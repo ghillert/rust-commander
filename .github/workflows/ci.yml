@@ -1,28 +1,132 @@
-name: Rust
-on: [push, pull_request]
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
+
 jobs:
-  check:
+  format:
+    name: Formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  build:
+    name: Test and build (${{ matrix.os }})
+    needs: format
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Check out source
+        uses: actions/checkout@v7
         with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxi-dev libxrandr-dev libxcursor-dev libxinerama-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev libarchive-dev libdbus-1-dev
-      - if: runner.os == 'macOS'
-        run: brew install libarchive pkg-config
-      - if: runner.os == 'Windows'
+          persist-credentials: false
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config libarchive-dev libdbus-1-dev \
+            libx11-dev libxi-dev libxrandr-dev libxcursor-dev libxinerama-dev \
+            libgl1-mesa-dev libxkbcommon-dev libwayland-dev
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install libarchive pkg-config
+          echo "PKG_CONFIG_PATH=$(brew --prefix libarchive)/lib/pkgconfig" >> "$GITHUB_ENV"
+
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          vcpkg install libarchive:x64-windows-static-md
-          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "VCPKGRS_TRIPLET=x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: cargo test --locked
-      - run: cargo build --locked --release
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libarchive:x64-windows-static-md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test --locked --all-targets
+
+      - name: Build release executable
+        run: cargo build --locked --release
+
+      - name: Package Linux executable
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          cp target/release/mucommander-rust LICENSE NOTICE dist/
+          tar -czf "dist/mucommander-rust-${RUNNER_OS}-${RUNNER_ARCH}.tar.gz" \
+            -C dist mucommander-rust LICENSE NOTICE
+
+      - name: Package macOS application
+        if: runner.os == 'macOS'
+        run: |
+          ./scripts/package-macos.sh
+          codesign --verify --deep --strict "target/release/muCommander Rust.app"
+          mkdir -p dist
+          tar -czf "dist/mucommander-rust-${RUNNER_OS}-${RUNNER_ARCH}.tar.gz" \
+            -C target/release "muCommander Rust.app"
+
+      - name: Package Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "target/release/mucommander-rust.exe", "LICENSE", "NOTICE" `
+            -DestinationPath "dist/mucommander-rust-$env:RUNNER_OS-$env:RUNNER_ARCH.zip"
+
+      # Tar archives preserve Unix executable permissions and the app bundle.
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: mucommander-rust-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

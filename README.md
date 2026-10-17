@@ -1,6 +1,6 @@
 # muCommander Rust
 
-[![CI](https://github.com/ghillert/rust-commander/actions/workflows/ci.yml/badge.svg)](https://github.com/ghillert/rust-commander/actions/workflows/ci.yml)
+[![CI](https://github.com/ghillert/rust-commander/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ghillert/rust-commander/actions/workflows/ci.yml)
 [![Rust 1.92+](https://img.shields.io/badge/Rust-1.92%2B-orange?logo=rust)](Cargo.toml)
 [![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg)](LICENSE)
 
@@ -256,14 +256,19 @@ used by CI with:
 ```sh
 ./scripts/cargo-local.sh fmt --all -- --check
 ./scripts/cargo-local.sh clippy --locked --all-targets -- -D warnings
-./scripts/cargo-local.sh test --locked
+./scripts/cargo-local.sh test --locked --all-targets
 ./scripts/cargo-local.sh build --locked --release
 ```
 
 On Windows, replace `./scripts/cargo-local.sh` with `cargo`.
-The [GitHub Actions workflow](.github/workflows/ci.yml) configures macOS,
-Windows, and Ubuntu jobs. Local validation is recorded in
-[parity/VALIDATION.md](parity/VALIDATION.md).
+
+The [CI workflow](.github/workflows/ci.yml) runs on pushes, pull requests, and
+manual dispatch. It checks formatting, then runs Clippy, tests, and release
+builds on Ubuntu, macOS, and Windows. Successful platform jobs upload build
+artifacts to the workflow run's summary page for **7 days**, including an ad hoc
+signed macOS app bundle. These are CI builds, not release installers; native
+runtime dependencies still apply. The badge above shows the `main` branch.
+Local validation is recorded in [parity/VALIDATION.md](parity/VALIDATION.md).
 
 Tests use temporary directories and generated archive/PDF fixtures. The WebDAV
 integration test opens a loopback-only server; it requires permission to bind
