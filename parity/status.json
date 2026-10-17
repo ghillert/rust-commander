@@ -1,0 +1,1277 @@
+{
+  "AddBookmark": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "BatchRename": {
+    "evidence": [
+      "src/desktop.rs",
+      "tests/desktop_tools.rs::batch_rename_supports_cycles_without_overwriting_contents",
+      "tests/desktop_tools.rs::batch_rename_previews_numbering_and_regex"
+    ],
+    "note": "",
+    "status": "implemented"
+  },
+  "BringAllToFront": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "CalculateChecksum": {
+    "evidence": [
+      "src/operations.rs",
+      "tests/desktop_tools.rs::all_checksum_algorithms_match_known_values"
+    ],
+    "note": "",
+    "status": "implemented"
+  },
+  "ChangeDate": {
+    "evidence": [
+      "src/operations.rs",
+      "src/app.rs"
+    ],
+    "note": "Core and UI exist; full platform behavior is not validated.",
+    "status": "partial"
+  },
+  "ChangeLocation": {
+    "evidence": [
+      "src/app.rs",
+      "parity/VALIDATION.md"
+    ],
+    "note": "Core local navigation/open workflow exists; full upstream action semantics and cross-platform behavior remain incomplete.",
+    "status": "partial"
+  },
+  "ChangePermissions": {
+    "evidence": [
+      "src/operations.rs",
+      "src/app.rs"
+    ],
+    "note": "Core and UI exist; full platform behavior is not validated.",
+    "status": "partial"
+  },
+  "CheckForUpdates": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "CloneTabToOtherPanel": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "CloseDuplicateTabs": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "CloseOtherTabs": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "CloseTab": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "CloseWindow": {
+    "evidence": [
+      "src/app.rs"
+    ],
+    "note": "Implemented UI and close protection; full lifecycle validation pending.",
+    "status": "partial"
+  },
+  "CombineFiles": {
+    "evidence": [
+      "src/desktop.rs",
+      "tests/desktop_tools.rs::split_and_combine_round_trip_every_chunk_boundary"
+    ],
+    "note": "",
+    "status": "implemented"
+  },
+  "CompareFolders": {
+    "evidence": [
+      "src/desktop.rs",
+      "tests/desktop_tools.rs"
+    ],
+    "note": "Local-only; search content has a size limit and comparison skips symlinks.",
+    "status": "partial"
+  },
+  "ConnectToServer": {
+    "evidence": [
+      "src/remote.rs",
+      "tests/webdav_backend.rs"
+    ],
+    "note": "Saved profiles, keychain integration and partial adapters; live services and keychain UI need validation.",
+    "status": "partial"
+  },
+  "Copy": {
+    "evidence": [
+      "src/transfer.rs",
+      "tests/transfer_conflicts.rs",
+      "src/app.rs"
+    ],
+    "note": "Local skip, keep-both, recoverable replacement and folder merge workflows; remote conflict resolution, per-file prompts and complete platform validation remain open.",
+    "status": "partial"
+  },
+  "CopyFileBaseNames": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "CopyFileNames": {
+    "evidence": [
+      "src/app.rs"
+    ],
+    "note": "UI implemented; native smoke validation pending.",
+    "status": "partial"
+  },
+  "CopyFilePaths": {
+    "evidence": [
+      "src/app.rs"
+    ],
+    "note": "UI implemented; native smoke validation pending.",
+    "status": "partial"
+  },
+  "CopyFilesToClipboard": {
+    "evidence": [
+      "src/app.rs",
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+    ],
+    "note": "In-app clipboard only; native file clipboard interoperability is missing.",
+    "status": "partial"
+  },
+  "CustomizeCommandBar": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "Delete": {
+    "evidence": [
+      "src/operations.rs",
+      "src/app.rs"
+    ],
+    "note": "Core and UI exist; full platform behavior is not validated.",
+    "status": "partial"
+  },
+  "Donate": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "DuplicateTab": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "Edit": {
+    "evidence": [
+      "src/app.rs",
+      "tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content"
+    ],
+    "note": "Local UTF-8 text editing only.",
+    "status": "partial"
+  },
+  "EditBookmarks": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "EditCredentials": {
+    "evidence": [
+      "src/remote.rs",
+      "tests/webdav_backend.rs"
+    ],
+    "note": "Saved profiles, keychain integration and partial adapters; live services and keychain UI need validation.",
+    "status": "partial"
+  },
+  "Email": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "EmptyTrash": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ExploreBookmarks": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "Find": {
+    "evidence": [
+      "src/desktop.rs",
+      "tests/desktop_tools.rs"
+    ],
+    "note": "Local search and native filename-filter smoke test pass; remote search and complete upstream search options remain open.",
+    "status": "partial"
+  },
+  "FocusNext": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "FocusPrevious": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "GarbageCollect": {
+    "evidence": [
+      "src/main.rs"
+    ],
+    "note": "This upstream action explicitly triggers the JVM garbage collector; the Rust application does not run a JVM.",
+    "status": "inapplicable"
+  },
+  "GoBack": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "GoForward": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "GoToDocumentation": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "GoToForums": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "GoToHome": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "GoToParent": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "GoToParentInBothPanels": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "GoToParentInOtherPanel": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "GoToRoot": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "GoToWebsite": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "InternalEdit": {
+    "evidence": [
+      "src/app.rs",
+      "tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content"
+    ],
+    "note": "Local UTF-8 text editing only.",
+    "status": "partial"
+  },
+  "InternalView": {
+    "evidence": [
+      "src/viewer.rs",
+      "tests/desktop_tools.rs::image_and_hex_viewers_load_real_files",
+      "tests/desktop_tools.rs::pdf_viewer_renders_and_navigates_pages"
+    ],
+    "note": "Bounded input; format edge cases, text encodings, image animation and full PDF compatibility remain open.",
+    "status": "partial"
+  },
+  "InvertSelection": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "LocalCopy": {
+    "evidence": [
+      "src/transfer.rs",
+      "tests/transfer_conflicts.rs",
+      "src/app.rs"
+    ],
+    "note": "Local skip, keep-both, recoverable replacement and folder merge workflows; remote conflict resolution, per-file prompts and complete platform validation remain open.",
+    "status": "partial"
+  },
+  "MarkAll": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "MarkExtension": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "MarkGroup": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "MarkNextBlock": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "MarkNextPage": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "MarkNextRow": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "MarkPreviousBlock": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "MarkPreviousPage": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "MarkPreviousRow": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "MarkSelectedFile": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "MarkToFirstRow": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "MarkToLastRow": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "MaximizeWindow": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "MinimizeWindow": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "Mkdir": {
+    "evidence": [
+      "src/operations.rs",
+      "src/app.rs"
+    ],
+    "note": "Core and UI exist; full platform behavior is not validated.",
+    "status": "partial"
+  },
+  "Mkfile": {
+    "evidence": [
+      "src/operations.rs",
+      "src/app.rs"
+    ],
+    "note": "Core and UI exist; full platform behavior is not validated.",
+    "status": "partial"
+  },
+  "Move": {
+    "evidence": [
+      "src/transfer.rs",
+      "tests/transfer_conflicts.rs",
+      "src/app.rs"
+    ],
+    "note": "Local skip, keep-both, recoverable replacement and folder merge workflows; remote conflict resolution, per-file prompts and complete platform validation remain open.",
+    "status": "partial"
+  },
+  "MoveTabToOtherPanel": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "NewTab": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "NewWindow": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "NextTab": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "Open": {
+    "evidence": [
+      "src/app.rs",
+      "parity/VALIDATION.md"
+    ],
+    "note": "Core local navigation/open workflow exists; full upstream action semantics and cross-platform behavior remain incomplete.",
+    "status": "partial"
+  },
+  "OpenAs": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "OpenCommandPrompt": {
+    "evidence": [
+      "src/terminal.rs",
+      "src/app.rs"
+    ],
+    "note": "PTY/VT100 screen ran a shell command in the packaged macOS app; full terminal compatibility and other platforms remain unverified.",
+    "status": "partial"
+  },
+  "OpenInBothPanels": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "OpenInNewTab": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "OpenInOtherPanel": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "OpenNatively": {
+    "evidence": [
+      "src/app.rs",
+      "parity/VALIDATION.md"
+    ],
+    "note": "Core local navigation/open workflow exists; full upstream action semantics and cross-platform behavior remain incomplete.",
+    "status": "partial"
+  },
+  "OpenTrash": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "OpenURLInBrowser": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "Pack": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/file_manager.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "No encryption, archive mutation or archive link extraction; extraction requires a new folder.",
+    "status": "partial"
+  },
+  "PasteClipboardFiles": {
+    "evidence": [
+      "src/app.rs",
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+    ],
+    "note": "In-app clipboard only; native file clipboard interoperability is missing.",
+    "status": "partial"
+  },
+  "PermanentDelete": {
+    "evidence": [
+      "src/operations.rs",
+      "src/app.rs"
+    ],
+    "note": "Core and UI exist; full platform behavior is not validated.",
+    "status": "partial"
+  },
+  "PopupLeftDriveButton": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "PopupRightDriveButton": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "PreviousTab": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "QuickFind": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "Quit": {
+    "evidence": [
+      "src/app.rs"
+    ],
+    "note": "Implemented UI and close protection; full lifecycle validation pending.",
+    "status": "partial"
+  },
+  "RecallNextWindow": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "RecallPreviousWindow": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "RecallWindow1": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "RecallWindow10": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "RecallWindow2": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "RecallWindow3": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "RecallWindow4": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "RecallWindow5": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "RecallWindow6": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "RecallWindow7": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "RecallWindow8": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "RecallWindow9": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "Redo": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "Refresh": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Manual refresh and automatic macOS file-change notifications smoke tested; other platforms and remote refresh behavior remain unverified.",
+    "status": "partial"
+  },
+  "Rename": {
+    "evidence": [
+      "src/operations.rs",
+      "tests/file_manager.rs"
+    ],
+    "note": "Single rename refuses existing targets. Case-only renaming, complete platform semantics and conflict handling remain open.",
+    "status": "partial"
+  },
+  "ReportBug": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "RevealInDesktop": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ReverseSortOrder": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "Save": {
+    "evidence": [
+      "src/app.rs",
+      "tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content"
+    ],
+    "note": "Local UTF-8 text editing only.",
+    "status": "partial"
+  },
+  "SelectFirstRow": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "SelectLastRow": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "SelectNextBlock": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "SelectNextPage": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "SelectNextRow": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "SelectPreviousBlock": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "SelectPreviousPage": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "SelectPreviousRow": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "SetSameFolder": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "SetTabTitle": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ShowAbout": {
+    "evidence": [
+      "src/app.rs"
+    ],
+    "note": "Implemented UI and close protection; full lifecycle validation pending.",
+    "status": "partial"
+  },
+  "ShowBookmarksQL": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ShowDebugConsole": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ShowFilePopupMenu": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ShowFileProperties": {
+    "evidence": [
+      "src/operations.rs",
+      "src/app.rs"
+    ],
+    "note": "Core and UI exist; full platform behavior is not validated.",
+    "status": "partial"
+  },
+  "ShowInEnclosingFolder": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ShowKeyboardShortcuts": {
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions"
+    ],
+    "note": "Common preferences only; all upstream settings and shortcut actions are not ported.",
+    "status": "partial"
+  },
+  "ShowParentFoldersQL": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ShowPreferences": {
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions"
+    ],
+    "note": "Common controls inspected in the native app; full upstream preferences and cross-platform behavior remain incomplete.",
+    "status": "partial"
+  },
+  "ShowRecentExecutedFilesQL": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ShowRecentLocationsQL": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ShowRootFoldersQL": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ShowServerConnections": {
+    "evidence": [
+      "src/remote.rs",
+      "tests/webdav_backend.rs"
+    ],
+    "note": "Saved profiles, keychain integration and partial adapters; live services and keychain UI need validation.",
+    "status": "partial"
+  },
+  "ShowTabsQL": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "SortByDate": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "SortByExtension": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "SortByGroup": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "SortByName": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "SortByOwner": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "SortByPermissions": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "SortBySize": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "SplitEqually": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "SplitFile": {
+    "evidence": [
+      "src/desktop.rs",
+      "tests/desktop_tools.rs::split_and_combine_round_trip_every_chunk_boundary"
+    ],
+    "note": "",
+    "status": "implemented"
+  },
+  "SplitHorizontally": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "SplitVertically": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "Stop": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "SwapFolders": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "SwitchActiveTable": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "ToggleAutoSize": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ToggleCommandBar": {
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions"
+    ],
+    "note": "Common preferences only; all upstream settings and shortcut actions are not ported.",
+    "status": "partial"
+  },
+  "ToggleDateColumn": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ToggleExtensionColumn": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ToggleGroupColumn": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ToggleHiddenFiles": {
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions"
+    ],
+    "note": "Common preferences only; all upstream settings and shortcut actions are not ported.",
+    "status": "partial"
+  },
+  "ToggleLockTab": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ToggleOwnerColumn": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "TogglePermissionsColumn": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ToggleShowFoldersFirst": {
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions"
+    ],
+    "note": "Common preferences only; all upstream settings and shortcut actions are not ported.",
+    "status": "partial"
+  },
+  "ToggleShowParentFolder": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ToggleSizeColumn": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ToggleStatusBar": {
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions"
+    ],
+    "note": "Common preferences only; all upstream settings and shortcut actions are not ported.",
+    "status": "partial"
+  },
+  "ToggleTerminal": {
+    "evidence": [
+      "src/terminal.rs",
+      "src/app.rs"
+    ],
+    "note": "PTY and VT100 screen implemented; full terminal compatibility needs validation.",
+    "status": "partial"
+  },
+  "ToggleToolBar": {
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions"
+    ],
+    "note": "Common preferences only; all upstream settings and shortcut actions are not ported.",
+    "status": "partial"
+  },
+  "ToggleTree": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "ToggleUseSinglePanel": {
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions"
+    ],
+    "note": "Common preferences only; all upstream settings and shortcut actions are not ported.",
+    "status": "partial"
+  },
+  "Undo": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "UnmarkAll": {
+    "evidence": [
+      "src/app.rs",
+      "src/model.rs"
+    ],
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "status": "partial"
+  },
+  "UnmarkGroup": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "Unpack": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/file_manager.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "No encryption, archive mutation or archive link extraction; extraction requires a new folder.",
+    "status": "partial"
+  },
+  "View": {
+    "evidence": [
+      "src/viewer.rs",
+      "tests/desktop_tools.rs::image_and_hex_viewers_load_real_files",
+      "tests/desktop_tools.rs::pdf_viewer_renders_and_navigates_pages"
+    ],
+    "note": "Bounded input; format edge cases, text encodings, image animation and full PDF compatibility remain open.",
+    "status": "partial"
+  },
+  "mucommander-format-ar": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "status": "partial"
+  },
+  "mucommander-format-bzip2": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "status": "partial"
+  },
+  "mucommander-format-cpio": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "status": "partial"
+  },
+  "mucommander-format-gzip": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "status": "partial"
+  },
+  "mucommander-format-iso": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "status": "partial"
+  },
+  "mucommander-format-libguestfs": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "mucommander-format-lst": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "mucommander-format-rar": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "status": "partial"
+  },
+  "mucommander-format-rpm": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "status": "partial"
+  },
+  "mucommander-format-sevenzip": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "status": "partial"
+  },
+  "mucommander-format-tar": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "status": "partial"
+  },
+  "mucommander-format-xz": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "status": "partial"
+  },
+  "mucommander-format-zip": {
+    "evidence": [
+      "src/archive.rs",
+      "tests/desktop_tools.rs",
+      "tests/extended_archives.rs"
+    ],
+    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "status": "partial"
+  },
+  "mucommander-protocol-adb": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "mucommander-protocol-api": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "mucommander-protocol-dropbox": {
+    "evidence": [
+      "src/remote.rs",
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+    ],
+    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "status": "partial"
+  },
+  "mucommander-protocol-ftp": {
+    "evidence": [
+      "src/remote.rs",
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+    ],
+    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "status": "partial"
+  },
+  "mucommander-protocol-gcs": {
+    "evidence": [
+      "src/remote.rs",
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+    ],
+    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "status": "partial"
+  },
+  "mucommander-protocol-gdrive": {
+    "evidence": [
+      "src/remote.rs",
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+    ],
+    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "status": "partial"
+  },
+  "mucommander-protocol-hadoop": {
+    "evidence": [
+      "src/remote.rs",
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+    ],
+    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "status": "partial"
+  },
+  "mucommander-protocol-http": {
+    "evidence": [
+      "src/remote.rs",
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+    ],
+    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "status": "partial"
+  },
+  "mucommander-protocol-nfs": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "mucommander-protocol-onedrive": {
+    "evidence": [
+      "src/remote.rs",
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+    ],
+    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "status": "partial"
+  },
+  "mucommander-protocol-ovirt": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "mucommander-protocol-registry": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "mucommander-protocol-s3": {
+    "evidence": [
+      "src/remote.rs",
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+    ],
+    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "status": "partial"
+  },
+  "mucommander-protocol-sftp": {
+    "evidence": [
+      "src/remote.rs",
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+    ],
+    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "status": "partial"
+  },
+  "mucommander-protocol-smb": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "mucommander-protocol-vsphere": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "mucommander-viewer-api": {
+    "evidence": [],
+    "status": "missing"
+  },
+  "mucommander-viewer-binary": {
+    "evidence": [
+      "src/viewer.rs",
+      "tests/desktop_tools.rs"
+    ],
+    "note": "Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified.",
+    "status": "partial"
+  },
+  "mucommander-viewer-image": {
+    "evidence": [
+      "src/viewer.rs",
+      "tests/desktop_tools.rs"
+    ],
+    "note": "Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified.",
+    "status": "partial"
+  },
+  "mucommander-viewer-pdf": {
+    "evidence": [
+      "src/viewer.rs",
+      "tests/desktop_tools.rs"
+    ],
+    "note": "Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified.",
+    "status": "partial"
+  },
+  "mucommander-viewer-text": {
+    "evidence": [
+      "src/viewer.rs",
+      "tests/desktop_tools.rs"
+    ],
+    "note": "Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified.",
+    "status": "partial"
+  }
+}

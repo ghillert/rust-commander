@@ -1,0 +1,62 @@
+[package]
+name = "mucommander-rust"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.92"
+description = "A native Rust dual-pane file manager inspired by muCommander"
+license = "GPL-3.0-only"
+
+[dependencies]
+anyhow = "1"
+chrono = "0.4"
+compress-tools = "0.16"
+directories = "6"
+eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "x11", "wayland", "accesskit"] }
+flate2 = "1"
+bzip2 = "0.5"
+globset = "0.4"
+hayro = "0.8"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "tiff", "ico"] }
+md-5 = "0.10"
+libc = "0.2"
+notify = "8"
+opendal = { version = "0.54", features = ["blocking", "services-fs", "services-ftp", "services-sftp", "services-webdav", "services-s3", "services-http", "services-dropbox", "services-gdrive", "services-onedrive", "services-gcs", "services-webhdfs"] }
+percent-encoding = "2"
+portable-pty = "0.9"
+regex = "1"
+sevenz-rust = "0.6"
+sha1 = "0.10"
+xz2 = "0.1"
+open = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tar = "0.4"
+tempfile = "3"
+trash = "5"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+url = "2"
+vt100 = "0.15"
+zip = { version = "2.4", default-features = false, features = ["deflate", "bzip2"] }
+
+[features]
+screenshot = ["eframe/__screenshot"]
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[[bin]]
+name = "mucommander-rust"
+path = "src/main.rs"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+muda = { version = "0.21", default-features = false }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }

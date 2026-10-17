@@ -1,0 +1,569 @@
+use anyhow::{Context, Result, bail};
+use sha2::{Digest, Sha256};
+use std::{
+    fs::{self, File},
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Instant, SystemTime},
+};
+
+#[derive(Clone, Debug)]
+pub enum Operation {
+    Transfer {
+        sources: Vec<PathBuf>,
+        destination: PathBuf,
+        moving: bool,
+        options: crate::transfer::TransferOptions,
+    },
+    BatchRename(Vec<(PathBuf, PathBuf)>),
+    Properties(Vec<PathBuf>),
+    Compare {
+        left: PathBuf,
+        right: PathBuf,
+    },
+    Split {
+        source: PathBuf,
+        destination: PathBuf,
+        bytes: u64,
+    },
+    Combine {
+        sources: Vec<PathBuf>,
+        destination: PathBuf,
+    },
+    Mkfile(PathBuf),
+    Permissions {
+        paths: Vec<PathBuf>,
+        mode: u32,
+    },
+    Modified {
+        paths: Vec<PathBuf>,
+        time: SystemTime,
+    },
+    PermanentDelete(Vec<PathBuf>),
+    RemoteTransfer {
+        from: crate::filesystem::Location,
+        entries: Vec<crate::filesystem::Entry>,
+        to: crate::filesystem::Location,
+        moving: bool,
+    },
+    RemoteMkdir {
+        connection: String,
+        path: PathBuf,
+    },
+    RemoteDelete {
+        connection: String,
+        entries: Vec<crate::filesystem::Entry>,
+    },
+    Copy {
+        sources: Vec<PathBuf>,
+        destination: PathBuf,
+    },
+    Move {
+        sources: Vec<PathBuf>,
+        destination: PathBuf,
+    },
+    Rename {
+        source: PathBuf,
+        name: String,
+    },
+    Trash(Vec<PathBuf>),
+    Mkdir(PathBuf),
+    Pack {
+        sources: Vec<PathBuf>,
+        destination: PathBuf,
+    },
+    Extract {
+        archive: PathBuf,
+        selected: Vec<PathBuf>,
+        prefix: PathBuf,
+        destination: PathBuf,
+    },
+    Checksum(PathBuf),
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Progress {
+    pub current: String,
+    pub bytes: u64,
+    pub files: usize,
+}
+
+pub struct Task {
+    pub cancel: Arc<AtomicBool>,
+    pub progress: Progress,
+    report: Box<dyn FnMut(Progress) + Send>,
+    last_report: Instant,
+}
+
+impl Default for Task {
+    fn default() -> Self {
+        Self::new(Arc::new(AtomicBool::new(false)), |_| {})
+    }
+}
+
+impl Task {
+    pub fn new(cancel: Arc<AtomicBool>, report: impl FnMut(Progress) + Send + 'static) -> Self {
+        Self {
+            cancel,
+            progress: Progress::default(),
+            report: Box::new(report),
+            last_report: Instant::now(),
+        }
+    }
+
+    pub fn check(&self) -> Result<()> {
+        if self.cancel.load(Ordering::Relaxed) {
+            bail!("Operation cancelled. Completed items were kept.");
+        }
+        Ok(())
+    }
+
+    pub fn tick(&mut self, path: &Path, bytes: u64) -> Result<()> {
+        self.check()?;
+        self.progress.current = path.display().to_string();
+        self.progress.bytes += bytes;
+        if self.last_report.elapsed().as_millis() >= 40 {
+            (self.report)(self.progress.clone());
+            self.last_report = Instant::now();
+        }
+        Ok(())
+    }
+
+    pub fn stream(
+        &mut self,
+        input: &mut dyn Read,
+        output: &mut dyn Write,
+        path: &Path,
+    ) -> Result<u64> {
+        let mut buffer = [0u8; 64 * 1024];
+        let mut total = 0;
+        loop {
+            self.check()?;
+            let count = input.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            output.write_all(&buffer[..count])?;
+            total += count as u64;
+            self.tick(path, count as u64)?;
+        }
+        self.progress.files += 1;
+        Ok(total)
+    }
+}
+
+pub fn exists(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok()
+}
+
+pub(crate) fn remove(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.is_dir() {
+        fs::remove_dir_all(path)?;
+    } else {
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_sources(sources: &[PathBuf]) -> Result<()> {
+    if sources.is_empty() {
+        bail!("Select at least one item.");
+    }
+    for (i, source) in sources.iter().enumerate() {
+        fs::symlink_metadata(source)
+            .with_context(|| format!("Cannot read {}", source.display()))?;
+        for other in &sources[..i] {
+            if source == other || source.starts_with(other) || other.starts_with(source) {
+                bail!("The selection contains duplicate or nested paths.");
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn preflight(sources: &[PathBuf], destination: &Path) -> Result<Vec<PathBuf>> {
+    validate_sources(sources)?;
+    let destination =
+        fs::canonicalize(destination).context("The destination must be an existing folder")?;
+    if !destination.is_dir() {
+        bail!("The destination is not a folder.");
+    }
+    let mut targets = Vec::new();
+    for source in sources {
+        let name = source
+            .file_name()
+            .context("Cannot copy a filesystem root")?;
+        let target = destination.join(name);
+        if exists(&target) || targets.contains(&target) {
+            bail!(
+                "Destination already exists: {}. Rename it or choose another folder.",
+                target.display()
+            );
+        }
+        let metadata = fs::symlink_metadata(source)?;
+        if metadata.is_dir() && destination.starts_with(fs::canonicalize(source)?) {
+            bail!("Cannot copy or move a folder into itself.");
+        }
+        targets.push(target);
+    }
+    Ok(targets)
+}
+
+/// Creates new paths exclusively. Symlinks are copied as links, never followed.
+pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
+    task.tick(source, 0)?;
+    let metadata = fs::symlink_metadata(source)?;
+    if metadata.file_type().is_symlink() {
+        let link = fs::read_link(source)?;
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(link, target)?;
+        #[cfg(windows)]
+        if source.is_dir() {
+            std::os::windows::fs::symlink_dir(link, target)?;
+        } else {
+            std::os::windows::fs::symlink_file(link, target)?;
+        }
+        task.progress.files += 1;
+    } else if metadata.is_dir() {
+        fs::create_dir(target)?;
+        let result: Result<()> = (|| {
+            for item in fs::read_dir(source)? {
+                let item = item?;
+                copy_item(&item.path(), &target.join(item.file_name()), task)?;
+            }
+            fs::set_permissions(target, metadata.permissions())?;
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_dir_all(target);
+        }
+        result?;
+    } else if metadata.is_file() {
+        let mut input = File::open(source)?;
+        let mut temporary =
+            tempfile::NamedTempFile::new_in(target.parent().context("Missing parent folder")?)?;
+        task.stream(&mut input, &mut temporary, source)?;
+        let after = fs::symlink_metadata(source)?;
+        if metadata.len() != after.len() || metadata.modified().ok() != after.modified().ok() {
+            bail!("Source changed while copying: {}", source.display());
+        }
+        if let Ok(modified) = metadata.modified() {
+            temporary
+                .as_file()
+                .set_times(fs::FileTimes::new().set_modified(modified))?;
+        }
+        temporary
+            .as_file()
+            .set_permissions(metadata.permissions())?;
+        temporary.as_file().sync_all()?;
+        temporary.persist_noclobber(target).map_err(|e| e.error)?;
+    } else {
+        bail!("Special files are not supported: {}", source.display());
+    }
+    Ok(())
+}
+
+pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
+    task.check()?;
+    match operation {
+        Operation::Transfer {
+            sources,
+            destination,
+            moving,
+            options,
+        } => crate::transfer::transfer(&sources, &destination, moving, options, task),
+        Operation::BatchRename(plan) => {
+            crate::desktop::batch_rename(&plan, task)?;
+            Ok(format!("Renamed {} item(s).", plan.len()))
+        }
+        Operation::Properties(paths) => Ok(format!(
+            "Properties\n{}",
+            crate::desktop::properties(&paths, task)?
+        )),
+        Operation::Compare { left, right } => {
+            let entries = crate::desktop::compare(&left, &right, task)?;
+            Ok(format!(
+                "Folder comparison\n{}\n{}\n\n{}",
+                left.display(),
+                right.display(),
+                entries
+                    .iter()
+                    .map(|e| format!("{}  {}", e.status, e.name))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ))
+        }
+        Operation::Split {
+            source,
+            destination,
+            bytes,
+        } => {
+            crate::desktop::split(&source, &destination, bytes, task)?;
+            Ok("Split completed.".into())
+        }
+        Operation::Combine {
+            sources,
+            destination,
+        } => {
+            crate::desktop::combine(&sources, &destination, task)?;
+            Ok("Combined files successfully.".into())
+        }
+        Operation::Mkfile(path) => {
+            File::options().write(true).create_new(true).open(path)?;
+            Ok("Created file.".into())
+        }
+        Operation::Permissions { paths, mode } => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                for path in paths {
+                    task.check()?;
+                    if fs::symlink_metadata(&path)?.file_type().is_symlink() {
+                        bail!("Change the symlink target directly.");
+                    }
+                    fs::set_permissions(path, fs::Permissions::from_mode(mode & 0o777))?;
+                }
+                Ok("Permissions updated.".into())
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = (paths, mode);
+                bail!("POSIX permissions are not available on this platform.");
+            }
+        }
+        Operation::Modified { paths, time } => {
+            crate::desktop::change_modified(&paths, time)?;
+            Ok("Modification time updated.".into())
+        }
+        Operation::PermanentDelete(paths) => {
+            validate_sources(&paths)?;
+            for path in &paths {
+                task.tick(path, 0)?;
+                remove(path)?;
+            }
+            Ok(format!("Permanently deleted {} item(s).", paths.len()))
+        }
+        Operation::RemoteTransfer {
+            from,
+            entries,
+            to,
+            moving,
+        } => {
+            crate::remote::transfer(&from, &entries, &to, moving, task)?;
+            Ok(format!("Transferred {} item(s).", entries.len()))
+        }
+        Operation::RemoteMkdir { connection, path } => {
+            crate::remote::mkdir(&connection, &path)?;
+            Ok("Remote folder created.".into())
+        }
+        Operation::RemoteDelete {
+            connection,
+            entries,
+        } => {
+            crate::remote::delete(&connection, &entries, task)?;
+            Ok("Remote items deleted.".into())
+        }
+        Operation::Copy {
+            sources,
+            destination,
+        } => transfer(&sources, &destination, false, task),
+        Operation::Move {
+            sources,
+            destination,
+        } => transfer(&sources, &destination, true, task),
+        Operation::Rename { source, name } => {
+            crate::filesystem::validate_name(&name)?;
+            let target = source
+                .parent()
+                .context("Cannot rename a filesystem root")?
+                .join(name);
+            if exists(&target) {
+                bail!("That name already exists.");
+            }
+            let before = source_stamp(&source, task)?;
+            copy_item(&source, &target, task)?;
+            task.check()?;
+            if before != source_stamp(&source, task)? {
+                bail!("The source changed during rename. Both copies were kept.");
+            }
+            remove(&source)
+                .context("The new copy is complete, but the original could not be removed")?;
+            Ok("Renamed successfully.".into())
+        }
+        Operation::Trash(sources) => {
+            validate_sources(&sources)?;
+            for source in &sources {
+                task.tick(source, 0)?;
+                trash::delete(source)
+                    .with_context(|| format!("Could not move {} to Trash", source.display()))?;
+                task.progress.files += 1;
+            }
+            Ok(format!("Moved {} item(s) to Trash.", sources.len()))
+        }
+        Operation::Mkdir(path) => {
+            fs::create_dir(&path)?;
+            Ok(format!("Created {}", path.display()))
+        }
+        Operation::Pack {
+            sources,
+            destination,
+        } => {
+            validate_sources(&sources)?;
+            crate::archive::pack(&sources, &destination, task)?;
+            Ok(format!("Created {}", destination.display()))
+        }
+        Operation::Extract {
+            archive,
+            selected,
+            prefix,
+            destination,
+        } => {
+            crate::archive::extract(&archive, &selected, &prefix, &destination, task)?;
+            Ok(format!("Extracted to {}", destination.display()))
+        }
+        Operation::Checksum(path) => {
+            let mut input = File::open(&path)?;
+            let mut digest = Sha256::new();
+            let mut md5 = md5::Md5::new();
+            let mut sha1 = sha1::Sha1::new();
+            let mut sha512 = sha2::Sha512::new();
+            let mut buffer = [0u8; 64 * 1024];
+            loop {
+                task.tick(&path, 0)?;
+                let n = input.read(&mut buffer)?;
+                if n == 0 {
+                    break;
+                }
+                digest.update(&buffer[..n]);
+                md5.update(&buffer[..n]);
+                sha1.update(&buffer[..n]);
+                sha512.update(&buffer[..n]);
+                task.tick(&path, n as u64)?;
+            }
+            Ok(format!(
+                "Checksums · {}\nMD5     {:x}\nSHA-1   {:x}\nSHA-512 {:x}\nSHA-256 {:x}",
+                path.display(),
+                md5.finalize(),
+                sha1.finalize(),
+                sha512.finalize(),
+                digest.finalize()
+            ))
+        }
+    }
+}
+
+pub fn run(operation: Operation, task: &mut Task) -> Result<String> {
+    execute(operation, task)
+}
+
+fn transfer(
+    sources: &[PathBuf],
+    destination: &Path,
+    moving: bool,
+    task: &mut Task,
+) -> Result<String> {
+    let targets = preflight(sources, destination)?;
+    let before = if moving {
+        sources
+            .iter()
+            .map(|p| source_stamp(p, task))
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        Vec::new()
+    };
+    for (source, target) in sources.iter().zip(&targets) {
+        copy_item(source, target, task)
+            .with_context(|| format!("Could not copy {}", source.display()))?;
+    }
+    task.check()?;
+    if moving {
+        for (source, before) in sources.iter().zip(&before) {
+            if source_stamp(source, task)? != *before {
+                bail!(
+                    "A source changed during the move. All originals and completed copies were kept."
+                );
+            }
+        }
+        for source in sources {
+            remove(source).context("Copy completed, but an original could not be removed")?;
+        }
+    }
+    Ok(format!(
+        "{} {} item(s).",
+        if moving { "Moved" } else { "Copied" },
+        sources.len()
+    ))
+}
+
+pub(crate) fn source_stamp(path: &Path, task: &Task) -> Result<[u8; 32]> {
+    fn visit(path: &Path, digest: &mut Sha256, task: &Task) -> Result<()> {
+        task.check()?;
+        let metadata = fs::symlink_metadata(path)?;
+        digest.update(path.as_os_str().as_encoded_bytes());
+        digest.update([
+            0,
+            metadata.is_dir() as u8,
+            metadata.file_type().is_symlink() as u8,
+        ]);
+        digest.update(metadata.len().to_le_bytes());
+        if let Ok(modified) = metadata.modified()?.duration_since(SystemTime::UNIX_EPOCH) {
+            digest.update(modified.as_nanos().to_le_bytes());
+        }
+        if metadata.file_type().is_symlink() {
+            digest.update(fs::read_link(path)?.as_os_str().as_encoded_bytes());
+        } else if metadata.is_dir() {
+            let mut children = fs::read_dir(path)?.collect::<std::io::Result<Vec<_>>>()?;
+            children.sort_by_key(|e| e.file_name());
+            for child in children {
+                visit(&child.path(), digest, task)?;
+            }
+        }
+        Ok(())
+    }
+    let mut digest = Sha256::new();
+    visit(path, &mut digest, task)?;
+    Ok(digest.finalize().into())
+}
+
+pub fn read_text(path: &Path, limit: u64) -> Result<String> {
+    let file = File::open(path)?;
+    let mut bytes = Vec::new();
+    file.take(limit + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > limit {
+        bail!(
+            "Text files larger than {} cannot be opened in the built-in editor.",
+            crate::filesystem::human_size(limit)
+        );
+    }
+    if bytes.contains(&0) {
+        bail!("This is a binary file. Use Open externally to view it.");
+    }
+    String::from_utf8(bytes).context("This file is not UTF-8. Use Open externally to view it.")
+}
+
+/// Refuses external changes and replaces the target only after a complete write.
+pub fn save_text(path: &Path, original: &[u8], text: &str) -> Result<()> {
+    if fs::symlink_metadata(path)?.file_type().is_symlink() {
+        bail!("Edit the symlink target directly.");
+    }
+    let mut current = Vec::new();
+    File::open(path)?
+        .take(original.len() as u64 + 1)
+        .read_to_end(&mut current)?;
+    if current != original {
+        bail!("This file changed on disk. Reopen it before saving to avoid losing those changes.");
+    }
+    let permissions = fs::metadata(path)?.permissions();
+    let mut temporary =
+        tempfile::NamedTempFile::new_in(path.parent().context("Missing parent folder")?)?;
+    temporary.write_all(text.as_bytes())?;
+    temporary.as_file().set_permissions(permissions)?;
+    temporary.as_file().sync_all()?;
+    temporary.persist(path).map_err(|e| e.error)?;
+    Ok(())
+}

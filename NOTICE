@@ -1,0 +1,18 @@
+muCommander Rust — independent Rust implementation, started October 16, 2026.
+
+Inspired by muCommander, https://github.com/mucommander/mucommander
+Original muCommander copyright belongs to Maxence Bernard, Arik Hadas,
+and the muCommander contributors. This project is not an official
+muCommander release and does not include the original Java implementation
+or its artwork.
+
+This implementation is distributed under the GNU General Public License,
+version 3 only. See LICENSE. Provided without warranty.
+
+Third-party Rust dependencies retain their respective licenses. The precise
+dependency versions are recorded in Cargo.lock; their source and license
+notices are available from crates.io and in Cargo's registry source cache.
+
+tests/fixtures/tree.rar is from compress-tools 0.16.1
+(https://github.com/OSSystems/compress-tools-rs), licensed MIT OR Apache-2.0.
+The other archive fixtures contain test data generated for this project.
