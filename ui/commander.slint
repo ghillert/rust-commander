@@ -402,6 +402,7 @@ export component CommanderWindow inherits Window {
         if right.visible && x*1px>=right.absolute-position.x && x*1px<right.absolute-position.x+right.width && y*1px>=right.absolute-position.y && y*1px<right.absolute-position.y+right.height {return 1;}
         return -1;
     }
+    public function show-menu(title: string) {root.menu-x=8;root.menu-y=30;root.menu(title);app-menu.show();}
     public function show-file-menu() {root.menu-x=(root.active-pane==0 ? left.absolute-position.x : right.absolute-position.x)/1px + 24;root.menu-y=(root.active-pane==0 ? left.absolute-position.y : right.absolute-position.y)/1px + 150;root.menu("File");app-menu.show();}
     public function focus-files(side: int) { if side == 0 { left.focus-files(); } else { right.focus-files(); } }
     public function focus-address(side: int) { if side == 0 { left.focus-address(); } else { right.focus-address(); } }
@@ -418,7 +419,7 @@ export component CommanderWindow inherits Window {
                     padding-left: 8px; spacing: 3px;
                     for title in ["File", "Operations", "Navigate", "Selection", "View", "Window", "Help"]: ChromeButton {
                         label: Words.translate(title,Words.version); show-label: true;
-                        clicked => {root.menu-x=8;root.menu-y=30;root.menu(title);app-menu.show();}
+                        clicked => {root.show-menu(title);}
                     }
                     Rectangle {horizontal-stretch:1;}
                 }
@@ -607,10 +608,23 @@ export component CommanderWindow inherits Window {
 
     app-menu := PopupWindow {
         x: max(8px,min(root.menu-x*1px,root.width - 292px)); y: max(8px,min(root.menu-y*1px,root.height - self.height - 8px)); width: 280px;
-        height: min(root.height - 40px,(root.menu-items.length*34+24)*1px);
-        ScrollView { VerticalBox {
-            for command in root.menu-items: Button { text: Words.translate(command.title,Words.version); enabled: command.enabled; clicked => { app-menu.close(); root.action(command.id); } }
-        } }
+        height: min(root.height - 40px,(root.menu-items.length*28+12)*1px);
+        Rectangle {
+            background: Chrome.pane;
+            border-width: 1px; border-color: Chrome.separator; border-radius: 6px;
+            ScrollView {
+                x: 6px; y: 6px; width: parent.width - 12px; height: parent.height - 12px;
+                VerticalLayout {
+                    spacing: 0px;
+                    for command in root.menu-items: ChromeButton {
+                        height: 28px; horizontal-stretch: 1;
+                        label: Words.translate(command.title,Words.version); show-label: true;
+                        enabled: command.enabled;
+                        clicked => { app-menu.close(); root.action(command.id); }
+                    }
+                }
+            }
+        }
     }
 
     if root.viewer-visible: Overlay {

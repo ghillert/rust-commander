@@ -148,7 +148,9 @@ RUST_COMMANDER_SCREENSHOT_TO="$PWD/.runtime/slint.png" \
 
 The app captures a frame after loading and exits. Set
 `RUST_COMMANDER_SCREENSHOT_ACTION=Preferences` to capture Settings. Snapshots
-cover the client area; native title-bar controls require a desktop smoke check.
+can also open a command menu, for example with
+`RUST_COMMANDER_SCREENSHOT_ACTION=Menu:Operations`. They cover the client area;
+native title-bar controls require a desktop smoke check.
 For machines without working OpenGL, `SLINT_BACKEND=winit-software` selects the
 compiled software renderer. Linux desktop checks require a display or Xvfb.
 

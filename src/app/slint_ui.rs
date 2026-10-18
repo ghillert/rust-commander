@@ -1164,7 +1164,11 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
             let action_ui = smoke_ui.as_weak();
             slint::Timer::single_shot(Duration::from_millis(750), move || {
                 if let Some(ui) = action_ui.upgrade() {
-                    ui.invoke_action(action.into());
+                    if let Some(title) = action.strip_prefix("Menu:") {
+                        ui.invoke_show_menu(title.into());
+                    } else {
+                        ui.invoke_action(action.into());
+                    }
                 }
             });
         }
