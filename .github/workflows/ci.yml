@@ -70,11 +70,16 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          # vcpkg does not retry every curl DNS/download failure itself.
           for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Write-Host "Installing Windows dependencies (attempt $attempt/3)"
             & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libarchive:x64-windows-static-md
             $installExitCode = $LASTEXITCODE
             if ($installExitCode -eq 0) { break }
-            if ($attempt -lt 3) { Start-Sleep -Seconds (10 * $attempt) }
+            if ($attempt -lt 3) {
+              Write-Warning "vcpkg failed with exit code $installExitCode; retrying."
+              Start-Sleep -Seconds (10 * $attempt)
+            }
           }
           if ($installExitCode -ne 0) { exit $installExitCode }
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV

@@ -303,6 +303,10 @@ signed macOS app bundle. These are CI builds, not release installers; native
 runtime dependencies still apply. The badge above shows the `main` branch.
 Local validation is recorded in [parity/VALIDATION.md](parity/VALIDATION.md).
 
+The macOS/Windows drag dependency is a small vendored subset of `drag` 2.1.1.
+Its [provenance and update instructions](vendor/drag/README.md) explain why the
+unused GTK3 backend is excluded. Linux uses the separate GTK4 helper.
+
 Tests use temporary directories and generated archive/PDF fixtures. The WebDAV
 integration test opens a loopback-only server; it requires permission to bind
 a local port but no live service credentials or user files.
@@ -354,8 +358,8 @@ performed in your pull request.
 ## License
 
 Distributed under **GPL-3.0-only**. See [LICENSE](LICENSE) for the terms and
-[NOTICE](NOTICE) for upstream attribution and test-fixture notices. Third-party
-dependencies retain their own licenses.
+[NOTICE](NOTICE) for upstream attribution, third-party licenses and test-fixture
+notices. Dependencies retain their own licenses.
 
 This project is an independent Rust implementation inspired by muCommander;
 it is not an official muCommander release.

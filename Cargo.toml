@@ -78,3 +78,8 @@ windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk4 = {version="0.10.3", default-features=false, features=["v4_8"]}
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+
+# Upstream drag 2.1.1 locks unused GTK3/GLib dependencies. Linux uses our GTK4
+# helper; retain only the unchanged native macOS/Windows backends here.
+[patch.crates-io]
+drag = { path = "vendor/drag" }

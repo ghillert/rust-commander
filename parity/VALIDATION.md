@@ -215,3 +215,39 @@ by protected chains. The parity completion gate still returns nonzero honestly.
 Windows dependency setup now retries vcpkg installation at most three times.
 This addresses the observed transient GitHub DNS download failure without masking
 an exhausted failure or weakening warnings-denied checks.
+
+## Dependabot GLib and Windows dependency setup
+
+[Dependabot run 39102257724](https://github.com/ghillert/rust-commander/actions/runs/39102257724/job/117600759120)
+failed because `drag` 2.1.1 pulled GTK3/GLib 0.18.5 into Cargo.lock; that series
+cannot resolve to GLib 0.20+, which fixes RUSTSEC-2024-0429. The GTK3 backend was
+unused: Rust Commander enables `drag` only on macOS/Windows and has a separate
+GTK4 helper on Linux.
+
+A [vendored macOS/Windows subset](../vendor/drag/README.md) removes the unused
+backend and its dependencies. Native backend files are byte-for-byte identical
+to upstream 2.1.1, and both upstream licenses are retained. The root NOTICE
+includes the MIT notice for packaged binaries. Cargo regenerated the lockfile:
+GLib 0.21.5 is the only remaining GLib version, 37 obsolete packages are gone,
+and no unrelated package versions changed. No advisory is suppressed.
+Target-specific package names/versions are unchanged on Apple Silicon macOS,
+Windows MSVC and ARM64 Linux.
+
+[Windows job 117600786532](https://github.com/ghillert/rust-commander/actions/runs/39102253000/job/117600786532)
+failed before running Rust checks: vcpkg's liblzma download could not resolve
+GitHub's hostname (curl error 6). The local workflow's three bounded attempts
+now log each attempt and retry reason; an exhausted failure still fails CI.
+
+Validation of the dependency fix:
+
+- Linux Clippy with warnings denied and all 140 normal tests pass in an
+  isolated ARM64 Debian 12 container with the updated locked dependency graph.
+- macOS formatting, Clippy with warnings denied, and all 140 normal tests pass;
+  the two desktop/live-service tests remain ignored in the normal suite.
+- The macOS release bundle builds and its ad hoc signature verifies. Its bundled
+  NOTICE includes the vendored dependency's MIT license.
+- The Windows native drag crate passes `cargo check` for
+  `x86_64-pc-windows-msvc` from the Mac, using the existing locked dependency
+  versions. This does not link or run a Windows executable.
+- The CI workflow YAML parses. Full Windows build/test execution and the
+  Dependabot rerun require pushing the changes and running GitHub Actions.
