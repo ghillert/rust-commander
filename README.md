@@ -7,12 +7,12 @@
 A dual-pane desktop file manager written in Rust, inspired by
 [muCommander](https://github.com/mucommander/mucommander). Browse local files and
 archives, manage transfers, and work in an embedded terminal from one window.
-The interface uses egui/eframe and runs without a JVM or browser engine.
+The interface uses [Slint](https://slint.dev) and runs without a JVM or browser engine.
 
 Rust Commander is an independent project and is not affiliated with or endorsed
 by the Rust Project or Rust Foundation.
 
-> **Development preview — 0.5.0.** This is an independent implementation with
+> **Development preview — 0.6.0.** This is an independent implementation with
 > full upstream compatibility still in progress. Apple Silicon macOS has been
 > validated interactively; Windows/Linux desktop integration still needs testing.
 > See the [parity checklist](parity/PARITY.md) and
@@ -61,7 +61,8 @@ by the Rust Project or Rust Foundation.
   SMB2/3, SFTP, FTP, WebDAV, S3, and several cloud services. Validation is limited; see
   [Remote connections](#remote-connections).
 
-See the [0.5 twelve-feature guide](docs/FEATURES_0.5.md) for usage and limits,
+See the [Slint desktop guide](docs/SLINT_UI.md) for the 0.6 interface,
+the [0.5 twelve-feature guide](docs/FEATURES_0.5.md) for usage and limits,
 the [0.4 guide](docs/FEATURES_0.4.md) for earlier workflows, and
 [file operations and format support](docs/FILE_OPERATIONS.md) for recovery and
 archive details. Windows/Linux desktop interactions and live cloud services
@@ -103,9 +104,9 @@ Install the native dependencies:
 ```sh
 sudo apt-get update
 sudo apt-get install -y \
-  build-essential pkg-config libarchive-dev libdbus-1-dev libgtk-4-dev \
+  build-essential pkg-config libarchive-dev libdbus-1-dev libgtk-4-dev libfontconfig1-dev \
   libx11-dev libxfixes-dev libxi-dev libxrandr-dev libxcursor-dev libxinerama-dev \
-  libgl1-mesa-dev libxkbcommon-dev libwayland-dev
+  libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev
 ```
 
 Other distributions need the equivalent development packages.
@@ -190,22 +191,25 @@ remote archives open read-only. **Mod+Z / Mod+Shift+Z** undo/redo eligible local
 
 ## Desktop appearance
 
-Open **Settings → Desktop style** to choose a profile. **Automatic** selects
-macOS on a Mac, Windows on Windows, Ubuntu on Ubuntu, and a GNOME-style fallback
-on other Linux systems. **Appearance → Follow system** follows the desktop's
-light/dark preference; Light and Dark overrides are available.
+The interface uses Slint's **Cupertino** style on macOS, **Fluent** on Windows,
+and **Cosmic** on Linux. macOS keeps its native traffic-light window controls
+and AppKit menu bar. Windows and Linux keep their desktop window decorations.
+Slint discovers installed system fonts at runtime. The compact icon toolbar
+shares the macOS title bar, keeping the native window controls. Breadcrumbs are
+the normal location display; **Mod+L** or the pencil button opens the full path
+for editing. Toolbar actions have hover hints and accessible labels.
 
-The macOS profile includes the installed San Francisco font, a tinted Favorites
-sidebar, blue folders, striped file lists, and a compact toolbar integrated into
-the native title bar. AppKit provides the menu bar and traffic-light window
-controls. Windows and Linux keep their system window decorations and use
-installed Segoe UI, Ubuntu, or GNOME fonts where available, with a bundled
-fallback. System fonts are loaded at runtime and are not redistributed.
+Open **Settings → Desktop appearance** to choose the colors and layout profile.
+**Automatic** detects the platform, including Ubuntu's orange accent.
+**Color scheme → Follow system** follows the desktop's light/dark preference;
+Light and Dark overrides are available.
 
-The file lists and controls are drawn by egui. Profiles approximate desktop
-conventions; they do not use native AppKit, WinUI, or GTK widgets throughout,
-and the Linux fallback does not reproduce every desktop theme. Windows and
-Linux appearance still require testing on those systems.
+Slint renders the controls in the selected platform style. Widget styles are
+chosen at build time; the runtime appearance profiles control colors, font size
+and layout. Cosmic does not reproduce every Ubuntu/GNOME theme. See the
+[Slint guide](docs/SLINT_UI.md#platform-styles) for style overrides and desktop
+integration details. Windows/Linux native interactions still need validation
+on those desktops.
 
 New macOS installations hide the function-key command bar by default. Enable
 it in Settings if desired; existing preferences are preserved.
@@ -294,6 +298,10 @@ used by CI with:
 ```
 
 On Windows, replace `./scripts/cargo-local.sh` with `cargo`.
+
+The Slint UI is compiled from `ui/commander.slint` by `build.rs`. SVG assets are
+embedded in the executable. See the [Slint guide](docs/SLINT_UI.md) for platform
+styles, source layout, input integration and reproducible screenshots.
 
 The [CI workflow](.github/workflows/ci.yml) runs on pushes, pull requests, and
 manual dispatch. It checks formatting, then runs Clippy, tests, and release

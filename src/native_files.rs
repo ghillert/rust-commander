@@ -27,6 +27,16 @@ impl NativeFiles {
         }
         Ok(self.context.as_ref().unwrap())
     }
+    pub(crate) fn copy_text(&mut self, text: String) -> Result<()> {
+        self.context()?
+            .set_text(text)
+            .map_err(|e| anyhow::anyhow!("Clipboard unavailable: {e}"))
+    }
+    pub(crate) fn text(&mut self) -> Result<String> {
+        self.context()?
+            .get_text()
+            .map_err(|e| anyhow::anyhow!("Clipboard unavailable: {e}"))
+    }
     pub fn copy(&mut self, paths: &[PathBuf], moving: bool) -> Result<()> {
         if paths.is_empty() {
             bail!("Select local files to copy.");
@@ -184,9 +194,169 @@ impl raw_window_handle::HasWindowHandle for Window {
         &self,
     ) -> std::result::Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError>
     {
-        // The eframe window remains alive for the entire Commander instance.
+        // The Slint window remains alive for the entire Commander instance.
         Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(self.0) })
     }
+}
+
+/// Keep the real AppKit controls centered in the Slint header. AppKit can reset
+/// its title-bar layout after resizing or leaving fullscreen, so the UI tick
+/// checks the frames and only changes them when they differ.
+#[cfg(target_os = "macos")]
+pub(crate) fn align_window_controls(
+    handle: raw_window_handle::RawWindowHandle,
+    header_height: f64,
+) {
+    use objc2_app_kit::{NSView, NSWindowButton, NSWindowStyleMask};
+
+    let raw_window_handle::RawWindowHandle::AppKit(handle) = handle else {
+        return;
+    };
+    // Called on the UI thread while winit owns and keeps this NSView alive.
+    let view = unsafe { handle.ns_view.cast::<NSView>().as_ref() };
+    let Some(window) = view.window() else {
+        return;
+    };
+    if window.styleMask().contains(NSWindowStyleMask::FullScreen)
+        || window.isMiniaturized()
+        || !window.isVisible()
+    {
+        return;
+    }
+    let Some(close) = window.standardWindowButton(NSWindowButton::CloseButton) else {
+        return;
+    };
+    // These AppKit-owned views remain retained for this main-thread callback.
+    let Some(title_bar) = (unsafe { close.superview() }) else {
+        return;
+    };
+    let Some(container) = (unsafe { title_bar.superview() }) else {
+        return;
+    };
+    let Some(container_parent) = (unsafe { container.superview() }) else {
+        return;
+    };
+    let bounds = view.bounds();
+    let mut area = view.convertRect_fromView(container.bounds(), Some(&container));
+    area.size.height = header_height;
+    area.origin.y = bounds.origin.y
+        + if view.isFlipped() {
+            0.0
+        } else {
+            bounds.size.height - header_height
+        };
+    let frame = container_parent.convertRect_fromView(area, Some(view));
+    // Expand the native hit-test area too; moving just the buttons can clip
+    // them or leave the lower part of a button unclickable.
+    if container.frame() != frame {
+        container.setFrame(frame);
+    }
+    let center_y = bounds.origin.y
+        + if view.isFlipped() {
+            header_height / 2.0
+        } else {
+            bounds.size.height - header_height / 2.0
+        };
+    for kind in [
+        NSWindowButton::CloseButton,
+        NSWindowButton::MiniaturizeButton,
+        NSWindowButton::ZoomButton,
+    ] {
+        let Some(button) = window.standardWindowButton(kind) else {
+            continue;
+        };
+        let Some(parent) = (unsafe { button.superview() }) else {
+            continue;
+        };
+        let frame = button.frame();
+        let mut center = frame.origin;
+        center.x += frame.size.width / 2.0;
+        center.y += frame.size.height / 2.0;
+        let mut target = view.convertPoint_fromView(center, Some(&parent));
+        target.y = center_y;
+        let target = parent.convertPoint_fromView(target, Some(view));
+        let mut origin = frame.origin;
+        origin.y = target.y - frame.size.height / 2.0;
+        if (origin.y - frame.origin.y).abs() > 0.25 {
+            button.setFrameOrigin(origin);
+        }
+    }
+}
+
+/// Read the pointer in client coordinates at a native file drop. winit 0.30
+/// does not emit CursorMoved while an external native drag is over the window.
+#[cfg(target_os = "macos")]
+pub(crate) fn drop_position(
+    handle: raw_window_handle::RawWindowHandle,
+    _scale: f64,
+) -> Option<(f32, f32)> {
+    let raw_window_handle::RawWindowHandle::AppKit(handle) = handle else {
+        return None;
+    };
+    // Called on the UI thread while winit owns and keeps this NSView alive.
+    let view = unsafe { handle.ns_view.cast::<objc2_app_kit::NSView>().as_ref() };
+    let window = view.window()?;
+    let point = view.convertPoint_fromView(window.mouseLocationOutsideOfEventStream(), None);
+    let y = if view.isFlipped() {
+        point.y
+    } else {
+        view.bounds().size.height - point.y
+    };
+    Some((point.x as f32, y as f32))
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn drop_position(
+    handle: raw_window_handle::RawWindowHandle,
+    scale: f64,
+) -> Option<(f32, f32)> {
+    use windows_sys::Win32::{
+        Foundation::POINT, Graphics::Gdi::ScreenToClient, UI::WindowsAndMessaging::GetCursorPos,
+    };
+    let raw_window_handle::RawWindowHandle::Win32(handle) = handle else {
+        return None;
+    };
+    let mut point = POINT { x: 0, y: 0 };
+    // Both APIs fill a stack-owned POINT; HWND is valid for this UI callback.
+    if unsafe { GetCursorPos(&mut point) } == 0
+        || unsafe { ScreenToClient(handle.hwnd.get() as _, &mut point) } == 0
+    {
+        return None;
+    }
+    Some((
+        (f64::from(point.x) / scale) as f32,
+        (f64::from(point.y) / scale) as f32,
+    ))
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn drop_position(
+    handle: raw_window_handle::RawWindowHandle,
+    scale: f64,
+) -> Option<(f32, f32)> {
+    use x11rb::protocol::xproto::ConnectionExt;
+    let window = match handle {
+        raw_window_handle::RawWindowHandle::Xlib(handle) => u32::try_from(handle.window).ok()?,
+        raw_window_handle::RawWindowHandle::Xcb(handle) => handle.window.get(),
+        _ => return None,
+    };
+    let (connection, _) = x11rb::connect(None).ok()?;
+    let point = connection.query_pointer(window).ok()?.reply().ok()?;
+    if !point.same_screen {
+        return None;
+    }
+    Some((
+        (f64::from(point.win_x) / scale) as f32,
+        (f64::from(point.win_y) / scale) as f32,
+    ))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+pub(crate) fn drop_position(
+    _handle: raw_window_handle::RawWindowHandle,
+    _scale: f64,
+) -> Option<(f32, f32)> {
+    None
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]

@@ -1,9 +1,9 @@
-//! AppKit menus. Constructed and updated only on eframe's main UI thread.
+//! AppKit menus. Constructed and updated only on Slint's main UI thread.
+use crate::ui_signal::UiSignal;
 use crate::{
     APP_NAME,
     app::{Action, action_menus},
 };
-use eframe::egui;
 use muda::{
     Menu, MenuItem, PredefinedMenuItem, Submenu,
     accelerator::{Accelerator, Code, Modifiers},
@@ -17,7 +17,7 @@ pub struct NativeMenu {
     receiver: Receiver<muda::MenuId>,
 }
 impl NativeMenu {
-    pub fn new(ctx: &egui::Context) -> muda::Result<Self> {
+    pub fn new(ctx: &UiSignal) -> muda::Result<Self> {
         let menu = Menu::new();
         let mut items = Vec::new();
         let mut submenu_labels = Vec::new();

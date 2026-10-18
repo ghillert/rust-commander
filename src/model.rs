@@ -19,6 +19,7 @@ pub struct Tab {
     changed: Arc<AtomicBool>,
     last_refresh: Instant,
     pub id: u64,
+    pub(crate) revision: u64,
     pub location: Location,
     pub address: String,
     pub filter: String,
@@ -38,7 +39,7 @@ pub struct Tab {
 }
 
 impl Tab {
-    pub fn new(location: Location, ctx: &eframe::egui::Context) -> Self {
+    pub fn new(location: Location, ctx: &crate::ui_signal::UiSignal) -> Self {
         let mut tab = Self {
             folders_first: true,
             watcher: None,
@@ -46,6 +47,7 @@ impl Tab {
             changed: Arc::new(AtomicBool::new(false)),
             last_refresh: Instant::now(),
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            revision: 0,
             address: location.label(),
             history: vec![location.clone()],
             history_index: 0,
@@ -67,7 +69,7 @@ impl Tab {
         tab
     }
 
-    pub fn refresh(&mut self, ctx: &eframe::egui::Context) {
+    pub fn refresh(&mut self, ctx: &crate::ui_signal::UiSignal) {
         use notify::Watcher;
         let watch_path = match &self.location {
             Location::Local(path) => Some(path.clone()),
@@ -109,7 +111,7 @@ impl Tab {
         });
     }
 
-    pub fn poll_changes(&mut self, ctx: &eframe::egui::Context) {
+    pub fn poll_changes(&mut self, ctx: &crate::ui_signal::UiSignal) {
         if self.changed.load(Ordering::Relaxed) {
             if !self.loading && self.last_refresh.elapsed() > Duration::from_millis(250) {
                 self.changed.store(false, Ordering::Relaxed);
@@ -122,6 +124,7 @@ impl Tab {
 
     pub fn poll(&mut self, hidden: bool) {
         if let Some(result) = crate::background::poll(&mut self.pending) {
+            self.revision = self.revision.wrapping_add(1);
             self.loading = false;
             match result {
                 Ok(mut entries) => {
@@ -155,7 +158,7 @@ impl Tab {
         }
     }
 
-    pub fn navigate(&mut self, location: Location, ctx: &eframe::egui::Context) {
+    pub fn navigate(&mut self, location: Location, ctx: &crate::ui_signal::UiSignal) {
         if self.location != location {
             self.history.truncate(self.history_index + 1);
             self.history.push(location.clone());
@@ -164,7 +167,7 @@ impl Tab {
         self.set_location(location, ctx);
     }
 
-    fn set_location(&mut self, location: Location, ctx: &eframe::egui::Context) {
+    fn set_location(&mut self, location: Location, ctx: &crate::ui_signal::UiSignal) {
         self.address = location.label();
         self.location = location;
         self.entries.clear();
@@ -174,7 +177,7 @@ impl Tab {
         self.refresh(ctx);
     }
 
-    pub fn history(&mut self, forward: bool, ctx: &eframe::egui::Context) {
+    pub fn history(&mut self, forward: bool, ctx: &crate::ui_signal::UiSignal) {
         if forward && self.history_index + 1 < self.history.len() {
             self.history_index += 1;
         } else if !forward && self.history_index > 0 {
@@ -251,7 +254,7 @@ impl Pane {
     pub fn tab_mut(&mut self) -> &mut Tab {
         &mut self.tabs[self.active]
     }
-    pub fn add_tab(&mut self, ctx: &eframe::egui::Context) {
+    pub fn add_tab(&mut self, ctx: &crate::ui_signal::UiSignal) {
         self.tabs.push(Tab::new(self.tab().location.clone(), ctx));
         self.active = self.tabs.len() - 1;
     }

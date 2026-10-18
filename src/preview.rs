@@ -1,20 +1,20 @@
+use crate::ui_signal::UiSignal;
 use crate::{
     filesystem::{Entry, Location},
     viewer::Content,
 };
-use eframe::egui;
 use std::{
     sync::mpsc::{self, Receiver},
     time::{Duration, Instant},
 };
 #[derive(Default)]
 pub struct Preview {
-    target: Option<(Location, Entry)>,
+    pub(crate) target: Option<(Location, Entry)>,
     changed: Option<Instant>,
     pending: Option<Receiver<Result<Content, String>>>,
-    text: String,
-    texture: Option<egui::TextureHandle>,
-    loading: bool,
+    pub(crate) text: String,
+    pub(crate) image: Option<crate::viewer::RasterImage>,
+    pub(crate) loading: bool,
 }
 impl Preview {
     pub fn select(&mut self, location: Location, entry: Option<Entry>) {
@@ -28,16 +28,13 @@ impl Preview {
         if changed {
             self.target = entry.map(|e| (location, e));
             self.pending = None;
-            self.texture = None;
+            self.image = None;
             self.text.clear();
             self.changed = Some(Instant::now());
             self.loading = self.target.is_some();
         }
     }
-    pub fn show(&mut self, ctx: &egui::Context, visible: &mut bool) {
-        if !*visible {
-            return;
-        }
+    pub(crate) fn poll(&mut self, ctx: &UiSignal) {
         if self.pending.is_none()
             && self.loading
             && self
@@ -67,61 +64,10 @@ impl Preview {
             match result {
                 Ok(Content::Text(t)) | Ok(Content::Hex { text: t, .. }) => self.text = t,
                 Ok(Content::Image(i)) | Ok(Content::Pdf { image: i, .. }) => {
-                    self.texture = Some(ctx.load_texture(
-                        "persistent_preview",
-                        i,
-                        egui::TextureOptions::LINEAR,
-                    ))
+                    self.image = Some(i.clone());
                 }
                 Err(e) => self.text = e,
             }
-        }
-        egui::SidePanel::right("preview_pane")
-            .resizable(true)
-            .default_width(300.0)
-            .width_range(220.0..=700.0)
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.heading(crate::i18n::text("Preview"));
-                    if ui.small_button(crate::i18n::text("Close")).clicked() {
-                        *visible = false;
-                    }
-                });
-                ui.separator();
-                if let Some((location, entry)) = &self.target {
-                    ui.strong(&entry.name);
-                    ui.label(crate::filesystem::human_size(entry.size));
-                    #[cfg(target_os = "macos")]
-                    if location.local().is_some()
-                        && ui.button(crate::i18n::text("Quick Look")).clicked()
-                    {
-                        let _ =
-                            crate::native_actions::quick_look(std::slice::from_ref(&entry.path));
-                    }
-                    #[cfg(not(target_os = "macos"))]
-                    let _ = location;
-                } else {
-                    ui.label(crate::i18n::text("Select a file to preview"));
-                }
-                if self.loading || self.pending.is_some() {
-                    ui.spinner();
-                }
-                egui::ScrollArea::both().show(ui, |ui| {
-                    if let Some(texture) = &self.texture {
-                        let size = texture.size_vec2();
-                        ui.image((
-                            texture.id(),
-                            size * (ui.available_width() / size.x).min(1.0),
-                        ));
-                    } else {
-                        ui.add(
-                            egui::Label::new(egui::RichText::new(&self.text).monospace()).wrap(),
-                        );
-                    }
-                });
-            });
-        if self.loading || self.pending.is_some() {
-            ctx.request_repaint_after(Duration::from_millis(100));
         }
     }
 }

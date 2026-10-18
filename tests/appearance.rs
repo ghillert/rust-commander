@@ -1,4 +1,3 @@
-use eframe::egui;
 use rust_commander::{
     appearance::{self, ColorScheme, DesktopStyle},
     preferences::Preferences,
@@ -37,36 +36,19 @@ fn ubuntu_detection_uses_distribution_id_without_misidentifying_derivatives() {
 
 #[test]
 fn automatic_appearance_tracks_system_changes_without_losing_desktop_style() {
-    let ctx = egui::Context::default();
-    appearance::apply(&ctx, DesktopStyle::Ubuntu, ColorScheme::System, 14.0);
-    for theme in [egui::Theme::Light, egui::Theme::Dark, egui::Theme::Light] {
-        let _ = ctx.run(
-            egui::RawInput {
-                system_theme: Some(theme),
-                ..Default::default()
-            },
-            |ctx| {
-                assert_eq!(ctx.theme(), theme);
-                assert_eq!(
-                    ctx.style().visuals.hyperlink_color,
-                    appearance::Palette::new(DesktopStyle::Ubuntu, theme == egui::Theme::Dark)
-                        .accent
-                );
-            },
+    for dark in [false, true, false] {
+        assert_eq!(appearance::is_dark(ColorScheme::System, dark), dark);
+        assert_eq!(
+            appearance::Palette::new(DesktopStyle::Ubuntu, dark).accent,
+            slint::Color::from_rgb_u8(233, 84, 32)
         );
     }
-    appearance::apply(&ctx, DesktopStyle::MacOs, ColorScheme::Light, 14.0);
-    let _ = ctx.run(
-        egui::RawInput {
-            system_theme: Some(egui::Theme::Dark),
-            ..Default::default()
-        },
-        |ctx| assert_eq!(ctx.theme(), egui::Theme::Light),
-    );
+    assert!(!appearance::is_dark(ColorScheme::Light, true));
+    assert!(appearance::is_dark(ColorScheme::Dark, false));
 }
 
 #[test]
-fn desktop_overrides_persist_and_available_fonts_render() {
+fn desktop_overrides_and_font_preferences_persist() {
     for desktop in DesktopStyle::ALL {
         let preferences = Preferences {
             desktop_style: desktop,
@@ -77,21 +59,13 @@ fn desktop_overrides_persist_and_available_fonts_render() {
             serde_json::from_str(&serde_json::to_string(&preferences).unwrap()).unwrap();
         assert_eq!(restored.desktop_style, desktop);
         assert_eq!(restored.color_scheme, ColorScheme::Dark);
-        let ctx = egui::Context::default();
-        appearance::install_fonts(&ctx, desktop);
-        appearance::apply(&ctx, desktop, ColorScheme::Light, 14.0);
-        let output = ctx.run(Default::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.label("Documents · Rust Commander · ⌘");
-            });
-        });
-        assert!(!output.shapes.is_empty());
+        assert_eq!(restored.font_size, preferences.font_size);
     }
 }
 
 #[test]
 fn selected_filename_text_keeps_readable_contrast_in_every_style() {
-    fn luminance(color: egui::Color32) -> f32 {
+    fn luminance(color: slint::Color) -> f32 {
         let linear = |channel: u8| {
             let value = channel as f32 / 255.0;
             if value <= 0.04045 {
@@ -100,7 +74,9 @@ fn selected_filename_text_keeps_readable_contrast_in_every_style() {
                 ((value + 0.055) / 1.055).powf(2.4)
             }
         };
-        0.2126 * linear(color.r()) + 0.7152 * linear(color.g()) + 0.0722 * linear(color.b())
+        0.2126 * linear(color.red())
+            + 0.7152 * linear(color.green())
+            + 0.0722 * linear(color.blue())
     }
     for desktop in DesktopStyle::ALL {
         for dark in [false, true] {

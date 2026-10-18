@@ -1,3 +1,33 @@
+#[derive(Clone, Debug, PartialEq)]
+pub struct RasterImage {
+    pub size: [usize; 2],
+    pub pixels: Vec<[u8; 4]>,
+}
+impl RasterImage {
+    pub fn from_rgba_unmultiplied(size: [usize; 2], bytes: &[u8]) -> Self {
+        Self {
+            size,
+            pixels: bytes
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|p| [p[0], p[1], p[2], p[3]])
+                .collect(),
+        }
+    }
+    pub fn from_rgba_premultiplied(size: [usize; 2], bytes: &[u8]) -> Self {
+        let mut image = Self::from_rgba_unmultiplied(size, bytes);
+        for pixel in &mut image.pixels {
+            let a = u32::from(pixel[3]);
+            if a > 0 && a < 255 {
+                for channel in &mut pixel[..3] {
+                    *channel = ((u32::from(*channel) * 255 + a / 2) / a).min(255) as u8;
+                }
+            }
+        }
+        image
+    }
+}
 use crate::filesystem::Location;
 use anyhow::{Context, Result, bail};
 use std::{
@@ -9,7 +39,7 @@ use std::{
 pub enum Content {
     Pdf {
         bytes: std::sync::Arc<Vec<u8>>,
-        image: eframe::egui::ColorImage,
+        image: crate::viewer::RasterImage,
         pages: usize,
     },
     Text(String),
@@ -17,7 +47,7 @@ pub enum Content {
         text: String,
         truncated: bool,
     },
-    Image(eframe::egui::ColorImage),
+    Image(crate::viewer::RasterImage),
 }
 pub fn load(location: &Location, path: &Path) -> Result<Content> {
     let extension = path
@@ -52,7 +82,7 @@ pub fn load(location: &Location, path: &Path) -> Result<Content> {
         reader.limits(limits);
         let image = reader.decode()?.to_rgba8();
         return Ok(Content::Image(
-            eframe::egui::ColorImage::from_rgba_unmultiplied(
+            crate::viewer::RasterImage::from_rgba_unmultiplied(
                 [image.width() as usize, image.height() as usize],
                 image.as_raw(),
             ),
@@ -70,7 +100,7 @@ pub fn load(location: &Location, path: &Path) -> Result<Content> {
     })
 }
 
-pub fn render_pdf(bytes: &[u8], index: usize) -> Result<(eframe::egui::ColorImage, usize)> {
+pub fn render_pdf(bytes: &[u8], index: usize) -> Result<(crate::viewer::RasterImage, usize)> {
     let pdf = hayro::hayro_syntax::Pdf::new(bytes.to_vec())
         .map_err(|e| anyhow::anyhow!("Cannot read PDF: {e:?}"))?;
     let page = pdf.pages().get(index).context("PDF page does not exist")?;
@@ -91,7 +121,7 @@ pub fn render_pdf(bytes: &[u8], index: usize) -> Result<(eframe::egui::ColorImag
         },
     );
     Ok((
-        eframe::egui::ColorImage::from_rgba_premultiplied(
+        crate::viewer::RasterImage::from_rgba_premultiplied(
             [pixmap.width() as usize, pixmap.height() as usize],
             pixmap.data_as_u8_slice(),
         ),

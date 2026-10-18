@@ -1,5 +1,4 @@
 use anyhow::{Result, bail};
-use eframe::egui;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -83,11 +82,72 @@ impl Default for Preferences {
     }
 }
 
-pub fn shortcut(text: &str) -> Result<egui::KeyboardShortcut> {
-    let mut modifiers = egui::Modifiers::NONE;
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Key(String);
+impl Key {
+    pub fn from_name(name: &str) -> Option<Self> {
+        let upper = name.to_ascii_uppercase();
+        let canonical = match upper.as_str() {
+            "UP" | "ARROWUP" => "ARROWUP",
+            "DOWN" | "ARROWDOWN" => "ARROWDOWN",
+            "LEFT" | "ARROWLEFT" => "ARROWLEFT",
+            "RIGHT" | "ARROWRIGHT" => "ARROWRIGHT",
+            "ESC" | "ESCAPE" => "ESCAPE",
+            "RETURN" | "ENTER" => "ENTER",
+            " " | "SPACE" => "SPACE",
+            "," | "COMMA" => "COMMA",
+            "." | "PERIOD" => "PERIOD",
+            "/" | "SLASH" => "SLASH",
+            "\\" | "BACKSLASH" => "BACKSLASH",
+            ";" | "SEMICOLON" => "SEMICOLON",
+            ":" | "COLON" => "COLON",
+            "-" | "MINUS" => "MINUS",
+            "+" | "PLUS" => "PLUS",
+            "=" | "EQUALS" => "EQUALS",
+            "[" | "OPENBRACKET" => "OPENBRACKET",
+            "]" | "CLOSEBRACKET" => "CLOSEBRACKET",
+            "`" | "BACKTICK" => "BACKTICK",
+            "'" | "QUOTE" => "QUOTE",
+            "?" | "QUESTIONMARK" => "QUESTIONMARK",
+            "!" | "EXCLAMATIONMARK" => "EXCLAMATIONMARK",
+            "|" | "PIPE" => "PIPE",
+            "TAB" | "BACKSPACE" | "DELETE" | "INSERT" | "HOME" | "END" | "PAGEUP" | "PAGEDOWN" => {
+                upper.as_str()
+            }
+            _ => {
+                if upper.len() == 1 && upper.as_bytes()[0].is_ascii_alphanumeric() {
+                    return Some(Self(upper));
+                }
+                if upper
+                    .strip_prefix('F')
+                    .and_then(|n| n.parse::<u8>().ok())
+                    .is_some_and(|n| (1..=35).contains(&n))
+                {
+                    return Some(Self(upper));
+                }
+                return None;
+            }
+        };
+        Some(Self(canonical.into()))
+    }
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Modifiers {
+    pub command: bool,
+    pub shift: bool,
+    pub alt: bool,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Shortcut {
+    pub logical_key: Key,
+    pub modifiers: Modifiers,
+}
+
+pub fn shortcut(text: &str) -> Result<Shortcut> {
+    let mut modifiers = Modifiers::default();
     let mut key = None;
     for part in text.split('+').map(str::trim) {
-        match part.to_lowercase().as_str() {
+        match part.to_ascii_lowercase().as_str() {
             "command" | "cmd" | "ctrl" | "control" => modifiers.command = true,
             "shift" => modifiers.shift = true,
             "alt" | "option" => modifiers.alt = true,
@@ -95,17 +155,17 @@ pub fn shortcut(text: &str) -> Result<egui::KeyboardShortcut> {
                 if key.is_some() {
                     bail!("Shortcut must contain one key.");
                 }
-                key = egui::Key::from_name(part);
+                key = Key::from_name(part);
                 if key.is_none() {
                     bail!("Unknown key: {part}");
                 }
             }
         }
     }
-    Ok(egui::KeyboardShortcut::new(
+    Ok(Shortcut {
         modifiers,
-        key.ok_or_else(|| anyhow::anyhow!("Shortcut must contain a key"))?,
-    ))
+        logical_key: key.ok_or_else(|| anyhow::anyhow!("Shortcut must contain a key"))?,
+    })
 }
 
 pub fn validate(preferences: &Preferences) -> Result<()> {

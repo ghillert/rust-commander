@@ -17,6 +17,10 @@ tests/fixtures/tree.rar is from compress-tools 0.16.1
 (https://github.com/OSSystems/compress-tools-rs), licensed MIT OR Apache-2.0.
 The other archive fixtures contain test data generated for this project.
 
+The desktop interface uses Slint 1.18.1, https://slint.dev.
+Copyright belongs to SixtyFPS GmbH and the Slint contributors. This application
+uses Slint under its GPL-3.0-only licensing option.
+
 Vendored drag 2.1.1 macOS/Windows subset (vendor/drag):
 https://github.com/crabnebula-dev/drag-rs
 Redistributed under the MIT license option:

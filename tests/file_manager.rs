@@ -550,7 +550,7 @@ fn archive_parent_navigation_returns_to_local_folder() {
 #[test]
 fn model_filters_selection_and_never_uses_hidden_marked_files() {
     let root = tempfile::tempdir().unwrap();
-    let ctx = eframe::egui::Context::default();
+    let ctx = rust_commander::ui_signal::UiSignal::default();
     let mut tab = rust_commander::model::Tab::new(Location::Local(root.path().to_owned()), &ctx);
     tab.entries = vec![entry(".hidden", false, 1), entry("visible", false, 2)];
     tab.selected.insert(".hidden".into());

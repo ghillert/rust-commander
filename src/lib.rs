@@ -38,3 +38,5 @@ pub mod preview;
 
 #[cfg(target_os = "linux")]
 pub mod linux_drag;
+
+pub mod ui_signal;

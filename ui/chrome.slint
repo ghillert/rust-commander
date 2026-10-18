@@ -1,0 +1,235 @@
+// Compact desktop chrome shared by the three platform widget styles.
+export global Chrome {
+    in property <bool> dark;
+    in property <color> accent: #007aff;
+    in property <color> selection: #0065d3;
+    in property <color> selection-text: white;
+    out property <color> foreground: dark ? #ededf0 : #25252b;
+    out property <color> secondary: dark ? #98989f : #717179;
+    out property <color> disabled: dark ? #626269 : #b3b3b9;
+    out property <color> toolbar: dark ? #29292c : #f5f5f7;
+    out property <color> sidebar: dark ? #252528 : #f0f1f4;
+    out property <color> pane: dark ? #1e1e20 : white;
+    out property <color> header: dark ? #252527 : #fafafa;
+    out property <color> separator: dark ? #ffffff14 : #00000016;
+    out property <color> hover: dark ? #ffffff0d : #00000008;
+    out property <color> pressed: dark ? #ffffff1c : #00000014;
+    out property <color> selected-tab: dark ? #3a3a3f : white;
+    out property <color> field: dark ? #202023 : #f3f3f5;
+    out property <color> stripe: dark ? #222225 : #fafafb;
+}
+
+export global Glyphs {
+    public pure function action(id: string) -> image {
+        if id == "Back" { return @image-url("icons/back.svg"); }
+        if id == "Forward" { return @image-url("icons/forward.svg"); }
+        if id == "Refresh" { return @image-url("icons/refresh.svg"); }
+        if id == "Parent" { return @image-url("icons/up.svg"); }
+        if id == "Mkdir" { return @image-url("icons/new-folder.svg"); }
+        if id == "Copy" { return @image-url("icons/copy.svg"); }
+        if id == "Move" { return @image-url("icons/move.svg"); }
+        if id == "Rename" { return @image-url("icons/rename.svg"); }
+        if id == "Search" { return @image-url("icons/search.svg"); }
+        if id == "Terminal" { return @image-url("icons/terminal.svg"); }
+        if id == "ArchiveTools" { return @image-url("icons/archive.svg"); }
+        if id == "Undo" { return @image-url("icons/undo.svg"); }
+        if id == "Queue" { return @image-url("icons/history.svg"); }
+        if id == "Preview" { return @image-url("icons/preview.svg"); }
+        if id == "ToggleHidden" { return @image-url("icons/eye.svg"); }
+        if id == "Preferences" { return @image-url("icons/settings.svg"); }
+        if id == "NewTab" { return @image-url("icons/plus.svg"); }
+        if id == "CloseTab" { return @image-url("icons/close.svg"); }
+        return @image-url("icons/folder-outline.svg");
+    }
+    public pure function place(id: string) -> image {
+        if id == "place:0" { return @image-url("icons/home.svg"); }
+        if id == "place:1" { return @image-url("icons/desktop.svg"); }
+        if id == "place:2" { return @image-url("icons/document.svg"); }
+        if id == "place:3" { return @image-url("icons/download.svg"); }
+        if id == "place:4" { return @image-url("icons/computer.svg"); }
+        if id == "Connections" { return @image-url("icons/server.svg"); }
+        if id.starts-with("connection:") { return @image-url("icons/server.svg"); }
+        if id.starts-with("bookmark:") { return @image-url("icons/folder-outline.svg"); }
+        return @image-url("icons/drive.svg");
+    }
+}
+
+export component ChromeButton inherits Rectangle {
+    in property <bool> enabled: true;
+    out property <bool> has-focus: keyboard.has-focus;
+    forward-focus: keyboard;
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> show-label;
+    in property <bool> checked;
+    in property <bool> checkable;
+    in property <bool> tab-style;
+    in property <bool> muted;
+    in property <bool> emphasized;
+    callback clicked();
+    min-width: 28px;
+    preferred-width: max(28px,content.preferred-width);
+    min-height: 24px;
+    preferred-height: 30px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-checkable: root.checkable;
+    accessible-checked: root.checked;
+    accessible-action-default => { root.activate(); }
+    public function activate() { if root.enabled { root.clicked(); } }
+    keyboard := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {root.activate();return EventResult.accept;}
+            return EventResult.reject;
+        }
+    }
+    Rectangle {
+        height: min(parent.height,30px); y: (parent.height - self.height) / 2;
+        border-radius: 6px;
+        border-width: root.has-focus ? 1px : 0px;
+        border-color: Chrome.accent.with-alpha(0.65);
+        background: touch.pressed ? Chrome.pressed : root.checked ? (root.tab-style ? Chrome.selected-tab : Chrome.accent.with-alpha(0.13)) : touch.has-hover ? Chrome.hover : transparent;
+        content := HorizontalLayout {
+            padding-left: 7px; padding-right: 7px; spacing: root.icon.width > 0 ? 6px : 0px;
+            Rectangle {
+                width: root.icon.width > 0 ? 17px : 0px;
+                Image {
+                    source: root.icon; width: 17px; height: 17px;
+                    y: (parent.height - self.height) / 2;
+                    colorize: !root.enabled ? Chrome.disabled : root.checked && !root.tab-style ? Chrome.accent : root.muted ? Chrome.secondary : Chrome.foreground;
+                    accessible-role: none;
+                }
+            }
+            if root.show-label: Text {
+                text: root.label;
+                min-width: 0px; overflow: elide;
+                vertical-alignment: center;
+                font-size: 12px;
+                font-weight: root.emphasized ? 600 : 400;
+                color: !root.enabled ? Chrome.disabled : root.checked && !root.tab-style ? Chrome.accent : root.muted ? Chrome.secondary : Chrome.foreground;
+                accessible-role: none;
+            }
+        }
+    }
+    touch := TouchArea { enabled: root.enabled; clicked => { root.activate(); } }
+    Tooltip { text: @markdown("\{root.label}"); }
+}
+
+export component ChromeField inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <string> label;
+    in property <string> placeholder;
+    in property <image> icon;
+    out property <bool> has-focus: input.has-focus;
+    callback edited(string);
+    callback accepted(string);
+    callback key-event(KeyEvent) -> bool;
+    public function select-all() { input.select-all(); }
+    forward-focus: input;
+    horizontal-stretch: 1;
+    min-width: 0px;
+    min-height: 26px;
+    preferred-height: 28px;
+    border-radius: 6px;
+    background: Chrome.field;
+    border-width: 1px;
+    border-color: root.has-focus ? Chrome.accent.with-alpha(0.65) : Chrome.separator;
+    accessible-role: text-input;
+    accessible-label: root.label;
+    accessible-value <=> root.text;
+    accessible-placeholder-text: root.placeholder;
+    accessible-action-set-value(value) => { root.text = value; root.edited(value); }
+    accessible-action-set-selection-offsets(anchor, focus) => { input.set-selection-offsets(anchor, focus); }
+    Image {
+        source: root.icon; colorize: Chrome.secondary;
+        x: 8px; y: (parent.height - 14px) / 2;
+        width: 14px; height: 14px;
+        accessible-role: none;
+    }
+    viewport := Rectangle {
+        x: root.icon.width > 0 ? 29px : 9px;
+        width: parent.width - self.x - 9px; height: parent.height;
+        clip: true;
+        if root.text == "": Text {
+            text: root.placeholder; color: Chrome.secondary;
+            x: 0px; width: parent.width; height: parent.height; vertical-alignment: center; horizontal-alignment: left;
+            font-size: 12px; overflow: elide;
+            accessible-role: none;
+        }
+        ContextMenuArea {
+            Menu {
+                MenuItem { title: @tr("Undo"); activated => {input.undo();} }
+                MenuItem { title: @tr("Redo"); activated => {input.redo();} }
+                MenuSeparator {}
+                MenuItem { title: @tr("Cut"); enabled: root.text != ""; activated => {input.cut();} }
+                MenuItem { title: @tr("Copy"); enabled: root.text != ""; activated => {input.copy();} }
+                MenuItem { title: @tr("Paste"); activated => {input.paste();} }
+                MenuItem { title: @tr("Select All"); enabled: root.text != ""; activated => {input.select-all();} }
+            }
+        }
+        input := TextInput {
+            private property <length> scroll-x;
+            x: min(0px, max(parent.width - self.width - self.text-cursor-width, self.scroll-x));
+            width: max(parent.width - self.text-cursor-width, self.preferred-width);
+            height: parent.height;
+            single-line: true; vertical-alignment: center; horizontal-alignment: left;
+            color: Chrome.foreground; font-size: 12px;
+            selection-background-color: Chrome.selection;
+            selection-foreground-color: Chrome.selection-text;
+            accessible-role: none;
+            cursor-position-changed(position) => {
+                if position.x + self.scroll-x < 2px { self.scroll-x = 2px - position.x; }
+                else if position.x + self.scroll-x > viewport.width - 3px { self.scroll-x = viewport.width - position.x - 3px; }
+            }
+            edited => { root.edited(self.text); }
+            accepted => { root.accepted(self.text); }
+            key-pressed(event) => { return root.key-event(event) ? EventResult.accept : EventResult.reject; }
+        }
+    }
+}
+
+export component ShortcutButton inherits Rectangle {
+    in property <bool> enabled: true;
+    out property <bool> has-focus: keyboard.has-focus;
+    forward-focus: keyboard;
+    in property <string> key-label;
+    in property <string> label;
+    callback clicked();
+    preferred-height: 28px; min-height: 28px; vertical-stretch: 0;
+    horizontal-stretch: 1;
+    accessible-role: button;
+    accessible-label: root.key-label + " " + root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled {root.clicked();} }
+    keyboard := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {root.clicked();return EventResult.accept;}
+            return EventResult.reject;
+        }
+    }
+    Rectangle {
+        height: min(parent.height,28px); y: (parent.height - self.height) / 2;
+        border-radius: 5px;
+        background: touch.pressed ? Chrome.pressed : touch.has-hover ? Chrome.hover : transparent;
+        border-width: root.has-focus ? 1px : 0px;
+        border-color: Chrome.accent.with-alpha(0.65);
+        HorizontalLayout {
+            alignment: center; spacing: 7px;
+            Rectangle {
+                width: 24px;
+                Rectangle {
+                    height: 18px; y: (parent.height - self.height) / 2; border-radius: 4px;
+                    border-width: 1px; border-color: Chrome.separator;
+                    Text { text: root.key-label; width: parent.width; height: parent.height; color: Chrome.secondary; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; accessible-role: none; }
+                }
+            }
+            Text { text: root.label; color: Chrome.secondary; font-size: 11px; vertical-alignment: center; overflow: elide; accessible-role: none; }
+        }
+    }
+    touch := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}

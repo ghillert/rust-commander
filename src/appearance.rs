@@ -1,8 +1,5 @@
-//! Desktop-specific presentation. File operations stay independent of the UI.
-use eframe::egui::{self, Color32, FontFamily, FontId, Stroke, Vec2};
+//! Platform appearance preferences and colors. Slint renders the widgets.
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DesktopStyle {
     #[default]
@@ -66,115 +63,24 @@ impl ColorScheme {
             Self::Dark => "Dark",
         }
     }
-    pub fn preference(self) -> egui::ThemePreference {
-        match self {
-            Self::System => egui::ThemePreference::System,
-            Self::Light => egui::ThemePreference::Light,
-            Self::Dark => egui::ThemePreference::Dark,
-        }
-    }
 }
-
 pub struct Palette {
-    pub accent: Color32,
-    pub sidebar: Color32,
-    pub toolbar: Color32,
-    pub background: Color32,
-    pub line: Color32,
-    pub stripe: Color32,
-    pub selection: Color32,
-    pub selection_text: Color32,
-    pub inactive_selection: Color32,
-    pub folder: Color32,
+    pub accent: slint::Color,
+    pub sidebar: slint::Color,
+    pub toolbar: slint::Color,
+    pub background: slint::Color,
+    pub line: slint::Color,
+    pub stripe: slint::Color,
+    pub selection: slint::Color,
+    pub selection_text: slint::Color,
+    pub inactive_selection: slint::Color,
+    pub folder: slint::Color,
     pub radius: u8,
 }
 
-#[derive(Clone, Copy)]
-pub enum SidebarIcon {
-    Home,
-    Desktop,
-    Documents,
-    Downloads,
-    Computer,
-    Folder,
-}
-
-pub fn sidebar_button(
-    ui: &mut egui::Ui,
-    label: &str,
-    selected: bool,
-    icon: SidebarIcon,
-    palette: &Palette,
-) -> egui::Response {
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), egui::Sense::click());
-    response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, selected, label)
-    });
-    let painter = ui.painter_at(rect);
-    if selected || response.hovered() {
-        painter.rect_filled(
-            rect,
-            6.0,
-            if selected {
-                palette.inactive_selection
-            } else {
-                palette.toolbar
-            },
-        );
-    }
-    let center = rect.left_center() + Vec2::new(14.0, 0.0);
-    let p = |x, y| center + Vec2::new(x, y);
-    let stroke = Stroke::new(1.4_f32, palette.accent);
-    let outline = |min, max| {
-        painter.rect_stroke(
-            egui::Rect::from_min_max(min, max),
-            1.5,
-            stroke,
-            egui::StrokeKind::Inside,
-        );
-    };
-    match icon {
-        SidebarIcon::Home => {
-            painter.line_segment([p(-8.0, -1.0), p(0.0, -8.0)], stroke);
-            painter.line_segment([p(0.0, -8.0), p(8.0, -1.0)], stroke);
-            outline(p(-5.5, -1.0), p(5.5, 7.0));
-        }
-        SidebarIcon::Desktop | SidebarIcon::Computer => {
-            outline(p(-8.0, -6.0), p(8.0, 4.0));
-            painter.line_segment([p(0.0, 4.0), p(0.0, 7.0)], stroke);
-            painter.line_segment([p(-4.0, 7.0), p(4.0, 7.0)], stroke);
-        }
-        SidebarIcon::Documents => {
-            outline(p(-6.0, -8.0), p(6.0, 8.0));
-            for y in [-3.0, 1.0, 5.0] {
-                painter.line_segment([p(-3.0, y), p(3.0, y)], stroke);
-            }
-        }
-        SidebarIcon::Downloads => {
-            painter.line_segment([p(0.0, -7.0), p(0.0, 4.0)], stroke);
-            painter.line_segment([p(-4.0, 0.0), p(0.0, 4.0)], stroke);
-            painter.line_segment([p(0.0, 4.0), p(4.0, 0.0)], stroke);
-            painter.line_segment([p(-7.0, 7.0), p(7.0, 7.0)], stroke);
-        }
-        SidebarIcon::Folder => {
-            outline(p(-8.0, -3.0), p(8.0, 7.0));
-            painter.line_segment([p(-7.0, -6.0), p(-1.0, -6.0)], stroke);
-            painter.line_segment([p(-7.0, -6.0), p(-7.0, -3.0)], stroke);
-        }
-    }
-    painter.text(
-        rect.left_center() + Vec2::new(30.0, 0.0),
-        egui::Align2::LEFT_CENTER,
-        label,
-        FontId::proportional(egui::TextStyle::Body.resolve(ui.style()).size - 1.0),
-        ui.visuals().text_color(),
-    );
-    response
-}
 impl Palette {
     pub fn new(desktop: DesktopStyle, dark: bool) -> Self {
-        let rgb = Color32::from_rgb;
+        let rgb = slint::Color::from_rgb_u8;
         let accent = match desktop.resolve() {
             DesktopStyle::MacOs => {
                 if dark {
@@ -215,7 +121,7 @@ impl Palette {
             background: if dark {
                 rgb(29, 29, 31)
             } else {
-                Color32::WHITE
+                slint::Color::from_rgb_u8(255, 255, 255)
             },
             line: if dark {
                 rgb(65, 65, 69)
@@ -247,7 +153,7 @@ impl Palette {
                     rgb(24, 24, 24)
                 }
             } else {
-                Color32::WHITE
+                slint::Color::from_rgb_u8(255, 255, 255)
             },
             inactive_selection: if dark {
                 rgb(70, 70, 75)
@@ -264,125 +170,10 @@ impl Palette {
     }
 }
 
-pub fn apply(ctx: &egui::Context, desktop: DesktopStyle, scheme: ColorScheme, size: f32) {
-    ctx.set_theme(scheme.preference());
-    ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(match scheme {
-        ColorScheme::System => egui::SystemTheme::SystemDefault,
-        ColorScheme::Light => egui::SystemTheme::Light,
-        ColorScheme::Dark => egui::SystemTheme::Dark,
-    }));
-    for theme in [egui::Theme::Light, egui::Theme::Dark] {
-        let palette = Palette::new(desktop, theme == egui::Theme::Dark);
-        let mut style = egui::Style {
-            visuals: if theme == egui::Theme::Dark {
-                egui::Visuals::dark()
-            } else {
-                egui::Visuals::light()
-            },
-            ..Default::default()
-        };
-        style.spacing.item_spacing = Vec2::new(6.0, 5.0);
-        style.spacing.button_padding = Vec2::new(10.0, 5.0);
-        style.spacing.interact_size.y = 26.0;
-        style.spacing.scroll = egui::style::ScrollStyle::floating();
-        let size = size.clamp(10.0, 24.0);
-        for (text_style, points) in [
-            (egui::TextStyle::Body, size),
-            (egui::TextStyle::Button, size - 1.0),
-            (egui::TextStyle::Small, size - 2.0),
-            (egui::TextStyle::Heading, size + 3.0),
-        ] {
-            style
-                .text_styles
-                .insert(text_style, FontId::proportional(points));
-        }
-        style.visuals.panel_fill = palette.background;
-        style.visuals.window_fill = palette.background;
-        style.visuals.extreme_bg_color = palette.background;
-        style.visuals.faint_bg_color = palette.stripe;
-        style.visuals.override_text_color = Some(if theme == egui::Theme::Dark {
-            Color32::from_rgb(238, 238, 240)
-        } else {
-            Color32::from_rgb(32, 32, 34)
-        });
-        style.visuals.weak_text_color = Some(if theme == egui::Theme::Dark {
-            Color32::from_rgb(170, 170, 176)
-        } else {
-            Color32::from_rgb(108, 108, 114)
-        });
-        style.visuals.selection.bg_fill = palette.selection;
-        style.visuals.selection.stroke = Stroke::new(1.0_f32, palette.selection_text);
-        style.visuals.hyperlink_color = palette.accent;
-        style.visuals.window_corner_radius = egui::CornerRadius::same(palette.radius + 3);
-        style.visuals.window_stroke = Stroke::new(1.0_f32, palette.line);
-        for widget in [
-            &mut style.visuals.widgets.noninteractive,
-            &mut style.visuals.widgets.inactive,
-            &mut style.visuals.widgets.hovered,
-            &mut style.visuals.widgets.active,
-            &mut style.visuals.widgets.open,
-        ] {
-            widget.corner_radius = egui::CornerRadius::same(palette.radius);
-            widget.bg_stroke = Stroke::new(1.0_f32, palette.line);
-        }
-        style.visuals.widgets.inactive.bg_fill = palette.toolbar;
-        style.visuals.widgets.inactive.weak_bg_fill = palette.toolbar;
-        style.visuals.widgets.hovered.bg_fill = palette.inactive_selection;
-        style.visuals.widgets.hovered.weak_bg_fill = palette.inactive_selection;
-        style.visuals.widgets.active.bg_stroke = Stroke::new(1.0_f32, palette.accent);
-        ctx.set_style_of(theme, style);
+pub fn is_dark(scheme: ColorScheme, system_dark: bool) -> bool {
+    match scheme {
+        ColorScheme::Dark => true,
+        ColorScheme::Light => false,
+        ColorScheme::System => system_dark,
     }
-}
-
-/// Uses fonts installed on this machine; system fonts are never bundled.
-pub fn install_fonts(ctx: &egui::Context, desktop: DesktopStyle) {
-    let mut fonts = egui::FontDefinitions::default();
-    let candidates: Vec<PathBuf> = match desktop.resolve() {
-        DesktopStyle::MacOs => [
-            "/System/Library/Fonts/SFNS.ttf",
-            "/System/Library/Fonts/Helvetica.ttc",
-        ]
-        .map(PathBuf::from)
-        .into(),
-        DesktopStyle::Windows => {
-            let root = std::env::var_os("WINDIR")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("C:\\Windows"));
-            [
-                root.join("Fonts/segoeui.ttf"),
-                root.join("Fonts/seguiemj.ttf"),
-            ]
-            .into()
-        }
-        DesktopStyle::Ubuntu => [
-            "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
-            "/usr/share/fonts/truetype/ubuntu/UbuntuSans-Regular.ttf",
-            "/usr/share/fonts/truetype/ubuntu/UbuntuSans[wdth,wght].ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        ]
-        .map(PathBuf::from)
-        .into(),
-        _ => [
-            "/usr/share/fonts/truetype/cantarell/Cantarell-Regular.ttf",
-            "/usr/share/fonts/cantarell/Cantarell-Regular.otf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        ]
-        .map(PathBuf::from)
-        .into(),
-    };
-    if let Some(bytes) = candidates
-        .into_iter()
-        .find_map(|path| std::fs::read(path).ok())
-    {
-        fonts.font_data.insert(
-            "desktop-ui".into(),
-            egui::FontData::from_owned(bytes).into(),
-        );
-        fonts
-            .families
-            .entry(FontFamily::Proportional)
-            .or_default()
-            .insert(0, "desktop-ui".into());
-    }
-    ctx.set_fonts(fonts);
 }

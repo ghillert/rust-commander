@@ -1,0 +1,649 @@
+import { Button, CheckBox, ComboBox, LineEdit, TextEdit, ScrollView, ListView, HorizontalBox, VerticalBox, Slider, ProgressIndicator, Palette } from "std-widgets.slint";
+
+export { Palette } from "std-widgets.slint";
+import { Chrome, Glyphs, ChromeButton, ChromeField, ShortcutButton } from "chrome.slint";
+export { Chrome } from "chrome.slint";
+
+export struct Command { id: string, title: string, enabled: bool }
+export struct Place { id: string, title: string, detail: string, heading: bool }
+export struct FileColumn { title: string, width: float }
+export struct FileRow { id: string, name: string, cells: [string], directory: bool, selected: bool, cursor: bool, payload: string }
+export struct FormField { id: string, title: string, value: string, kind: int, choices: [string] }
+export struct FormRow { id: string, title: string, detail: string, selected: bool, actions: [Command] }
+export struct TerminalCell { text: string, foreground: color, background: color, bold: bool, cursor: bool }
+export struct TerminalRow { cells: [TerminalCell], text: string }
+
+export global Words {
+    in property <int> version;
+    pure callback translate(string,int)->string;
+}
+
+export global Transfers {
+    pure callback payload(string) -> data-transfer;
+    pure callback accepts(data-transfer) -> bool;
+}
+
+component FilePane inherits Rectangle {
+    in property <int> side;
+    in property <bool> active;
+    in property <bool> busy;
+    in property <[FileRow]> rows;
+    in property <int> cursor-index: -1;
+    in property <string> selection-payload;
+    private property <bool> native-drag;
+    private property <bool> editing-address;
+    in property <[FileColumn]> columns;
+    in property <[string]> tabs;
+    in property <[Place]> breadcrumbs;
+    in property <int> active-tab;
+    in-out property <string> address;
+    in-out property <string> filter;
+    in property <string> error;
+    in property <string> summary;
+    in property <color> accent;
+    in property <color> selection-color;
+    in property <color> selection-text;
+    in property <color> inactive-selection;
+    in property <bool> dark;
+    in property <float> text-size;
+    callback action(string);
+    callback tab(int);
+    callback breadcrumb(int);
+    callback navigate(string);
+    callback address-edited(string);
+    callback filter-edited(string);
+    callback selected(string, bool, bool);
+    callback clicked-file(string);
+    callback opened(string);
+    callback sort(int);
+    callback resize-column(int,float,bool);
+    callback context-menu(float,float);
+    callback key-event(KeyEvent) -> bool;
+    callback dropped(data-transfer) -> bool;
+    public function scroll-to-cursor() {
+        if root.cursor-index >= 0 {
+            let height=max(24px,(root.text-size+10)*1px);
+            let top=root.cursor-index*height+list.content-y;
+            if top<0px {list.content-y -= top;}
+            if top+height>list.visible-height {list.content-y -= top + height - list.visible-height;}
+        }
+    }
+    public function reset-native-drag() {root.native-drag=false;}
+    public function focus-files() { files-focus.focus(); }
+    public function focus-address() { root.editing-address=true; location.focus(); location.select-all(); }
+    public function focus-filter() { filter-input.focus(); filter-input.select-all(); }
+
+    background: Chrome.pane;
+    VerticalLayout {
+        spacing: 0px;
+        Rectangle {
+            height: 32px;
+            background: Chrome.toolbar;
+            HorizontalLayout {
+                padding-left: 9px; padding-right: 6px; padding-top: 4px; padding-bottom: 4px; spacing: 3px;
+                Rectangle {
+                    width: 7px;
+                    Rectangle {width:5px;height:5px;y:(parent.height - self.height)/2;border-radius:3px;background:root.active?root.accent:Chrome.separator;}
+                }
+                for title[index] in root.tabs: ChromeButton {
+                    label: title; show-label: true; tab-style: true;
+                    checked: index == root.active-tab; checkable: true;
+                    emphasized: index == root.active-tab;
+                    muted: index != root.active-tab;
+                    max-width: 170px; min-width: 50px; height: 26px;
+                    clicked => { root.tab(index); }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                ChromeButton { label: Words.translate("New tab",Words.version); icon: Glyphs.action("NewTab"); height: 24px; clicked => { root.action("NewTab"); } }
+                ChromeButton { label: Words.translate("Close tab",Words.version); icon: Glyphs.action("CloseTab"); height: 24px; enabled: root.tabs.length > 1; clicked => { root.action("CloseTab"); } }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Chrome.separator; }
+        }
+        Rectangle {
+            height: 36px; background: Chrome.header;
+            HorizontalLayout {
+                padding-left: 6px; padding-right: 6px; spacing: 3px;
+                ChromeButton { label: Words.translate("Parent folder",Words.version); icon: Glyphs.action("Parent"); clicked => {root.action("Parent");} }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    location := ChromeField {
+                        visible: root.editing-address;
+                        text <=> root.address;
+                        label: Words.translate(root.side == 0 ? "Left location" : "Right location",Words.version);
+                        placeholder: Words.translate("Location",Words.version);
+                        height: 28px; y: (parent.height - self.height) / 2;
+                        changed has-focus => { if !self.has-focus {root.editing-address=false;} }
+                        edited(text) => {root.address-edited(text);}
+                        accepted(text) => {root.navigate(text); root.editing-address=false; files-focus.focus();}
+                        key-event(event) => {
+                            if event.text == Key.Escape {root.editing-address=false;files-focus.focus();return true;}
+                            return false;
+                        }
+                    }
+                    ScrollView {
+                        visible: !root.editing-address;
+                        y: (parent.height - self.height) / 2;
+                        height: 28px;
+                        horizontal-scrollbar-policy: always-off; vertical-scrollbar-policy: always-off;
+                        content-x: min(0px,self.visible-width - self.content-width);
+                        HorizontalLayout {
+                            spacing: 0px;
+                            for crumb[index] in root.breadcrumbs: HorizontalLayout {
+                                spacing: 0px;
+                                if index > 0: Rectangle {width:10px;Image {source:Glyphs.action("Forward");width:10px;height:10px;y:(parent.height - self.height)/2;colorize:Chrome.secondary.with-alpha(0.65);accessible-role:none;}}
+                                ChromeButton {
+                                    label: crumb.title; show-label: true;
+                                    muted: index != root.breadcrumbs.length - 1;
+                                    emphasized: index == root.breadcrumbs.length - 1;
+                                    max-width: 150px; min-width: 20px; height: 24px;
+                                    clicked => {root.breadcrumb(index);}
+                                }
+                            }
+                        }
+                    }
+                }
+                ChromeButton {label: Words.translate("Edit location",Words.version);icon: Glyphs.action("Rename");width:28px;clicked=>{root.focus-address();}}
+            }
+        }
+        Rectangle {
+            height: 32px; background: Chrome.pane;
+            filter-input := ChromeField {
+                x: 9px; y: 3px; width: parent.width - 18px; height: 27px;
+                text <=> root.filter; icon: Glyphs.action("Search");
+                label: Words.translate(root.side == 0 ? "Left filter" : "Right filter",Words.version);
+                placeholder: Words.translate("Filter files…",Words.version);
+                edited(text) => {root.filter-edited(text);}
+            }
+        }
+        Rectangle {
+            height: 26px;
+            background: Chrome.header;
+            HorizontalLayout {
+                spacing: 0px;
+                for column[index] in root.columns: Rectangle {
+                    preferred-width: column.width * 1px; min-width: index == 0 ? 80px : 40px;
+                    horizontal-stretch: index == 0 ? 1 : 0;
+                    Text { text: column.title; x: 8px; width: parent.width - 12px; height: parent.height; vertical-alignment: center; font-size: 11px; font-weight: 600; color: Chrome.secondary; horizontal-alignment: column.title == Words.translate("Size",Words.version) ? right : left; overflow: elide; }
+                    TouchArea { clicked => { root.sort(index); } }
+                    TouchArea {
+                        x: parent.width - 5px; width: 5px;
+                        mouse-cursor: ew-resize;
+                        private property <float> base-width;
+                        private property <float> start-x;
+                        pointer-event(event) => {
+                            if event.kind == PointerEventKind.down {self.base-width=column.width;self.start-x=(self.absolute-position.x+self.mouse-x)/1px;}
+                            if event.kind == PointerEventKind.up {root.resize-column(index,column.width,true);}
+                        }
+                        moved => {if self.pressed {root.resize-column(index,max(40,min(800,self.base-width+(self.absolute-position.x+self.mouse-x)/1px-self.start-x)),false);}}
+                    }
+                }
+            }
+        }
+        files-focus := FocusScope {
+            key-pressed(event) => { return root.key-event(event) ? EventResult.accept : EventResult.reject; }
+            list := ListView {
+                for row[index] in root.rows: Rectangle {
+                    height: max(24px, (root.text-size + 10) * 1px);
+                    background: row.selected || (row.cursor && root.active) ? (root.active ? root.selection-color : root.inactive-selection) : (mod(index, 2) == 0 ? Chrome.pane : Chrome.stripe);
+                    border-width: 0px;
+                    border-color: row.cursor ? root.accent : transparent;
+                    accessible-role: list-item;
+                    accessible-label: row.name;
+                    HorizontalLayout {
+                        spacing: 0px;
+                        for column[col] in root.columns: Rectangle {
+                            preferred-width: column.width * 1px; min-width: col == 0 ? 80px : 40px;
+                            horizontal-stretch: col == 0 ? 1 : 0;
+                            if col == 0: Image {
+                                source: row.directory ? @image-url("icons/folder.svg") : @image-url("icons/file.svg");
+                                x: 8px; y: (parent.height - 18px) / 2; width: 18px; height: 18px;
+                            }
+                            Text {
+                                text: row.cells[col];
+                                x: col == 0 ? 32px : 8px;
+                                width: parent.width - self.x - 6px;
+                                height: parent.height;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                font-size: root.text-size * 1px;
+                                horizontal-alignment: column.title == Words.translate("Size",Words.version) ? right : left;
+                                color: (row.selected || row.cursor) && root.active ? root.selection-text : Chrome.foreground;
+                            }
+                        }
+                    }
+                    DragArea {
+                        data: Transfers.payload(row.selected ? root.selection-payload : row.payload);
+                        enabled: !root.native-drag;
+                        allow-copy: row.payload != "";
+                        allow-move: false;
+                        TouchArea {
+                            private property <bool> modified-press;
+                            clicked => {if !self.modified-press {root.clicked-file(row.id);}}
+                            double-clicked => { root.opened(row.id); }
+                            // Secondary click selects the target before showing its actions.
+                            pointer-event(event) => {
+                                if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                                    files-focus.focus(); root.selected(row.id,false,false);
+                                    root.context-menu((self.absolute-position.x+self.mouse-x)/1px,(self.absolute-position.y+self.mouse-y)/1px);
+                                } else if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {
+                                    self.modified-press=event.modifiers.control || event.modifiers.meta || event.modifiers.shift || event.modifiers.alt;
+                                    files-focus.focus(); root.native-drag=event.modifiers.alt;
+                                    root.selected(row.id,event.modifiers.control || event.modifiers.meta,event.modifiers.shift);
+                                    if event.modifiers.alt {root.action("NativeDrag");}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if root.busy: Text { text: Words.translate("Loading…", Words.version); x: 12px; y: 12px; color: Palette.foreground; }
+            DropArea {
+                can-drop(event) => { return Transfers.accepts(event.data) ? DragAction.copy : DragAction.none; }
+                dropped(event) => { return root.dropped(event.data) ? DragAction.copy : DragAction.none; }
+            }
+        }
+        if root.error != "": Text { text: root.error; color: #c74343; wrap: word-wrap; }
+        Rectangle {
+            height: 24px; background: Chrome.pane;
+            Rectangle { height: 1px; background: Chrome.separator; }
+            Text { x: 10px; width: parent.width - 20px; text: root.summary; height: parent.height; vertical-alignment: center; color: Chrome.secondary; font-size: 10px; }
+        }
+    }
+}
+
+component Overlay inherits FocusScope {
+    callback key-event(KeyEvent)->bool;
+    init => { self.focus(); }
+    key-pressed(event) => { return root.key-event(event) ? EventResult.accept : EventResult.reject; }
+    Rectangle { background: #00000070; TouchArea {} }
+    @children
+}
+
+export component CommanderWindow inherits Window {
+    title: "Rust Commander";
+    default-font-size: root.text-size * 1px;
+    preferred-width: 1240px;
+    preferred-height: 780px;
+    min-width: 840px;
+    min-height: 480px;
+    background: Palette.background;
+    in property <bool> native-menus;
+    in property <bool> dark;
+    in property <color> accent: #007aff;
+    in property <color> selection-color: #0065d3;
+    in property <color> selection-text: white;
+    in property <color> inactive-selection: #dedfe3;
+    in property <float> text-size: 14;
+    in property <bool> toolbar-visible: true;
+    out property <length> native-header-height: root.toolbar-visible ? 44px : 40px;
+    in property <bool> command-bar-visible: true;
+    in property <bool> status-visible: true;
+    in property <bool> single-pane;
+    in property <int> active-pane;
+    in property <bool> busy;
+    in property <bool> show-hidden;
+    in property <float> progress;
+    in property <string> status;
+    in property <string> active-location;
+    in property <bool> status-error;
+    in property <[Command]> toolbar;
+    in property <[Place]> places;
+    in property <[FileColumn]> columns;
+    in property <[FileRow]> left-rows;
+    in property <int> left-cursor: -1;
+    in property <int> right-cursor: -1;
+    in property <string> left-selection-payload;
+    in property <string> right-selection-payload;
+    in property <[FileRow]> right-rows;
+    in property <[string]> left-tabs;
+    in property <[Place]> left-breadcrumbs;
+    in property <[Place]> right-breadcrumbs;
+    in property <[string]> right-tabs;
+    in property <int> left-tab;
+    in property <int> right-tab;
+    in-out property <string> left-address;
+    in-out property <string> right-address;
+    in-out property <string> left-filter;
+    in-out property <string> right-filter;
+    in property <bool> left-busy;
+    in property <bool> right-busy;
+    in property <string> left-error;
+    in property <string> right-error;
+    in property <string> left-summary;
+    in property <string> right-summary;
+    in property <bool> preview-visible;
+    in property <string> preview-title;
+    in property <string> preview-text;
+    in property <image> preview-image;
+    in property <bool> terminal-visible;
+    in-out property <bool> terminal-focused;
+    in property <string> terminal-status;
+    in property <[TerminalRow]> terminal-rows;
+    in property <[Command]> menu-items;
+    private property <float> menu-x: 8;
+    private property <float> menu-y: 32;
+    in property <string> dialog-title;
+    in property <float> dialog-preferred-height: 650;
+    in property <string> dialog-description;
+    in property <string> dialog-error;
+    in property <bool> dialog-busy;
+    in property <[FormField]> dialog-fields;
+    in property <[FormRow]> dialog-rows;
+    in property <[Command]> dialog-buttons;
+    in property <bool> viewer-visible;
+    in property <string> viewer-title;
+    in-out property <string> viewer-text;
+    in property <image> viewer-image;
+    in property <bool> viewer-editable;
+    in property <bool> viewer-pdf;
+    in property <bool> viewer-has-previous;
+    in property <bool> viewer-has-next;
+    in property <string> viewer-page;
+    in property <bool> viewer-dirty;
+    in property <bool> viewer-confirm-close;
+    in property <string> viewer-error;
+    in-out property <float> viewer-zoom: 1;
+    callback action(string);
+    callback window-drag();
+    callback menu(string);
+    callback place(string);
+    callback place-menu(string)->bool;
+    callback tab(int, int);
+    callback breadcrumb(int,int);
+    callback navigate(int, string);
+    callback address-edited(int, string);
+    callback filter(int, string);
+    callback selected(int, string, bool, bool);
+    callback clicked-file(int,string);
+    callback opened(int, string);
+    callback sort(int, int);
+    callback resize-column(int,float,bool);
+    callback pane-key(int, KeyEvent) -> bool;
+    callback global-key(KeyEvent) -> bool;
+    callback dropped(int, data-transfer) -> bool;
+    callback dialog-field(string, string);
+    callback dialog-action(string);
+    callback dialog-select(string);
+    callback viewer-edit(string);
+    callback viewer-action(string);
+    callback terminal-key(KeyEvent) -> bool;
+    callback terminal-resize(int, int);
+    changed dialog-title => { if root.dialog-title == "" { root.focus-files(root.active-pane); } }
+    changed viewer-visible => { if !root.viewer-visible { root.focus-files(root.active-pane); } }
+    public function scroll-to-cursor(side:int) {if side==0{left.scroll-to-cursor();}else{right.scroll-to-cursor();}}
+    public function reset-native-drag() {left.reset-native-drag();right.reset-native-drag();}
+    public function drop-side(x:float,y:float)->int {
+        if x*1px>=left.absolute-position.x && x*1px<left.absolute-position.x+left.width && y*1px>=left.absolute-position.y && y*1px<left.absolute-position.y+left.height {return 0;}
+        if right.visible && x*1px>=right.absolute-position.x && x*1px<right.absolute-position.x+right.width && y*1px>=right.absolute-position.y && y*1px<right.absolute-position.y+right.height {return 1;}
+        return -1;
+    }
+    public function focus-files(side: int) { if side == 0 { left.focus-files(); } else { right.focus-files(); } }
+    public function focus-address(side: int) { if side == 0 { left.focus-address(); } else { right.focus-address(); } }
+    public function focus-filter(side: int) { if side == 0 { left.focus-filter(); } else { right.focus-filter(); } }
+
+    FocusScope {
+        enabled: root.dialog-title == "" && !root.viewer-visible;
+        key-pressed(event) => { return root.global-key(event) ? EventResult.accept : EventResult.reject; }
+        VerticalLayout {
+            spacing: 0px;
+            if !root.native-menus: Rectangle {
+                height: 30px; background: Chrome.toolbar;
+                HorizontalLayout {
+                    padding-left: 8px; spacing: 3px;
+                    for title in ["File", "Operations", "Navigate", "Selection", "View", "Help"]: ChromeButton {
+                        label: Words.translate(title,Words.version); show-label: true;
+                        clicked => {root.menu-x=8;root.menu-y=30;root.menu(title);app-menu.show();}
+                    }
+                    Rectangle {horizontal-stretch:1;}
+                }
+            }
+            if root.native-menus && !root.toolbar-visible: Rectangle {
+                height: root.native-header-height; background: Chrome.toolbar;
+                TouchArea {pointer-event(event)=>{if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {root.window-drag();}}}
+                Text {x:86px;height:parent.height;text:"Rust Commander";font-size:12px;color:Chrome.secondary;vertical-alignment:center;}
+            }
+            if root.toolbar-visible: Rectangle {
+                height: root.native-header-height; background: Chrome.toolbar;
+                TouchArea {pointer-event(event)=>{if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {root.window-drag();}}}
+                HorizontalLayout {
+                    padding-left: root.native-menus ? 86px : 10px; padding-right: 10px; spacing: 3px;
+                    ChromeButton {label:Words.translate("Back",Words.version);icon:Glyphs.action("Back");clicked=>{root.action("Back");}}
+                    ChromeButton {label:Words.translate("Forward",Words.version);icon:Glyphs.action("Forward");clicked=>{root.action("Forward");}}
+                    ChromeButton {label:Words.translate("Refresh",Words.version);icon:Glyphs.action("Refresh");clicked=>{root.action("Refresh");}}
+                    Rectangle {width:9px;Rectangle {x:4px;width:1px;height:20px;y:(parent.height - self.height)/2;background:Chrome.separator;}}
+                    for command in root.toolbar: ChromeButton {
+                        label: Words.translate(command.title,Words.version); icon: Glyphs.action(command.id);
+                        show-label: command.id == "Mkdir" || command.id == "Copy" || command.id == "Move";
+                        enabled: command.enabled; clicked=>{root.action(command.id);}
+                    }
+                    Rectangle {horizontal-stretch:1;}
+                    ChromeButton {label:Words.translate("Hidden",Words.version);icon:Glyphs.action("ToggleHidden");checkable:true;checked:root.show-hidden;clicked=>{root.action("ToggleHidden");}}
+                    ChromeButton {label:Words.translate("Preview",Words.version);icon:Glyphs.action("Preview");checkable:true;checked:root.preview-visible;clicked=>{root.action("Preview");}}
+                    Rectangle {width:9px;Rectangle {x:4px;width:1px;height:20px;y:(parent.height - self.height)/2;background:Chrome.separator;}}
+                    ChromeButton {label:Words.translate("Settings…",Words.version);icon:Glyphs.action("Preferences");clicked=>{root.action("Preferences");}}
+                }
+                Rectangle {y:parent.height - 1px;height:1px;background:Chrome.separator;}
+            }
+            HorizontalLayout {
+                spacing: 1px;
+                Rectangle {
+                    width: 186px; background: Chrome.sidebar;
+                    ListView {
+                        for place in root.places: Rectangle {
+                            height: place.heading ? 32px : 29px;
+                            Rectangle {
+                                x:7px;y:2px;width:parent.width - 14px;height:parent.height - 4px;border-radius:5px;
+                                background: !place.heading && place.detail != "" && place.detail == root.active-location ? Chrome.pressed : place-touch.has-hover ? Chrome.hover : transparent;
+                            }
+                            if !place.heading: Image {source:Glyphs.place(place.id);x:16px;y:(parent.height - 15px)/2;width:15px;height:15px;colorize:place.id == "place:0" || place.id == "place:1" || place.id == "place:2" || place.id == "place:3" || place.id.starts-with("bookmark:") ? root.accent : Chrome.secondary;accessible-role:none;}
+                            Text {
+                                text:place.title;x:place.heading?16px:39px;width:parent.width - self.x - 12px;height:parent.height;
+                                vertical-alignment:center;color:place.heading?Chrome.secondary:Chrome.foreground;
+                                font-weight:place.heading?600:400;font-size:place.heading?10px:12px;overflow:elide;
+                            }
+                            place-touch := TouchArea {
+                                enabled: !place.heading;
+                                clicked=>{root.place(place.id);}
+                                pointer-event(event)=>{
+                                    if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                                        if root.place-menu(place.id) {root.menu-x=(self.absolute-position.x+self.mouse-x)/1px;root.menu-y=(self.absolute-position.y+self.mouse-y)/1px;app-menu.show();}
+                                    }
+                                }
+                            }
+                            if !place.heading: Tooltip {text:@markdown("\{place.title}");}
+                        }
+                    }
+                }
+                left := FilePane {
+                    visible: !root.single-pane || root.active-pane == 0; min-width: 0px; max-width: root.single-pane && root.active-pane == 1 ? 0px : 100000px;
+                    breadcrumbs: root.left-breadcrumbs;
+                    breadcrumb(index) => {root.breadcrumb(0,index);}
+                    selection-payload: root.left-selection-payload;
+                    cursor-index: root.left-cursor;
+                    side: 0; active: root.active-pane == 0; rows: root.left-rows; columns: root.columns; tabs: root.left-tabs; active-tab: root.left-tab;
+                    address <=> root.left-address; filter <=> root.left-filter; error: root.left-error; busy: root.left-busy; summary: root.left-summary;
+                    accent: root.accent; selection-color: root.selection-color; selection-text: root.selection-text; inactive-selection: root.inactive-selection; dark: root.dark; text-size: root.text-size;
+                    action(id) => { root.action(id + ":0"); } tab(index) => { root.tab(0, index); }
+                    address-edited(text) => { root.address-edited(0,text); }
+                    navigate(text) => { root.navigate(0, text); } filter-edited(text) => { root.filter(0, text); }
+                    selected(id, toggle, range) => { root.selected(0, id, toggle, range); }
+                    clicked-file(id) => {root.clicked-file(0,id);} opened(id) => { root.opened(0, id); }
+                    sort(index) => { root.sort(0, index); }
+                    resize-column(index,width,finished) => {root.resize-column(index,width,finished);}
+                    context-menu(x,y) => {root.menu-x=x;root.menu-y=y;root.menu("File");app-menu.show();} key-event(event) => { return root.pane-key(0, event); }
+                    dropped(data) => { return root.dropped(0, data); }
+                }
+                right := FilePane {
+                    visible: !root.single-pane || root.active-pane == 1; min-width: 0px; max-width: root.single-pane && root.active-pane == 0 ? 0px : 100000px;
+                    breadcrumbs: root.right-breadcrumbs;
+                    breadcrumb(index) => {root.breadcrumb(1,index);}
+                    selection-payload: root.right-selection-payload;
+                    cursor-index: root.right-cursor;
+                    side: 1; active: root.active-pane == 1; rows: root.right-rows; columns: root.columns; tabs: root.right-tabs; active-tab: root.right-tab;
+                    address <=> root.right-address; filter <=> root.right-filter; error: root.right-error; busy: root.right-busy; summary: root.right-summary;
+                    accent: root.accent; selection-color: root.selection-color; selection-text: root.selection-text; inactive-selection: root.inactive-selection; dark: root.dark; text-size: root.text-size;
+                    action(id) => { root.action(id + ":1"); } tab(index) => { root.tab(1, index); }
+                    address-edited(text) => { root.address-edited(1,text); }
+                    navigate(text) => { root.navigate(1, text); } filter-edited(text) => { root.filter(1, text); }
+                    selected(id, toggle, range) => { root.selected(1, id, toggle, range); }
+                    clicked-file(id) => {root.clicked-file(1,id);} opened(id) => { root.opened(1, id); }
+                    sort(index) => { root.sort(1, index); }
+                    resize-column(index,width,finished) => {root.resize-column(index,width,finished);}
+                    context-menu(x,y) => {root.menu-x=x;root.menu-y=y;root.menu("File");app-menu.show();} key-event(event) => { return root.pane-key(1, event); }
+                    dropped(data) => { return root.dropped(1, data); }
+                }
+                if root.preview-visible: VerticalBox {
+                    width: 300px;
+                    Text { text: root.preview-title; color: Palette.foreground; wrap: word-wrap; font-weight: 600; }
+                    Image { source: root.preview-image; image-fit: contain; height: self.source.height > 0 ? 200px : 0px; }
+                    ScrollView { Text { text: root.preview-text; wrap: word-wrap; color: Palette.foreground; } }
+                }
+            }
+            if root.terminal-visible: terminal-focus := FocusScope {
+                height: 224px;
+                init => {self.focus();}
+                accessible-role: groupbox;
+                accessible-label: Words.translate("Terminal",Words.version);
+                changed has-focus => {root.terminal-focused=self.has-focus;}
+                key-pressed(event) => { return root.terminal-key(event) ? EventResult.accept : EventResult.reject; }
+                Rectangle {
+                    background: #101015;
+                    VerticalLayout {
+                        HorizontalBox {height: 24px; padding: 0px; Text {text: root.terminal-status; color: #c6c6ce;} Button {text: "×"; max-width: 30px; clicked => {root.action("Terminal");}}}
+                        spacing: 0px;
+                        for line in root.terminal-rows: Rectangle {
+                            height: 16px;
+                            accessible-role: text;
+                            accessible-label: line.text;
+                            HorizontalLayout {
+                                spacing: 0px;
+                                for cell in line.cells: Rectangle {
+                                    width: 8px;
+                                    background: cell.cursor ? #dddddd : cell.background;
+                                    Text { accessible-role: none; text: cell.text; font-family: "monospace"; font-size: 13px; color: cell.cursor ? #101015 : cell.foreground; font-weight: cell.bold ? 700 : 400; }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                    TouchArea { y: 24px; height: parent.height - 24px; clicked => { terminal-focus.focus(); } }
+                }
+            }
+            if root.busy: HorizontalBox {
+                height: 32px;
+                ProgressIndicator { indeterminate: true; }
+                Button { text: Words.translate("Cancel", Words.version); clicked => { root.action("CancelJob"); } }
+            }
+            if root.status-visible: Rectangle {
+                height: 23px; background: Chrome.toolbar;
+                Rectangle {height:1px;background:Chrome.separator;}
+                Text {x:12px;width:parent.width - 24px;text:root.status;height:parent.height;vertical-alignment:center;color:root.status-error?#c74343:Chrome.secondary;font-size:11px;overflow:elide;}
+            }
+            if root.command-bar-visible: Rectangle {
+                height: 34px; background: Chrome.toolbar;
+                HorizontalLayout {
+                    padding-left:8px;padding-right:8px;spacing:4px;
+                    for command in [{id:"Help",key:"F1",title:"Help"},{id:"View",key:"F3",title:"View"},{id:"Edit",key:"F4",title:"Edit"},{id:"Copy",key:"F5",title:"Copy"},{id:"Move",key:"F6",title:"Move"},{id:"Mkdir",key:"F7",title:"New folder"},{id:"Trash",key:"F8",title:"Trash"}]: ShortcutButton {
+                        key-label:command.key;label:Words.translate(command.title,Words.version);clicked=>{root.action(command.id);}
+                    }
+                }
+            }
+        }
+    }
+
+    app-menu := PopupWindow {
+        x: max(8px,min(root.menu-x*1px,root.width - 292px)); y: max(8px,min(root.menu-y*1px,root.height - self.height - 8px)); width: 280px;
+        height: min(root.height - 40px,(root.menu-items.length*34+24)*1px);
+        ScrollView { VerticalBox {
+            for command in root.menu-items: Button { text: Words.translate(command.title,Words.version); enabled: command.enabled; clicked => { app-menu.close(); root.action(command.id); } }
+        } }
+    }
+
+    if root.viewer-visible: Overlay {
+        key-event(event) => { return root.global-key(event); }
+        Rectangle {
+            x: 35px; y: 35px; width: parent.width - 70px; height: parent.height - 70px;
+            background: Palette.background; border-radius: 10px;
+            VerticalBox {
+                HorizontalBox {
+                    Text { text: root.viewer-title; font-weight: 600; color: Palette.foreground; overflow: elide; }
+                    if root.viewer-pdf: Button { enabled: root.viewer-has-previous; text: Words.translate("‹", Words.version); clicked => { root.viewer-action("previous"); } }
+                    if root.viewer-pdf: Text { text: root.viewer-page; color: Palette.foreground; }
+                    if root.viewer-pdf: Button { enabled: root.viewer-has-next; text: Words.translate("›", Words.version); clicked => { root.viewer-action("next"); } }
+                    Button { text: Words.translate("Close", Words.version); clicked => { root.viewer-action("close"); } }
+                }
+                if root.viewer-image.width > 0: ScrollView {
+                    Image { source: root.viewer-image; width: self.source.width * root.viewer-zoom * 1px; height: self.source.height * root.viewer-zoom * 1px; }
+                }
+                if root.viewer-image.width == 0: TextEdit {
+                    init => { self.focus(); }
+                    accessible-label: Words.translate("File contents",Words.version);
+                    text <=> root.viewer-text; read-only: !root.viewer-editable; font-family: "monospace";
+                    edited => { root.viewer-edit(root.viewer-text); }
+                }
+                if root.viewer-image.width > 0: Slider { minimum: 0.1; maximum: 4; value <=> root.viewer-zoom; }
+                if root.viewer-error != "": Text { text: root.viewer-error; color: #c74343; wrap: word-wrap; }
+                if root.viewer-confirm-close: HorizontalBox {
+                    Text { text: Words.translate("Discard unsaved changes?", Words.version); color: Palette.foreground; }
+                    Button { text: Words.translate("Keep editing", Words.version); clicked => { root.viewer-action("keep"); } }
+                    Button { text: Words.translate("Discard changes", Words.version); clicked => { root.viewer-action("discard"); } }
+                }
+                if root.viewer-editable: Button { text: Words.translate("Save", Words.version); enabled: root.viewer-dirty && !root.busy; clicked => { root.viewer-action("save"); } }
+            }
+        }
+    }
+
+    if root.dialog-title != "": Overlay {
+        key-event(event) => { return root.global-key(event); }
+        Rectangle {
+            x: max(16px, (parent.width - 760px) / 2); y: (parent.height - self.height) / 2;
+            width: min(760px, parent.width - 32px); height: min(parent.height - 56px,root.dialog-preferred-height * 1px);
+            background: Palette.background; border-radius: 10px;
+            VerticalBox {
+                Text { text: root.dialog-title; font-size: 20px; font-weight: 600; color: Palette.foreground; }
+                if root.dialog-description != "": Text { text: root.dialog-description; color: Palette.foreground; wrap: word-wrap; }
+                ScrollView {
+                    VerticalBox {
+                        padding: 0px; spacing: 12px;
+                        for field[index] in root.dialog-fields: VerticalBox {
+                            padding: 0px; spacing: 4px;
+                            if field.kind != 2: Text { text: field.title; color: Palette.foreground; font-weight: 600; wrap: word-wrap; }
+                            if field.kind == 0 || field.kind == 1 || field.kind == 5: LineEdit {
+                                init => { if index == 0 { self.focus(); self.select-all(); } }
+                                text <=> field.value;
+                                input-type: field.kind == 1 ? InputType.password : InputType.text;
+                                accessible-label: field.title;
+                                accepted(value) => { root.dialog-action("accept"); }
+                                edited(value) => { root.dialog-field(field.id, value); }
+                            }
+                            if field.kind == 2: CheckBox { text: field.title; checked: field.value == "true"; toggled => { root.dialog-field(field.id, self.checked ? "true" : "false"); } }
+                            if field.kind == 3: ComboBox { accessible-label: field.title; model: field.choices; current-value: field.value; selected(value) => { root.dialog-field(field.id, value); } }
+                            if field.kind == 4: TextEdit { text <=> field.value; height: 140px; edited => { root.dialog-field(field.id, self.text); } }
+                            if field.kind == 6: Text { text: field.value; color: Palette.foreground; wrap: word-wrap; }
+                        }
+                        for item in root.dialog-rows: Rectangle {
+                            background: item.selected ? (root.dark ? #30435e : #dfebff) : Palette.background;
+                            min-height: 54px;
+                            VerticalBox {
+                                padding: 6px; spacing: 4px;
+                                HorizontalBox {
+                                    padding: 0px;
+                                    Button { text: item.title; clicked => { root.dialog-select(item.id); } }
+                                    for command in item.actions: Button { text: Words.translate(command.title,Words.version); enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
+                                }
+                                if item.detail != "": Text { text: item.detail; color: Palette.foreground; wrap: word-wrap; }
+                            }
+                        }
+                    }
+                }
+                if root.dialog-busy: ProgressIndicator { indeterminate: true; }
+                if root.dialog-error != "": Text { text: root.dialog-error; color: #c74343; wrap: word-wrap; }
+                HorizontalBox {
+                    Rectangle { horizontal-stretch: 1; }
+                    for command in root.dialog-buttons: Button { text: Words.translate(command.title,Words.version); enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
+                }
+            }
+        }
+    }
+}

@@ -1,8 +1,10 @@
 # Validation record
 
-This record covers version 0.4.0 on the available Apple Silicon Mac, including
-Linux checks in an ARM64 Debian container. It is not a
-full muCommander compatibility certification. See [PARITY.md](PARITY.md) for
+This record covers versions 0.3–0.6 on the available Apple Silicon Mac,
+including Linux checks in an ARM64 Debian container. The latest interface
+validation is in [Slint migration (0.6.0)](#slint-migration-060); earlier sections
+retain historical results for the previous frontend. This is not a full
+muCommander compatibility certification. See [PARITY.md](PARITY.md) for
 implementation gaps, including missing behavior as well as unverified platforms.
 
 ## Automated checks
@@ -41,7 +43,7 @@ began in 0.2.0; the appearance-specific checks below use 0.3.0:
 | Recoverable replacement | Copied a conflicting test file using Replace; result displayed the recovery path. Filesystem checks confirmed source preservation, new destination content and the old content in its backup. |
 | Address shortcut | Cmd+L selected the existing address; pasting a new absolute path replaced it and navigated successfully. |
 
-## Validation limits
+## Historical validation limits (0.4.0)
 
 Windows builds and Windows/Linux native desktop interactions still need
 validation. Linux Clippy and tests pass in an ARM64 Debian container on this Mac;
@@ -251,3 +253,94 @@ Validation of the dependency fix:
   versions. This does not link or run a Windows executable.
 - The CI workflow YAML parses. Full Windows build/test execution and the
   Dependabot rerun require pushing the changes and running GitHub Actions.
+
+## Slint migration (0.6.0)
+
+The desktop frontend now uses Slint 1.18.1 with the existing Rust controllers,
+workers and storage implementations. egui/eframe is absent from both the source
+and the locked dependency graph. See the [Slint guide](../docs/SLINT_UI.md) for
+architecture, styles and upgrade-sensitive native integration.
+
+Automated checks:
+
+- All **140** normal tests pass on Apple Silicon macOS. The interactive clipboard
+  and live SMB tests remain ignored in normal runs; their earlier evidence above
+  is historical, not a new live-service validation for this frontend.
+- Formatting and warnings-denied Clippy pass with the locked graph.
+- Slint callback tests cover editable paths, navigation, selection/filtering,
+  copy/drop confirmation guards, invalid names/settings, remote/archive drops,
+  active-right single-pane hit testing, shifted shortcuts, dirty-editor close
+  protection, and keyboard focus after modal/terminal closure. Native modifier
+  reconciliation is exercised through the actual Slint focus tree.
+- Cupertino, Fluent and Cosmic styles compile on macOS. The optimized 0.6.0
+  Mac bundle builds and its ad hoc signature verifies. Icons are embedded.
+- ARM64 Debian 12 passes warnings-denied Clippy and all **140** normal tests,
+  builds the screenshot-enabled executable, and produces a Cosmic client-area
+  snapshot with the software renderer under Xvfb. Three optional tests are
+  ignored on Linux, including its native GTK test.
+
+Native macOS smoke checks used a separate bundle, disposable files and isolated
+configuration:
+
+| Workflow | Observed result |
+| --- | --- |
+| Native window | Close, minimize and full-screen/zoom controls remain in the accessibility tree. |
+| Menus | AppKit command menus remain present after activation; menu-driven Undo and Settings work. |
+| Copy and history | Confirmation selects the destination field; copying a Unicode filename and a text file completes. Menu Undo, Cmd+Z and Cmd+Shift+Z change the disposable destination as expected. |
+| Address | Cmd+L selects the address; pasting a new absolute location and pressing Return navigates there. |
+| Archives | A new ZIP appears through automatic refresh; opening it, entering an archive folder and viewing its text file work. |
+| Appearance | Settings keeps its action footer visible; selecting Dark and applying it updates the interface and native window appearance. |
+| Terminal | Opening focuses the PTY. A printf command displays its output, physical Control-C clears pending input, and output remains accessible by line. |
+
+These checks caught and fixed menu replacement on window activation, transient
+button models interrupting clicks, lost focus after dialog/terminal closure, and
+macOS synthesized shortcut modifier delivery. Diagnostic key logging was removed.
+Reviewing winit's native-drop paths also found omitted cursor coordinates.
+AppKit, Win32 and X11 queries now identify the target pane; when a compositor
+prohibits the query, the active pane's destination is displayed for confirmation.
+Native cross-application drop completion remains unverified.
+
+The initial Linux rendered launch exposed missing `libxkbcommon-x11`; it is now
+an explicit README/CI dependency and the Xvfb launch passes. The container has
+no desktop session bus, so it reports an xdg-settings watcher warning. This
+check does not validate following a real desktop's light/dark preference.
+
+Windows native execution, a real Ubuntu/GNOME/Wayland desktop, external native
+file-drop completion and drag-out into another application's target remain
+unverified. Native drag implementations are retained, with deferred dispatch
+outside the controller borrow and guarded incoming-drop routing. Slint widget
+styles are drawn controls with native window integration; they do not establish
+exact AppKit/WinUI/Ubuntu widget parity. Live cloud/OAuth validation and the
+remaining upstream parity items are still open.
+
+## Desktop chrome refinement (0.6.0)
+
+The main window now has compact icon controls, text breadcrumbs with an editable
+path mode, sidebar glyphs and current-location highlighting, quiet tabs,
+right-aligned sizes, a small active-pane marker and a slim shortcut bar. The
+macOS toolbar uses a full-size content view with transparent native title bar;
+space is reserved for the native window controls. Toolbar background dragging
+uses winit's window-drag API; physical drag behavior remains unverified.
+
+Light and dark client-area snapshots were rendered and visually reviewed on
+macOS. A separate native review bundle used disposable files and isolated
+settings. Accessibility inspection retained close, minimize and full-screen/zoom
+controls, labeled toolbar buttons and editable filters. Native checks confirmed
+Cmd+L path editing/navigation, filtering, copying through the new toolbar with
+confirmation, and Cmd+Z Undo. The normal suite passes all **140** tests, including
+actual keyboard entry through the compact address field after deferred focus
+callbacks are processed; warnings-denied Clippy passes.
+
+The refined chrome compiles with Cupertino, Fluent and Cosmic styles on macOS.
+The updated optimized Mac bundle builds and its ad hoc signature verifies.
+The earlier Linux container results above establish the migration baseline;
+the refined chrome has not been exercised on a native Windows/Linux desktop.
+
+The macOS traffic-light alignment was checked in an isolated native review
+window. AppKit frame measurements place all three centers at 22 points in the
+44-point toolbar, and at 20 points in the 40-point header with the toolbar
+hidden. Native zoom resizing, entering/leaving full screen, and restoring the
+toolbar retain the alignment. The standard controls remain accessible, and
+the toolbar Settings action remains usable. The native title-bar hit area is
+resized with the header to accommodate the controls. The four existing Slint UI
+regression tests and Clippy with warnings denied pass after this adjustment.
