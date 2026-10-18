@@ -1,5 +1,8 @@
 //! AppKit menus. Constructed and updated only on eframe's main UI thread.
-use crate::app::{Action, action_menus};
+use crate::{
+    APP_NAME,
+    app::{Action, action_menus},
+};
 use eframe::egui;
 use muda::{
     Menu, MenuItem, PredefinedMenuItem, Submenu,
@@ -16,11 +19,11 @@ impl NativeMenu {
     pub fn new(ctx: &egui::Context) -> muda::Result<Self> {
         let menu = Menu::new();
         let mut items = Vec::new();
-        let app = Submenu::new("muCommander Rust", true);
+        let app = Submenu::new(APP_NAME, true);
         app.append(&PredefinedMenuItem::about(
             None,
             Some(muda::AboutMetadata {
-                name: Some("muCommander Rust".into()),
+                name: Some(APP_NAME.into()),
                 version: Some(env!("CARGO_PKG_VERSION").into()),
                 ..Default::default()
             }),
@@ -28,7 +31,7 @@ impl NativeMenu {
         app.append(&PredefinedMenuItem::separator())?;
         for (label, action, key) in [
             ("Settings…", Action::Preferences, Code::Comma),
-            ("Quit muCommander Rust", Action::Quit, Code::KeyQ),
+            ("Quit Rust Commander", Action::Quit, Code::KeyQ),
         ] {
             let item = MenuItem::with_id(
                 format!("{action:?}"),
@@ -64,7 +67,7 @@ impl NativeMenu {
                     ("Appearance…", Action::Preferences),
                 ],
             ),
-            ("Help", vec![("muCommander Help", Action::Help)]),
+            ("Help", vec![("Rust Commander Help", Action::Help)]),
         ]) {
             let submenu = Submenu::new(title, true);
             for (label, action) in entries {

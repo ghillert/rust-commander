@@ -2970,46 +2970,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mucommander-rust"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "bzip2",
- "chrono",
- "compress-tools",
- "directories",
- "eframe",
- "flate2",
- "globset",
- "hayro",
- "image",
- "keyring",
- "libc",
- "md-5",
- "muda",
- "notify",
- "open",
- "opendal",
- "percent-encoding",
- "portable-pty",
- "regex",
- "serde",
- "serde_json",
- "sevenz-rust",
- "sha1",
- "sha2",
- "tar",
- "tempfile",
- "tokio",
- "trash",
- "url",
- "vt100",
- "windows-sys 0.61.2",
- "xz2",
- "zip",
-]
-
-[[package]]
 name = "muda"
 version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4464,6 +4424,46 @@ dependencies = [
  "spki",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "rust-commander"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "bzip2",
+ "chrono",
+ "compress-tools",
+ "directories",
+ "eframe",
+ "flate2",
+ "globset",
+ "hayro",
+ "image",
+ "keyring",
+ "libc",
+ "md-5",
+ "muda",
+ "notify",
+ "open",
+ "opendal",
+ "percent-encoding",
+ "portable-pty",
+ "regex",
+ "serde",
+ "serde_json",
+ "sevenz-rust",
+ "sha1",
+ "sha2",
+ "tar",
+ "tempfile",
+ "tokio",
+ "trash",
+ "url",
+ "vt100",
+ "windows-sys 0.61.2",
+ "xz2",
+ "zip",
 ]
 
 [[package]]

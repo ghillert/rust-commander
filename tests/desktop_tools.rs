@@ -1,4 +1,4 @@
-use mucommander_rust::{
+use rust_commander::{
     archive,
     desktop::{self, RenameOptions, SearchOptions},
     filesystem::{self, Location},

@@ -1,4 +1,4 @@
-use mucommander_rust::background;
+use rust_commander::background;
 use std::sync::mpsc;
 
 #[test]

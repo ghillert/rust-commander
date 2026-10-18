@@ -1,4 +1,4 @@
-use mucommander_rust::{archive, operations::Task};
+use rust_commander::{archive, operations::Task};
 use std::{fs, io::Write, path::Path};
 
 #[test]

@@ -6,9 +6,10 @@ implementation gaps, including missing behavior as well as unverified platforms.
 
 ## Automated checks
 
-- 69 tests pass: 26 core file-manager tests, 18 desktop/archive/viewer tests,
+- 79 tests pass: 26 core file-manager tests, 18 desktop/archive/viewer tests,
   12 transfer-conflict tests, 3 extended-format tests, 2 worker-failure tests,
-  1 real HTTP WebDAV test, 2 egui drag/drop tests, and 5 appearance tests.
+  1 real HTTP WebDAV test, 2 egui drag/drop tests, 5 appearance tests,
+  5 settings migration tests, and 5 credential compatibility tests.
 - Rust formatting and Clippy with warnings denied pass.
 - Optimized macOS app bundle builds, and its ad hoc signature verifies.
 - Packaged executable reports 0.3.0 and displays CLI usage.
@@ -69,3 +70,19 @@ previewed with the Ubuntu profile and with macOS dark appearance; settings
 apply correctly, and the fixed Cancel/Apply footer stays visible while scrolling.
 The window uses native OS controls with a custom toolbar; toolbar-background
 drag handling is implemented but has not been verified with a physical mouse.
+
+## Rust Commander naming
+
+The application, Cargo package/executable, macOS bundle, CI artifacts and
+current documentation now use Rust Commander / `rust-commander`. The optimized
+bundle's display name, executable and `io.github.ghillert.rust-commander`
+identifier are verified; its ad hoc signature verifies, and CLI help/version
+output uses the new name. The native UI smoke checks above were performed
+before this naming change.
+
+Compatibility tests confirm that existing preview settings are read when the
+new configuration file is absent, current settings take precedence, and invalid
+settings remain preserved and reported. Credential tests use isolated in-memory
+keyring entries: legacy fallback, current-entry precedence, lookup errors,
+invalid data, and deletion of both namespaces are covered. They do not validate
+live operating-system credential prompts or access controls.

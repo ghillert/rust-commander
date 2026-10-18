@@ -1,5 +1,6 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+use rust_commander::{APP_NAME, app::Commander};
 use std::path::PathBuf;
 
 fn main() -> eframe::Result {
@@ -7,12 +8,12 @@ fn main() -> eframe::Result {
     for arg in std::env::args_os().skip(1) {
         if arg == "--help" || arg == "-h" {
             println!(
-                "muCommander Rust\n\nUsage: mucommander-rust [LEFT_DIRECTORY] [RIGHT_DIRECTORY]\n\nNative dual-pane file manager. F1 opens keyboard help."
+                "{APP_NAME}\n\nUsage: rust-commander [LEFT_DIRECTORY] [RIGHT_DIRECTORY]\n\nNative dual-pane file manager. F1 opens keyboard help."
             );
             return Ok(());
         }
         if arg == "--version" {
-            println!("mucommander-rust {}", env!("CARGO_PKG_VERSION"));
+            println!("{APP_NAME} {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         }
         paths.push(PathBuf::from(arg));
@@ -31,11 +32,11 @@ fn main() -> eframe::Result {
         .with_title_shown(false)
         .with_titlebar_buttons_shown(true);
     eframe::run_native(
-        "muCommander Rust",
+        APP_NAME,
         eframe::NativeOptions {
             viewport,
             ..Default::default()
         },
-        Box::new(move |cc| Ok(Box::new(mucommander_rust::app::Commander::new(cc, &paths)))),
+        Box::new(move |cc| Ok(Box::new(Commander::new(cc, &paths)))),
     )
 }

@@ -1,3 +1,6 @@
+/// The application name used in windows, menus, and help.
+pub const APP_NAME: &str = "Rust Commander";
+
 pub mod app;
 pub mod appearance;
 pub mod archive;

@@ -145,7 +145,7 @@ impl Execution {
     fn backup_path(&mut self, target: &Path) -> Result<PathBuf> {
         if self.recovery.is_none() {
             let directory = tempfile::Builder::new()
-                .prefix(".mucommander-replaced-")
+                .prefix(".rust-commander-replaced-")
                 .tempdir_in(&self.destination)?;
             fs::create_dir(directory.path().join("items"))?;
             fs::write(
@@ -192,7 +192,7 @@ impl Execution {
                 // Copy completely before moving the existing target. The new
                 // item and recovery folder stay on the destination filesystem.
                 let stage = tempfile::Builder::new()
-                    .prefix(".mucommander-incoming-")
+                    .prefix(".rust-commander-incoming-")
                     .tempdir_in(plan.target.parent().context("Missing target parent")?)?;
                 let incoming = stage.path().join("item");
                 operations::copy_item(&plan.source, &incoming, task)?;

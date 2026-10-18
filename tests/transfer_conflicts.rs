@@ -1,4 +1,4 @@
-use mucommander_rust::{
+use rust_commander::{
     operations::Task,
     transfer::{self, ConflictPolicy, TransferOptions},
 };
@@ -29,7 +29,7 @@ fn recovery(destination: &Path) -> PathBuf {
             p.file_name()
                 .unwrap()
                 .to_string_lossy()
-                .starts_with(".mucommander-replaced-")
+                .starts_with(".rust-commander-replaced-")
         })
         .unwrap()
 }

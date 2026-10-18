@@ -1389,7 +1389,7 @@ impl Commander {
                     if cfg!(target_os = "macos") {
                         ui.add_space(80.0);
                     }
-                    ui.label(RichText::new("muCommander").strong());
+                    ui.label(RichText::new(crate::APP_NAME).strong());
                     ui.separator();
                     if self.preferences.toolbar {
                         for (label, a) in [
@@ -2231,7 +2231,7 @@ impl Commander {
                     ui.checkbox(&mut prompt.transfer_options.merge_folders, "Merge existing folders");
                 });
                 if prompt.transfer_options.conflicts == ConflictPolicy::Replace {
-                    ui.label("Replaced items stay in a hidden .mucommander-replaced-* folder in the destination. The result reports its path.");
+                    ui.label("Replaced items stay in a hidden .rust-commander-replaced-* folder in the destination. The result reports its path.");
                 }
             }
             ui.add_space(8.0);
@@ -2723,7 +2723,7 @@ impl Commander {
         self.editor(ctx);
         if self.help {
             egui::Modal::new(egui::Id::new("help")).show(ctx, |ui| {
-                ui.set_width(510.0); ui.heading("muCommander Rust");
+                ui.set_width(510.0); ui.heading(crate::APP_NAME);
                 ui.label(format!("Native dual-pane file manager · {}", env!("CARGO_PKG_VERSION")));
                 ui.separator();
                 egui::Grid::new("shortcuts").num_columns(2).spacing([28.0, 7.0]).show(ui, |ui| {
@@ -2764,7 +2764,7 @@ impl Commander {
         }
         if self.confirm_exit {
             egui::Modal::new(egui::Id::new("exit")).show(ctx, |ui| {
-                ui.heading("Close muCommander?"); ui.label("There is a running operation or unsaved text. Closing cancels the operation and discards unsaved text.");
+                ui.heading(format!("Close {}?", crate::APP_NAME)); ui.label("There is a running operation or unsaved text. Closing cancels the operation and discards unsaved text.");
                 ui.horizontal(|ui| {
                     if ui.button("Keep working").clicked() { self.confirm_exit = false; }
                     if ui.button("Cancel work and close").clicked() {

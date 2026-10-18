@@ -1,4 +1,4 @@
-# muCommander Rust
+# Rust Commander
 
 [![CI](https://github.com/ghillert/rust-commander/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ghillert/rust-commander/actions/workflows/ci.yml)
 [![Rust 1.92+](https://img.shields.io/badge/Rust-1.92%2B-orange?logo=rust)](Cargo.toml)
@@ -8,6 +8,9 @@ A dual-pane desktop file manager written in Rust, inspired by
 [muCommander](https://github.com/mucommander/mucommander). Browse local files and
 archives, manage transfers, and work in an embedded terminal from one window.
 The interface uses egui/eframe and runs without a JVM or browser engine.
+
+Rust Commander is an independent project and is not affiliated with or endorsed
+by the Rust Project or Rust Foundation.
 
 > **Development preview — 0.3.0.** This is an independent implementation with
 > full upstream compatibility still in progress. Apple Silicon macOS has been
@@ -145,7 +148,7 @@ include a toolchain or build output.
 
 ```sh
 ./scripts/package-macos.sh
-open "target/release/muCommander Rust.app"
+open "target/release/Rust Commander.app"
 ```
 
 The bundle uses an ad hoc signature. Notarization and release installers are
@@ -156,7 +159,7 @@ not configured.
 The executable accepts up to two starting directories:
 
 ```text
-mucommander-rust [LEFT_DIRECTORY] [RIGHT_DIRECTORY]
+rust-commander [LEFT_DIRECTORY] [RIGHT_DIRECTORY]
 ```
 
 Pass them after `--` when launching through Cargo. For example, on macOS/Linux:
@@ -240,13 +243,20 @@ Tabs, bookmarks, connection profiles, and preferences are saved in
 `settings.json` in the operating system's application configuration folder.
 Invalid settings are reported and preserved.
 
-Use `MUCOMMANDER_CONFIG_DIR` for an isolated configuration. On macOS/Linux:
+Use `RUST_COMMANDER_CONFIG_DIR` for an isolated configuration. On macOS/Linux:
 
 ```sh
-MUCOMMANDER_CONFIG_DIR="$PWD/.runtime/config" ./scripts/run.sh
+RUST_COMMANDER_CONFIG_DIR="$PWD/.runtime/config" ./scripts/run.sh
 ```
 
-On Windows, set `$env:MUCOMMANDER_CONFIG_DIR` before running Cargo.
+On Windows, set `$env:RUST_COMMANDER_CONFIG_DIR` before running Cargo.
+
+Settings from the earlier muCommander Rust preview are read when the new
+configuration file does not yet exist, then saved under Rust Commander's
+configuration directory. The original settings are preserved. The old
+`MUCOMMANDER_CONFIG_DIR` variable remains a fallback; `RUST_COMMANDER_CONFIG_DIR`
+takes precedence. Previously saved credentials remain accessible through their
+legacy credential-store entries; new credentials use the `rust-commander` service.
 
 ## Development
 

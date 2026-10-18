@@ -25,7 +25,7 @@ collision preserves staging files and reports their recovery location.
 ### Replacement and recovery
 
 Replacements are staged completely before an existing target is moved into a
-hidden `.mucommander-replaced-*` recovery folder in the destination. The result
+hidden `.rust-commander-replaced-*` recovery folder in the destination. The result
 reports its path, and `items/` preserves the original relative paths. Review these
 backups before removing them. Folder replacement without merging preserves the
 whole original folder there.

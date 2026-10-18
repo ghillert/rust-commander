@@ -1,4 +1,4 @@
-use mucommander_rust::remote::{self, Connection, Secrets};
+use rust_commander::remote::{self, Connection, Secrets};
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},

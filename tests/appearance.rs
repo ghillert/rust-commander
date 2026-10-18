@@ -1,5 +1,5 @@
 use eframe::egui;
-use mucommander_rust::{
+use rust_commander::{
     appearance::{self, ColorScheme, DesktopStyle},
     preferences::Preferences,
     settings::Settings,
@@ -82,7 +82,7 @@ fn desktop_overrides_persist_and_available_fonts_render() {
         appearance::apply(&ctx, desktop, ColorScheme::Light, 14.0);
         let output = ctx.run(Default::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                ui.label("Documents · muCommander · ⌘");
+                ui.label("Documents · Rust Commander · ⌘");
             });
         });
         assert!(!output.shapes.is_empty());

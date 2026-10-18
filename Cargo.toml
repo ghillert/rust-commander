@@ -1,5 +1,5 @@
 [package]
-name = "mucommander-rust"
+name = "rust-commander"
 version = "0.3.0"
 edition = "2024"
 rust-version = "1.92"
@@ -47,7 +47,7 @@ lto = "thin"
 strip = true
 
 [[bin]]
-name = "mucommander-rust"
+name = "rust-commander"
 path = "src/main.rs"
 
 [target.'cfg(target_os = "macos")'.dependencies]

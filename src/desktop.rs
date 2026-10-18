@@ -177,7 +177,7 @@ pub fn batch_rename(plan: &[(PathBuf, PathBuf)], task: &mut Task) -> Result<()> 
         }
     }
     let staging = tempfile::Builder::new()
-        .prefix(".mucommander-rename-")
+        .prefix(".rust-commander-rename-")
         .tempdir_in(parent)?
         .keep();
     let mut staged = BTreeSet::new();

@@ -220,20 +220,45 @@ fn session(id: &str) -> Result<Arc<Session>> {
         .context("Connection failed")
 }
 
+const CREDENTIAL_SERVICE: &str = "rust-commander";
+// Retain access to credentials saved by the earlier muCommander Rust preview.
+const LEGACY_CREDENTIAL_SERVICE: &str = "mucommander-rust";
+
 pub fn save_credentials(id: &str, secrets: &Secrets) -> Result<()> {
-    keyring::Entry::new("mucommander-rust", id)?.set_password(&serde_json::to_string(secrets)?)?;
+    keyring::Entry::new(CREDENTIAL_SERVICE, id)?.set_password(&serde_json::to_string(secrets)?)?;
     Ok(())
 }
 pub fn load_credentials(id: &str) -> Result<Secrets> {
-    Ok(serde_json::from_str(
-        &keyring::Entry::new("mucommander-rust", id)?.get_password()?,
-    )?)
+    read_stored_credentials(
+        &keyring::Entry::new(CREDENTIAL_SERVICE, id)?,
+        &keyring::Entry::new(LEGACY_CREDENTIAL_SERVICE, id)?,
+    )
 }
-pub fn forget_credentials(id: &str) -> Result<()> {
-    match keyring::Entry::new("mucommander-rust", id)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => {}
+
+fn read_stored_credentials(current: &keyring::Entry, legacy: &keyring::Entry) -> Result<Secrets> {
+    let contents = match current.get_password() {
+        Ok(password) => password,
+        Err(keyring::Error::NoEntry) => legacy.get_password()?,
         Err(error) => return Err(error.into()),
+    };
+    Ok(serde_json::from_str(&contents)?)
+}
+
+fn forget_stored_credentials(entries: &[keyring::Entry]) -> Result<()> {
+    for entry in entries {
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(error) => return Err(error.into()),
+        }
     }
+    Ok(())
+}
+
+pub fn forget_credentials(id: &str) -> Result<()> {
+    forget_stored_credentials(&[
+        keyring::Entry::new(CREDENTIAL_SERVICE, id)?,
+        keyring::Entry::new(LEGACY_CREDENTIAL_SERVICE, id)?,
+    ])?;
     sessions()
         .write()
         .map_err(|_| anyhow::anyhow!("Session lock failed"))?
@@ -588,4 +613,88 @@ fn copy_entry(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod credential_compatibility_tests {
+    use super::*;
+
+    fn entry(token: Option<&str>) -> keyring::Entry {
+        let entry =
+            keyring::Entry::new_with_credential(Box::new(keyring::mock::MockCredential::default()));
+        if let Some(token) = token {
+            entry
+                .set_password(
+                    &serde_json::to_string(&Secrets {
+                        access_token: token.into(),
+                        ..Default::default()
+                    })
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        entry
+    }
+
+    #[test]
+    fn current_credentials_take_precedence_over_legacy_credentials() {
+        let current = entry(Some("current-token"));
+        let legacy = entry(Some("legacy-token"));
+        assert_eq!(
+            read_stored_credentials(&current, &legacy)
+                .unwrap()
+                .access_token,
+            "current-token"
+        );
+    }
+
+    #[test]
+    fn missing_current_credentials_fall_back_without_modifying_legacy_credentials() {
+        let current = entry(None);
+        let legacy = entry(Some("legacy-token"));
+        assert_eq!(
+            read_stored_credentials(&current, &legacy)
+                .unwrap()
+                .access_token,
+            "legacy-token"
+        );
+        assert!(matches!(
+            current.get_password(),
+            Err(keyring::Error::NoEntry)
+        ));
+        assert!(legacy.get_password().is_ok());
+    }
+
+    #[test]
+    fn credential_lookup_errors_do_not_fall_back_to_older_secrets() {
+        let current = entry(Some("current-token"));
+        let legacy = entry(Some("legacy-token"));
+        current
+            .get_credential()
+            .downcast_ref::<keyring::mock::MockCredential>()
+            .unwrap()
+            .set_error(keyring::Error::Invalid(
+                "mock lookup".into(),
+                "access refused".into(),
+            ));
+        assert!(read_stored_credentials(&current, &legacy).is_err());
+    }
+
+    #[test]
+    fn invalid_current_credentials_are_reported_without_falling_back() {
+        let current = entry(None);
+        current.set_password("invalid JSON").unwrap();
+        let legacy = entry(Some("legacy-token"));
+        assert!(read_stored_credentials(&current, &legacy).is_err());
+    }
+
+    #[test]
+    fn forgetting_credentials_removes_both_namespaces() {
+        let entries = [entry(Some("current-token")), entry(Some("legacy-token"))];
+        forget_stored_credentials(&entries).unwrap();
+        for entry in &entries {
+            assert!(matches!(entry.get_password(), Err(keyring::Error::NoEntry)));
+        }
+        forget_stored_credentials(&entries).unwrap();
+    }
 }

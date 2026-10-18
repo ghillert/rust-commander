@@ -1,4 +1,4 @@
-use mucommander_rust::{
+use rust_commander::{
     archive,
     filesystem::{self, Entry, Location, Sort},
     operations::{self, Operation, Task},
@@ -551,7 +551,7 @@ fn archive_parent_navigation_returns_to_local_folder() {
 fn model_filters_selection_and_never_uses_hidden_marked_files() {
     let root = tempfile::tempdir().unwrap();
     let ctx = eframe::egui::Context::default();
-    let mut tab = mucommander_rust::model::Tab::new(Location::Local(root.path().to_owned()), &ctx);
+    let mut tab = rust_commander::model::Tab::new(Location::Local(root.path().to_owned()), &ctx);
     tab.entries = vec![entry(".hidden", false, 1), entry("visible", false, 2)];
     tab.selected.insert(".hidden".into());
     tab.cursor = Some("visible".into());

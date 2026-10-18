@@ -98,32 +98,32 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          cp target/release/mucommander-rust LICENSE NOTICE dist/
-          tar -czf "dist/mucommander-rust-${RUNNER_OS}-${RUNNER_ARCH}.tar.gz" \
-            -C dist mucommander-rust LICENSE NOTICE
+          cp target/release/rust-commander LICENSE NOTICE dist/
+          tar -czf "dist/rust-commander-${RUNNER_OS}-${RUNNER_ARCH}.tar.gz" \
+            -C dist rust-commander LICENSE NOTICE
 
       - name: Package macOS application
         if: runner.os == 'macOS'
         run: |
           ./scripts/package-macos.sh
-          codesign --verify --deep --strict "target/release/muCommander Rust.app"
+          codesign --verify --deep --strict "target/release/Rust Commander.app"
           mkdir -p dist
-          tar -czf "dist/mucommander-rust-${RUNNER_OS}-${RUNNER_ARCH}.tar.gz" \
-            -C target/release "muCommander Rust.app"
+          tar -czf "dist/rust-commander-${RUNNER_OS}-${RUNNER_ARCH}.tar.gz" \
+            -C target/release "Rust Commander.app"
 
       - name: Package Windows executable
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path "target/release/mucommander-rust.exe", "LICENSE", "NOTICE" `
-            -DestinationPath "dist/mucommander-rust-$env:RUNNER_OS-$env:RUNNER_ARCH.zip"
+          Compress-Archive -Path "target/release/rust-commander.exe", "LICENSE", "NOTICE" `
+            -DestinationPath "dist/rust-commander-$env:RUNNER_OS-$env:RUNNER_ARCH.zip"
 
       # Tar archives preserve Unix executable permissions and the app bundle.
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: mucommander-rust-${{ runner.os }}-${{ runner.arch }}
+          name: rust-commander-${{ runner.os }}-${{ runner.arch }}
           path: |
             dist/*.tar.gz
             dist/*.zip
