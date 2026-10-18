@@ -212,6 +212,9 @@ pub fn edit_zip(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> {
             }
         }
     }
+    // Windows refuses replacing the destination while its ZIP reader is open,
+    // even when that handle allows delete sharing. All entries are copied now.
+    drop(input);
     task.check()?;
     if crate::history::fingerprint(file, task)? != stamp {
         bail!("Archive changed during editing; the original was kept.");

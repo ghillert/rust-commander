@@ -157,3 +157,33 @@ fn raw_tar_and_sevenz_members_keep_windows_separators_and_traversal_rejected() {
         }
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn zip_edit_preserves_original_when_an_external_reader_blocks_replacement() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("first.txt");
+    fs::write(&source, "original content").unwrap();
+    let packed = root.path().join("test.zip");
+    archive::pack(&[source], &packed, &mut Task::default()).unwrap();
+    let original = fs::read(&packed).unwrap();
+    let addition = root.path().join("second.txt");
+    fs::write(&addition, "new content").unwrap();
+    let edit = ZipEdit::Add {
+        sources: vec![addition],
+        prefix: Path::new("nested").to_owned(),
+    };
+    let external_reader = File::open(&packed).unwrap();
+    assert!(archive_tools::edit_archive(&packed, &edit, &mut Task::default()).is_err());
+    assert_eq!(fs::read(&packed).unwrap(), original);
+    drop(external_reader);
+    archive_tools::edit_archive(&packed, &edit, &mut Task::default()).unwrap();
+    assert_eq!(
+        archive::read_text(&packed, Path::new("first.txt"), 100).unwrap(),
+        "original content"
+    );
+    assert_eq!(
+        archive::read_text(&packed, &Path::new("nested").join("second.txt"), 100).unwrap(),
+        "new content"
+    );
+}

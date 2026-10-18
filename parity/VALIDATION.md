@@ -450,3 +450,39 @@ Validation of this fix:
   warnings-denied Clippy for `x86_64-pc-windows-msvc` in a standalone harness.
   This is a compile check, not Windows test execution. A new Windows CI run with
   the fix is still required to confirm the full suite there.
+
+## Windows ZIP replacement handle lifetime
+
+[Windows job 117760776917](https://github.com/ghillert/rust-commander/actions/runs/39156505054/job/117760776917)
+checked out `2f88c64`, passed Clippy and all 39 Windows library tests, including
+the native path and nested synchronization regressions. The nested archive test
+now passes ZIP creation, listing and selected extraction, then fails on its
+first ZIP edit with `failed to persist temporary file: Access is denied.
+(os error 5)`. The macOS and Ubuntu jobs complete successfully, including release
+packaging.
+
+The ZIP editor retained its input `ZipArchive<File>` until the function returned,
+so the destination was still open when `NamedTempFile::persist` called
+`MoveFileExW(..., MOVEFILE_REPLACE_EXISTING)`. The editor now explicitly drops
+that reader after copying and validating all entries and before its final
+fingerprint check and atomic replacement. The original-change guard, permission
+preservation and staged write remain in place; replacement errors do not delete
+the original to work around a lock.
+
+Validation of this fix:
+
+- All **47** targeted archive, recovery and feature integration tests pass on
+  Apple Silicon macOS; the two optional clipboard/live SMB cases remain ignored.
+  Formatting, whitespace checks and warnings-denied all-targets/all-features
+  Clippy pass.
+- An isolated x86-64 Win32 executable run under Wine 11.0 on the Mac reproduces
+  error 5 when `MoveFileExW` replaces a destination with its reader still open,
+  even with `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`. Closing the
+  reader makes the same replacement succeed. The diagnostic uses disposable
+  files and its own Wine prefix; this is emulated Win32 evidence, not a native
+  Windows application test.
+- A Windows-only regression keeps an external reader open, checks that an edit
+  fails without changing the original bytes, then closes the reader and verifies
+  the same edit succeeds with both original and added entries intact. The
+  existing nested ZIP/TAR/7z edit test also covers the reported failure. The new
+  Windows-specific case still requires execution by Windows CI.
