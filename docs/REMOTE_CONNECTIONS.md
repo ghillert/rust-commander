@@ -28,20 +28,27 @@ validation on the supported platforms.
 
 - **SFTP** uses the system OpenSSH executable, an agent or private key, and
   strict known-host verification. Password-based SFTP is not implemented.
-- **Cloud adapters** accept access tokens. Browser OAuth login and token refresh
-  workflows are not implemented.
+- **Cloud adapters** accept access tokens. Google Drive, Dropbox and OneDrive also
+  offer browser sign-in with PKCE, token refresh and reconnection. Register your
+  own desktop client first; see [OAuth setup](OAUTH.md).
 - **GCS** expects a base64-encoded service account credential payload in the
   token field.
 - **HTTP** supports direct file paths rather than listing folders.
 
 ## Transfer behavior and limits
 
-Remote transfers refuse existing targets. Some services lack conditional-create
+Remote transfers preview top-level conflicts and offer Stop, Skip, Keep both and
+Replace, with per-item overrides. Replace streams the old target into a hidden
+recovery copy before removal; completed copies and backups can remain after an
+error. Folder conflicts apply to whole folders; remote folder merging is not
+implemented. Some services lack conditional-create
 support: conflict checks do not lock out simultaneous writes by other clients.
 Failed remote transfers can leave partial output.
 
-Remote deletion is permanent and requires confirmation. Remote rename and
-remote archive browsing/editing are not implemented. For local transfer and
+Remote deletion is permanent and requires confirmation. Remote rename
+streams a copy, checks source metadata and removes the original after success.
+Cancellation can keep both copies. Nested remote archives open read-only in a
+bounded temporary cache; remote archive editing is not implemented. For local transfer and
 recovery behavior, see [File operations](FILE_OPERATIONS.md).
 
 ## Validation status

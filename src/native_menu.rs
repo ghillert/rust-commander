@@ -12,13 +12,15 @@ use std::sync::mpsc::{self, Receiver};
 
 pub struct NativeMenu {
     _menu: Menu,
-    items: Vec<(MenuItem, Action)>,
+    items: Vec<(MenuItem, Action, &'static str)>,
+    submenu_labels: Vec<(Submenu, &'static str)>,
     receiver: Receiver<muda::MenuId>,
 }
 impl NativeMenu {
     pub fn new(ctx: &egui::Context) -> muda::Result<Self> {
         let menu = Menu::new();
         let mut items = Vec::new();
+        let mut submenu_labels = Vec::new();
         let app = Submenu::new(APP_NAME, true);
         app.append(&PredefinedMenuItem::about(
             None,
@@ -35,12 +37,12 @@ impl NativeMenu {
         ] {
             let item = MenuItem::with_id(
                 format!("{action:?}"),
-                label,
+                crate::i18n::text(label).as_ref(),
                 true,
                 Some(Accelerator::new(Modifiers::META, key)),
             );
             app.append(&item)?;
-            items.push((item, action));
+            items.push((item, action, label));
             if matches!(action, Action::Preferences) {
                 app.append(&PredefinedMenuItem::separator())?;
                 app.append(&PredefinedMenuItem::hide(None))?;
@@ -51,7 +53,7 @@ impl NativeMenu {
         }
         menu.append(&app)?;
         let window = Submenu::with_items(
-            "Window",
+            crate::i18n::text("Window").as_ref(),
             true,
             &[
                 &PredefinedMenuItem::minimize(None),
@@ -59,6 +61,7 @@ impl NativeMenu {
                 &PredefinedMenuItem::fullscreen(None),
             ],
         )?;
+        submenu_labels.push((window.clone(), "Window"));
         for (title, entries) in action_menus().into_iter().chain([
             (
                 "View",
@@ -69,17 +72,18 @@ impl NativeMenu {
             ),
             ("Help", vec![("Rust Commander Help", Action::Help)]),
         ]) {
-            let submenu = Submenu::new(title, true);
+            let submenu = Submenu::new(crate::i18n::text(title).as_ref(), true);
             for (label, action) in entries {
                 let item = MenuItem::with_id(
                     format!("{title}-{action:?}"),
-                    label.split("  F").next().unwrap_or(label),
+                    crate::i18n::text(label.split("  F").next().unwrap_or(label)).as_ref(),
                     true,
                     None,
                 );
                 submenu.append(&item)?;
-                items.push((item, action));
+                items.push((item, action, label));
             }
+            submenu_labels.push((submenu.clone(), title));
             if title == "Help" {
                 menu.append(&window)?;
                 submenu.set_as_help_menu_for_nsapp();
@@ -97,20 +101,31 @@ impl NativeMenu {
         Ok(Self {
             _menu: menu,
             items,
+            submenu_labels,
             receiver,
         })
+    }
+
+    /// Keep the event receiver alive: muda installs its global handler only once.
+    pub fn localize(&self) {
+        for (item, _, label) in &self.items {
+            item.set_text(crate::i18n::text(label.split("  F").next().unwrap_or(label)).as_ref());
+        }
+        for (submenu, label) in &self.submenu_labels {
+            submenu.set_text(crate::i18n::text(label).as_ref());
+        }
     }
 
     pub fn poll(&self, blocked: bool) -> Vec<Action> {
         let mut actions = Vec::new();
         while let Ok(id) = self.receiver.try_recv() {
-            if let Some((_, action)) = self.items.iter().find(|(item, _)| item.id() == &id)
+            if let Some((_, action, _)) = self.items.iter().find(|(item, _, _)| item.id() == &id)
                 && (!blocked || matches!(action, Action::Quit))
             {
                 actions.push(*action);
             }
         }
-        for (item, action) in &self.items {
+        for (item, action, _) in &self.items {
             item.set_enabled(!blocked || matches!(action, Action::Quit));
         }
         actions

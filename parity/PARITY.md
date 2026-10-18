@@ -24,11 +24,11 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | CombineFiles | implemented | src/desktop.rs, tests/desktop_tools.rs::split_and_combine_round_trip_every_chunk_boundary |
 | CompareFolders | partial | src/desktop.rs, tests/desktop_tools.rs — Local-only; search content has a size limit and comparison skips symlinks. |
 | ConnectToServer | partial | src/remote.rs, tests/webdav_backend.rs — Saved profiles, keychain integration and partial adapters; live services and keychain UI need validation. |
-| Copy | partial | src/transfer.rs, tests/transfer_conflicts.rs, src/app.rs — Local skip, keep-both, recoverable replacement and folder merge workflows; remote conflict resolution, per-file prompts and complete platform validation remain open. |
+| Copy | partial | src/transfer.rs, src/remote.rs, src/app.rs, tests/transfer_conflicts.rs, tests/features.rs — Local recursive conflict preview and per-file choices, recoverable replacements and optional folder merge. Remote top-level choices tested with filesystem adapter; live services and cross-platform behavior pending. |
 | CopyFileBaseNames | missing | — |
 | CopyFileNames | partial | src/app.rs — UI implemented; native smoke validation pending. |
 | CopyFilePaths | partial | src/app.rs — UI implemented; native smoke validation pending. |
-| CopyFilesToClipboard | partial | src/app.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — In-app clipboard only; native file clipboard interoperability is missing. |
+| CopyFilesToClipboard | partial | src/native_files.rs, src/app.rs, tests/features.rs — Native local file clipboard plus remote pane selections. Mac copy/cut, Unicode paths and external clipboard changes pass a real desktop round-trip. Windows/Linux interoperability requires validation. |
 | CustomizeCommandBar | missing | — |
 | Delete | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
 | Donate | missing | — |
@@ -56,7 +56,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | InternalEdit | partial | src/app.rs, tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content — Local UTF-8 text editing only. |
 | InternalView | partial | src/viewer.rs, tests/desktop_tools.rs::image_and_hex_viewers_load_real_files, tests/desktop_tools.rs::pdf_viewer_renders_and_navigates_pages — Bounded input; format edge cases, text encodings, image animation and full PDF compatibility remain open. |
 | InvertSelection | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| LocalCopy | partial | src/transfer.rs, tests/transfer_conflicts.rs, src/app.rs — Local skip, keep-both, recoverable replacement and folder merge workflows; remote conflict resolution, per-file prompts and complete platform validation remain open. |
+| LocalCopy | partial | src/transfer.rs, src/remote.rs, src/app.rs, tests/transfer_conflicts.rs, tests/features.rs — Local recursive conflict preview and per-file choices, recoverable replacements and optional folder merge. Remote top-level choices tested with filesystem adapter; live services and cross-platform behavior pending. |
 | MarkAll | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | MarkExtension | missing | — |
 | MarkGroup | missing | — |
@@ -73,7 +73,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | MinimizeWindow | missing | — |
 | Mkdir | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
 | Mkfile | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
-| Move | partial | src/transfer.rs, tests/transfer_conflicts.rs, src/app.rs — Local skip, keep-both, recoverable replacement and folder merge workflows; remote conflict resolution, per-file prompts and complete platform validation remain open. |
+| Move | partial | src/transfer.rs, src/remote.rs, src/app.rs, tests/transfer_conflicts.rs, tests/features.rs — Local recursive conflict preview and per-file choices, recoverable replacements and optional folder merge. Remote top-level choices tested with filesystem adapter; live services and cross-platform behavior pending. |
 | MoveTabToOtherPanel | missing | — |
 | NewTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | NewWindow | missing | — |
@@ -87,11 +87,11 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | OpenNatively | partial | src/app.rs, parity/VALIDATION.md — Core local navigation/open workflow exists; full upstream action semantics and cross-platform behavior remain incomplete. |
 | OpenTrash | missing | — |
 | OpenURLInBrowser | missing | — |
-| Pack | partial | src/archive.rs, tests/file_manager.rs, tests/desktop_tools.rs, tests/extended_archives.rs — No encryption, archive mutation or archive link extraction; extraction requires a new folder. |
-| PasteClipboardFiles | partial | src/app.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — In-app clipboard only; native file clipboard interoperability is missing. |
+| Pack | partial | src/archive.rs, src/archive_tools.rs, src/app.rs, tests/features.rs, tests/file_manager.rs, tests/extended_archives.rs — ZIP and 7z AES encryption, local ZIP editing and nested/remote archive browsing. Extract to new folders; archive links, non-ZIP mutation and broad format fixtures remain open. |
+| PasteClipboardFiles | partial | src/native_files.rs, src/app.rs, tests/features.rs — Native local file clipboard plus remote pane selections. Mac copy/cut, Unicode paths and external clipboard changes pass a real desktop round-trip. Windows/Linux interoperability requires validation. |
 | PermanentDelete | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
-| PopupLeftDriveButton | missing | — |
-| PopupRightDriveButton | missing | — |
+| PopupLeftDriveButton | partial | src/native_files.rs, src/app.rs — Mounted-drive sidebar and clickable local breadcrumbs provide navigation. Exact upstream quick-list behavior and cross-platform interactions remain open. |
+| PopupRightDriveButton | partial | src/native_files.rs, src/app.rs — Mounted-drive sidebar and clickable local breadcrumbs provide navigation. Exact upstream quick-list behavior and cross-platform interactions remain open. |
 | PreviousTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | QuickFind | missing | — |
 | Quit | partial | src/app.rs — Implemented UI and close protection; full lifecycle validation pending. |
@@ -109,7 +109,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | RecallWindow9 | missing | — |
 | Redo | missing | — |
 | Refresh | partial | src/app.rs, src/model.rs — Manual refresh and automatic macOS file-change notifications smoke tested; other platforms and remote refresh behavior remain unverified. |
-| Rename | partial | src/operations.rs, tests/file_manager.rs — Single rename refuses existing targets. Case-only renaming, complete platform semantics and conflict handling remain open. |
+| Rename | partial | src/operations.rs, src/remote.rs, src/archive_tools.rs, src/app.rs, tests/features.rs — Local, ZIP and remote rename implemented. Remote copy/check/delete validated through filesystem adapter; live services and full platform behavior pending. |
 | ReportBug | missing | — |
 | RevealInDesktop | missing | — |
 | ReverseSortOrder | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
@@ -131,15 +131,15 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | ShowFileProperties | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
 | ShowInEnclosingFolder | missing | — |
 | ShowKeyboardShortcuts | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
-| ShowParentFoldersQL | missing | — |
-| ShowPreferences | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common controls inspected in the native app; full upstream preferences and cross-platform behavior remain incomplete. |
+| ShowParentFoldersQL | partial | src/native_files.rs, src/app.rs — Mounted-drive sidebar and clickable local breadcrumbs provide navigation. Exact upstream quick-list behavior and cross-platform interactions remain open. |
+| ShowPreferences | partial | src/preferences.rs, src/feature_ui.rs, src/app.rs, tests/features.rs — Desktop preferences now include language, persistent column customization and toolbar action order. Full upstream preferences and cross-platform behavior remain incomplete. |
 | ShowRecentExecutedFilesQL | missing | — |
 | ShowRecentLocationsQL | missing | — |
 | ShowRootFoldersQL | missing | — |
 | ShowServerConnections | partial | src/remote.rs, tests/webdav_backend.rs — Saved profiles, keychain integration and partial adapters; live services and keychain UI need validation. |
 | ShowTabsQL | missing | — |
 | SortByDate | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| SortByExtension | missing | — |
+| SortByExtension | partial | src/preferences.rs, src/app.rs, tests/features.rs — Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open. |
 | SortByGroup | missing | — |
 | SortByName | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | SortByOwner | missing | — |
@@ -149,52 +149,52 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | SplitFile | implemented | src/desktop.rs, tests/desktop_tools.rs::split_and_combine_round_trip_every_chunk_boundary |
 | SplitHorizontally | missing | — |
 | SplitVertically | missing | — |
-| Stop | missing | — |
+| Stop | partial | src/app.rs, src/history.rs, tests/features.rs — Queue and active operation cancellation with persistent outcomes. Cancellation is cooperative; not all native/provider calls are interruptible. |
 | SwapFolders | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | SwitchActiveTable | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | ToggleAutoSize | missing | — |
 | ToggleCommandBar | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
-| ToggleDateColumn | missing | — |
-| ToggleExtensionColumn | missing | — |
+| ToggleDateColumn | partial | src/preferences.rs, src/app.rs, tests/features.rs — Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open. |
+| ToggleExtensionColumn | partial | src/preferences.rs, src/app.rs, tests/features.rs — Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open. |
 | ToggleGroupColumn | missing | — |
 | ToggleHiddenFiles | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
 | ToggleLockTab | missing | — |
 | ToggleOwnerColumn | missing | — |
 | ToggleShowParentFolder | missing | — |
-| TogglePermissionsColumn | missing | — |
+| TogglePermissionsColumn | partial | src/preferences.rs, src/app.rs, tests/features.rs — Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open. |
 | ToggleShowFoldersFirst | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
-| ToggleSizeColumn | missing | — |
+| ToggleSizeColumn | partial | src/preferences.rs, src/app.rs, tests/features.rs — Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open. |
 | ToggleStatusBar | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
 | ToggleTerminal | partial | src/terminal.rs, src/app.rs — PTY and VT100 screen implemented; full terminal compatibility needs validation. |
-| ToggleToolBar | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
+| ToggleToolBar | partial | src/preferences.rs, src/feature_ui.rs, src/app.rs, tests/features.rs — Desktop preferences now include language, persistent column customization and toolbar action order. Full upstream preferences and cross-platform behavior remain incomplete. |
 | ToggleTree | missing | — |
 | ToggleUseSinglePanel | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
 | UnmarkAll | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | UnmarkGroup | missing | — |
-| Unpack | partial | src/archive.rs, tests/file_manager.rs, tests/desktop_tools.rs, tests/extended_archives.rs — No encryption, archive mutation or archive link extraction; extraction requires a new folder. |
-| Undo | missing | — |
+| Unpack | partial | src/archive.rs, src/archive_tools.rs, src/app.rs, tests/features.rs, tests/file_manager.rs, tests/extended_archives.rs — ZIP and 7z AES encryption, local ZIP editing and nested/remote archive browsing. Extract to new folders; archive links, non-ZIP mutation and broad format fixtures remain open. |
+| Undo | partial | src/history.rs, src/app.rs, tests/features.rs — Guarded local operation Undo, full recovery copies and persistent history; no Redo, remote Undo or universal operation coverage. Cross-platform interaction validation pending. |
 | View | partial | src/viewer.rs, tests/desktop_tools.rs::image_and_hex_viewers_load_real_files, tests/desktop_tools.rs::pdf_viewer_renders_and_navigates_pages — Bounded input; format edge cases, text encodings, image animation and full PDF compatibility remain open. |
 | mucommander-protocol-api | missing | — |
 | mucommander-viewer-api | missing | — |
-| mucommander-format-ar | partial | src/archive.rs, tests/desktop_tools.rs, tests/extended_archives.rs — Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open. |
-| mucommander-format-bzip2 | partial | src/archive.rs, tests/desktop_tools.rs, tests/extended_archives.rs — Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open. |
-| mucommander-format-cpio | partial | src/archive.rs, tests/desktop_tools.rs, tests/extended_archives.rs — Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open. |
-| mucommander-format-gzip | partial | src/archive.rs, tests/desktop_tools.rs, tests/extended_archives.rs — Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open. |
-| mucommander-format-iso | partial | src/archive.rs, tests/desktop_tools.rs, tests/extended_archives.rs — Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open. |
+| mucommander-format-ar | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
+| mucommander-format-bzip2 | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
+| mucommander-format-cpio | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
+| mucommander-format-gzip | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
+| mucommander-format-iso | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
 | mucommander-format-libguestfs | missing | — |
 | mucommander-format-lst | missing | — |
-| mucommander-format-rar | partial | src/archive.rs, tests/desktop_tools.rs, tests/extended_archives.rs — Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open. |
-| mucommander-format-sevenzip | partial | src/archive.rs, tests/desktop_tools.rs, tests/extended_archives.rs — Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open. |
-| mucommander-format-tar | partial | src/archive.rs, tests/desktop_tools.rs, tests/extended_archives.rs — Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open. |
-| mucommander-format-xz | partial | src/archive.rs, tests/desktop_tools.rs, tests/extended_archives.rs — Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open. |
-| mucommander-format-zip | partial | src/archive.rs, tests/desktop_tools.rs, tests/extended_archives.rs — Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open. |
-| mucommander-format-rpm | partial | src/archive.rs, tests/desktop_tools.rs, tests/extended_archives.rs — Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open. |
+| mucommander-format-rar | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
+| mucommander-format-sevenzip | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
+| mucommander-format-tar | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
+| mucommander-format-xz | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
+| mucommander-format-zip | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
+| mucommander-format-rpm | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
 | mucommander-protocol-adb | missing | — |
 | mucommander-protocol-ftp | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
-| mucommander-protocol-dropbox | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
+| mucommander-protocol-dropbox | partial | src/oauth.rs, src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/features.rs — Browser OAuth with PKCE, refresh/reconnect and remote file workflows implemented. Protocol tests use loopback fixtures; live provider registration/account validation pending. |
 | mucommander-protocol-gcs | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
-| mucommander-protocol-gdrive | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
-| mucommander-protocol-onedrive | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
+| mucommander-protocol-gdrive | partial | src/oauth.rs, src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/features.rs — Browser OAuth with PKCE, refresh/reconnect and remote file workflows implemented. Protocol tests use loopback fixtures; live provider registration/account validation pending. |
+| mucommander-protocol-onedrive | partial | src/oauth.rs, src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/features.rs — Browser OAuth with PKCE, refresh/reconnect and remote file workflows implemented. Protocol tests use loopback fixtures; live provider registration/account validation pending. |
 | mucommander-protocol-hadoop | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
 | mucommander-protocol-nfs | missing | — |
 | mucommander-protocol-http | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |

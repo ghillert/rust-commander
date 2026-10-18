@@ -1,18 +1,20 @@
 # Validation record
 
-This record covers version 0.3.0 on the available Apple Silicon Mac. It is not a
+This record covers version 0.4.0 on the available Apple Silicon Mac. It is not a
 full muCommander compatibility certification. See [PARITY.md](PARITY.md) for
 implementation gaps, including missing behavior as well as unverified platforms.
 
 ## Automated checks
 
-- 79 tests pass: 26 core file-manager tests, 18 desktop/archive/viewer tests,
+- The 0.3.0 baseline had 79 passing tests: 26 core file-manager tests, 18 desktop/archive/viewer tests,
   12 transfer-conflict tests, 3 extended-format tests, 2 worker-failure tests,
   1 real HTTP WebDAV test, 2 egui drag/drop tests, 5 appearance tests,
   5 settings migration tests, and 5 credential compatibility tests.
 - Rust formatting and Clippy with warnings denied pass.
 - Optimized macOS app bundle builds, and its ad hoc signature verifies.
-- Packaged executable reports 0.3.0 and displays CLI usage.
+- Version 0.4.0 passes 113 automated tests, plus a separate interactive Mac
+  clipboard test. It adds recovery, conflicts, ZIP mutation/encryption, nested/remote
+  archives, OAuth, localization and preference coverage; see the section below.
 - The parity gate intentionally fails until the remaining upstream items have
   implementation and validation evidence. Its item counts are not a percentage
   of the product's functionality.
@@ -45,9 +47,10 @@ configured for them. Live SFTP, FTP, S3, cloud OAuth, keychain UI and other remo
 services have not been validated. The native automation drag gesture did not
 produce a drop; pane and external drops pass egui event tests, while native
 desktop drag/drop integration remains unverified. The filesystem adapter and loopback WebDAV
-server establish only their tested contracts. Drag-out, native OS file clipboard,
-archive editing/encryption, localization, undo/redo and several other upstream
-workflows remain unimplemented. Format-edge-case coverage is incomplete.
+server establish only their tested contracts. Mac native file clipboard is tested. Drag-out still needs native end-to-end
+validation, and Linux native drag-out is not implemented. Local Undo, ZIP editing,
+encryption and initial localization are implemented; Redo and broader upstream
+workflows remain open. Format-edge-case coverage is incomplete.
 
 ## Desktop appearance validation (0.3.0)
 
@@ -86,3 +89,42 @@ settings remain preserved and reported. Credential tests use isolated in-memory
 keyring entries: legacy fallback, current-entry precedence, lookup errors,
 invalid data, and deletion of both namespaces are covered. They do not validate
 live operating-system credential prompts or access controls.
+
+## Twelve-feature release (0.4.0)
+
+The [feature guide](../docs/FEATURES_0.4.md) maps the twelve requested areas to
+implemented behavior and limits. Automated checks cover mixed per-file conflicts,
+local Undo (moves, renames, replacements, merges and exact ZIP restoration),
+external-edit and backup-tamper refusal, consecutive directory Undo, cancelled
+operations and orphan-record recovery, ZIP editing, AES ZIP/7z round trips and
+wrong passwords, nested archive Parent navigation, remote files/folders and
+archive browsing with the filesystem adapter, PKCE/state validation, loopback
+token exchange/redaction/fragmented HTTP, preferences and localization.
+
+The real Mac clipboard test preserves its prior contents in memory and exercises
+two files including a Unicode filename: Copy, Cut, selection ownership, external
+Copy clearing Cut semantics, and external text clearing a remote selection. It
+passes after fixing AppKit UTI identifiers and Unicode filename equivalence.
+The test is ignored in normal CI because it requires an interactive desktop.
+
+Live OAuth accounts and Windows/Linux desktop interactions remain untested.
+The build uses X11 and Wayland clipboard backends, subject to compositor support;
+Linux native drag-out falls back to copying files to the clipboard.
+
+### Native 0.4.0 smoke checks
+
+A separate test bundle used disposable files and isolated configuration, leaving
+the user's running application and settings intact. Native checks confirmed:
+
+- Copy confirmation and completed queue/history; Cmd+Z removed the copied file.
+- F2 inside a ZIP opened Archive tools; renaming an entry changed the archive and
+  listing, and Undo restored the original entry. Filesystem checks confirmed both.
+- German applied to toolbars, sidebar, native menus, preferences and help.
+- Settings still opened after a language change. This caught a native menu receiver
+  bug; labels now update in place because muda registers its handler only once.
+- Column width/reorder controls and toolbar controls displayed. Changing toolbar
+  order applied immediately. The Preferences action footer remained visible with
+  both customization sections expanded.
+- The package retained native close/minimize/full-screen controls.
+
+Native drag-out to another application's drop target is still unverified.

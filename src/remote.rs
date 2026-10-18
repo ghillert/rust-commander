@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     io::Read,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, OnceLock, RwLock},
 };
 
@@ -24,6 +24,9 @@ pub struct Connection {
     pub region: String,
     pub username: String,
     pub key_file: String,
+    pub oauth_client_id: String,
+    pub oauth_tenant: String,
+    pub oauth_port: u16,
 }
 impl Default for Connection {
     fn default() -> Self {
@@ -43,17 +46,24 @@ impl Default for Connection {
             region: "us-east-1".into(),
             username: String::new(),
             key_file: String::new(),
+            oauth_client_id: String::new(),
+            oauth_tenant: "common".into(),
+            oauth_port: 53682,
         }
     }
 }
 
 // Secrets are serialized only for the OS credential store, never into settings.
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Secrets {
     pub password: String,
     pub access_key_id: String,
     pub secret_access_key: String,
     pub access_token: String,
+    pub refresh_token: String,
+    pub oauth_client_secret: String,
+    pub expires_at: u64,
 }
 pub const SERVICES: &[&str] = &[
     "sftp", "ftp", "webdav", "s3", "http", "dropbox", "gdrive", "onedrive", "gcs", "webhdfs",
@@ -62,6 +72,7 @@ pub const SERVICES: &[&str] = &[
 struct Session {
     operator: opendal::blocking::Operator,
     secrets: Secrets,
+    remember: bool,
 }
 static SESSIONS: OnceLock<RwLock<HashMap<String, Arc<Session>>>> = OnceLock::new();
 static PROFILES: OnceLock<RwLock<HashMap<String, Connection>>> = OnceLock::new();
@@ -151,6 +162,8 @@ fn clean_error(error: impl std::fmt::Display, secrets: &Secrets) -> anyhow::Erro
         &secrets.access_key_id,
         &secrets.secret_access_key,
         &secrets.access_token,
+        &secrets.refresh_token,
+        &secrets.oauth_client_secret,
     ] {
         if !secret.is_empty() {
             text = text.replace(secret, "[redacted]");
@@ -189,18 +202,59 @@ pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Res
         .map_err(|_| anyhow::anyhow!("Session lock failed"))?
         .insert(
             connection.id.clone(),
-            Arc::new(Session { operator, secrets }),
+            Arc::new(Session {
+                operator,
+                secrets,
+                remember,
+            }),
         );
     Ok(())
 }
 
 fn session(id: &str) -> Result<Arc<Session>> {
-    if let Some(session) = sessions()
+    // Serialize reconnects to avoid spending a rotating refresh token twice.
+    static RECONNECT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let existing = sessions()
         .read()
         .map_err(|_| anyhow::anyhow!("Session lock failed"))?
         .get(id)
+        .cloned();
+    if let Some(session) = existing
+        && (session.secrets.expires_at == 0
+            || session.secrets.expires_at > crate::oauth::now() + 60)
     {
-        return Ok(session.clone());
+        return Ok(session);
+    }
+    let _reconnect = RECONNECT
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Reconnect lock failed"))?;
+    session_locked(id)
+}
+
+fn session_locked(id: &str) -> Result<Arc<Session>> {
+    let existing = sessions()
+        .read()
+        .map_err(|_| anyhow::anyhow!("Session lock failed"))?
+        .get(id)
+        .cloned();
+    if let Some(session) = existing {
+        let session = session.clone();
+        if session.secrets.expires_at > 0 && session.secrets.expires_at <= crate::oauth::now() + 60
+        {
+            let connection = profiles()
+                .read()
+                .map_err(|_| anyhow::anyhow!("Connection lock failed"))?
+                .get(id)
+                .cloned()
+                .context("Connection profile missing")?;
+            let secrets = crate::oauth::refresh(&connection, &session.secrets)?;
+            let remember = session.remember;
+            // Release the read guard before reconnecting and replacing the session.
+            drop(session);
+            // Refresh outside the session map lock.
+            return refreshed_session(&connection, secrets, remember);
+        }
+        return Ok(session);
     }
     let connection = profiles()
         .read()
@@ -208,16 +262,61 @@ fn session(id: &str) -> Result<Arc<Session>> {
         .get(id)
         .cloned()
         .context("Connection profile is missing. Open Connections to reconnect.")?;
-    let secrets = load_credentials(id).context(
+    let mut secrets = load_credentials(id).context(
         "Reconnect to this service in Connections; credentials are not available for this session",
     )?;
-    connect(&connection, secrets, false)?;
+    if secrets.expires_at > 0 && secrets.expires_at <= crate::oauth::now() + 60 {
+        secrets = crate::oauth::refresh(&connection, &secrets)?;
+    }
+    connect(&connection, secrets, true)?;
     sessions()
         .read()
         .map_err(|_| anyhow::anyhow!("Session lock failed"))?
         .get(id)
         .cloned()
         .context("Connection failed")
+}
+
+fn refreshed_session(
+    connection: &Connection,
+    secrets: Secrets,
+    remember: bool,
+) -> Result<Arc<Session>> {
+    connect(connection, secrets, remember)?;
+    sessions()
+        .read()
+        .map_err(|_| anyhow::anyhow!("Session lock failed"))?
+        .get(&connection.id)
+        .cloned()
+        .context("Cloud reconnection failed")
+}
+
+pub fn rename(id: &str, source: &Path, name: &str) -> Result<()> {
+    rename_with_task(id, source, name, &mut Task::default())
+}
+
+pub fn rename_with_task(id: &str, source: &Path, name: &str, task: &mut Task) -> Result<()> {
+    crate::filesystem::validate_name(name)?;
+    let parent = source.parent().unwrap_or(Path::new(""));
+    let entry = list(id, parent)?
+        .into_iter()
+        .find(|entry| entry.path == source)
+        .context("Remote source no longer exists")?;
+    let location = Location::Remote {
+        connection: id.into(),
+        path: parent.into(),
+    };
+    let target = parent.join(name);
+    if target == source {
+        return Ok(());
+    }
+    ensure_absent(&location, &target)?;
+    let before = snapshot(&location, std::slice::from_ref(&entry), task)?;
+    copy_entry(&location, &entry, &location, &target, task)?;
+    if snapshot(&location, std::slice::from_ref(&entry), task)? != before {
+        bail!("Remote source changed during rename. Both copies were kept.");
+    }
+    delete(id, &[entry], task)
 }
 
 const CREDENTIAL_SERVICE: &str = "rust-commander";
@@ -613,6 +712,221 @@ fn copy_entry(
         }
     }
     Ok(())
+}
+
+fn entry_at(location: &Location, path: &Path) -> Result<Option<Entry>> {
+    match location {
+        Location::Local(_) => {
+            if operations::exists(path) {
+                Ok(Some(crate::filesystem::entry_from_path(path)?))
+            } else {
+                Ok(None)
+            }
+        }
+        Location::Remote { connection, .. } => {
+            let session = session(connection)?;
+            let metadata = match session.operator.stat(&key(path, false)?) {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == opendal::ErrorKind::NotFound => return Ok(None),
+                Err(error) => return Err(clean_error(error, &session.secrets)),
+            };
+            Ok(Some(Entry {
+                path: path.into(),
+                name: path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned(),
+                is_dir: metadata.is_dir(),
+                is_symlink: false,
+                size: metadata.content_length(),
+                modified: metadata.last_modified().map(Into::into),
+            }))
+        }
+        _ => bail!("Extract archives to a local folder first."),
+    }
+}
+
+pub fn conflicts(
+    from: &Location,
+    entries: &[Entry],
+    to: &Location,
+) -> Result<Vec<crate::transfer::Conflict>> {
+    let base = match to {
+        Location::Local(path) | Location::Remote { path, .. } => path,
+        _ => bail!("Archive destinations are read-only."),
+    };
+    let _ = from;
+    let mut result = Vec::new();
+    for entry in entries {
+        let target = base.join(&entry.name);
+        if let Some(existing) = entry_at(to, &target)? {
+            result.push(crate::transfer::Conflict {
+                source: entry.path.clone(),
+                target,
+                source_size: entry.size,
+                target_size: existing.size,
+            });
+        }
+    }
+    Ok(result)
+}
+
+pub fn transfer_resolved(
+    from: &Location,
+    entries: &[Entry],
+    to: &Location,
+    moving: bool,
+    options: crate::transfer::TransferOptions,
+    overrides: &std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
+    task: &mut Task,
+) -> Result<String> {
+    use crate::transfer::ConflictPolicy;
+    if let (Location::Local(_), Location::Local(destination)) = (from, to) {
+        return crate::transfer::transfer_resolved(
+            &entries
+                .iter()
+                .map(|entry| entry.path.clone())
+                .collect::<Vec<_>>(),
+            destination,
+            moving,
+            options,
+            overrides,
+            task,
+        );
+    }
+    if entries.is_empty() {
+        bail!("Select files to transfer.");
+    }
+    let base = match to {
+        Location::Local(path) | Location::Remote { path, .. } => path,
+        _ => bail!("Archive destinations are read-only."),
+    };
+    let mut plans = Vec::new();
+    let mut reserved = std::collections::BTreeSet::new();
+    for entry in entries {
+        let mut target = base.join(&entry.name);
+        let existing = entry_at(to, &target)?;
+        let policy = overrides.get(&target).copied().unwrap_or(options.conflicts);
+        let same_storage = matches!((from, to), (Location::Local(_), Location::Local(_)))
+            || matches!((from,to),(Location::Remote{connection:a,..},Location::Remote{connection:b,..})if a==b);
+        if same_storage
+            && (target == entry.path || (entry.is_dir && target.starts_with(&entry.path)))
+        {
+            bail!("Cannot transfer an item into itself.");
+        }
+        if existing.is_some() || reserved.contains(&target) {
+            match policy {
+                ConflictPolicy::Refuse => bail!("Destination already exists: {}", target.display()),
+                ConflictPolicy::Skip => {
+                    continue;
+                }
+                ConflictPolicy::Rename => {
+                    let original = target.clone();
+                    let mut found = false;
+                    for number in 1..=100_000 {
+                        let stem = original.file_stem().unwrap_or_default().to_string_lossy();
+                        let extension = original
+                            .extension()
+                            .map(|value| format!(".{}", value.to_string_lossy()))
+                            .unwrap_or_default();
+                        let candidate = base.join(format!("{stem} ({number}){extension}"));
+                        if !reserved.contains(&candidate) && entry_at(to, &candidate)?.is_none() {
+                            target = candidate;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        bail!("Could not find an unused destination name.");
+                    }
+                }
+                ConflictPolicy::Replace => {
+                    if reserved.contains(&target) {
+                        bail!("Multiple sources have the same destination.");
+                    }
+                }
+            }
+        }
+        reserved.insert(target.clone());
+        plans.push((
+            entry.clone(),
+            target,
+            if policy == ConflictPolicy::Replace {
+                existing
+            } else {
+                None
+            },
+        ));
+    }
+    let before = snapshot(from, entries, task)?;
+    let mut backups = Vec::new();
+    for (entry, target, existing) in &plans {
+        task.check()?;
+        if let Some(existing) = existing {
+            let backup = base.join(format!(
+                ".rust-commander-replaced-{}-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos(),
+                existing.name
+            ));
+            let stamp = snapshot(to, std::slice::from_ref(existing), task)?;
+            ensure_absent(to, &backup)?;
+            copy_entry(to, existing, to, &backup, task)?;
+            backups.push(backup.clone());
+            if snapshot(to, std::slice::from_ref(existing), task)? != stamp {
+                bail!(
+                    "Destination changed while preparing replacement. Backup retained at {}",
+                    backup.display()
+                );
+            }
+            match to {
+                Location::Local(_) => {
+                    task.capture(target)?;
+                    operations::remove(target)?;
+                }
+                Location::Remote { connection, .. } => {
+                    delete(connection, std::slice::from_ref(existing), task)?
+                }
+                _ => unreachable!(),
+            }
+        }
+        if let Location::Local(_) = to {
+            task.capture(target)?;
+        }
+        if let Err(error) = copy_entry(from, entry, to, target, task) {
+            bail!(
+                "Transfer failed: {error:#}. Original target backups retained at: {:?}",
+                backups
+            );
+        }
+    }
+    if moving {
+        if snapshot(from, entries, task)? != before {
+            bail!("Source changed during transfer. Originals and completed copies were kept.");
+        }
+        for (entry, _, _) in &plans {
+            task.check()?;
+            match from {
+                Location::Local(_) => {
+                    task.capture(&entry.path)?;
+                    operations::remove(&entry.path)?;
+                }
+                Location::Remote { connection, .. } => {
+                    delete(connection, std::slice::from_ref(entry), task)?
+                }
+                _ => bail!("Archive contents are read-only."),
+            }
+        }
+    }
+    Ok(format!(
+        "Transferred {} item(s); skipped {}. Recovery backups: {:?}",
+        plans.len(),
+        entries.len() - plans.len(),
+        backups
+    ))
 }
 
 #[cfg(test)]

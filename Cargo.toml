@@ -1,6 +1,6 @@
 [package]
 name = "rust-commander"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.92"
 description = "A native Rust dual-pane file manager inspired by muCommander"
@@ -24,7 +24,7 @@ opendal = { version = "0.54", features = ["blocking", "services-fs", "services-f
 percent-encoding = "2"
 portable-pty = "0.9"
 regex = "1"
-sevenz-rust = "0.6"
+sevenz-rust = { version = "0.6", features = ["aes256"] }
 sha1 = "0.10"
 xz2 = "0.1"
 open = "5"
@@ -37,7 +37,19 @@ trash = "5"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 url = "2"
 vt100 = "0.15"
-zip = { version = "2.4", default-features = false, features = ["deflate", "bzip2"] }
+zip = { version = "2.4", default-features = false, features = ["deflate", "bzip2", "aes-crypto"] }
+
+clipboard-rs = { version = "0.3.5", features = ["wayland"] }
+raw-window-handle = "0.6"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+rand = "0.8"
+sys-locale = "0.3"
+filetime = "0.2"
+same-file = "1"
+base64 = "0.22"
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+drag = "2.1.1"
 
 [features]
 screenshot = ["eframe/__screenshot"]

@@ -62,7 +62,8 @@ impl Location {
                     prefix: prefix.parent().unwrap_or(Path::new("")).to_owned(),
                 })
             }
-            Self::Archive { file, .. } => file.parent().map(|p| Self::Local(p.to_owned())),
+            Self::Archive { file, .. } => crate::archive_tools::origin(file)
+                .or_else(|| file.parent().map(|p| Self::Local(p.to_owned()))),
             Self::Remote { connection, path } => path.parent().map(|p| Self::Remote {
                 connection: connection.clone(),
                 path: p.to_owned(),
@@ -132,6 +133,7 @@ pub enum Sort {
     Size,
     Modified,
     Extension,
+    Kind,
 }
 
 pub fn list(location: &Location) -> Result<Vec<Entry>> {
@@ -182,6 +184,7 @@ pub fn sort_entries_with_options(
             Sort::Size => a.size.cmp(&b.size),
             Sort::Modified => a.modified.cmp(&b.modified),
             Sort::Extension => a.path.extension().cmp(&b.path.extension()),
+            Sort::Kind => a.kind().cmp(b.kind()),
         }
         .then_with(|| a.name.cmp(&b.name));
         if descending { order.reverse() } else { order }
@@ -291,4 +294,20 @@ pub fn human_size(bytes: u64) -> String {
     } else {
         format!("{n:.1} {}", UNITS[unit])
     }
+}
+
+pub fn entry_from_path(path: &Path) -> Result<Entry> {
+    let metadata = fs::symlink_metadata(path)?;
+    Ok(Entry {
+        path: path.into(),
+        name: path
+            .file_name()
+            .context("Cannot copy a filesystem root")?
+            .to_string_lossy()
+            .into_owned(),
+        is_dir: metadata.is_dir(),
+        is_symlink: metadata.file_type().is_symlink(),
+        size: metadata.len(),
+        modified: metadata.modified().ok(),
+    })
 }

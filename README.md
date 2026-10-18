@@ -12,7 +12,7 @@ The interface uses egui/eframe and runs without a JVM or browser engine.
 Rust Commander is an independent project and is not affiliated with or endorsed
 by the Rust Project or Rust Foundation.
 
-> **Development preview — 0.3.0.** This is an independent implementation with
+> **Development preview — 0.4.0.** This is an independent implementation with
 > full upstream compatibility still in progress. Apple Silicon macOS has been
 > validated; Windows and Linux builds and desktop integration still need testing.
 > See the [parity checklist](parity/PARITY.md) and
@@ -39,7 +39,13 @@ by the Rust Project or Rust Foundation.
 - **Local file operations:** copy, move, rename, create, Trash, and permanent
   deletion, with skip, keep-both, recoverable replacement, and folder merging.
 - **Archive support:** create, browse, and extract ZIP, TAR variants, 7z, and
-  compressed streams; read additional formats through libarchive.
+  compressed streams; edit local ZIPs, create/unlock encrypted ZIP and 7z,
+  and browse nested or remote archives. Read additional formats through libarchive.
+- **Recovery and transfers:** guarded local Undo, persistent operation history,
+  a cancellable queue, and per-file conflict choices.
+- **Desktop integration:** system file clipboard, mounted drives, clickable
+  breadcrumbs, configurable columns/toolbar, and macOS/Windows drag-out.
+- **Languages:** system language, English, German, and Spanish.
 - **File tools:** batch rename with preview, recursive name/content search,
   folder comparison, checksums, properties, permissions, and split/combine.
 - **Built-in viewers:** UTF-8 text editing, images, hex, and PDF page navigation.
@@ -51,10 +57,10 @@ by the Rust Project or Rust Foundation.
   SFTP, FTP, WebDAV, S3, and several cloud services. Validation is limited; see
   [Remote connections](#remote-connections).
 
-See [file operations and format support](docs/FILE_OPERATIONS.md) for supported
-formats, recovery behavior, and current limits. Local pane and external-file
-drop handling is implemented and tested with egui events; native desktop
-drag-and-drop integration remains unverified.
+See the [twelve-feature guide](docs/FEATURES_0.4.md) for usage and platform limits,
+and [file operations and format support](docs/FILE_OPERATIONS.md) for recovery
+and archive details. Native drag-out on Linux remains open; Windows/Linux
+desktop interactions and live cloud services still need validation.
 
 ## Getting started
 
@@ -93,7 +99,7 @@ Install the native dependencies:
 sudo apt-get update
 sudo apt-get install -y \
   build-essential pkg-config libarchive-dev libdbus-1-dev \
-  libx11-dev libxi-dev libxrandr-dev libxcursor-dev libxinerama-dev \
+  libx11-dev libxfixes-dev libxi-dev libxrandr-dev libxcursor-dev libxinerama-dev \
   libgl1-mesa-dev libxkbcommon-dev libwayland-dev
 ```
 
@@ -171,8 +177,10 @@ Pass them after `--` when launching through Cargo. For example, on macOS/Linux:
 Double-click folders and supported archives to browse them. Double-click a file
 to open its built-in viewer, or choose **Open externally** for other formats.
 Use **F5** to copy marked files to the other pane and **F6** to move them.
-Archive contents are read-only; **F5** extracts selected entries into a new
-folder. Additional tools are available in the **File**, **Operations**,
+**F5** extracts archive entries into a new folder. **Operations → Archive tools**
+edits local ZIPs or creates/unlocks encrypted ZIP and 7z archives. Nested and
+remote archives open read-only. **Mod+Z** undoes eligible local operations and
+**Mod+J** opens the queue and history. Additional tools are available in the **File**, **Operations**,
 **Navigate**, and **Selection** menus.
 
 ## Desktop appearance
@@ -220,7 +228,9 @@ navigation shortcuts are fixed.
 | Cmd + Shift + . (macOS) / Ctrl + H (Windows/Linux) | Show hidden files |
 | Mod + , | Settings |
 | Cmd + Delete (macOS) | Move to Trash |
-| Mod + C / X / V | In-app file copy / cut / paste |
+| Mod + C / X / V | System file copy / cut / paste |
+| Mod + Z / J | Undo / queue and history |
+| Alt + drag | Native drag-out on macOS/Windows |
 | Mod + S | Save text |
 | Alt + Left / Right | Back / forward |
 | Escape | Clear marks/filter or close dialog |
@@ -229,8 +239,9 @@ navigation shortcuts are fixed.
 
 Open **File → Connections** to configure SFTP, FTP, WebDAV, S3, HTTP, Dropbox,
 Google Drive, OneDrive, GCS, or WebHDFS. Secrets can be kept in memory or stored
-in the operating system's credential store. Cloud connections currently use
-supplied tokens; browser OAuth login and refresh are not implemented.
+in the operating system's credential store. Google Drive, Dropbox and OneDrive support browser OAuth
+login with PKCE and automatic token refresh, using your own registered client.
+See [OAuth setup](docs/OAUTH.md); live account validation is still pending.
 
 Remote testing covers a filesystem adapter and a loopback WebDAV server. Live
 remote services have not been validated. Read the
@@ -241,7 +252,10 @@ service-specific behavior, and transfer limits.
 
 Tabs, bookmarks, connection profiles, and preferences are saved in
 `settings.json` in the operating system's application configuration folder.
-Invalid settings are reported and preserved.
+Invalid settings are reported and preserved. Undo snapshots and operation
+records are stored in a sibling `history/` directory; full recovery copies can
+grow substantially and have no automatic expiration. See the
+[recovery storage guide](docs/FEATURES_0.4.md#recovery-storage).
 
 Use `RUST_COMMANDER_CONFIG_DIR` for an isolated configuration. On macOS/Linux:
 
@@ -298,11 +312,11 @@ Outstanding work includes:
 - Validation of Windows, Linux, live remote services, and native drag-and-drop.
 - SMB/NFS/ADB and virtualization providers, Bonjour discovery, and Windows
   registry browsing. Mounted SMB/NFS volumes are already usable as local folders.
-- Browser OAuth login/refresh, remote rename, and remote archive workflows.
-- Archive editing, encryption, and broader format coverage.
-- Native OS file clipboard, drag-out, undo/redo, and richer conflict prompts.
-- Localization, upstream XML settings migration, configurable columns/toolbar,
-  and broader text-encoding, viewer, and terminal compatibility.
+- Live validation of browser OAuth, keychain prompts, and remote rename/conflicts.
+- Editing archive formats beyond ZIP, remote archive editing, and broader fixtures.
+- Native Linux drag-out, Redo, and broader Undo coverage.
+- Additional languages, remaining detailed diagnostics, upstream XML settings
+  migration, and broader text-encoding, viewer, and terminal compatibility.
 
 To refresh the upstream inventory while preserving recorded statuses:
 

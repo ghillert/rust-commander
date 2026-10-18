@@ -83,7 +83,11 @@ fn visit(file: &Path, mut callback: impl FnMut(Member, &mut dyn Read) -> Result<
         Format::Zip => {
             let mut archive = ZipArchive::new(File::open(file)?)?;
             for i in 0..archive.len() {
-                let mut entry = archive.by_index(i)?;
+                let password = password(file);
+                let mut entry = match password.as_deref() {
+                    Some(password) => archive.by_index_decrypt(i, password.as_bytes())?,
+                    None => archive.by_index(i)?,
+                };
                 let path = safe_relative(Path::new(entry.name()))?;
                 let directory = entry.is_dir();
                 let link = entry.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000);
@@ -114,7 +118,10 @@ fn visit(file: &Path, mut callback: impl FnMut(Member, &mut dyn Read) -> Result<
             }
         }
         Format::SevenZ => {
-            let mut reader = sevenz_rust::SevenZReader::open(file, sevenz_rust::Password::empty())?;
+            let mut reader = sevenz_rust::SevenZReader::open(
+                file,
+                sevenz_rust::Password::from(password(file).as_deref().unwrap_or("")),
+            )?;
             reader.for_each_entries(|entry, input| {
                 let result = (|| -> Result<()> {
                     let path = safe_relative(Path::new(&entry.name))?;
@@ -369,7 +376,12 @@ fn walk(
     Ok(())
 }
 
-fn pack_zip<W: Write + Seek>(writer: W, sources: &[PathBuf], task: &mut Task) -> Result<W> {
+fn pack_zip<W: Write + Seek>(
+    writer: W,
+    sources: &[PathBuf],
+    password: Option<&str>,
+    task: &mut Task,
+) -> Result<W> {
     let mut archive = ZipWriter::new(writer);
     for source in sources {
         let name = Path::new(
@@ -385,6 +397,11 @@ fn pack_zip<W: Write + Seek>(writer: W, sources: &[PathBuf], task: &mut Task) ->
             let options = SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Deflated)
                 .large_file(true);
+            let options = if let Some(password) = password {
+                options.with_aes_encryption(zip::AesMode::Aes256, password)
+            } else {
+                options
+            };
             #[cfg(unix)]
             let options = {
                 use std::os::unix::fs::PermissionsExt;
@@ -447,7 +464,12 @@ fn pack_tar<W: Write>(writer: W, sources: &[PathBuf], task: &mut Task) -> Result
     Ok(archive.into_inner()?)
 }
 
-pub fn pack(sources: &[PathBuf], destination: &Path, task: &mut Task) -> Result<()> {
+fn pack_impl(
+    sources: &[PathBuf],
+    destination: &Path,
+    password: Option<&str>,
+    task: &mut Task,
+) -> Result<()> {
     if exists(destination) {
         bail!("Archive already exists. Choose a different name.");
     }
@@ -478,7 +500,7 @@ pub fn pack(sources: &[PathBuf], destination: &Path, task: &mut Task) -> Result<
     match kind {
         Format::Extended => unreachable!(),
         Format::Zip => {
-            pack_zip(&mut output, sources, task)?;
+            pack_zip(&mut output, sources, password, task)?;
         }
         Format::Tar => {
             pack_tar(&mut output, sources, task)?;
@@ -504,6 +526,13 @@ pub fn pack(sources: &[PathBuf], destination: &Path, task: &mut Task) -> Result<
         }
         Format::SevenZ => {
             let mut archive = sevenz_rust::SevenZWriter::new(&mut output)?;
+            if let Some(password) = password {
+                archive.set_content_methods(vec![
+                    sevenz_rust::AesEncoderOptions::new(sevenz_rust::Password::from(password))
+                        .into(),
+                    sevenz_rust::SevenZMethod::LZMA2.into(),
+                ]);
+            }
             for source in sources {
                 let name = Path::new(source.file_name().context("Missing filename")?);
                 walk(source, name, task, &mut |source, name, directory, task| {
@@ -662,4 +691,82 @@ pub fn read_text(file: &Path, path: &Path, limit: u64) -> Result<String> {
         bail!("This archive entry is binary.");
     }
     String::from_utf8(bytes).context("This archive entry is not UTF-8")
+}
+
+static PASSWORDS: std::sync::OnceLock<
+    std::sync::RwLock<std::collections::BTreeMap<PathBuf, String>>,
+> = std::sync::OnceLock::new();
+fn password(path: &Path) -> Option<String> {
+    PASSWORDS
+        .get_or_init(Default::default)
+        .read()
+        .ok()?
+        .get(path)
+        .cloned()
+}
+pub fn unlock(path: &Path, secret: &str) -> Result<()> {
+    let passwords = PASSWORDS.get_or_init(Default::default);
+    let previous = passwords
+        .write()
+        .map_err(|_| anyhow::anyhow!("Archive password lock failed"))?
+        .insert(path.into(), secret.into());
+    let mut count = 0usize;
+    let mut bytes = 0u64;
+    let result = visit(path, |member, input| {
+        count += 1;
+        bytes = bytes.saturating_add(member.size);
+        if count > 100_000 || bytes > 10 * 1024 * 1024 * 1024 {
+            bail!("Archive exceeds the validation limit.");
+        }
+        if member.regular {
+            let copied = std::io::copy(
+                &mut input.take(member.size.saturating_add(1)),
+                &mut std::io::sink(),
+            )?;
+            if copied != member.size {
+                bail!("Archive entry has an invalid size.");
+            }
+        }
+        Ok(())
+    });
+    if let Err(error) = result {
+        let mut passwords = passwords
+            .write()
+            .map_err(|_| anyhow::anyhow!("Archive password lock failed"))?;
+        if let Some(previous) = previous {
+            passwords.insert(path.into(), previous);
+        } else {
+            passwords.remove(path);
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+pub fn pack(sources: &[PathBuf], destination: &Path, task: &mut Task) -> Result<()> {
+    pack_impl(sources, destination, None, task)
+}
+pub fn pack_with_password(
+    sources: &[PathBuf],
+    destination: &Path,
+    secret: &str,
+    task: &mut Task,
+) -> Result<()> {
+    if secret.is_empty() {
+        bail!("Enter an archive password.");
+    }
+    if !matches!(format(destination), Some(Format::Zip | Format::SevenZ)) {
+        bail!("Encryption is supported for ZIP and 7z archives.");
+    }
+    pack_impl(sources, destination, Some(secret), task)
+}
+pub fn extract_with_password(
+    file: &Path,
+    selected: &[PathBuf],
+    prefix: &Path,
+    destination: &Path,
+    secret: &str,
+    task: &mut Task,
+) -> Result<()> {
+    unlock(file, secret)?;
+    extract(file, selected, prefix, destination, task)
 }

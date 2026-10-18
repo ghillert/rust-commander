@@ -1,5 +1,5 @@
 use crate::{
-    filesystem::{self, Entry, Location, Sort},
+    filesystem::{self, Entry, Location},
     model::{Pane, Tab},
     operations::{self, Operation, Progress, Task},
     settings::{self, Bookmark, Settings},
@@ -14,6 +14,10 @@ use std::{
     },
     time::Duration,
 };
+
+fn tr(text: &str) -> std::borrow::Cow<'_, str> {
+    crate::i18n::text(text)
+}
 
 fn focus_text(response: &egui::Response, text: &str) {
     response.request_focus();
@@ -75,6 +79,10 @@ fn file_icon(
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Action {
+    Undo,
+    Queue,
+    ArchiveTools,
+    NativeDrag,
     Quit,
     ToggleHidden,
     Preferences,
@@ -132,6 +140,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
             "File",
             vec![
                 ("Connections…", Action::Connections),
+                ("Archive tools…", Action::ArchiveTools),
                 ("New file", Action::Mkfile),
                 ("Batch rename…", Action::BatchRename),
                 ("Properties", Action::Properties),
@@ -149,6 +158,8 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
         (
             "Operations",
             vec![
+                ("Undo last operation", Action::Undo),
+                ("Transfer queue and history…", Action::Queue),
                 ("Copy  F5", Action::Copy),
                 ("Move  F6", Action::Move),
                 ("Create archive", Action::Pack),
@@ -191,6 +202,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Copy files", Action::CopyClipboard),
                 ("Cut files", Action::CutClipboard),
                 ("Paste files", Action::PasteClipboard),
+                ("Native drag-out", Action::NativeDrag),
             ],
         ),
     ])
@@ -204,6 +216,10 @@ struct Prompt {
     focus: bool,
     error: Option<String>,
     transfer_options: crate::transfer::TransferOptions,
+    overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
+    conflicts: Vec<crate::transfer::Conflict>,
+    conflict_key: String,
+    pending_conflicts: Option<Receiver<Result<Vec<crate::transfer::Conflict>, String>>>,
 }
 enum PromptKind {
     Mkfile(PathBuf),
@@ -236,6 +252,10 @@ enum PromptKind {
         sources: Vec<PathBuf>,
         moving: bool,
         base: PathBuf,
+    },
+    RemoteRename {
+        connection: String,
+        source: PathBuf,
     },
     Rename(PathBuf),
     Mkdir(PathBuf),
@@ -281,9 +301,11 @@ impl Editor {
 
 enum JobEvent {
     Progress(Progress),
-    Done(Result<String, String>),
+    Done(Result<crate::history::Record, String>),
 }
 struct Job {
+    label: String,
+    undo_of: Option<String>,
     receiver: Receiver<JobEvent>,
     cancel: Arc<AtomicBool>,
     progress: Progress,
@@ -303,6 +325,16 @@ struct ConnectionForm {
 }
 
 pub struct Commander {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    native_window: Option<crate::native_files::Window>,
+    native_files: crate::native_files::NativeFiles,
+    queue: std::collections::VecDeque<Operation>,
+    history: Vec<crate::history::Record>,
+    show_history: bool,
+    archive_form: Option<crate::feature_ui::ArchiveForm>,
+    pending_archive: Option<Receiver<Result<Location, String>>>,
+    pending_archive_target: Option<(usize, u64)>,
+    oauth_cancel: Option<Arc<AtomicBool>>,
     #[cfg(target_os = "macos")]
     native_menu: Option<crate::native_menu::NativeMenu>,
     pending_pdf: Option<Receiver<PdfResult>>,
@@ -336,8 +368,16 @@ pub struct Commander {
 impl Commander {
     pub fn new(cc: &eframe::CreationContext<'_>, paths: &[PathBuf]) -> Self {
         let app = Self::with_settings(&cc.egui_ctx, paths, settings::load());
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         let mut app = app;
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            use raw_window_handle::HasWindowHandle;
+            app.native_window = cc
+                .window_handle()
+                .ok()
+                .map(|handle| crate::native_files::Window(handle.as_raw()));
+        }
         #[cfg(target_os = "macos")]
         match crate::native_menu::NativeMenu::new(&cc.egui_ctx) {
             Ok(menu) => app.native_menu = Some(menu),
@@ -354,6 +394,7 @@ impl Commander {
         let settings_valid = loaded.is_ok();
         let error = loaded.as_ref().err().map(|e| format!("{e:#}"));
         let mut settings = loaded.unwrap_or_default();
+        settings.preferences.upgrade();
         crate::remote::register_profiles(&settings.connections);
         for (side, path) in paths.iter().enumerate().take(2) {
             let path = filesystem::resolve_path(
@@ -385,7 +426,18 @@ impl Commander {
             settings.preferences.color_scheme = crate::appearance::ColorScheme::Dark;
         }
         crate::appearance::install_fonts(ctx, settings.preferences.desktop_style);
+        crate::i18n::set(settings.preferences.language);
         let app = Self {
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            native_window: None,
+            native_files: Default::default(),
+            queue: Default::default(),
+            history: crate::history::load().unwrap_or_default(),
+            show_history: false,
+            archive_form: None,
+            pending_archive: None,
+            pending_archive_target: None,
+            oauth_cancel: None,
             #[cfg(target_os = "macos")]
             native_menu: None,
             pending_pdf: None,
@@ -449,9 +501,20 @@ impl Commander {
 
     fn start_job(&mut self, operation: Operation, ctx: &egui::Context) {
         if self.job.is_some() {
-            self.fail("Wait for the current operation to finish.");
+            if self.queue.len() >= 1000 {
+                self.fail("The transfer queue is full. Finish or cancel queued operations.");
+                return;
+            }
+            self.queue.push_back(operation);
+            self.status = format!("Queued {} operation(s).", self.queue.len());
             return;
         }
+        let label = operation.label().to_owned();
+        let undo_of = if let Operation::Undo(record) = &operation {
+            Some(record.id.clone())
+        } else {
+            None
+        };
         let (sender, receiver) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = cancel.clone();
@@ -465,11 +528,14 @@ impl Commander {
                 let _ = progress_sender.send(JobEvent::Progress(p));
                 progress_ctx.request_repaint();
             });
-            let result = operations::run(operation, &mut task).map_err(|e| format!("{e:#}"));
+            let result =
+                crate::history::execute(operation, &mut task).map_err(|e| format!("{e:#}"));
             let _ = sender.send(JobEvent::Done(result));
             worker_ctx.request_repaint();
         });
         self.job = Some(Job {
+            label,
+            undo_of,
             receiver,
             cancel,
             progress: Progress::default(),
@@ -479,7 +545,8 @@ impl Commander {
     fn poll(&mut self, ctx: &egui::Context) {
         #[cfg(target_os = "macos")]
         if let Some(menu) = &self.native_menu {
-            let blocked = self.job.is_some()
+            let blocked = self.archive_form.is_some()
+                || self.show_history
                 || self.prompt.is_some()
                 || self.editor.is_some()
                 || self.help
@@ -491,6 +558,21 @@ impl Commander {
                 || (self.terminal_visible && self.terminal.as_ref().is_some_and(|t| t.focused));
             for action in menu.poll(blocked) {
                 self.act(action, ctx);
+            }
+        }
+        if let Some(result) = crate::background::poll(&mut self.pending_archive) {
+            match result {
+                Ok(location) => {
+                    if let Some((side, id)) = self.pending_archive_target.take() {
+                        if let Some(tab) = self.panes[side].tabs.iter_mut().find(|tab| tab.id == id)
+                        {
+                            tab.navigate(location, ctx);
+                        }
+                    } else {
+                        self.tab_mut().navigate(location, ctx);
+                    }
+                }
+                Err(error) => self.fail(error),
             }
         }
         if let Some(terminal) = &mut self.terminal {
@@ -528,6 +610,8 @@ impl Commander {
                 Err(error) => {
                     if let Some(form) = &mut self.connection_form {
                         form.error = Some(error);
+                    } else {
+                        self.fail(error);
                     }
                 }
             }
@@ -559,22 +643,42 @@ impl Commander {
             }
         }
         if let Some(result) = completed {
+            let undo_of = self.job.as_ref().and_then(|job| job.undo_of.clone());
             self.job = None;
             match result {
-                Ok(message) => {
-                    if message.starts_with("Checksums")
-                        || message.starts_with("Properties")
-                        || message.starts_with("Folder comparison")
-                        || message.contains("Replaced originals are kept")
+                Ok(record) => {
+                    if record.success
+                        && let Some(id) = undo_of
+                        && let Some(original) =
+                            self.history.iter_mut().find(|record| record.id == id)
                     {
-                        self.message = Some(message.clone());
+                        original.undone = true;
                     }
-                    self.status = message;
-                    self.status_error = false;
+                    self.status = record.result.clone();
+                    self.status_error = !record.success;
+                    if record.result.contains("Replaced originals are kept")
+                        || record.result.starts_with("Checksums")
+                        || record.result.starts_with("Properties")
+                        || record.result.starts_with("Folder comparison")
+                    {
+                        self.message = Some(record.result.clone());
+                    }
+                    self.history.push(record);
+                    if let Err(error) = crate::history::save(&self.history) {
+                        self.fail(format!(
+                            "Operation finished, but history could not be saved: {error:#}"
+                        ));
+                    }
                 }
                 Err(error) => self.fail(error),
             }
             self.refresh(ctx);
+        }
+        if self.job.is_none()
+            && !self.exiting
+            && let Some(operation) = self.queue.pop_front()
+        {
+            self.start_job(operation, ctx);
         }
         if let Some(result) = crate::background::poll(&mut self.pending_view) {
             match result {
@@ -586,6 +690,7 @@ impl Commander {
             || self.pending_view.is_some()
             || self.pending_pdf.is_some()
             || self.pending_connection.is_some()
+            || self.pending_archive.is_some()
             || self.panes.iter().any(|p| p.tabs.iter().any(|t| t.loading))
         {
             ctx.request_repaint_after(Duration::from_millis(100));
@@ -596,6 +701,28 @@ impl Commander {
     }
 
     fn open_entry(&mut self, entry: Entry, ctx: &egui::Context) {
+        if !entry.is_dir
+            && self.tab().location.local().is_none()
+            && crate::archive::format(&entry.path).is_some()
+        {
+            let location = self.tab().location.clone();
+            let path = entry.path.clone();
+            let (sender, receiver) = mpsc::channel();
+            self.pending_archive = Some(receiver);
+            self.pending_archive_target = Some((self.active, self.tab().id));
+            let ctx = ctx.clone();
+            std::thread::spawn(move || {
+                let result = crate::archive_tools::materialize(&location, &path)
+                    .map(|file| Location::Archive {
+                        file,
+                        prefix: PathBuf::new(),
+                    })
+                    .map_err(|error| format!("{error:#}"));
+                let _ = sender.send(result);
+                ctx.request_repaint();
+            });
+            return;
+        }
         if let Some(location) = self.tab().location.enter(&entry) {
             self.tab_mut().navigate(location, ctx);
         } else {
@@ -680,7 +807,82 @@ impl Commander {
             .map(Path::to_owned);
         let local = location.local().map(Path::to_owned);
         let mut prompt = None;
+        if let Location::Archive { file, .. } = &location
+            && crate::archive::format(file) == Some(crate::archive::Format::Zip)
+            && crate::archive_tools::origin(file).is_none()
+            && matches!(action, Action::Rename | Action::Trash)
+        {
+            let other = self.panes[1 - self.active].tab();
+            let mut form = crate::feature_ui::ArchiveForm::new(
+                &location,
+                &chosen,
+                &other.location,
+                &other.chosen(self.show_hidden),
+            );
+            form.edit_mode = if matches!(action, Action::Rename) {
+                2
+            } else {
+                1
+            };
+            self.archive_form = Some(form);
+            return;
+        }
+        if matches!(action, Action::Copy) && location.local().is_some() {
+            let other = self.panes[1 - self.active].tab();
+            if let Location::Archive { file, .. } = &other.location
+                && crate::archive::format(file) == Some(crate::archive::Format::Zip)
+                && crate::archive_tools::origin(file).is_none()
+            {
+                self.archive_form = Some(crate::feature_ui::ArchiveForm::new(
+                    &other.location,
+                    &other.chosen(self.show_hidden),
+                    &location,
+                    &chosen,
+                ));
+                return;
+            }
+        }
         match action {
+            Action::Undo => {
+                if self.job.is_some() || !self.queue.is_empty() {
+                    self.fail("Finish or cancel queued operations before undoing.");
+                    return;
+                }
+                if let Some(record) = self
+                    .history
+                    .iter()
+                    .rev()
+                    .find(|record| !record.undone && !record.changes.is_empty())
+                    .cloned()
+                {
+                    self.start_job(Operation::Undo(Box::new(record)), ctx);
+                } else {
+                    self.fail("No operation is available to undo.");
+                }
+                return;
+            }
+            Action::Queue => {
+                self.show_history = true;
+                return;
+            }
+            Action::ArchiveTools => {
+                let other = self.panes[1 - self.active].tab();
+                self.archive_form = Some(crate::feature_ui::ArchiveForm::new(
+                    &location,
+                    &chosen,
+                    &other.location,
+                    &other.chosen(self.show_hidden),
+                ));
+                return;
+            }
+            Action::NativeDrag => {
+                if location.local().is_some() {
+                    self.native_drag(sources);
+                } else {
+                    self.fail("Native drag-out requires local files.");
+                }
+                return;
+            }
             Action::Quit => {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 return;
@@ -778,7 +980,20 @@ impl Commander {
                 return;
             }
             Action::PasteClipboard => {
-                if let Some((from, entries, moving)) = self.clipboard.clone() {
+                let native = self.native_files.paste().ok().and_then(|(paths, moving)| {
+                    let entries = paths
+                        .iter()
+                        .map(|path| filesystem::entry_from_path(path))
+                        .collect::<anyhow::Result<Vec<_>>>()
+                        .ok()?;
+                    let base = paths.first()?.parent()?.to_path_buf();
+                    Some((Location::Local(base), entries, moving))
+                });
+                if let Some((from, entries, moving)) = native.or_else(|| {
+                    self.clipboard.clone().filter(|(location, _, _)| {
+                        location.local().is_none() && self.native_files.owns_selection()
+                    })
+                }) {
                     if let (Location::Local(base), Location::Local(destination)) =
                         (&from, &location)
                     {
@@ -797,6 +1012,10 @@ impl Commander {
                             focus: true,
                             error: None,
                             transfer_options: Default::default(),
+                            overrides: Default::default(),
+                            conflicts: Vec::new(),
+                            conflict_key: String::new(),
+                            pending_conflicts: None,
                         });
                     } else {
                         self.start_job(
@@ -810,7 +1029,7 @@ impl Commander {
                         );
                     }
                 } else {
-                    self.fail("Copy or cut files in this app first.");
+                    self.fail("No files are available on the system clipboard.");
                 }
                 return;
             }
@@ -946,6 +1165,20 @@ impl Commander {
                 return;
             }
             Action::CopyClipboard | Action::CutClipboard => {
+                if location.local().is_none()
+                    && let Err(error) = self.native_files.mark_remote()
+                {
+                    self.fail(error);
+                    return;
+                }
+                if location.local().is_some()
+                    && let Err(error) = self
+                        .native_files
+                        .copy(&sources, matches!(action, Action::CutClipboard))
+                {
+                    self.fail(error);
+                    return;
+                }
                 self.clipboard = Some((location, chosen, matches!(action, Action::CutClipboard)));
                 self.status = "File selection copied. Paste into the destination pane.".into();
                 return;
@@ -1042,7 +1275,7 @@ impl Commander {
                     prompt = Some((
                         "Transfer files",
                         format!(
-                            "Transfer {} item(s) to the destination? Existing targets are refused.",
+                            "Transfer {} item(s). Choose how to handle existing targets.",
                             chosen.len()
                         ),
                         destination.label(),
@@ -1076,6 +1309,26 @@ impl Commander {
                 }
             }
             Action::Rename => {
+                if let Location::Remote { connection, .. } = &location {
+                    self.prompt = Some(Prompt {
+                        title: "Rename remote item".into(),
+                        description: "Choose a new name. Existing targets are refused.".into(),
+                        value: chosen[0].name.clone(),
+                        kind: PromptKind::RemoteRename {
+                            connection: connection.clone(),
+                            source: chosen[0].path.clone(),
+                        },
+                        focus: true,
+                        error: None,
+                        transfer_options: Default::default(),
+                        overrides: Default::default(),
+                        conflicts: Vec::new(),
+                        conflict_key: String::new(),
+                        pending_conflicts: None,
+                    });
+                    return;
+                }
+
                 if local.is_some() && sources.len() == 1 {
                     prompt = Some((
                         "Rename",
@@ -1175,10 +1428,6 @@ impl Commander {
                 return;
             }
         }
-        if self.job.is_some() && !matches!(action, Action::Bookmark) {
-            self.fail("Wait for the current operation to finish.");
-            return;
-        }
         if let Some((title, description, value, kind)) = prompt {
             self.prompt = Some(Prompt {
                 title: title.into(),
@@ -1188,6 +1437,10 @@ impl Commander {
                 focus: true,
                 error: None,
                 transfer_options: Default::default(),
+                overrides: Default::default(),
+                conflicts: Vec::new(),
+                conflict_key: String::new(),
+                pending_conflicts: None,
             });
         } else {
             self.fail("This operation requires local folders. Archive contents are read-only.");
@@ -1201,6 +1454,8 @@ impl Commander {
             || self.message.is_some()
             || self.confirm_exit
             || self.connection_form.is_some()
+            || self.archive_form.is_some()
+            || self.show_history
             || self.tools.active()
             || self.preferences_form.is_some()
             || (self.terminal_visible && self.terminal.as_ref().is_some_and(|t| t.focused))
@@ -1300,6 +1555,8 @@ impl Commander {
                 Action::CopyClipboard,
                 Action::CutClipboard,
                 Action::PasteClipboard,
+                Action::Undo,
+                Action::Queue,
             ] {
                 if let Some(binding) = self.preferences.shortcuts.get(&format!("{candidate:?}"))
                     && let Ok(shortcut) = crate::preferences::shortcut(binding)
@@ -1366,20 +1623,20 @@ impl Commander {
                 if !native {
                     egui::MenuBar::new().ui(ui, |ui| {
                         for (title, entries) in action_menus() {
-                            ui.menu_button(title, |ui| {
+                            ui.menu_button(tr(title), |ui| {
                                 for (label, a) in entries {
-                                    if ui.button(label).clicked() {
+                                    if ui.button(tr(label)).clicked() {
                                         action = Some(a);
                                         ui.close();
                                     }
                                 }
-                                if title == "File" && ui.button("Quit").clicked() {
+                                if title == "File" && ui.button(tr("Quit")).clicked() {
                                     action = Some(Action::Quit);
                                     ui.close();
                                 }
                             });
                         }
-                        if ui.button("Help").clicked() {
+                        if ui.button(tr("Help")).clicked() {
                             action = Some(Action::Help);
                         }
                     });
@@ -1392,19 +1649,17 @@ impl Commander {
                     ui.label(RichText::new(crate::APP_NAME).strong());
                     ui.separator();
                     if self.preferences.toolbar {
-                        for (label, a) in [
-                            ("New folder", Action::Mkdir),
-                            ("Copy", Action::Copy),
-                            ("Move", Action::Move),
-                        ] {
+                        for item in &self.preferences.toolbar_actions {
+                            let label = tr(item.label());
+                            let a = item.action();
                             if ui
-                                .add_enabled(self.job.is_none(), egui::Button::new(label))
+                                .add_enabled(!self.exiting, egui::Button::new(tr(label.as_ref())))
                                 .clicked()
                             {
                                 action = Some(a);
                             }
                         }
-                        ui.menu_button("More", |ui| {
+                        ui.menu_button(tr("More"), |ui| {
                             for (label, a) in [
                                 ("Rename…", Action::Rename),
                                 ("Create archive…", Action::Pack),
@@ -1412,8 +1667,11 @@ impl Commander {
                                 ("Checksums", Action::Checksum),
                                 ("Batch rename…", Action::BatchRename),
                                 ("Open terminal", Action::Terminal),
+                                ("Archive tools…", Action::ArchiveTools),
+                                ("Undo", Action::Undo),
+                                ("Transfer queue and history…", Action::Queue),
                             ] {
-                                if ui.button(label).clicked() {
+                                if ui.button(tr(label)).clicked() {
                                     action = Some(a);
                                     ui.close();
                                 }
@@ -1421,12 +1679,12 @@ impl Commander {
                         });
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Search").clicked() {
+                        if ui.button(tr("Search")).clicked() {
                             action = Some(Action::Search);
                         }
-                        ui.menu_button("View", |ui| {
+                        ui.menu_button(tr("View"), |ui| {
                             let mut hidden = self.show_hidden;
-                            if ui.checkbox(&mut hidden, "Show hidden files").changed() {
+                            if ui.checkbox(&mut hidden, tr("Show hidden files")).changed() {
                                 action = Some(Action::ToggleHidden);
                             }
                             ui.separator();
@@ -1439,20 +1697,20 @@ impl Commander {
                                     .radio_value(
                                         &mut self.preferences.color_scheme,
                                         scheme,
-                                        scheme.label(),
+                                        tr(scheme.label()),
                                     )
                                     .changed();
                             }
                             ui.separator();
-                            if ui.button("Settings…").clicked() {
+                            if ui.button(tr("Settings…")).clicked() {
                                 action = Some(Action::Preferences);
                                 ui.close();
                             }
                         });
-                        if ui.button("Refresh").clicked() {
+                        if ui.button(tr("Refresh")).clicked() {
                             action = Some(Action::Refresh);
                         }
-                        if ui.button("Bookmark").clicked() {
+                        if ui.button(tr("Bookmark")).clicked() {
                             action = Some(Action::Bookmark);
                         }
                     });
@@ -1485,7 +1743,7 @@ impl Commander {
             )
             .show(ctx, |ui| {
                 ui.add_space(12.0);
-                ui.label(RichText::new("Favorites").small().strong().weak());
+                ui.label(RichText::new(tr("Favorites")).small().strong().weak());
                 let home = filesystem::home();
                 use crate::appearance::SidebarIcon;
                 for (label, path, icon) in [
@@ -1502,7 +1760,7 @@ impl Commander {
                     if path.is_dir()
                         && crate::appearance::sidebar_button(
                             ui,
-                            label,
+                            tr(label).as_ref(),
                             self.tab().location == Location::Local(path.clone()),
                             icon,
                             &palette,
@@ -1512,27 +1770,17 @@ impl Commander {
                         location = Some(Location::Local(path));
                     }
                 }
-                #[cfg(target_os = "windows")]
-                for drive in b'A'..=b'Z' {
-                    let path = PathBuf::from(format!("{}:\\", drive as char));
-                    if path.is_dir() && ui.button(path.display().to_string()).clicked() {
-                        location = Some(Location::Local(path));
-                    }
-                }
-                #[cfg(target_os = "macos")]
-                if let Ok(volumes) = std::fs::read_dir("/Volumes") {
-                    ui.collapsing("Volumes", |ui| {
-                        for volume in volumes.flatten() {
-                            if ui.button(volume.file_name().to_string_lossy()).clicked() {
-                                location = Some(Location::Local(volume.path()));
-                            }
+                ui.collapsing(tr("Mounted drives"), |ui| {
+                    for (label, path) in crate::native_files::mounted_drives() {
+                        if ui.button(label).clicked() {
+                            location = Some(Location::Local(path));
                         }
-                    });
-                }
+                    }
+                });
                 ui.add_space(18.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Bookmarks").small().strong().weak());
-                    if ui.small_button("+").clicked() {
+                    ui.label(RichText::new(tr("Bookmarks")).small().strong().weak());
+                    if ui.small_button(tr("+")).clicked() {
                         add_bookmark = true;
                     }
                 });
@@ -1552,8 +1800,8 @@ impl Commander {
                             location = Some(bookmark.location.clone());
                         }
                         if ui
-                            .small_button("×")
-                            .on_hover_text("Remove bookmark")
+                            .small_button(tr("×"))
+                            .on_hover_text(tr("Remove bookmark"))
                             .clicked()
                         {
                             remove = Some(i);
@@ -1574,7 +1822,7 @@ impl Commander {
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.add_space(12.0);
                     ui.label(
-                        RichText::new("Tab switches panes\nSpace marks files\nF1 opens help")
+                        RichText::new(tr("Tab switches panes\nSpace marks files\nF1 opens help"))
                             .small()
                             .weak(),
                     );
@@ -1603,7 +1851,7 @@ impl Commander {
                         job.progress.files,
                         filesystem::human_size(job.progress.bytes)
                     ));
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(tr("Cancel")).clicked() {
                         job.cancel.store(true, Ordering::Relaxed);
                     }
                     ui.add(egui::Label::new(&job.progress.current).truncate());
@@ -1611,7 +1859,7 @@ impl Commander {
             } else if self.pending_view.is_some() {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label("Opening file…");
+                    ui.label(tr("Opening file…"));
                 });
             } else {
                 let color = if self.status_error {
@@ -1620,9 +1868,22 @@ impl Commander {
                     ui.visuals().weak_text_color()
                 };
                 if self.preferences.status_bar {
-                    ui.add(egui::Label::new(RichText::new(&self.status).color(color)).truncate())
-                        .on_hover_text(&self.status);
+                    ui.add(
+                        egui::Label::new(RichText::new(tr(&self.status)).color(color)).truncate(),
+                    )
+                    .on_hover_text(tr(&self.status));
                 }
+            }
+            if !self.queue.is_empty()
+                && ui
+                    .button(format!(
+                        "{} ({})",
+                        tr("Queued operations"),
+                        self.queue.len()
+                    ))
+                    .clicked()
+            {
+                action = Some(Action::Queue);
             }
             ui.separator();
             if self.preferences.command_bar {
@@ -1637,7 +1898,7 @@ impl Commander {
                         ("F8  Trash", Action::Trash),
                     ] {
                         if ui
-                            .add_enabled(self.job.is_none(), egui::Button::new(label).frame(false))
+                            .add_enabled(!self.exiting, egui::Button::new(tr(label)).frame(false))
                             .clicked()
                         {
                             action = Some(a);
@@ -1653,6 +1914,10 @@ impl Commander {
     }
 
     fn panes(&mut self, ctx: &egui::Context) {
+        let mut column_layout = self.preferences.columns.clone();
+        let mut column_resized = false;
+        let mut native_drag = None;
+        let mut unlock_archive = None;
         let palette = crate::appearance::Palette::new(
             self.preferences.desktop_style,
             ctx.style().visuals.dark_mode,
@@ -1709,14 +1974,14 @@ impl Commander {
                                                         self.active = side;
                                                     }
                                                     if pane.tabs.len() > 1
-                                                        && ui.small_button("×").clicked()
+                                                        && ui.small_button(tr("×")).clicked()
                                                     {
                                                         close = Some(index);
                                                     }
                                                 }
                                                 if ui
-                                                    .small_button("+")
-                                                    .on_hover_text("New tab")
+                                                    .small_button(tr("+"))
+                                                    .on_hover_text(tr("New tab"))
                                                     .clicked()
                                                 {
                                                     pane.add_tab(ctx);
@@ -1732,17 +1997,25 @@ impl Commander {
                                 let tab = pane.tab_mut();
                                 ui.push_id(tab.id, |ui| {
                                     ui.horizontal(|ui| {
-                                        if ui.small_button("<").on_hover_text("Back").clicked() {
+                                        if ui
+                                            .small_button(tr("<"))
+                                            .on_hover_text(tr("Back"))
+                                            .clicked()
+                                        {
                                             tab.history(false, ctx);
                                             self.active = side;
                                         }
-                                        if ui.small_button(">").on_hover_text("Forward").clicked() {
+                                        if ui
+                                            .small_button(tr(">"))
+                                            .on_hover_text(tr("Forward"))
+                                            .clicked()
+                                        {
                                             tab.history(true, ctx);
                                             self.active = side;
                                         }
                                         if ui
-                                            .small_button("Up")
-                                            .on_hover_text("Parent folder")
+                                            .small_button(tr("Up"))
+                                            .on_hover_text(tr("Parent folder"))
                                             .clicked()
                                         {
                                             if let Some(parent) = tab.location.parent() {
@@ -1753,7 +2026,7 @@ impl Commander {
                                         let address = ui.add(
                                             egui::TextEdit::singleline(&mut tab.address)
                                                 .desired_width(ui.available_width())
-                                                .hint_text("Path to folder"),
+                                                .hint_text(tr("Path to folder")),
                                         );
                                         if tab.focus_address {
                                             focus_text(&address, &tab.address);
@@ -1774,17 +2047,35 @@ impl Commander {
                                             }
                                         }
                                     });
+                                    if let Some(path) = tab.location.local().map(Path::to_path_buf)
+                                    {
+                                        let mut target = None;
+                                        ui.horizontal_wrapped(|ui| {
+                                            for (label, path) in
+                                                crate::native_files::breadcrumbs(&path)
+                                            {
+                                                if ui.small_button(label).clicked() {
+                                                    target = Some(path);
+                                                }
+                                                ui.weak(tr("›"));
+                                            }
+                                        });
+                                        if let Some(path) = target {
+                                            tab.navigate(Location::Local(path), ctx);
+                                            self.active = side;
+                                        }
+                                    }
                                     ui.horizontal(|ui| {
                                         if matches!(tab.location, Location::Archive { .. }) {
                                             ui.label(
-                                                RichText::new("ARCHIVE · READ ONLY")
+                                                RichText::new(tr("ARCHIVE"))
                                                     .size(10.0)
                                                     .color(ui.visuals().hyperlink_color),
                                             );
                                         }
                                         let filter = ui.add(
                                             egui::TextEdit::singleline(&mut tab.filter)
-                                                .hint_text("Filter files…")
+                                                .hint_text(tr("Filter files…"))
                                                 .desired_width(ui.available_width()),
                                         );
                                         if tab.focus_filter {
@@ -1804,28 +2095,30 @@ impl Commander {
                                     });
                                     let width = ui.available_width();
                                     ui.horizontal(|ui| {
-                                        for (label, sort, w) in [
-                                            ("Name", Sort::Name, width * 0.49),
-                                            ("Size", Sort::Size, width * 0.16),
-                                            ("Modified", Sort::Modified, width * 0.27),
-                                        ] {
-                                            let label = if tab.sort == sort {
-                                                format!(
-                                                    "{label} {}",
-                                                    if tab.descending { "v" } else { "^" }
+                                        let total: f32 =
+                                            column_layout.iter().map(|column| column.width).sum();
+                                        for (index, column) in column_layout.iter_mut().enumerate()
+                                        {
+                                            let sort = column.kind.sort();
+                                            let w = width * column.width / total;
+                                            let label = format!(
+                                                "{}{}",
+                                                tr(column.kind.label()),
+                                                if sort == Some(tab.sort) {
+                                                    if tab.descending { " v" } else { " ^" }
+                                                } else {
+                                                    ""
+                                                }
+                                            );
+                                            let response = ui.add_sized(
+                                                [w - 6.0, 24.0],
+                                                egui::Button::new(
+                                                    RichText::new(label).small().strong(),
                                                 )
-                                            } else {
-                                                label.into()
-                                            };
-                                            if ui
-                                                .add_sized(
-                                                    [w, 24.0],
-                                                    egui::Button::new(
-                                                        RichText::new(label).small().strong(),
-                                                    )
-                                                    .frame(false),
-                                                )
-                                                .clicked()
+                                                .frame(false),
+                                            );
+                                            if response.clicked()
+                                                && let Some(sort) = sort
                                             {
                                                 if tab.sort == sort {
                                                     tab.descending = !tab.descending;
@@ -1840,18 +2133,43 @@ impl Commander {
                                                     tab.folders_first,
                                                 );
                                             }
+                                            let handle = egui::Rect::from_min_size(
+                                                response.rect.right_top(),
+                                                Vec2::new(6.0, 24.0),
+                                            );
+                                            let resize = ui
+                                                .interact(
+                                                    handle,
+                                                    ui.id().with(("column_resize", index)),
+                                                    egui::Sense::drag(),
+                                                )
+                                                .on_hover_cursor(
+                                                    egui::CursorIcon::ResizeHorizontal,
+                                                );
+                                            if resize.dragged() {
+                                                column.width = (column.width
+                                                    + resize.drag_delta().x * total / width)
+                                                    .clamp(40.0, 800.0);
+                                                column_resized = true;
+                                            }
                                         }
                                     });
                                     ui.separator();
                                     let visible = tab.visible(self.show_hidden);
                                     let height = (ui.available_height() - 38.0).max(100.0);
                                     if let Some(error) = &tab.error {
-                                        ui.colored_label(Color32::from_rgb(190, 65, 55), error);
+                                        ui.colored_label(Color32::from_rgb(190, 65, 55), tr(error));
+                                        if let Location::Archive { file, .. } = &tab.location
+                                            && ui.button(tr("Unlock archive")).clicked()
+                                        {
+                                            unlock_archive = Some(file.clone());
+                                            self.active = side;
+                                        }
                                     }
                                     if tab.loading {
                                         ui.horizontal(|ui| {
                                             ui.spinner();
-                                            ui.label("Loading folder…");
+                                            ui.label(tr("Loading folder…"));
                                         });
                                     }
                                     let scroll_to = if tab.scroll_to_cursor {
@@ -1892,7 +2210,14 @@ impl Commander {
                                                 } else {
                                                     vec![entry.path.clone()]
                                                 };
-                                                response.dnd_set_drag_payload(FileDrag { sources });
+                                                if response.drag_started()
+                                                    && ui.input(|input| input.modifiers.alt)
+                                                {
+                                                    native_drag = Some(sources.clone());
+                                                } else {
+                                                    response
+                                                        .dnd_set_drag_payload(FileDrag { sources });
+                                                }
                                             }
                                             response.widget_info(|| {
                                                 egui::WidgetInfo::selected(
@@ -1953,53 +2278,36 @@ impl Commander {
                                                 marked,
                                                 icon_color,
                                             );
-                                            let name_rect = egui::Rect::from_min_max(
-                                                rect.min + Vec2::new(31.0, 0.0),
-                                                egui::pos2(
-                                                    rect.left() + width * 0.51 - 6.0,
-                                                    rect.bottom(),
-                                                ),
-                                            );
-                                            painter.with_clip_rect(name_rect).text(
-                                                name_rect.left_center(),
-                                                egui::Align2::LEFT_CENTER,
-                                                &entry.name,
-                                                egui::FontId::proportional(font_size - 1.0),
-                                                text_color,
-                                            );
-                                            let size = if entry.is_dir {
-                                                "—".into()
-                                            } else {
-                                                filesystem::human_size(entry.size)
-                                            };
-                                            painter.text(
-                                                egui::pos2(
-                                                    rect.left() + width * 0.51,
-                                                    rect.center().y,
-                                                ),
-                                                egui::Align2::LEFT_CENTER,
-                                                size,
-                                                egui::FontId::proportional(font_size - 2.0),
-                                                detail_color,
-                                            );
-                                            let modified = entry
-                                                .modified
-                                                .map(|t| {
-                                                    chrono::DateTime::<chrono::Local>::from(t)
-                                                        .format("%Y-%m-%d %H:%M")
-                                                        .to_string()
-                                                })
-                                                .unwrap_or_else(|| "—".into());
-                                            painter.text(
-                                                egui::pos2(
-                                                    rect.left() + width * 0.70,
-                                                    rect.center().y,
-                                                ),
-                                                egui::Align2::LEFT_CENTER,
-                                                modified,
-                                                egui::FontId::proportional(font_size - 3.0),
-                                                detail_color,
-                                            );
+                                            let total: f32 = column_layout
+                                                .iter()
+                                                .map(|column| column.width)
+                                                .sum();
+                                            let mut x = rect.left();
+                                            for column in &column_layout {
+                                                let w = width * column.width / total;
+                                                let name =
+                                                    column.kind == crate::preferences::Column::Name;
+                                                let cell = egui::Rect::from_min_max(
+                                                    egui::pos2(
+                                                        x + if name { 31.0 } else { 4.0 },
+                                                        rect.top(),
+                                                    ),
+                                                    egui::pos2(x + w - 5.0, rect.bottom()),
+                                                );
+                                                painter.with_clip_rect(cell).text(
+                                                    cell.left_center(),
+                                                    egui::Align2::LEFT_CENTER,
+                                                    column.kind.value(
+                                                        &entry,
+                                                        tab.location.local().is_some(),
+                                                    ),
+                                                    egui::FontId::proportional(
+                                                        font_size - if name { 1.0 } else { 2.0 },
+                                                    ),
+                                                    if name { text_color } else { detail_color },
+                                                );
+                                                x += w;
+                                            }
                                             if response.clicked() {
                                                 self.active = side;
                                                 let modifiers = ui.input(|i| i.modifiers);
@@ -2161,6 +2469,8 @@ impl Commander {
                 && self.editor.is_none()
                 && !self.tools.active()
                 && self.preferences_form.is_none()
+                && self.archive_form.is_none()
+                && !self.show_history
                 && self.connection_form.is_none()
                 && !self.help
                 && self.message.is_none()
@@ -2181,10 +2491,28 @@ impl Commander {
                     focus: true,
                     error: None,
                     transfer_options: Default::default(),
+                    overrides: Default::default(),
+                    conflicts: Vec::new(),
+                    conflict_key: String::new(),
+                    pending_conflicts: None,
                 });
             } else {
                 self.fail("Finish or close the current dialog before dropping files.");
             }
+        }
+        if column_resized {
+            self.preferences.columns = column_layout;
+            self.save_settings();
+        }
+        if let Some(paths) = native_drag {
+            self.native_drag(paths);
+        }
+        if let Some(file) = unlock_archive {
+            self.archive_form = Some(crate::feature_ui::ArchiveForm {
+                file: file.display().to_string(),
+                mode: 2,
+                ..Default::default()
+            });
         }
     }
 
@@ -2194,10 +2522,66 @@ impl Commander {
         };
         let mut accept = false;
         let mut cancel = false;
+        if let Some(result) = crate::background::poll(&mut prompt.pending_conflicts) {
+            match result {
+                Ok(conflicts) => prompt.conflicts = conflicts,
+                Err(error) => prompt.error = Some(error),
+            }
+        }
+        if let PromptKind::Transfer { sources, base, .. } = &prompt.kind {
+            let destination = filesystem::resolve_path(&prompt.value, base);
+            let key = format!(
+                "{}:{}",
+                destination.display(),
+                prompt.transfer_options.merge_folders
+            );
+            if key != prompt.conflict_key && prompt.pending_conflicts.is_none() {
+                prompt.conflict_key = key;
+                let sources = sources.clone();
+                let merge = prompt.transfer_options.merge_folders;
+                let (sender, receiver) = mpsc::channel();
+                prompt.pending_conflicts = Some(receiver);
+                let ctx = ctx.clone();
+                std::thread::spawn(move || {
+                    let result = crate::transfer::conflicts(&sources, &destination, merge)
+                        .map_err(|error| format!("{error:#}"));
+                    let _ = sender.send(result);
+                    ctx.request_repaint();
+                });
+            }
+            if prompt.pending_conflicts.is_some() {
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
+        }
+        if let PromptKind::RemoteTransfer {
+            from, entries, to, ..
+        } = &prompt.kind
+        {
+            let key = prompt.value.clone();
+            if key != prompt.conflict_key && prompt.pending_conflicts.is_none() {
+                prompt.conflict_key = key;
+                let from = from.clone();
+                let entries = entries.clone();
+                let to = filesystem::parse_location(&prompt.value, to);
+                let (sender, receiver) = mpsc::channel();
+                prompt.pending_conflicts = Some(receiver);
+                let ctx = ctx.clone();
+                std::thread::spawn(move || {
+                    let result = to
+                        .and_then(|to| crate::remote::conflicts(&from, &entries, &to))
+                        .map_err(|error| format!("{error:#}"));
+                    let _ = sender.send(result);
+                    ctx.request_repaint();
+                });
+            }
+            if prompt.pending_conflicts.is_some() {
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
+        }
         egui::Modal::new(egui::Id::new("operation_prompt")).show(ctx, |ui| {
             ui.set_width(480.0);
-            ui.heading(&prompt.title);
-            ui.label(&prompt.description);
+            ui.heading(tr(&prompt.title));
+            ui.label(tr(&prompt.description));
             ui.add_space(8.0);
             if !matches!(
                 prompt.kind,
@@ -2214,29 +2598,45 @@ impl Commander {
                 }
             }
             if let Some(error) = &prompt.error {
-                ui.colored_label(Color32::from_rgb(190, 65, 55), error);
+                ui.colored_label(Color32::from_rgb(190, 65, 55), tr(error));
             }
-            if matches!(prompt.kind, PromptKind::Transfer { .. }) {
+            if matches!(prompt.kind, PromptKind::Transfer { .. }|PromptKind::RemoteTransfer{..}) {
                 use crate::transfer::ConflictPolicy;
-                ui.label("When a target exists:");
+                ui.collapsing(tr("Per-file conflicts"),|ui|{
+                    if prompt.pending_conflicts.is_some(){ui.spinner();}
+                    egui::ScrollArea::vertical().max_height(180.0).show(ui,|ui|{
+                        for conflict in &prompt.conflicts {
+                            ui.push_id(&conflict.target,|ui|{
+                                ui.label(conflict.target.display().to_string());
+                                ui.small(format!("{} → {}",filesystem::human_size(conflict.source_size),filesystem::human_size(conflict.target_size)));
+                                let mut policy=prompt.overrides.get(&conflict.target).copied().unwrap_or(prompt.transfer_options.conflicts);let before=policy;
+                                ui.horizontal(|ui|{for(value,label)in[(ConflictPolicy::Refuse,"Stop on conflict"),(ConflictPolicy::Skip,"Skip"),(ConflictPolicy::Rename,"Keep both"),(ConflictPolicy::Replace,"Replace")]{ui.selectable_value(&mut policy,value,tr(label));}});if policy!=before{prompt.overrides.insert(conflict.target.clone(),policy);}
+                            });
+                        }
+                    });
+                    if ui.button(tr("Apply to all")).clicked(){prompt.overrides.clear();}
+                });
+                ui.label(tr("When a target exists:"));
                 for (policy, label) in [
                     (ConflictPolicy::Refuse, "Stop before copying"),
                     (ConflictPolicy::Skip, "Skip existing items"),
                     (ConflictPolicy::Rename, "Keep both, with a numbered name"),
                     (ConflictPolicy::Replace, "Replace, keeping originals in a recovery folder"),
                 ] {
-                    ui.radio_value(&mut prompt.transfer_options.conflicts, policy, label);
+                    ui.radio_value(&mut prompt.transfer_options.conflicts, policy, tr(label));
                 }
-                ui.add_enabled_ui(prompt.transfer_options.conflicts != ConflictPolicy::Rename, |ui| {
-                    ui.checkbox(&mut prompt.transfer_options.merge_folders, "Merge existing folders");
-                });
+                if matches!(prompt.kind, PromptKind::Transfer{..}) {
+                    ui.add_enabled_ui(prompt.transfer_options.conflicts != ConflictPolicy::Rename, |ui| {
+                        ui.checkbox(&mut prompt.transfer_options.merge_folders,tr("Merge existing folders"));
+                    });
+                }
                 if prompt.transfer_options.conflicts == ConflictPolicy::Replace {
-                    ui.label("Replaced items stay in a hidden .rust-commander-replaced-* folder in the destination. The result reports its path.");
+                    ui.label(tr("Replaced items stay in a hidden .rust-commander-replaced-* folder in the destination. The result reports its path."));
                 }
             }
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     cancel = true;
                 }
                 if ui
@@ -2301,11 +2701,13 @@ impl Commander {
                         entries,
                         to,
                         moving,
-                    } => Operation::RemoteTransfer {
+                    } => Operation::RemoteTransferResolved {
                         from: from.clone(),
                         entries: entries.clone(),
                         to: filesystem::parse_location(&prompt.value, to)?,
                         moving: *moving,
+                        options: prompt.transfer_options,
+                        overrides: prompt.overrides.clone(),
                     },
                     PromptKind::RemoteMkdir { connection, path } => {
                         filesystem::validate_name(&prompt.value)?;
@@ -2327,13 +2729,19 @@ impl Commander {
                         base,
                     } => {
                         let destination = filesystem::resolve_path(&prompt.value, base);
-                        Operation::Transfer {
+                        Operation::ResolvedTransfer {
                             sources: sources.clone(),
                             destination,
                             moving: *moving,
                             options: prompt.transfer_options,
+                            overrides: prompt.overrides.clone(),
                         }
                     }
+                    PromptKind::RemoteRename { connection, source } => Operation::RemoteRename {
+                        connection: connection.clone(),
+                        source: source.clone(),
+                        name: prompt.value.clone(),
+                    },
                     PromptKind::Rename(source) => {
                         filesystem::validate_name(&prompt.value)?;
                         Operation::Rename {
@@ -2396,16 +2804,18 @@ impl Commander {
         egui::Modal::new(egui::Id::new("text_editor")).show(ctx, |ui| {
             ui.set_width((ctx.content_rect().width() - 120.0).clamp(550.0, 1000.0));
             ui.horizontal(|ui| {
-                ui.heading(if editor.editable {
+                ui.heading(tr(if editor.editable {
                     "Text editor"
                 } else {
                     editor.kind
-                });
+                }));
                 if editor.dirty() {
-                    ui.label(RichText::new("Unsaved changes").color(ui.visuals().hyperlink_color));
+                    ui.label(
+                        RichText::new(tr("Unsaved changes")).color(ui.visuals().hyperlink_color),
+                    );
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Close").clicked() {
+                    if ui.button(tr("Close")).clicked() {
                         close = true;
                     }
                 });
@@ -2416,7 +2826,7 @@ impl Commander {
                     if ui
                         .add_enabled(
                             pdf.page > 0 && self.pending_pdf.is_none(),
-                            egui::Button::new("Previous page"),
+                            egui::Button::new(tr("Previous page")),
                         )
                         .clicked()
                     {
@@ -2426,7 +2836,7 @@ impl Commander {
                     if ui
                         .add_enabled(
                             pdf.page + 1 < pdf.pages && self.pending_pdf.is_none(),
-                            egui::Button::new("Next page"),
+                            egui::Button::new(tr("Next page")),
                         )
                         .clicked()
                     {
@@ -2442,7 +2852,7 @@ impl Commander {
                     Some(ctx.load_texture(&editor.title, image, egui::TextureOptions::LINEAR));
             }
             if editor.texture.is_some() {
-                ui.add(egui::Slider::new(&mut editor.zoom, 0.1..=4.0).text("Zoom"));
+                ui.add(egui::Slider::new(&mut editor.zoom, 0.1..=4.0).text(tr("Zoom")));
             }
             egui::ScrollArea::both()
                 .max_height((ctx.content_rect().height() - 260.0).max(180.0))
@@ -2466,11 +2876,11 @@ impl Commander {
                     }
                 });
             if let Some(error) = &editor.error {
-                ui.colored_label(Color32::from_rgb(190, 65, 55), error);
+                ui.colored_label(Color32::from_rgb(190, 65, 55), tr(error));
             }
             if editor.editable
                 && (ui
-                    .add_enabled(editor.dirty(), egui::Button::new("Save  ⌘/Ctrl+S"))
+                    .add_enabled(editor.dirty(), egui::Button::new(tr("Save  ⌘/Ctrl+S")))
                     .clicked()
                     || ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::S)))
                 && let Some(path) = &editor.path
@@ -2490,12 +2900,12 @@ impl Commander {
             }
             if editor.confirm_close {
                 ui.separator();
-                ui.label("Discard unsaved changes?");
+                ui.label(tr("Discard unsaved changes?"));
                 ui.horizontal(|ui| {
-                    if ui.button("Keep editing").clicked() {
+                    if ui.button(tr("Keep editing")).clicked() {
                         editor.confirm_close = false;
                     }
-                    if ui.button("Discard changes").clicked() {
+                    if ui.button(tr("Discard changes")).clicked() {
                         editor.text = editor.original.clone();
                         close = true;
                     }
@@ -2535,26 +2945,26 @@ impl Commander {
         let mut apply = false;
         egui::Modal::new(egui::Id::new("preferences")).show(ctx, |ui| {
             ui.set_width(550.0);
-            ui.heading("Preferences");
+            ui.heading(tr("Preferences"));
             egui::ScrollArea::vertical()
                 .max_height(ctx.content_rect().height() - 180.0)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label("Desktop style");
+                        ui.label(tr("Desktop style"));
                         egui::ComboBox::from_id_salt("desktop_style")
-                            .selected_text(preferences.desktop_style.label())
+                            .selected_text(tr(preferences.desktop_style.label()))
                             .show_ui(ui, |ui| {
                                 for desktop in crate::appearance::DesktopStyle::ALL {
                                     ui.selectable_value(
                                         &mut preferences.desktop_style,
                                         desktop,
-                                        desktop.label(),
+                                        tr(desktop.label()),
                                     );
                                 }
                             });
                     });
                     ui.horizontal(|ui| {
-                        ui.label("Appearance");
+                        ui.label(tr("Appearance"));
                         for scheme in [
                             crate::appearance::ColorScheme::System,
                             crate::appearance::ColorScheme::Light,
@@ -2563,14 +2973,15 @@ impl Commander {
                             ui.selectable_value(
                                 &mut preferences.color_scheme,
                                 scheme,
-                                scheme.label(),
+                                tr(scheme.label()),
                             );
                         }
                     });
                     ui.add(
                         egui::Slider::new(&mut preferences.font_size, 10.0..=24.0)
-                            .text("Font size"),
+                            .text(tr("Font size")),
                     );
+                    crate::feature_ui::preferences(ui, &mut preferences);
                     for (label, value) in [
                         ("Show toolbar", &mut preferences.toolbar),
                         ("Show command bar", &mut preferences.command_bar),
@@ -2582,15 +2993,17 @@ impl Commander {
                         ),
                         ("Folders first", &mut preferences.folders_first),
                     ] {
-                        ui.checkbox(value, label);
+                        ui.checkbox(value, tr(label));
                     }
                     ui.separator();
-                    ui.label("Keyboard shortcuts · Command means Cmd on macOS and Ctrl elsewhere");
+                    ui.label(tr(
+                        "Keyboard shortcuts · Command means Cmd on macOS and Ctrl elsewhere",
+                    ));
                     egui::Grid::new("shortcut_settings")
                         .num_columns(2)
                         .show(ui, |ui| {
                             for (action, binding) in &mut preferences.shortcuts {
-                                ui.label(action);
+                                ui.label(tr(action));
                                 ui.text_edit_singleline(binding);
                                 ui.end_row();
                             }
@@ -2598,16 +3011,16 @@ impl Commander {
                 });
             ui.separator();
             if let Some(error) = &self.preferences_error {
-                ui.colored_label(Color32::RED, error);
+                ui.colored_label(Color32::RED, tr(error));
             }
             ui.horizontal(|ui| {
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("Cancel")).clicked() {
                     close = true;
                 }
-                if ui.button("Apply").clicked() {
+                if ui.button(tr("Apply")).clicked() {
                     apply = true;
                 }
-                if ui.button("Restore defaults").clicked() {
+                if ui.button(tr("Restore defaults")).clicked() {
                     preferences = crate::preferences::Preferences::default();
                 }
             });
@@ -2619,6 +3032,11 @@ impl Commander {
             match crate::preferences::validate(&preferences) {
                 Ok(()) => {
                     self.preferences = preferences.clone();
+                    crate::i18n::set(self.preferences.language);
+                    #[cfg(target_os = "macos")]
+                    if let Some(menu) = &self.native_menu {
+                        menu.localize();
+                    }
                     crate::appearance::install_fonts(ctx, self.preferences.desktop_style);
                     self.theme(ctx);
                     self.refresh(ctx);
@@ -2639,56 +3057,76 @@ impl Commander {
         };
         let mut close = false;
         let mut connect = false;
+        let mut authorize = false;
         let mut open = None;
         egui::Modal::new(egui::Id::new("connections")).show(ctx, |ui| {
-            ui.set_width(570.0); ui.heading("Connections");
+            ui.set_width(570.0); ui.heading(tr("Connections"));
             egui::ScrollArea::vertical().max_height(ctx.content_rect().height() - 160.0).show(ui, |ui| {
                 for connection in &self.connections {
                     ui.horizontal(|ui| {
                         ui.label(format!("{} · {}", connection.name, connection.service));
-                        if ui.button("Open").clicked() { open = Some(connection.id.clone()); }
-                        if ui.button("Edit").clicked() { form.connection = connection.clone(); }
-                        if ui.button("Forget credentials").clicked()
+                        if ui.button(tr("Open")).clicked() { open = Some(connection.id.clone()); }
+                        if ui.button(tr("Edit")).clicked() { form.connection = connection.clone(); }
+                        if ui.button(tr("Forget credentials")).clicked()
                             && let Err(error) = crate::remote::forget_credentials(&connection.id) { form.error = Some(error.to_string()); }
                     });
                 }
                 ui.separator();
                 egui::Grid::new("connection_fields").num_columns(2).show(ui, |ui| {
-                    ui.label("Name"); ui.text_edit_singleline(&mut form.connection.name); ui.end_row();
-                    ui.label("Service"); egui::ComboBox::from_id_salt("remote_service").selected_text(&form.connection.service).show_ui(ui, |ui| {
+                    ui.label(tr("Name")); ui.text_edit_singleline(&mut form.connection.name); ui.end_row();
+                    ui.label(tr("Service")); egui::ComboBox::from_id_salt("remote_service").selected_text(&form.connection.service).show_ui(ui, |ui| {
                         for service in crate::remote::SERVICES { ui.selectable_value(&mut form.connection.service, (*service).into(), *service); }
                     }); ui.end_row();
                     for (label, value) in [("Endpoint", &mut form.connection.endpoint), ("Root folder", &mut form.connection.root),
                         ("Bucket", &mut form.connection.bucket), ("Region", &mut form.connection.region), ("Username", &mut form.connection.username), ("Private key file", &mut form.connection.key_file)] {
-                        ui.label(label); ui.text_edit_singleline(value); ui.end_row();
+                        ui.label(tr(label)); ui.text_edit_singleline(value); ui.end_row();
                     }
-                    if form.connection.service != "sftp" { ui.label("Password"); ui.add(egui::TextEdit::singleline(&mut form.secrets.password).password(true)); ui.end_row(); }
+                    if form.connection.service != "sftp" { ui.label(tr("Password")); ui.add(egui::TextEdit::singleline(&mut form.secrets.password).password(true)); ui.end_row(); }
                     for (label, value) in [("Access key ID", &mut form.secrets.access_key_id), ("Secret access key", &mut form.secrets.secret_access_key), ("Access token / base64 GCS credentials", &mut form.secrets.access_token)] {
-                        ui.label(label); ui.add(egui::TextEdit::singleline(value).password(true)); ui.end_row();
+                        ui.label(tr(label)); ui.add(egui::TextEdit::singleline(value).password(true)); ui.end_row();
                     }
                 });
-                if form.connection.service == "sftp" { ui.label("SFTP uses OpenSSH, your SSH agent or private key, and strict known-host verification. Add a trusted server to your OpenSSH known_hosts before connecting."); }
-                ui.checkbox(&mut form.remember, "Remember credentials in the operating system credential store");
-                if let Some(error) = &form.error { ui.colored_label(Color32::from_rgb(190, 65, 55), error); }
+                if matches!(form.connection.service.as_str(),"gdrive"|"dropbox"|"onedrive") {
+                    ui.separator();
+                    ui.label(tr("OAuth client ID"));ui.text_edit_singleline(&mut form.connection.oauth_client_id);
+                    ui.label(tr("OAuth client secret"));ui.add(egui::TextEdit::singleline(&mut form.secrets.oauth_client_secret).password(true));
+                    if form.connection.service=="onedrive"{ui.label(tr("Microsoft tenant"));ui.text_edit_singleline(&mut form.connection.oauth_tenant);}
+                    ui.horizontal(|ui|{ui.label(tr("Callback port"));ui.add(egui::DragValue::new(&mut form.connection.oauth_port).range(1024..=65535));});
+                    let host=if form.connection.service=="onedrive"{"localhost"}else{"127.0.0.1"};
+                    ui.small(format!("Register redirect URI: http://{host}:{}/callback",form.connection.oauth_port));
+                    if ui.add_enabled(self.pending_connection.is_none(),egui::Button::new(tr("Sign in with browser"))).clicked(){authorize=true;}
+                }
+                if form.connection.service == "sftp" { ui.label(tr("SFTP uses OpenSSH, your SSH agent or private key, and strict known-host verification. Add a trusted server to your OpenSSH known_hosts before connecting.")); }
+                ui.checkbox(&mut form.remember, tr("Remember credentials in the operating system credential store"));
+                if let Some(error) = &form.error { ui.colored_label(Color32::from_rgb(190, 65, 55), tr(error)); }
                 ui.horizontal(|ui| {
-                    if ui.button("Close").clicked() { close = true; }
-                    if ui.add_enabled(self.pending_connection.is_none(), egui::Button::new("Connect")).clicked() { connect = true; }
-                    if self.pending_connection.is_some() { ui.spinner(); ui.label("Connecting…"); }
+                    if ui.button(tr("Close")).clicked() { close = true; }
+                    if ui.add_enabled(self.pending_connection.is_none(), egui::Button::new(tr("Connect"))).clicked() { connect = true; }
+                    if self.pending_connection.is_some() { ui.spinner(); ui.label(tr("Connecting…")); }
                 });
             });
         });
-        if connect {
+        if connect || authorize {
+            let cancel = Arc::new(AtomicBool::new(false));
+            self.oauth_cancel = Some(cancel.clone());
             let connection = form.connection.clone();
-            let secrets = std::mem::take(&mut form.secrets);
+            let secrets = form.secrets.clone();
             let remember = form.remember;
             let (sender, receiver) = mpsc::channel();
             let ctx = ctx.clone();
             self.pending_connection = Some(receiver);
             form.error = None;
             std::thread::spawn(move || {
-                let result = crate::remote::connect(&connection, secrets, remember)
-                    .map(|()| connection)
-                    .map_err(|e| format!("{e:#}"));
+                let result = (|| -> anyhow::Result<_> {
+                    let secrets = if authorize {
+                        crate::oauth::authorize(&connection, secrets, cancel)?
+                    } else {
+                        secrets
+                    };
+                    crate::remote::connect(&connection, secrets, remember)?;
+                    Ok(connection)
+                })()
+                .map_err(|e| format!("{e:#}"));
                 let _ = sender.send(result);
                 ctx.request_repaint();
             });
@@ -2705,10 +3143,13 @@ impl Commander {
         }
         if !close {
             self.connection_form = Some(form);
+        } else if let Some(cancel) = self.oauth_cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
         }
     }
 
     fn dialogs(&mut self, ctx: &egui::Context) {
+        self.feature_dialogs(ctx);
         self.preferences_dialog(ctx);
         if let Some(effect) = self.tools.show(ctx) {
             match effect {
@@ -2724,23 +3165,25 @@ impl Commander {
         if self.help {
             egui::Modal::new(egui::Id::new("help")).show(ctx, |ui| {
                 ui.set_width(510.0); ui.heading(crate::APP_NAME);
-                ui.label(format!("Native dual-pane file manager · {}", env!("CARGO_PKG_VERSION")));
+                egui::ScrollArea::vertical().max_height((ctx.content_rect().height()-200.0).max(180.0)).show(ui, |ui| {
+                ui.label(format!("{} · {}", tr("Native dual-pane file manager"), env!("CARGO_PKG_VERSION")));
                 ui.separator();
                 egui::Grid::new("shortcuts").num_columns(2).spacing([28.0, 7.0]).show(ui, |ui| {
-                    for (key, description) in [("Tab", "Switch active pane"), ("↑ / ↓ · Enter · Backspace", "Navigate files · Open · Parent folder"), ("Space / Insert", "Mark or unmark current file"), ("Shift / ⌘ / Ctrl + click", "Range / multiple selection"), ("F2 / F3 / F4", "Rename / View / Edit"), ("F5 / F6 / F7 / F8", "Copy / Move / New folder / Trash"), ("⌘ / Ctrl + L / F", "Focus address / filter"), ("⌘ / Ctrl + T / W", "New tab / close tab"), ("⌘ / Ctrl + A / D / R / H", "Select all / bookmark / refresh / hidden files"), ("Alt + ← / →", "Back / forward"), ("Escape", "Clear marks and filter / close dialog")] { ui.label(RichText::new(key).monospace()); ui.label(description); ui.end_row(); }
+                    for (key, description) in [("Tab", "Switch active pane"), ("↑ / ↓ · Enter · Backspace", "Navigate files · Open · Parent folder"), ("Space / Insert", "Mark or unmark current file"), ("Shift / ⌘ / Ctrl + click", "Range / multiple selection"), ("F2 / F3 / F4", "Rename / View / Edit"), ("F5 / F6 / F7 / F8", "Copy / Move / New folder / Trash"), ("⌘ / Ctrl + L / F", "Focus address / filter"), ("⌘ / Ctrl + T / W", "New tab / close tab"), ("⌘ / Ctrl + A / D / R", "Select all / bookmark / refresh"), ("⌘+Shift+. / Ctrl+H", "Show hidden files"), ("⌘ / Ctrl + C / X / V", "System file copy / cut / paste"), ("⌘ / Ctrl + Z / J", "Undo / queue and history"), ("Alt + drag", "Native drag-out on macOS/Windows"), ("Alt + ← / →", "Back / forward"), ("Escape", "Clear marks and filter / close dialog")] { ui.label(RichText::new(key).monospace()); ui.label(tr(description)); ui.end_row(); }
                 });
                 ui.separator();
-                ui.label("Double-click folders and supported archives to browse, or files to view text, images, hex and PDFs. Archive contents are read-only; use Extract or F5 to copy them out. Text editing supports local UTF-8 files up to 2 MiB.");
-                ui.label("Inspired by muCommander. Independent Rust implementation; not an official release. GPL-3.0-only. You may redistribute this program under that license. No warranty.");
-                ui.hyperlink_to("Original muCommander project", "https://github.com/mucommander/mucommander");
-                ui.collapsing("GNU General Public License v3", |ui| { egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| { ui.label(include_str!("../LICENSE")); }); });
-                if ui.button("Close").clicked() || ui.input(|i| i.key_pressed(Key::Escape)) { self.help = false; }
+                ui.label(tr("Double-click folders and supported archives to browse, or files to view text, images, hex and PDFs. Use Archive tools to edit local ZIPs or unlock encrypted archives. F5 extracts entries; nested and remote archives open read-only. Text editing supports local UTF-8 files up to 2 MiB."));
+                ui.label(tr("Inspired by muCommander. Independent Rust implementation; not an official release. GPL-3.0-only. You may redistribute this program under that license. No warranty."));
+                ui.hyperlink_to(tr("Original muCommander project"), "https://github.com/mucommander/mucommander");
+                ui.collapsing(tr("GNU General Public License v3"), |ui| { egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| { ui.label(include_str!("../LICENSE")); }); });
+                });
+                if ui.button(tr("Close")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) { self.help = false; }
             });
         }
         if let Some(message) = self.message.clone() {
             egui::Modal::new(egui::Id::new("result")).show(ctx, |ui| {
                 ui.set_width(550.0);
-                ui.heading("Results");
+                ui.heading(tr("Results"));
                 egui::ScrollArea::both()
                     .max_height(ctx.content_rect().height() - 240.0)
                     .show(ui, |ui| {
@@ -2753,10 +3196,11 @@ impl Commander {
                         );
                     });
                 ui.horizontal(|ui| {
-                    if ui.button("Copy result").clicked() {
+                    if ui.button(tr("Copy result")).clicked() {
                         ctx.copy_text(message.clone());
                     }
-                    if ui.button("Close").clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                    if ui.button(tr("Close")).clicked() || ui.input(|i| i.key_pressed(Key::Escape))
+                    {
                         self.message = None;
                     }
                 });
@@ -2764,10 +3208,10 @@ impl Commander {
         }
         if self.confirm_exit {
             egui::Modal::new(egui::Id::new("exit")).show(ctx, |ui| {
-                ui.heading(format!("Close {}?", crate::APP_NAME)); ui.label("There is a running operation or unsaved text. Closing cancels the operation and discards unsaved text.");
+                ui.heading(format!("Close {}?", crate::APP_NAME)); ui.label(tr("There is a running operation or unsaved text. Closing cancels the operation and discards unsaved text."));
                 ui.horizontal(|ui| {
-                    if ui.button("Keep working").clicked() { self.confirm_exit = false; }
-                    if ui.button("Cancel work and close").clicked() {
+                    if ui.button(tr("Keep working")).clicked() { self.confirm_exit = false; }
+                    if ui.button(tr("Cancel work and close")).clicked() {
                         if let Some(job) = &self.job { job.cancel.store(true, Ordering::Relaxed); }
                         self.editor = None; self.confirm_exit = false; self.exiting = true;
                     }
@@ -2802,6 +3246,159 @@ impl Commander {
     }
 }
 
+impl Commander {
+    fn native_drag(&mut self, paths: Vec<PathBuf>) {
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            if let Some(window) = &self.native_window {
+                if let Err(error) = crate::native_files::drag_out(window, paths) {
+                    self.fail(error);
+                }
+            } else {
+                self.fail("Native window handle unavailable.");
+            }
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            match self.native_files.copy(&paths,false){Ok(())=>self.status="Files copied to the system clipboard. Native drag-out is not supported by this Linux window backend.".into(),Err(error)=>self.fail(error)}
+        }
+    }
+
+    fn feature_dialogs(&mut self, ctx: &egui::Context) {
+        if let Some(mut form) = self.archive_form.take() {
+            let (close, action) = form.show(ctx);
+            if let Some(action) = action {
+                match action {
+                    crate::feature_ui::ArchiveAction::Browse(file) => {
+                        self.tab_mut().navigate(
+                            Location::Archive {
+                                file,
+                                prefix: PathBuf::new(),
+                            },
+                            ctx,
+                        );
+                    }
+                    crate::feature_ui::ArchiveAction::Run(operation) => {
+                        self.start_job(operation, ctx)
+                    }
+                    crate::feature_ui::ArchiveAction::Unlock(file, password) => {
+                        let (sender, receiver) = mpsc::channel();
+                        self.pending_archive = Some(receiver);
+                        self.pending_archive_target = Some((self.active, self.tab().id));
+                        let ctx = ctx.clone();
+                        std::thread::spawn(move || {
+                            let result = crate::archive::unlock(&file, &password)
+                                .map(|()| Location::Archive {
+                                    file,
+                                    prefix: PathBuf::new(),
+                                })
+                                .map_err(|error| format!("{error:#}"));
+                            let _ = sender.send(result);
+                            ctx.request_repaint();
+                        });
+                    }
+                }
+            }
+            if !close {
+                self.archive_form = Some(form);
+            }
+        }
+        if self.show_history {
+            let mut close = false;
+            let mut remove = None;
+            let mut undo = None;
+            egui::Modal::new(egui::Id::new("queue_history")).show(ctx, |ui| {
+                ui.set_width(660.0);
+                ui.heading(tr("Transfer queue and history"));
+                if let Some(job) = &self.job {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(tr(&job.label));
+                        if ui.button(tr("Cancel")).clicked() {
+                            job.cancel.store(true, Ordering::Relaxed);
+                        }
+                    });
+                }
+                ui.separator();
+                ui.strong(tr("Queued operations"));
+                if self.queue.is_empty() {
+                    ui.label(tr("No queued operations"));
+                }
+                egui::ScrollArea::vertical()
+                    .id_salt("queued_list")
+                    .max_height(120.0)
+                    .show(ui, |ui| {
+                        for (index, operation) in self.queue.iter().enumerate() {
+                            ui.horizontal(|ui| {
+                                ui.label(format!("{}. {}", index + 1, tr(operation.label())));
+                                if ui.button(tr("Cancel")).clicked() {
+                                    remove = Some(index);
+                                }
+                            });
+                        }
+                    });
+                ui.separator();
+                ui.strong(tr("Operation history"));
+                egui::ScrollArea::vertical()
+                    .max_height((ctx.content_rect().height() - 330.0).clamp(100.0, 350.0))
+                    .show(ui, |ui| {
+                        for record in self.history.iter().rev() {
+                            ui.push_id(&record.id, |ui| {
+                                let state = if record.undone {
+                                    "Undone"
+                                } else if record.cancelled {
+                                    "Cancelled"
+                                } else if record.success {
+                                    "Completed"
+                                } else {
+                                    "Failed"
+                                };
+                                ui.collapsing(
+                                    format!("{} · {}", tr(&record.label), tr(state)),
+                                    |ui| {
+                                        ui.label(tr(&record.result));
+                                        if ui
+                                            .add_enabled(
+                                                !record.undone
+                                                    && !record.changes.is_empty()
+                                                    && self.job.is_none()
+                                                    && self.queue.is_empty(),
+                                                egui::Button::new(tr("Undo")),
+                                            )
+                                            .clicked()
+                                        {
+                                            undo = Some(record.clone());
+                                        }
+                                    },
+                                );
+                            });
+                        }
+                    });
+                if ui.button(tr("Close")).clicked()
+                    || ui.input(|input| input.key_pressed(Key::Escape))
+                {
+                    close = true;
+                }
+            });
+            if let Some(index) = remove
+                && let Some(operation) = self.queue.remove(index)
+            {
+                self.history
+                    .push(crate::history::cancelled(operation.label()));
+                if let Err(error) = crate::history::save(&self.history) {
+                    self.fail(error);
+                }
+            }
+            if let Some(record) = undo {
+                self.start_job(Operation::Undo(Box::new(record)), ctx);
+            }
+            if close {
+                self.show_history = false;
+            }
+        }
+    }
+}
+
 impl eframe::App for Commander {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll(ctx);
@@ -2822,8 +3419,8 @@ impl eframe::App for Commander {
                 .min_height(100.0)
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label("Terminal · click the screen to type");
-                        if ui.button("Hide terminal").clicked() {
+                        ui.label(tr("Terminal · click the screen to type"));
+                        if ui.button(tr("Hide terminal")).clicked() {
                             self.terminal_visible = false;
                         }
                     });
@@ -2839,6 +3436,10 @@ impl eframe::App for Commander {
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.save_settings();
+        crate::archive_tools::clear_cache();
+        if let Some(cancel) = &self.oauth_cancel {
+            cancel.store(true, Ordering::Relaxed);
+        }
     }
 }
 

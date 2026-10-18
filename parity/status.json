@@ -122,10 +122,12 @@
   "Copy": {
     "evidence": [
       "src/transfer.rs",
+      "src/remote.rs",
+      "src/app.rs",
       "tests/transfer_conflicts.rs",
-      "src/app.rs"
+      "tests/features.rs"
     ],
-    "note": "Local skip, keep-both, recoverable replacement and folder merge workflows; remote conflict resolution, per-file prompts and complete platform validation remain open.",
+    "note": "Local recursive conflict preview and per-file choices, recoverable replacements and optional folder merge. Remote top-level choices tested with filesystem adapter; live services and cross-platform behavior pending.",
     "status": "partial"
   },
   "CopyFileBaseNames": {
@@ -148,10 +150,11 @@
   },
   "CopyFilesToClipboard": {
     "evidence": [
+      "src/native_files.rs",
       "src/app.rs",
-      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+      "tests/features.rs"
     ],
-    "note": "In-app clipboard only; native file clipboard interoperability is missing.",
+    "note": "Native local file clipboard plus remote pane selections. Mac copy/cut, Unicode paths and external clipboard changes pass a real desktop round-trip. Windows/Linux interoperability requires validation.",
     "status": "partial"
   },
   "CustomizeCommandBar": {
@@ -325,10 +328,12 @@
   "LocalCopy": {
     "evidence": [
       "src/transfer.rs",
+      "src/remote.rs",
+      "src/app.rs",
       "tests/transfer_conflicts.rs",
-      "src/app.rs"
+      "tests/features.rs"
     ],
-    "note": "Local skip, keep-both, recoverable replacement and folder merge workflows; remote conflict resolution, per-file prompts and complete platform validation remain open.",
+    "note": "Local recursive conflict preview and per-file choices, recoverable replacements and optional folder merge. Remote top-level choices tested with filesystem adapter; live services and cross-platform behavior pending.",
     "status": "partial"
   },
   "MarkAll": {
@@ -438,10 +443,12 @@
   "Move": {
     "evidence": [
       "src/transfer.rs",
+      "src/remote.rs",
+      "src/app.rs",
       "tests/transfer_conflicts.rs",
-      "src/app.rs"
+      "tests/features.rs"
     ],
-    "note": "Local skip, keep-both, recoverable replacement and folder merge workflows; remote conflict resolution, per-file prompts and complete platform validation remain open.",
+    "note": "Local recursive conflict preview and per-file choices, recoverable replacements and optional folder merge. Remote top-level choices tested with filesystem adapter; live services and cross-platform behavior pending.",
     "status": "partial"
   },
   "MoveTabToOtherPanel": {
@@ -527,19 +534,22 @@
   "Pack": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
+      "src/app.rs",
+      "tests/features.rs",
       "tests/file_manager.rs",
-      "tests/desktop_tools.rs",
       "tests/extended_archives.rs"
     ],
-    "note": "No encryption, archive mutation or archive link extraction; extraction requires a new folder.",
+    "note": "ZIP and 7z AES encryption, local ZIP editing and nested/remote archive browsing. Extract to new folders; archive links, non-ZIP mutation and broad format fixtures remain open.",
     "status": "partial"
   },
   "PasteClipboardFiles": {
     "evidence": [
+      "src/native_files.rs",
       "src/app.rs",
-      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+      "tests/features.rs"
     ],
-    "note": "In-app clipboard only; native file clipboard interoperability is missing.",
+    "note": "Native local file clipboard plus remote pane selections. Mac copy/cut, Unicode paths and external clipboard changes pass a real desktop round-trip. Windows/Linux interoperability requires validation.",
     "status": "partial"
   },
   "PermanentDelete": {
@@ -551,12 +561,20 @@
     "status": "partial"
   },
   "PopupLeftDriveButton": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/native_files.rs",
+      "src/app.rs"
+    ],
+    "note": "Mounted-drive sidebar and clickable local breadcrumbs provide navigation. Exact upstream quick-list behavior and cross-platform interactions remain open.",
+    "status": "partial"
   },
   "PopupRightDriveButton": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/native_files.rs",
+      "src/app.rs"
+    ],
+    "note": "Mounted-drive sidebar and clickable local breadcrumbs provide navigation. Exact upstream quick-list behavior and cross-platform interactions remain open.",
+    "status": "partial"
   },
   "PreviousTab": {
     "evidence": [
@@ -640,9 +658,12 @@
   "Rename": {
     "evidence": [
       "src/operations.rs",
-      "tests/file_manager.rs"
+      "src/remote.rs",
+      "src/archive_tools.rs",
+      "src/app.rs",
+      "tests/features.rs"
     ],
-    "note": "Single rename refuses existing targets. Case-only renaming, complete platform semantics and conflict handling remain open.",
+    "note": "Local, ZIP and remote rename implemented. Remote copy/check/delete validated through filesystem adapter; live services and full platform behavior pending.",
     "status": "partial"
   },
   "ReportBug": {
@@ -778,16 +799,21 @@
     "status": "partial"
   },
   "ShowParentFoldersQL": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/native_files.rs",
+      "src/app.rs"
+    ],
+    "note": "Mounted-drive sidebar and clickable local breadcrumbs provide navigation. Exact upstream quick-list behavior and cross-platform interactions remain open.",
+    "status": "partial"
   },
   "ShowPreferences": {
     "evidence": [
       "src/preferences.rs",
+      "src/feature_ui.rs",
       "src/app.rs",
-      "tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions"
+      "tests/features.rs"
     ],
-    "note": "Common controls inspected in the native app; full upstream preferences and cross-platform behavior remain incomplete.",
+    "note": "Desktop preferences now include language, persistent column customization and toolbar action order. Full upstream preferences and cross-platform behavior remain incomplete.",
     "status": "partial"
   },
   "ShowRecentExecutedFilesQL": {
@@ -823,8 +849,13 @@
     "status": "partial"
   },
   "SortByExtension": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/features.rs"
+    ],
+    "note": "Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open.",
+    "status": "partial"
   },
   "SortByGroup": {
     "evidence": [],
@@ -875,8 +906,13 @@
     "status": "missing"
   },
   "Stop": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app.rs",
+      "src/history.rs",
+      "tests/features.rs"
+    ],
+    "note": "Queue and active operation cancellation with persistent outcomes. Cancellation is cooperative; not all native/provider calls are interruptible.",
+    "status": "partial"
   },
   "SwapFolders": {
     "evidence": [
@@ -908,12 +944,22 @@
     "status": "partial"
   },
   "ToggleDateColumn": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/features.rs"
+    ],
+    "note": "Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open.",
+    "status": "partial"
   },
   "ToggleExtensionColumn": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/features.rs"
+    ],
+    "note": "Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open.",
+    "status": "partial"
   },
   "ToggleGroupColumn": {
     "evidence": [],
@@ -937,8 +983,13 @@
     "status": "missing"
   },
   "TogglePermissionsColumn": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/features.rs"
+    ],
+    "note": "Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open.",
+    "status": "partial"
   },
   "ToggleShowFoldersFirst": {
     "evidence": [
@@ -954,8 +1005,13 @@
     "status": "missing"
   },
   "ToggleSizeColumn": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app.rs",
+      "tests/features.rs"
+    ],
+    "note": "Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open.",
+    "status": "partial"
   },
   "ToggleStatusBar": {
     "evidence": [
@@ -977,10 +1033,11 @@
   "ToggleToolBar": {
     "evidence": [
       "src/preferences.rs",
+      "src/feature_ui.rs",
       "src/app.rs",
-      "tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions"
+      "tests/features.rs"
     ],
-    "note": "Common preferences only; all upstream settings and shortcut actions are not ported.",
+    "note": "Desktop preferences now include language, persistent column customization and toolbar action order. Full upstream preferences and cross-platform behavior remain incomplete.",
     "status": "partial"
   },
   "ToggleTree": {
@@ -997,8 +1054,13 @@
     "status": "partial"
   },
   "Undo": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/history.rs",
+      "src/app.rs",
+      "tests/features.rs"
+    ],
+    "note": "Guarded local operation Undo, full recovery copies and persistent history; no Redo, remote Undo or universal operation coverage. Cross-platform interaction validation pending.",
+    "status": "partial"
   },
   "UnmarkAll": {
     "evidence": [
@@ -1015,11 +1077,13 @@
   "Unpack": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
+      "src/app.rs",
+      "tests/features.rs",
       "tests/file_manager.rs",
-      "tests/desktop_tools.rs",
       "tests/extended_archives.rs"
     ],
-    "note": "No encryption, archive mutation or archive link extraction; extraction requires a new folder.",
+    "note": "ZIP and 7z AES encryption, local ZIP editing and nested/remote archive browsing. Extract to new folders; archive links, non-ZIP mutation and broad format fixtures remain open.",
     "status": "partial"
   },
   "View": {
@@ -1034,46 +1098,56 @@
   "mucommander-format-ar": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
       "tests/desktop_tools.rs",
-      "tests/extended_archives.rs"
+      "tests/extended_archives.rs",
+      "tests/features.rs"
     ],
-    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
     "status": "partial"
   },
   "mucommander-format-bzip2": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
       "tests/desktop_tools.rs",
-      "tests/extended_archives.rs"
+      "tests/extended_archives.rs",
+      "tests/features.rs"
     ],
-    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
     "status": "partial"
   },
   "mucommander-format-cpio": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
       "tests/desktop_tools.rs",
-      "tests/extended_archives.rs"
+      "tests/extended_archives.rs",
+      "tests/features.rs"
     ],
-    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
     "status": "partial"
   },
   "mucommander-format-gzip": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
       "tests/desktop_tools.rs",
-      "tests/extended_archives.rs"
+      "tests/extended_archives.rs",
+      "tests/features.rs"
     ],
-    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
     "status": "partial"
   },
   "mucommander-format-iso": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
       "tests/desktop_tools.rs",
-      "tests/extended_archives.rs"
+      "tests/extended_archives.rs",
+      "tests/features.rs"
     ],
-    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
     "status": "partial"
   },
   "mucommander-format-libguestfs": {
@@ -1087,55 +1161,67 @@
   "mucommander-format-rar": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
       "tests/desktop_tools.rs",
-      "tests/extended_archives.rs"
+      "tests/extended_archives.rs",
+      "tests/features.rs"
     ],
-    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
     "status": "partial"
   },
   "mucommander-format-rpm": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
       "tests/desktop_tools.rs",
-      "tests/extended_archives.rs"
+      "tests/extended_archives.rs",
+      "tests/features.rs"
     ],
-    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
     "status": "partial"
   },
   "mucommander-format-sevenzip": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
       "tests/desktop_tools.rs",
-      "tests/extended_archives.rs"
+      "tests/extended_archives.rs",
+      "tests/features.rs"
     ],
-    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
     "status": "partial"
   },
   "mucommander-format-tar": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
       "tests/desktop_tools.rs",
-      "tests/extended_archives.rs"
+      "tests/extended_archives.rs",
+      "tests/features.rs"
     ],
-    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
     "status": "partial"
   },
   "mucommander-format-xz": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
       "tests/desktop_tools.rs",
-      "tests/extended_archives.rs"
+      "tests/extended_archives.rs",
+      "tests/features.rs"
     ],
-    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
     "status": "partial"
   },
   "mucommander-format-zip": {
     "evidence": [
       "src/archive.rs",
+      "src/archive_tools.rs",
       "tests/desktop_tools.rs",
-      "tests/extended_archives.rs"
+      "tests/extended_archives.rs",
+      "tests/features.rs"
     ],
-    "note": "Read/write support varies by format; NRG/CPIO/RPM need dedicated fixtures. Encryption, nested archives and mutation remain open.",
+    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
     "status": "partial"
   },
   "mucommander-protocol-adb": {
@@ -1148,10 +1234,12 @@
   },
   "mucommander-protocol-dropbox": {
     "evidence": [
+      "src/oauth.rs",
       "src/remote.rs",
-      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts",
+      "tests/features.rs"
     ],
-    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "note": "Browser OAuth with PKCE, refresh/reconnect and remote file workflows implemented. Protocol tests use loopback fixtures; live provider registration/account validation pending.",
     "status": "partial"
   },
   "mucommander-protocol-ftp": {
@@ -1172,10 +1260,12 @@
   },
   "mucommander-protocol-gdrive": {
     "evidence": [
+      "src/oauth.rs",
       "src/remote.rs",
-      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts",
+      "tests/features.rs"
     ],
-    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "note": "Browser OAuth with PKCE, refresh/reconnect and remote file workflows implemented. Protocol tests use loopback fixtures; live provider registration/account validation pending.",
     "status": "partial"
   },
   "mucommander-protocol-hadoop": {
@@ -1200,10 +1290,12 @@
   },
   "mucommander-protocol-onedrive": {
     "evidence": [
+      "src/oauth.rs",
       "src/remote.rs",
-      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts",
+      "tests/features.rs"
     ],
-    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "note": "Browser OAuth with PKCE, refresh/reconnect and remote file workflows implemented. Protocol tests use loopback fixtures; live provider registration/account validation pending.",
     "status": "partial"
   },
   "mucommander-protocol-ovirt": {

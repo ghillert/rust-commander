@@ -31,8 +31,8 @@ backups before removing them. Folder replacement without merging preserves the
 whole original folder there.
 
 When a move skips a nested conflict, its entire source folder is retained,
-including already copied children. Remote transfers and the lower-level
-`Copy`/`Move` API continue to refuse existing targets. Cancelled or failed batches
+including already copied children. Remote transfers also offer per-item conflict
+choices; the lower-level `Copy`/`Move` API refuses existing targets. Cancelled or failed batches
 can keep completed copies. Cancellation is cooperative and cannot interrupt an
 OS call already in progress.
 
@@ -58,9 +58,13 @@ changes are not locked out.
 NRG, CPIO, and RPM still need dedicated format fixtures. Format-edge-case
 coverage is incomplete; see the [validation record](../parity/VALIDATION.md).
 
-Archive contents are read-only. Double-click a supported archive to browse it,
-then use **F5** to extract selected entries into a new folder. Encrypted archives,
-archive mutation, and remote archive browsing/editing are unsupported.
+Double-click a supported archive to browse it, then use **F5** to extract selected
+entries into a new folder. Archive tools edits local ZIPs (Add/Remove/Rename),
+creates AES-encrypted ZIP/7z archives, and unlocks existing encrypted archives.
+Nested and remote archives are materialized into a bounded temporary cache and
+remain read-only. ZIP mutation preserves unchanged compressed entries and checks
+the original before replacement; adding plaintext to an encrypted ZIP is refused.
+See the [feature guide](FEATURES_0.4.md) for limits and local Undo behavior.
 
 Extraction requires a new folder and rejects absolute paths, parent traversal,
 Windows drive/backslash paths, links, and special files. It never merges into

@@ -13,6 +13,10 @@ use std::{
     },
 };
 
+fn tr(text: &str) -> std::borrow::Cow<'_, str> {
+    crate::i18n::text(text)
+}
+
 pub enum Effect {
     Run(Operation),
     Navigate(Location),
@@ -65,26 +69,26 @@ impl Tools {
         if let Some(form) = &mut self.rename {
             let mut close = false;
             egui::Modal::new(egui::Id::new("batch_rename")).show(ctx, |ui| {
-                ui.set_width(700.0); ui.heading("Batch rename");
+                ui.set_width(700.0); ui.heading(tr("Batch rename"));
                 egui::Grid::new("rename_fields").num_columns(2).show(ui, |ui| {
-                    ui.label("Find"); ui.text_edit_singleline(&mut form.options.find); ui.end_row();
-                    ui.label("Replace"); ui.text_edit_singleline(&mut form.options.replace); ui.end_row();
-                    ui.label("Use regular expression"); ui.checkbox(&mut form.options.regex, ""); ui.end_row();
-                    ui.label("Template"); ui.text_edit_singleline(&mut form.options.template); ui.end_row();
-                    ui.label("First number / padding"); ui.horizontal(|ui| { ui.add(egui::DragValue::new(&mut form.options.start)); ui.add(egui::DragValue::new(&mut form.options.width).range(0..=12)); }); ui.end_row();
+                    ui.label(tr("Find")); ui.text_edit_singleline(&mut form.options.find); ui.end_row();
+                    ui.label(tr("Replace")); ui.text_edit_singleline(&mut form.options.replace); ui.end_row();
+                    ui.label(tr("Use regular expression")); ui.checkbox(&mut form.options.regex, tr("")); ui.end_row();
+                    ui.label(tr("Template")); ui.text_edit_singleline(&mut form.options.template); ui.end_row();
+                    ui.label(tr("First number / padding")); ui.horizontal(|ui| { ui.add(egui::DragValue::new(&mut form.options.start)); ui.add(egui::DragValue::new(&mut form.options.width).range(0..=12)); }); ui.end_row();
                 });
-                ui.label("{name} = filename without extension · {ext} = extension including dot · {n} = number");
+                ui.label(tr("{name} = filename without extension · {ext} = extension including dot · {n} = number"));
                 let plan = desktop::rename_plan(&form.sources, &form.options);
                 match &plan {
                     Ok(plan) => { egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| { egui::Grid::new("rename_preview").striped(true).show(ui, |ui| {
-                        for (source, target) in plan { ui.label(source.file_name().unwrap_or_default().to_string_lossy()); ui.label("→"); ui.label(target.file_name().unwrap_or_default().to_string_lossy()); ui.end_row(); }
+                        for (source, target) in plan { ui.label(source.file_name().unwrap_or_default().to_string_lossy()); ui.label(tr("→")); ui.label(target.file_name().unwrap_or_default().to_string_lossy()); ui.end_row(); }
                     }); }); }
-                    Err(error) => { ui.colored_label(egui::Color32::RED, error.to_string()); }
+                    Err(error) => { ui.colored_label(egui::Color32::RED, tr(&error.to_string())); }
                 }
-                if let Some(error) = &form.error { ui.label(error); }
+                if let Some(error) = &form.error { ui.label(tr(error)); }
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() { close = true; }
-                    if ui.add_enabled(plan.is_ok(), egui::Button::new("Rename all")).clicked()
+                    if ui.button(tr("Cancel")).clicked() { close = true; }
+                    if ui.add_enabled(plan.is_ok(), egui::Button::new(tr("Rename all"))).clicked()
                         && let Ok(plan) = plan { effect = Some(Effect::Run(Operation::BatchRename(plan))); close = true; }
                 });
             });
@@ -106,48 +110,53 @@ impl Tools {
             let mut search = false;
             egui::Modal::new(egui::Id::new("search")).show(ctx, |ui| {
                 ui.set_width(800.0);
-                ui.heading("Find files");
+                ui.heading(tr("Find files"));
                 ui.label(form.options.root.display().to_string());
                 ui.horizontal(|ui| {
-                    ui.label("Filename pattern");
+                    ui.label(tr("Filename pattern"));
                     ui.text_edit_singleline(&mut form.options.pattern);
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Containing text");
+                    ui.label(tr("Containing text"));
                     ui.text_edit_singleline(&mut form.options.content);
                 });
-                ui.checkbox(&mut form.options.hidden, "Include hidden files and folders");
+                ui.checkbox(
+                    &mut form.options.hidden,
+                    tr("Include hidden files and folders"),
+                );
                 ui.horizontal(|ui| {
                     if ui
-                        .add_enabled(form.pending.is_none(), egui::Button::new("Search"))
+                        .add_enabled(form.pending.is_none(), egui::Button::new(tr("Search")))
                         .clicked()
                     {
                         search = true;
                     }
                     if form.pending.is_some() {
                         ui.spinner();
-                        if ui.button("Stop").clicked() {
+                        if ui.button(tr("Stop")).clicked() {
                             form.cancel.store(true, Ordering::Relaxed);
                         }
                     }
-                    if ui.button("Close").clicked() {
+                    if ui.button(tr("Close")).clicked() {
                         form.cancel.store(true, Ordering::Relaxed);
                         close = true;
                     }
                 });
                 if let Some(error) = &form.error {
-                    ui.colored_label(egui::Color32::RED, error);
+                    ui.colored_label(egui::Color32::RED, tr(error));
                 }
                 if let Some(result) = &form.result {
                     ui.label(format!(
-                        "{} results{} · {} unreadable entries",
+                        "{} {}{} · {} {}",
                         result.paths.len(),
+                        tr("results"),
                         if result.truncated {
-                            " (limit reached)"
+                            tr(" (limit reached)")
                         } else {
-                            ""
+                            tr("")
                         },
-                        result.errors.len()
+                        result.errors.len(),
+                        tr("unreadable entries")
                     ));
                     egui::ScrollArea::vertical()
                         .max_height(320.0)
@@ -172,9 +181,9 @@ impl Tools {
                                 }
                             }
                         });
-                    ui.collapsing("Unreadable entries", |ui| {
+                    ui.collapsing(tr("Unreadable entries"), |ui| {
                         for error in &result.errors {
-                            ui.label(error);
+                            ui.label(tr(error));
                         }
                     });
                 }

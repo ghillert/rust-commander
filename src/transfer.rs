@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::{Context, Result, bail};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     ffi::OsString,
     fs,
     path::{Path, PathBuf},
@@ -60,9 +60,14 @@ fn plan_item(
     target: PathBuf,
     options: TransferOptions,
     reserved: &mut BTreeSet<PathBuf>,
+    overrides: &BTreeMap<PathBuf, ConflictPolicy>,
     task: &Task,
 ) -> Result<PlannedItem> {
     task.check()?;
+    let options = TransferOptions {
+        conflicts: overrides.get(&target).copied().unwrap_or(options.conflicts),
+        ..options
+    };
     let source_metadata = fs::symlink_metadata(source)?;
     let target_metadata = match fs::symlink_metadata(&target) {
         Ok(metadata) => Some(metadata),
@@ -95,6 +100,7 @@ fn plan_item(
                     target.join(child.file_name()),
                     options,
                     reserved,
+                    overrides,
                     task,
                 )?);
             }
@@ -171,6 +177,9 @@ impl Execution {
     /// is deliberately retained during a move, including its copied children.
     fn copy(&mut self, plan: &PlannedItem, task: &mut Task) -> Result<bool> {
         task.check()?;
+        if !matches!(plan.action, Action::Skip) {
+            task.capture(&plan.target)?;
+        }
         match &plan.action {
             Action::Copy => operations::copy_item(&plan.source, &plan.target, task)?,
             Action::Skip => {
@@ -228,14 +237,27 @@ impl Execution {
     }
 }
 
-pub fn transfer(
+pub fn transfer_resolved(
     sources: &[PathBuf],
     destination: &Path,
     moving: bool,
     options: TransferOptions,
+    overrides: &BTreeMap<PathBuf, ConflictPolicy>,
     task: &mut Task,
 ) -> Result<String> {
     operations::validate_sources(sources)?;
+    let normalized_overrides = overrides
+        .iter()
+        .map(|(path, policy)| {
+            let normalized = path
+                .parent()
+                .and_then(|parent| parent.canonicalize().ok())
+                .and_then(|parent| path.file_name().map(|name| parent.join(name)))
+                .unwrap_or_else(|| path.clone());
+            (normalized, *policy)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let overrides = &normalized_overrides;
     let destination =
         fs::canonicalize(destination).context("Choose an existing destination folder")?;
     if !destination.is_dir() {
@@ -267,7 +289,14 @@ pub fn transfer(
                 }
             }
         }
-        plans.push(plan_item(source, target, options, &mut reserved, task)?);
+        plans.push(plan_item(
+            source,
+            target,
+            options,
+            &mut reserved,
+            overrides,
+            task,
+        )?);
     }
     let before = if moving {
         sources
@@ -300,6 +329,7 @@ pub fn transfer(
             for (source, complete) in sources.iter().zip(&completed) {
                 if *complete {
                     task.check()?;
+                    task.capture(source)?;
                     operations::remove(source)
                         .context("Copies completed, but an original could not be removed")?;
                 }
@@ -332,4 +362,72 @@ pub fn transfer(
         }
     }
     result
+}
+
+pub fn transfer(
+    sources: &[PathBuf],
+    destination: &Path,
+    moving: bool,
+    options: TransferOptions,
+    task: &mut Task,
+) -> Result<String> {
+    transfer_resolved(
+        sources,
+        destination,
+        moving,
+        options,
+        &BTreeMap::new(),
+        task,
+    )
+}
+
+#[derive(Clone)]
+pub struct Conflict {
+    pub source: PathBuf,
+    pub target: PathBuf,
+    pub source_size: u64,
+    pub target_size: u64,
+}
+
+pub fn conflicts(sources: &[PathBuf], destination: &Path, merge: bool) -> Result<Vec<Conflict>> {
+    fn visit(source: &Path, target: &Path, merge: bool, result: &mut Vec<Conflict>) -> Result<()> {
+        let input = fs::symlink_metadata(source)?;
+        let output = match fs::symlink_metadata(target) {
+            Ok(metadata) => metadata,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
+        if merge && input.is_dir() && output.is_dir() {
+            for entry in fs::read_dir(source)? {
+                let entry = entry?;
+                visit(
+                    &entry.path(),
+                    &target.join(entry.file_name()),
+                    merge,
+                    result,
+                )?;
+            }
+        } else {
+            if result.len() >= 5000 {
+                bail!("Too many conflicts to display; resolve a smaller selection.");
+            }
+            result.push(Conflict {
+                source: source.into(),
+                target: target.into(),
+                source_size: input.len(),
+                target_size: output.len(),
+            });
+        }
+        Ok(())
+    }
+    let mut result = Vec::new();
+    for source in sources {
+        visit(
+            source,
+            &destination.join(source.file_name().context("Missing filename")?),
+            merge,
+            &mut result,
+        )?;
+    }
+    Ok(result)
 }

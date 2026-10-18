@@ -13,6 +13,44 @@ use std::{
 
 #[derive(Clone, Debug)]
 pub enum Operation {
+    RemoteTransferResolved {
+        from: crate::filesystem::Location,
+        entries: Vec<crate::filesystem::Entry>,
+        to: crate::filesystem::Location,
+        moving: bool,
+        options: crate::transfer::TransferOptions,
+        overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
+    },
+
+    Undo(Box<crate::history::Record>),
+    ResolvedTransfer {
+        sources: Vec<PathBuf>,
+        destination: PathBuf,
+        moving: bool,
+        options: crate::transfer::TransferOptions,
+        overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
+    },
+    RemoteRename {
+        connection: String,
+        source: PathBuf,
+        name: String,
+    },
+    ArchiveEdit {
+        archive: PathBuf,
+        edit: crate::archive_tools::ZipEdit,
+    },
+    PackProtected {
+        sources: Vec<PathBuf>,
+        destination: PathBuf,
+        password: String,
+    },
+    ExtractProtected {
+        archive: PathBuf,
+        selected: Vec<PathBuf>,
+        prefix: PathBuf,
+        destination: PathBuf,
+        password: String,
+    },
     Transfer {
         sources: Vec<PathBuf>,
         destination: PathBuf,
@@ -85,6 +123,39 @@ pub enum Operation {
     Checksum(PathBuf),
 }
 
+impl Operation {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Undo(_) => "Undo",
+            Self::Transfer { moving: true, .. }
+            | Self::ResolvedTransfer { moving: true, .. }
+            | Self::Move { .. } => "Move files",
+            Self::Transfer { .. } | Self::ResolvedTransfer { .. } | Self::Copy { .. } => {
+                "Copy files"
+            }
+            Self::Rename { .. } | Self::RemoteRename { .. } => "Rename",
+            Self::BatchRename(_) => "Batch rename",
+            Self::Mkdir(_) | Self::RemoteMkdir { .. } => "New folder",
+            Self::Mkfile(_) => "New file",
+            Self::Trash(_) => "Move to Trash",
+            Self::PermanentDelete(_) | Self::RemoteDelete { .. } => "Delete",
+            Self::Pack { .. } | Self::PackProtected { .. } => "Create archive",
+            Self::Extract { .. } | Self::ExtractProtected { .. } => "Extract archive",
+            Self::ArchiveEdit { .. } => "Edit ZIP archive",
+            Self::RemoteTransfer { .. } | Self::RemoteTransferResolved { .. } => "Remote transfer",
+            Self::Properties(_) => "Properties",
+            Self::Compare { .. } => "Compare folders",
+            Self::Checksum(_) => "Checksums",
+            Self::Permissions { .. } => "Permissions",
+            Self::Modified { .. } => "Modification time",
+            Self::Split { .. } => "Split file",
+            Self::Combine { .. } => "Combine files",
+        }
+    }
+}
+
+pub type ChangeHook = Box<dyn FnMut(&Path) -> Result<()> + Send>;
+
 #[derive(Clone, Debug, Default)]
 pub struct Progress {
     pub current: String,
@@ -93,6 +164,7 @@ pub struct Progress {
 }
 
 pub struct Task {
+    pub before_change: Option<ChangeHook>,
     pub cancel: Arc<AtomicBool>,
     pub progress: Progress,
     report: Box<dyn FnMut(Progress) + Send>,
@@ -108,11 +180,22 @@ impl Default for Task {
 impl Task {
     pub fn new(cancel: Arc<AtomicBool>, report: impl FnMut(Progress) + Send + 'static) -> Self {
         Self {
+            before_change: None,
             cancel,
             progress: Progress::default(),
             report: Box::new(report),
             last_report: Instant::now(),
         }
+    }
+
+    pub fn capture(&mut self, path: &Path) -> Result<()> {
+        self.check()?;
+        if let Some(mut hook) = self.before_change.take() {
+            let result = hook(path);
+            self.before_change = Some(hook);
+            result?;
+        }
+        Ok(())
     }
 
     pub fn check(&self) -> Result<()> {
@@ -228,6 +311,11 @@ pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
         } else {
             std::os::windows::fs::symlink_file(link, target)?;
         }
+        filetime::set_symlink_file_times(
+            target,
+            filetime::FileTime::from_last_access_time(&metadata),
+            filetime::FileTime::from_last_modification_time(&metadata),
+        )?;
         task.progress.files += 1;
     } else if metadata.is_dir() {
         fs::create_dir(target)?;
@@ -236,6 +324,10 @@ pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
                 let item = item?;
                 copy_item(&item.path(), &target.join(item.file_name()), task)?;
             }
+            filetime::set_file_mtime(
+                target,
+                filetime::FileTime::from_last_modification_time(&metadata),
+            )?;
             fs::set_permissions(target, metadata.permissions())?;
             Ok(())
         })();
@@ -271,6 +363,74 @@ pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
 pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
     task.check()?;
     match operation {
+        Operation::RemoteTransferResolved {
+            from,
+            entries,
+            to,
+            moving,
+            options,
+            overrides,
+        } => crate::remote::transfer_resolved(
+            &from, &entries, &to, moving, options, &overrides, task,
+        ),
+        Operation::Undo(record) => {
+            crate::history::undo(&record, task)?;
+            Ok(format!("Undid {}", record.label))
+        }
+        Operation::ResolvedTransfer {
+            sources,
+            destination,
+            moving,
+            options,
+            overrides,
+        } => crate::transfer::transfer_resolved(
+            &sources,
+            &destination,
+            moving,
+            options,
+            &overrides,
+            task,
+        ),
+        Operation::RemoteRename {
+            connection,
+            source,
+            name,
+        } => {
+            crate::remote::rename_with_task(&connection, &source, &name, task)?;
+            Ok("Remote item renamed.".into())
+        }
+        Operation::ArchiveEdit { archive, edit } => {
+            task.capture(&archive)?;
+            crate::archive_tools::edit_zip(&archive, &edit, task)?;
+            Ok("ZIP archive updated.".into())
+        }
+        Operation::PackProtected {
+            sources,
+            destination,
+            password,
+        } => {
+            task.capture(&destination)?;
+            crate::archive::pack_with_password(&sources, &destination, &password, task)?;
+            Ok("Encrypted archive created.".into())
+        }
+        Operation::ExtractProtected {
+            archive,
+            selected,
+            prefix,
+            destination,
+            password,
+        } => {
+            task.capture(&destination)?;
+            crate::archive::extract_with_password(
+                &archive,
+                &selected,
+                &prefix,
+                &destination,
+                &password,
+                task,
+            )?;
+            Ok("Archive extracted.".into())
+        }
         Operation::Transfer {
             sources,
             destination,
@@ -278,6 +438,10 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             options,
         } => crate::transfer::transfer(&sources, &destination, moving, options, task),
         Operation::BatchRename(plan) => {
+            for (source, target) in &plan {
+                task.capture(source)?;
+                task.capture(target)?;
+            }
             crate::desktop::batch_rename(&plan, task)?;
             Ok(format!("Renamed {} item(s).", plan.len()))
         }
@@ -314,6 +478,7 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             Ok("Combined files successfully.".into())
         }
         Operation::Mkfile(path) => {
+            task.capture(&path)?;
             File::options().write(true).create_new(true).open(path)?;
             Ok("Created file.".into())
         }
@@ -385,6 +550,8 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             if exists(&target) {
                 bail!("That name already exists.");
             }
+            task.capture(&source)?;
+            task.capture(&target)?;
             let before = source_stamp(&source, task)?;
             copy_item(&source, &target, task)?;
             task.check()?;
@@ -406,6 +573,7 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             Ok(format!("Moved {} item(s) to Trash.", sources.len()))
         }
         Operation::Mkdir(path) => {
+            task.capture(&path)?;
             fs::create_dir(&path)?;
             Ok(format!("Created {}", path.display()))
         }
@@ -414,6 +582,7 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             destination,
         } => {
             validate_sources(&sources)?;
+            task.capture(&destination)?;
             crate::archive::pack(&sources, &destination, task)?;
             Ok(format!("Created {}", destination.display()))
         }
@@ -423,6 +592,7 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             prefix,
             destination,
         } => {
+            task.capture(&destination)?;
             crate::archive::extract(&archive, &selected, &prefix, &destination, task)?;
             Ok(format!("Extracted to {}", destination.display()))
         }
@@ -477,6 +647,7 @@ fn transfer(
         Vec::new()
     };
     for (source, target) in sources.iter().zip(&targets) {
+        task.capture(target)?;
         copy_item(source, target, task)
             .with_context(|| format!("Could not copy {}", source.display()))?;
     }
@@ -490,6 +661,7 @@ fn transfer(
             }
         }
         for source in sources {
+            task.capture(source)?;
             remove(source).context("Copy completed, but an original could not be removed")?;
         }
     }

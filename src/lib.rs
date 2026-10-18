@@ -18,3 +18,10 @@ pub mod terminal;
 pub mod tools_ui;
 pub mod transfer;
 pub mod viewer;
+
+pub mod archive_tools;
+pub mod feature_ui;
+pub mod history;
+pub mod i18n;
+pub mod native_files;
+pub mod oauth;
