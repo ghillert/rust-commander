@@ -27,7 +27,12 @@ validation on the supported platforms.
 ## Service-specific behavior
 
 - **SFTP** uses the system OpenSSH executable, an agent or private key, and
-  strict known-host verification. Password-based SFTP is not implemented.
+  strict known-host verification on **macOS and Linux**. The current OpenDAL
+  transport depends on the Unix-only `openssh` crate, so SFTP is unavailable in
+  Windows builds and is omitted from their service picker. Existing SFTP profiles
+  remain readable and report this limitation when used on Windows. Windows
+  defaults to WebDAV; other remote adapters remain available. Password-based
+  SFTP is not implemented.
 - **Cloud adapters** accept access tokens. Google Drive, Dropbox and OneDrive also
   offer browser sign-in with PKCE, token refresh and reconnection. Register your
   own desktop client first; see [OAuth setup](OAUTH.md).

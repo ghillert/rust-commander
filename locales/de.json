@@ -312,5 +312,6 @@
   "Automatic (this desktop)": "Automatisch (dieser Desktop)",
   "Ready · Select files to get started": "Bereit · Zum Starten Dateien auswählen",
   "This folder is empty": "Dieser Ordner ist leer",
-  "Add favorites with ⌘D.": "Favoriten mit ⌘D hinzufügen."
+  "Add favorites with ⌘D.": "Favoriten mit ⌘D hinzufügen.",
+  "SFTP is currently supported only on macOS and Linux. Choose another service or mount the server as a local folder.": "SFTP wird derzeit nur auf macOS und Linux unterstützt. Einen anderen Dienst wählen oder den Server als lokalen Ordner einbinden."
 }

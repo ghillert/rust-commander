@@ -14,7 +14,7 @@ by the Rust Project or Rust Foundation.
 
 > **Development preview — 0.4.0.** This is an independent implementation with
 > full upstream compatibility still in progress. Apple Silicon macOS has been
-> validated; Windows and Linux builds and desktop integration still need testing.
+> validated interactively; Windows/Linux desktop integration still needs testing.
 > See the [parity checklist](parity/PARITY.md) and
 > [validation record](parity/VALIDATION.md) for the current scope.
 
@@ -238,7 +238,8 @@ navigation shortcuts are fixed.
 ## Remote connections
 
 Open **File → Connections** to configure SFTP, FTP, WebDAV, S3, HTTP, Dropbox,
-Google Drive, OneDrive, GCS, or WebHDFS. Secrets can be kept in memory or stored
+Google Drive, OneDrive, GCS, or WebHDFS. SFTP currently requires macOS or Linux;
+Windows offers the other adapters. Secrets can be kept in memory or stored
 in the operating system's credential store. Google Drive, Dropbox and OneDrive support browser OAuth
 login with PKCE and automatic token refresh, using your own registered client.
 See [OAuth setup](docs/OAUTH.md); live account validation is still pending.

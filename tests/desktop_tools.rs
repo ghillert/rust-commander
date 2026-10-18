@@ -362,3 +362,30 @@ fn pdf_viewer_renders_and_navigates_pages() {
     assert!(viewer::render_pdf(bytes, 2).is_err());
     assert!(viewer::render_pdf(b"not a PDF", 0).is_err());
 }
+
+#[test]
+fn remote_service_choices_match_platform_support() {
+    use rust_commander::remote::{self, Connection};
+    assert!(remote::SERVICES.contains(&Connection::default().service.as_str()));
+    let connection = Connection {
+        service: "sftp".into(),
+        ..Default::default()
+    };
+    #[cfg(unix)]
+    {
+        assert!(remote::SERVICES.contains(&"sftp"));
+        remote::validate(&connection).unwrap();
+    }
+    #[cfg(not(unix))]
+    {
+        assert!(!remote::SERVICES.contains(&"sftp"));
+        assert_eq!(Connection::default().service, "webdav");
+        let error = remote::validate(&connection).unwrap_err().to_string();
+        assert!(error.contains("SFTP is currently supported only on macOS and Linux"));
+        remote::register_profiles(std::slice::from_ref(&connection));
+        let error = remote::list(&connection.id, std::path::Path::new(""))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("SFTP is currently supported only on macOS and Linux"));
+    }
+}

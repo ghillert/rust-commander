@@ -20,7 +20,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 md-5 = "0.10"
 libc = "0.2"
 notify = "8"
-opendal = { version = "0.54", features = ["blocking", "services-fs", "services-ftp", "services-sftp", "services-webdav", "services-s3", "services-http", "services-dropbox", "services-gdrive", "services-onedrive", "services-gcs", "services-webhdfs"] }
+opendal = { version = "0.54", features = ["blocking", "services-fs", "services-ftp", "services-webdav", "services-s3", "services-http", "services-dropbox", "services-gdrive", "services-onedrive", "services-gcs", "services-webhdfs"] }
 percent-encoding = "2"
 portable-pty = "0.9"
 regex = "1"
@@ -47,6 +47,10 @@ sys-locale = "0.3"
 filetime = "0.2"
 same-file = "1"
 base64 = "0.22"
+
+[target.'cfg(unix)'.dependencies]
+# OpenDAL SFTP uses the Unix-only openssh transport.
+opendal = { version = "0.54", features = ["services-sftp"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 drag = "2.1.1"

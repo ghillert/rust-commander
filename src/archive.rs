@@ -634,6 +634,8 @@ fn visit_extended(
                     continue;
                 }
                 let path = safe_relative(Path::new(&name))?;
+                // libc uses u16 for st_mode on macOS/Windows and u32 on Linux.
+                #[allow(clippy::unnecessary_cast)]
                 let mode = stat.st_mode as u32;
                 let directory = mode & 0o170000 == 0o040000;
                 let regular = mode & 0o170000 == 0o100000;

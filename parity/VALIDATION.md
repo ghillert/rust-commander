@@ -1,6 +1,7 @@
 # Validation record
 
-This record covers version 0.4.0 on the available Apple Silicon Mac. It is not a
+This record covers version 0.4.0 on the available Apple Silicon Mac, including
+Linux checks in an ARM64 Debian container. It is not a
 full muCommander compatibility certification. See [PARITY.md](PARITY.md) for
 implementation gaps, including missing behavior as well as unverified platforms.
 
@@ -12,7 +13,7 @@ implementation gaps, including missing behavior as well as unverified platforms.
   5 settings migration tests, and 5 credential compatibility tests.
 - Rust formatting and Clippy with warnings denied pass.
 - Optimized macOS app bundle builds, and its ad hoc signature verifies.
-- Version 0.4.0 passes 113 automated tests, plus a separate interactive Mac
+- Version 0.4.0 passes 114 automated tests, plus a separate interactive Mac
   clipboard test. It adds recovery, conflicts, ZIP mutation/encryption, nested/remote
   archives, OAuth, localization and preference coverage; see the section below.
 - The parity gate intentionally fails until the remaining upstream items have
@@ -42,8 +43,10 @@ began in 0.2.0; the appearance-specific checks below use 0.3.0:
 
 ## Validation limits
 
-Windows and Linux builds and native interactions have not been run. CI is
-configured for them. Live SFTP, FTP, S3, cloud OAuth, keychain UI and other remote
+Windows builds and Windows/Linux native desktop interactions still need
+validation. Linux Clippy and tests pass in an ARM64 Debian container on this Mac;
+that does not validate an Ubuntu release build or native Linux desktop behavior.
+CI remains configured for all three platforms. Live SFTP, FTP, S3, cloud OAuth, keychain UI and other remote
 services have not been validated. The native automation drag gesture did not
 produce a drop; pane and external drops pass egui event tests, while native
 desktop drag/drop integration remains unverified. The filesystem adapter and loopback WebDAV
@@ -128,3 +131,29 @@ the user's running application and settings intact. Native checks confirmed:
 - The package retained native close/minimize/full-screen controls.
 
 Native drag-out to another application's drop target is still unverified.
+
+## CI portability fixes
+
+The Ubuntu job in run `39081602830` failed Clippy on an archive mode cast: libc's
+`st_mode` is u16 on macOS/Windows and u32 on Linux. The conversion now documents
+that ABI difference and scopes the unnecessary-cast exception to that statement;
+the workflow continues treating warnings as errors. The 0.4.0 Ubuntu job in run
+`39092799534` reproduced the same failure.
+
+The Windows job failed inside the Unix-only `openssh` dependency brought in by
+OpenDAL's SFTP feature. SFTP is now enabled only for Unix targets, omitted from
+the Windows service picker, and rejected explicitly when opening saved Windows
+SFTP profiles. Windows defaults to WebDAV. Other remote adapters remain enabled.
+A regression test covers platform service choices and the unsupported-profile
+error path; the Windows branch still requires the next CI run.
+
+Validation after these fixes:
+
+- Formatting and Clippy with warnings denied pass on macOS.
+- 114 tests pass on macOS; one interactive clipboard test remains ignored in
+  normal runs and retains its earlier separate smoke-check evidence.
+- Linux Clippy and all 114 tests pass with Rust 1.99.1 in an isolated ARM64
+  Debian 12 container. The final source changes were checked again with Clippy.
+- The `x86_64-pc-windows-msvc` Cargo dependency graph excludes `openssh` and
+  `openssh-sftp-client`; a full Windows build/test run remains pending.
+- Cargo.lock is unchanged and all checks use `--locked`.

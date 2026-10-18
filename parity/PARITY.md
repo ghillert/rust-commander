@@ -201,7 +201,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | mucommander-protocol-ovirt | missing | — |
 | mucommander-protocol-registry | missing | — |
 | mucommander-protocol-s3 | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
-| mucommander-protocol-sftp | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
+| mucommander-protocol-sftp | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/desktop_tools.rs::remote_service_choices_match_platform_support — SFTP uses OpenSSH key/agent authentication on macOS/Linux; the transport is Unix-only and Windows reports this limitation. Platform service choices are tested; live SFTP remains unvalidated. |
 | mucommander-protocol-smb | missing | — |
 | mucommander-protocol-vsphere | missing | — |
 | mucommander-viewer-text | partial | src/viewer.rs, tests/desktop_tools.rs — Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified. |

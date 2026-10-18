@@ -39,7 +39,7 @@ impl Default for Connection {
                     .as_nanos()
             ),
             name: "New connection".into(),
-            service: "sftp".into(),
+            service: if cfg!(unix) { "sftp" } else { "webdav" }.into(),
             endpoint: String::new(),
             root: "/".into(),
             bucket: String::new(),
@@ -66,7 +66,17 @@ pub struct Secrets {
     pub expires_at: u64,
 }
 pub const SERVICES: &[&str] = &[
-    "sftp", "ftp", "webdav", "s3", "http", "dropbox", "gdrive", "onedrive", "gcs", "webhdfs",
+    #[cfg(unix)]
+    "sftp",
+    "ftp",
+    "webdav",
+    "s3",
+    "http",
+    "dropbox",
+    "gdrive",
+    "onedrive",
+    "gcs",
+    "webhdfs",
 ];
 
 struct Session {
@@ -106,6 +116,12 @@ pub fn connection_name(id: &str) -> String {
 pub fn validate(connection: &Connection) -> Result<()> {
     if connection.name.trim().is_empty() || connection.id.is_empty() {
         bail!("Enter a connection name.");
+    }
+    #[cfg(not(unix))]
+    if connection.service == "sftp" {
+        bail!(
+            "SFTP is currently supported only on macOS and Linux. Choose another service or mount the server as a local folder."
+        );
     }
     if !SERVICES.contains(&connection.service.as_str()) && connection.service != "fs" {
         bail!("Unsupported storage service.");
@@ -262,6 +278,7 @@ fn session_locked(id: &str) -> Result<Arc<Session>> {
         .get(id)
         .cloned()
         .context("Connection profile is missing. Open Connections to reconnect.")?;
+    validate(&connection)?;
     let mut secrets = load_credentials(id).context(
         "Reconnect to this service in Connections; credentials are not available for this session",
     )?;
