@@ -107,17 +107,86 @@ fn redo_refuses_external_edits() {
 fn timestamp_changes_are_reversible() {
     let d = tempfile::tempdir().unwrap();
     let p = d.path().join("a");
+    let journal = d.path().join("history");
     fs::write(&p, "contents").unwrap();
     let before = fs::metadata(&p).unwrap().modified().unwrap();
+    let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
     let r = run(
         Operation::Modified {
             paths: vec![p.clone()],
-            time: std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000),
+            time: modified,
         },
-        &d.path().join("history"),
+        &journal,
     );
-    run(Operation::Undo(Box::new(r)), &d.path().join("history"));
-    assert_eq!(fs::metadata(p).unwrap().modified().unwrap(), before);
+    assert_eq!(fs::metadata(&p).unwrap().modified().unwrap(), modified);
+    assert_eq!(fs::read(&p).unwrap(), b"contents");
+    let undone = run(Operation::Undo(Box::new(r)), &journal);
+    assert_eq!(fs::metadata(&p).unwrap().modified().unwrap(), before);
+    run(Operation::Redo(Box::new(undone)), &journal);
+    assert_eq!(fs::metadata(&p).unwrap().modified().unwrap(), modified);
+    assert_eq!(fs::read(&p).unwrap(), b"contents");
+}
+#[test]
+fn directory_timestamp_changes_are_reversible_without_changing_children() {
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join("folder");
+    let journal = d.path().join("history");
+    fs::create_dir(&p).unwrap();
+    let child = p.join("file");
+    fs::write(&child, "contents").unwrap();
+    let before = fs::metadata(&p).unwrap().modified().unwrap();
+    let child_before = fs::metadata(&child).unwrap().modified().unwrap();
+    let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    let r = run(
+        Operation::Modified {
+            paths: vec![p.clone()],
+            time: modified,
+        },
+        &journal,
+    );
+    assert_eq!(fs::metadata(&p).unwrap().modified().unwrap(), modified);
+    let undone = run(Operation::Undo(Box::new(r)), &journal);
+    assert_eq!(fs::metadata(&p).unwrap().modified().unwrap(), before);
+    run(Operation::Redo(Box::new(undone)), &journal);
+    assert_eq!(fs::metadata(&p).unwrap().modified().unwrap(), modified);
+    assert_eq!(
+        fs::metadata(&child).unwrap().modified().unwrap(),
+        child_before
+    );
+    assert_eq!(fs::read(child).unwrap(), b"contents");
+}
+#[test]
+fn timestamp_changes_preserve_read_only_files() {
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join("read-only");
+    fs::write(&p, "contents").unwrap();
+    let original = fs::metadata(&p).unwrap().permissions();
+    let mut permissions = original.clone();
+    permissions.set_readonly(true);
+    fs::set_permissions(&p, permissions).unwrap();
+    let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    let result = rust_commander::desktop::change_modified(std::slice::from_ref(&p), modified);
+    let after = fs::metadata(&p).unwrap();
+    // Restore permissions before assertions so Windows can clean up the temporary directory.
+    fs::set_permissions(&p, original).unwrap();
+    result.unwrap();
+    assert_eq!(after.modified().unwrap(), modified);
+    assert!(after.permissions().readonly());
+    assert_eq!(fs::read(p).unwrap(), b"contents");
+}
+#[cfg(unix)]
+#[test]
+fn timestamp_changes_refuse_symlinks_without_changing_the_target() {
+    let d = tempfile::tempdir().unwrap();
+    let target = d.path().join("target");
+    let link = d.path().join("link");
+    fs::write(&target, "contents").unwrap();
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let before = fs::metadata(&target).unwrap().modified().unwrap();
+    let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    assert!(rust_commander::desktop::change_modified(&[link], modified).is_err());
+    assert_eq!(fs::metadata(&target).unwrap().modified().unwrap(), before);
+    assert_eq!(fs::read(target).unwrap(), b"contents");
 }
 #[cfg(unix)]
 #[test]

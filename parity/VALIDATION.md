@@ -486,3 +486,38 @@ Validation of this fix:
   the same edit succeeds with both original and added entries intact. The
   existing nested ZIP/TAR/7z edit test also covers the reported failure. The new
   Windows-specific case still requires execution by Windows CI.
+
+
+## Windows timestamp metadata access
+
+[Windows job 117775997124](https://github.com/ghillert/rust-commander/actions/runs/39161594318/job/117775997124)
+checked out `a861da4`, passed Clippy, all 39 library tests and all three archive
+path tests, including the external-reader replacement regression. It then failed
+`timestamp_changes_are_reversible` on the initial timestamp change with
+`Access is denied. (os error 5)`. The macOS and Ubuntu jobs succeeded, including
+release packaging. This run confirms the preceding archive fixes on Windows.
+
+`desktop::change_modified` opened a read-only handle before calling `set_times`.
+Windows [SetFileTime requires FILE_WRITE_ATTRIBUTES](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfiletime).
+The Windows branch now requests that metadata access directly through
+`OpenOptionsExt::access_mode`, with `FILE_FLAG_BACKUP_SEMANTICS` to support
+folders. It does not request file-content write access or clear read-only
+permissions. Symlink refusal remains in place.
+
+Validation of this fix:
+
+- All **17** active `features_05` integration tests pass on Apple Silicon macOS;
+  the disposable live SMB test remains ignored. Timestamp regressions check
+  file and folder changes through Undo/Redo, unchanged contents and child
+  timestamps, read-only permission preservation and refusal to follow symlinks.
+- Formatting, whitespace checks and warnings-denied all-targets/all-features
+  Clippy pass. The exact timestamp function also passes warnings-denied Clippy
+  for `x86_64-pc-windows-msvc` in a standalone harness. This checks the Windows
+  branch without claiming a full Windows application build or test execution.
+- A disposable Win32 diagnostic under Wine 11.0 can set and read back file and
+  directory timestamps with the new metadata-only access. However, Wine also
+  accepts the old read-only handle and does not expose the expected read-only
+  attribute for its fixture. This diagnostic therefore does not validate native
+  Windows access enforcement or read-only behavior.
+- The new Windows-specific behavior and recovery regressions still require a
+  native Windows CI run with this fix.

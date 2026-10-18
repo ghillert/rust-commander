@@ -492,7 +492,21 @@ pub fn change_modified(paths: &[PathBuf], modified: SystemTime) -> Result<()> {
         if fs::symlink_metadata(path)?.file_type().is_symlink() {
             bail!("Change the symlink target directly.");
         }
-        File::open(path)?.set_times(fs::FileTimes::new().set_modified(modified))?;
+        #[cfg(windows)]
+        let file = {
+            use std::os::windows::fs::OpenOptionsExt;
+            use windows_sys::Win32::Storage::FileSystem::{
+                FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+            };
+            // SetFileTime requires metadata write access; the flag also permits directories.
+            File::options()
+                .access_mode(FILE_WRITE_ATTRIBUTES)
+                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+                .open(path)?
+        };
+        #[cfg(not(windows))]
+        let file = File::open(path)?;
+        file.set_times(fs::FileTimes::new().set_modified(modified))?;
     }
     Ok(())
 }
