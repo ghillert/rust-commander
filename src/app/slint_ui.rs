@@ -7,6 +7,8 @@ use std::{cell::RefCell, rc::Rc};
 slint::include_modules!();
 mod dialogs;
 mod keys;
+mod parity;
+mod windows;
 
 #[derive(Clone, PartialEq)]
 struct RowData {
@@ -22,6 +24,7 @@ struct RowData {
 
 pub(super) struct Adapter {
     app: Commander,
+    extra: parity::State,
     ctx: UiSignal,
     rows: [Rc<VecModel<FileRow>>; 2],
     row_cache: [Vec<RowData>; 2],
@@ -84,17 +87,14 @@ fn path_id(path: &Path) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(path.as_os_str().as_encoded_bytes())
 }
 
-fn action_named(name: &str) -> Option<Action> {
-    action_menus()
+pub(crate) fn supported_commands() -> Vec<String> {
+    parity::command_catalog()
         .into_iter()
-        .flat_map(|(_, actions)| actions.into_iter().map(|(_, action)| action))
-        .chain([
-            Action::ToggleHidden,
-            Action::Preferences,
-            Action::Help,
-            Action::Quit,
-        ])
-        .find(|action| format!("{action:?}") == name)
+        .map(|(id, _)| id)
+        .collect()
+}
+fn action_named(name: &str) -> Option<Action> {
+    all_actions().into_iter().find(|a| format!("{a:?}") == name)
 }
 
 fn image(image: &crate::viewer::RasterImage) -> slint::Image {
@@ -114,6 +114,7 @@ impl Adapter {
         let app = Commander::with_settings(&ctx, paths, loaded);
         Self {
             app,
+            extra: Default::default(),
             ctx,
             rows: std::array::from_fn(|_| Rc::new(VecModel::default())),
             row_cache: Default::default(),
@@ -149,7 +150,8 @@ impl Adapter {
     }
 
     fn blocked(&self) -> bool {
-        self.app.features.active()
+        self.extra.dialog.is_some()
+            || self.app.features.active()
             || self.app.prompt.is_some()
             || self.app.editor.is_some()
             || self.app.help
@@ -221,8 +223,16 @@ impl Adapter {
         let (name, side) = id.split_once(':').map_or((id, None), |(name, side)| {
             (name, side.parse::<usize>().ok())
         });
-        if name == "Quit" {
+        if name == "SaveText" {
+            self.viewer_action("save");
+            return;
+        }
+        if name == "CloseWindow" {
             self.request_close();
+            return;
+        }
+        if name == "Quit" {
+            self.extra.window_request = Some(windows::Request::Quit);
             return;
         }
         if name == "CancelJob" {
@@ -268,6 +278,9 @@ impl Adapter {
         }
         if let Some(side) = side.filter(|&side| side < 2) {
             self.app.active = side;
+        }
+        if self.parity_action(name) {
+            return;
         }
         if name == "Back" || name == "Forward" {
             self.app.tab_mut().history(name == "Forward", &self.ctx);
@@ -318,7 +331,13 @@ impl Adapter {
     }
 
     fn request_close(&mut self) {
-        if self.app.job.is_some() || self.app.editor.as_ref().is_some_and(Editor::dirty) {
+        if self
+            .app
+            .job
+            .as_ref()
+            .is_some_and(|job| job.owner == self.app.window_id)
+            || self.app.editor.as_ref().is_some_and(Editor::dirty)
+        {
             self.app.confirm_exit = true;
         } else {
             self.app.exiting = true;
@@ -326,6 +345,8 @@ impl Adapter {
     }
 
     fn tick(&mut self, ui: &CommanderWindow) {
+        #[cfg(target_os = "macos")]
+        use slint::winit_030::WinitWindowAccessor;
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         if self.app.native_window.is_none() {
             use raw_window_handle::HasWindowHandle;
@@ -341,7 +362,13 @@ impl Adapter {
             }
         }
         #[cfg(target_os = "macos")]
-        if let Some(menu) = &self.app.native_menu {
+        if ui
+            .window()
+            .with_winit_window(|window| window.has_focus())
+            .unwrap_or(false)
+            && let Some(menu) = &self.app.native_menu
+        {
+            menu.update_bindings(&self.app.preferences);
             let actions = menu.poll(self.blocked() || self.app.exiting);
             for action in actions {
                 self.action(&format!("{action:?}"));
@@ -360,6 +387,7 @@ impl Adapter {
             }
         }
         self.app.poll(&self.ctx);
+        self.parity_tick();
         self.app.poll_prompt(&self.ctx);
         self.poll_dialogs();
         if self.app.preferences.preview {
@@ -388,9 +416,6 @@ impl Adapter {
             self.request_close();
         }
         self.sync(ui);
-        if self.app.exiting && self.app.job.is_none() {
-            let _ = slint::quit_event_loop();
-        }
     }
 
     fn sync(&mut self, ui: &CommanderWindow) {
@@ -459,6 +484,7 @@ impl Adapter {
                 f64::from(ui.get_native_header_height()),
             );
         }
+        self.parity_sync(ui);
         ui.set_command_bar_visible(self.app.preferences.command_bar);
         ui.set_status_visible(self.app.preferences.status_bar);
         ui.set_single_pane(self.app.preferences.single_pane);
@@ -660,7 +686,7 @@ impl Adapter {
             let tabs = self.app.panes[side]
                 .tabs
                 .iter()
-                .map(|tab| tab.location.title())
+                .map(parity::tab_label)
                 .collect::<Vec<_>>();
             if tabs != self.tabs_cache[side] {
                 if side == 0 {
@@ -874,11 +900,41 @@ impl Adapter {
             ui.set_viewer_text(editor.text.as_str().into());
             ui.set_viewer_editable(editor.editable);
             ui.set_viewer_dirty(editor.dirty());
+            ui.set_viewer_save_key(
+                self.app
+                    .preferences
+                    .shortcuts
+                    .get("SaveText")
+                    .map(|binding| parity::display_binding(binding))
+                    .unwrap_or_default()
+                    .into(),
+            );
             ui.set_viewer_confirm_close(editor.confirm_close);
             ui.set_viewer_error(editor.error.clone().unwrap_or_default().into());
-            ui.set_viewer_pdf(editor.pdf.is_some());
+            ui.set_viewer_text_controls(editor.image.is_none() && editor.pdf.is_none());
+            ui.set_viewer_encoding(
+                editor
+                    .document
+                    .as_ref()
+                    .map(|d| d.encoding)
+                    .or_else(|| editor.text_page.as_ref().map(|p| p.document.encoding))
+                    .unwrap_or_default()
+                    .label()
+                    .into(),
+            );
+            ui.set_viewer_save_encoding(
+                editor
+                    .document
+                    .as_ref()
+                    .map(|d| d.encoding)
+                    .unwrap_or_default()
+                    .label()
+                    .into(),
+            );
+            ui.set_viewer_pdf(editor.pdf.is_some() || editor.text_page.is_some());
             ui.set_viewer_has_previous(
-                editor.pdf.as_ref().is_some_and(|pdf| pdf.page > 0)
+                (editor.pdf.as_ref().is_some_and(|pdf| pdf.page > 0)
+                    || editor.text_page.as_ref().is_some_and(|p| p.offset > 0))
                     && self.app.pending_pdf.is_none(),
             );
             ui.set_viewer_has_next(
@@ -886,13 +942,20 @@ impl Adapter {
                     .pdf
                     .as_ref()
                     .is_some_and(|pdf| pdf.page + 1 < pdf.pages)
-                    && self.app.pending_pdf.is_none(),
+                    || editor.text_page.as_ref().is_some_and(|p| p.next < p.total)
+                        && self.app.pending_pdf.is_none(),
             );
             ui.set_viewer_page(
                 editor
                     .pdf
                     .as_ref()
                     .map(|pdf| format!("{} / {}", pdf.page + 1, pdf.pages))
+                    .or_else(|| {
+                        editor
+                            .text_page
+                            .as_ref()
+                            .map(|p| format!("Bytes {}–{} / {}", p.offset, p.next, p.total))
+                    })
                     .unwrap_or_default()
                     .into(),
             );
@@ -1083,31 +1146,22 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
     slint::BackendSelector::new()
         .backend_name("winit".into())
         .select()?;
-    let ui = CommanderWindow::new()?;
-    let state = Rc::new(RefCell::new(Adapter::new(paths, settings::load())));
-    wire(&ui, state.clone());
+    let smoke_ui = windows::open(paths, settings::load())?;
+    #[cfg(not(feature = "screenshot"))]
+    let _ = &smoke_ui;
     let timer = slint::Timer::default();
-    let tick_state = state.clone();
-    let weak = ui.as_weak();
     timer.start(
         slint::TimerMode::Repeated,
         Duration::from_millis(50),
-        move || {
-            if let Some(ui) = weak.upgrade() {
-                tick_state.borrow_mut().tick(&ui);
-                dispatch_native_drag(&tick_state, &ui);
-            }
-        },
+        windows::tick,
     );
-    state.borrow_mut().sync(&ui);
-    ui.invoke_focus_files(state.borrow().app.active as i32);
     #[cfg(feature = "screenshot")]
     let screenshot_timer = slint::Timer::default();
     #[cfg(feature = "screenshot")]
     if let Some(path) = std::env::var_os("RUST_COMMANDER_SCREENSHOT_TO") {
-        let weak = ui.as_weak();
+        let weak = smoke_ui.as_weak();
         if let Ok(action) = std::env::var("RUST_COMMANDER_SCREENSHOT_ACTION") {
-            let action_ui = ui.as_weak();
+            let action_ui = smoke_ui.as_weak();
             slint::Timer::single_shot(Duration::from_millis(750), move || {
                 if let Some(ui) = action_ui.upgrade() {
                     ui.invoke_action(action.into());
@@ -1143,7 +1197,7 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
             },
         );
     }
-    ui.run()?;
+    slint::run_event_loop_until_quit()?;
     Ok(())
 }
 
@@ -1182,11 +1236,11 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
             let state=state.clone(); let weak=ui.as_weak();
             ui.$method(move |$($arg),*| {
                 let Some($window)=weak.upgrade() else {return Default::default();};
-                let mut guard=state.borrow_mut();
-                let $adapter=&mut *guard;
-                let result=$body;
-                $adapter.sync(&$window);
-                result
+                windows::with_state(&state,|$adapter| {
+                  let result=$body;
+                  $adapter.sync(&$window);
+                  result
+                })
             });
         }};
     }
@@ -1239,7 +1293,7 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
             .find(|(name, _)| *name == title.as_str())
             .map(|(_, entries)| entries)
             .unwrap_or_default();
-        if title == "View" {
+        if title == "View" && entries.is_empty() {
             entries = vec![
                 ("Show Hidden Files", Action::ToggleHidden),
                 ("Appearance…", Action::Preferences),
@@ -1254,7 +1308,8 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
                     .into_iter()
                     .map(|(title, action)| Command {
                         id: format!("{action:?}").into(),
-                        title: tr(title).into_owned().into(),
+                        title: parity::caption(&format!("{action:?}"), title, &a.app.preferences)
+                            .into(),
                         enabled: !a.blocked(),
                     })
                     .collect::<Vec<_>>(),
@@ -1344,6 +1399,12 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
             );
         }
     });
+    callback!(on_resize_panes, |a, w, ratio, finished| {
+        a.app.preferences.layout.set_ratio(ratio);
+        if finished {
+            a.app.save_settings();
+        }
+    });
     callback!(on_dropped, |a, w, side, data| {
         if side >= 0 {
             a.drop_files(side as usize, data)
@@ -1431,11 +1492,12 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
     let weak = ui.as_weak();
     let close_state = state.clone();
     ui.window().on_close_requested(move || {
-        let mut a = close_state.borrow_mut();
-        a.request_close();
-        if let Some(ui) = weak.upgrade() {
-            a.sync(&ui);
-        }
+        windows::with_state(&close_state, |a| {
+            a.request_close();
+            if let Some(ui) = weak.upgrade() {
+                a.sync(&ui);
+            }
+        });
         slint::CloseRequestResponse::KeepWindowShown
     });
 }
@@ -1505,7 +1567,7 @@ fn dispatch_native_drag(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     state.borrow_mut().app.native_drag(paths);
     ui.invoke_reset_native_drag();
-    state.borrow_mut().sync(ui);
+    windows::with_state(state, |a| a.sync(ui));
 }
 
 fn location_breadcrumbs(location: &Location) -> Vec<(String, Location)> {
@@ -1561,3 +1623,6 @@ fn location_breadcrumbs(location: &Location) -> Vec<(String, Location)> {
         }
     }
 }
+
+#[cfg(test)]
+mod parity_tests;

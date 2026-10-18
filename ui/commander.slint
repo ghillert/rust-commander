@@ -4,6 +4,7 @@ export { Palette } from "std-widgets.slint";
 import { Chrome, Glyphs, ChromeButton, ChromeField, ShortcutButton } from "chrome.slint";
 export { Chrome } from "chrome.slint";
 
+export struct CommandButton {id:string,title:string,key:string,enabled:bool}
 export struct Command { id: string, title: string, enabled: bool }
 export struct Place { id: string, title: string, detail: string, heading: bool }
 export struct FileColumn { title: string, width: float }
@@ -25,6 +26,7 @@ export global Transfers {
 
 component FilePane inherits Rectangle {
     in property <int> side;
+    out property <float> visible-rows:list.visible-height/max(24px,(root.text-size+10)*1px);
     in property <bool> active;
     in property <bool> busy;
     in property <[FileRow]> rows;
@@ -33,11 +35,15 @@ component FilePane inherits Rectangle {
     private property <bool> native-drag;
     private property <bool> editing-address;
     in property <[FileColumn]> columns;
+    in property <bool> auto-size-columns;
+    in property <float> column-total:1;
+    private property <float> column-scale:root.auto-size-columns ? root.width/1px/max(root.column-total,1):1;
     in property <[string]> tabs;
     in property <[Place]> breadcrumbs;
     in property <int> active-tab;
     in-out property <string> address;
     in-out property <string> filter;
+    in property <string> quick-find;
     in property <string> error;
     in property <string> summary;
     in property <color> accent;
@@ -147,6 +153,10 @@ component FilePane inherits Rectangle {
         }
         Rectangle {
             height: 32px; background: Chrome.pane;
+            if root.quick-find != "": Rectangle {
+                height:24px;background:Chrome.toolbar;
+                Text {x:12px;width:parent.width - 24px;height:parent.height;vertical-alignment:center;text:"Quick find: " + root.quick-find;color:Chrome.secondary;font-size:12px;}
+            }
             filter-input := ChromeField {
                 x: 9px; y: 3px; width: parent.width - 18px; height: 27px;
                 text <=> root.filter; icon: Glyphs.action("Search");
@@ -161,7 +171,7 @@ component FilePane inherits Rectangle {
             HorizontalLayout {
                 spacing: 0px;
                 for column[index] in root.columns: Rectangle {
-                    preferred-width: column.width * 1px; min-width: index == 0 ? 80px : 40px;
+                    preferred-width: column.width * root.column-scale * 1px; min-width: index == 0 ? 80px : 40px;
                     horizontal-stretch: index == 0 ? 1 : 0;
                     Text { text: column.title; x: 8px; width: parent.width - 12px; height: parent.height; vertical-alignment: center; font-size: 11px; font-weight: 600; color: Chrome.secondary; horizontal-alignment: column.title == Words.translate("Size",Words.version) ? right : left; overflow: elide; }
                     TouchArea { clicked => { root.sort(index); } }
@@ -174,7 +184,7 @@ component FilePane inherits Rectangle {
                             if event.kind == PointerEventKind.down {self.base-width=column.width;self.start-x=(self.absolute-position.x+self.mouse-x)/1px;}
                             if event.kind == PointerEventKind.up {root.resize-column(index,column.width,true);}
                         }
-                        moved => {if self.pressed {root.resize-column(index,max(40,min(800,self.base-width+(self.absolute-position.x+self.mouse-x)/1px-self.start-x)),false);}}
+                        moved => {if self.pressed {root.resize-column(index,max(40,min(800,self.base-width+((self.absolute-position.x+self.mouse-x)/1px-self.start-x)/root.column-scale)),false);}}
                     }
                 }
             }
@@ -192,7 +202,7 @@ component FilePane inherits Rectangle {
                     HorizontalLayout {
                         spacing: 0px;
                         for column[col] in root.columns: Rectangle {
-                            preferred-width: column.width * 1px; min-width: col == 0 ? 80px : 40px;
+                            preferred-width: column.width * root.column-scale * 1px; min-width: col == 0 ? 80px : 40px;
                             horizontal-stretch: col == 0 ? 1 : 0;
                             if col == 0: Image {
                                 source: row.directory ? @image-url("icons/folder.svg") : @image-url("icons/file.svg");
@@ -260,7 +270,8 @@ component Overlay inherits FocusScope {
 }
 
 export component CommanderWindow inherits Window {
-    title: "Rust Commander";
+    in property <string> window-title: "Rust Commander";
+    title: root.window-title;
     default-font-size: root.text-size * 1px;
     preferred-width: 1240px;
     preferred-height: 780px;
@@ -279,6 +290,16 @@ export component CommanderWindow inherits Window {
     in property <bool> command-bar-visible: true;
     in property <bool> status-visible: true;
     in property <bool> single-pane;
+    out property <float> left-page-rows:left.visible-rows;
+    out property <float> right-page-rows:right.visible-rows;
+    in property <bool> auto-size-columns;
+    in property <float> column-total:1;
+    in property <bool> stacked;
+    in property <float> pane-ratio:0.5;
+    in property <[CommandButton]> command-buttons;
+    in property <string> left-quick-find;
+    in property <string> right-quick-find;
+    callback resize-panes(float,bool);
     in property <int> active-pane;
     in property <bool> busy;
     in property <bool> show-hidden;
@@ -366,6 +387,10 @@ export component CommanderWindow inherits Window {
     callback dialog-select(string);
     callback viewer-edit(string);
     callback viewer-action(string);
+    in property <bool> viewer-text-controls;
+    in property <string> viewer-encoding:"UTF-8";
+    in property <string> viewer-save-key;
+    in property <string> viewer-save-encoding:"UTF-8";
     callback terminal-key(KeyEvent) -> bool;
     callback terminal-resize(int, int);
     changed dialog-title => { if root.dialog-title == "" { root.focus-files(root.active-pane); } }
@@ -373,10 +398,11 @@ export component CommanderWindow inherits Window {
     public function scroll-to-cursor(side:int) {if side==0{left.scroll-to-cursor();}else{right.scroll-to-cursor();}}
     public function reset-native-drag() {left.reset-native-drag();right.reset-native-drag();}
     public function drop-side(x:float,y:float)->int {
-        if x*1px>=left.absolute-position.x && x*1px<left.absolute-position.x+left.width && y*1px>=left.absolute-position.y && y*1px<left.absolute-position.y+left.height {return 0;}
+        if left.visible && x*1px>=left.absolute-position.x && x*1px<left.absolute-position.x+left.width && y*1px>=left.absolute-position.y && y*1px<left.absolute-position.y+left.height {return 0;}
         if right.visible && x*1px>=right.absolute-position.x && x*1px<right.absolute-position.x+right.width && y*1px>=right.absolute-position.y && y*1px<right.absolute-position.y+right.height {return 1;}
         return -1;
     }
+    public function show-file-menu() {root.menu-x=(root.active-pane==0 ? left.absolute-position.x : right.absolute-position.x)/1px + 24;root.menu-y=(root.active-pane==0 ? left.absolute-position.y : right.absolute-position.y)/1px + 150;root.menu("File");app-menu.show();}
     public function focus-files(side: int) { if side == 0 { left.focus-files(); } else { right.focus-files(); } }
     public function focus-address(side: int) { if side == 0 { left.focus-address(); } else { right.focus-address(); } }
     public function focus-filter(side: int) { if side == 0 { left.focus-filter(); } else { right.focus-filter(); } }
@@ -390,7 +416,7 @@ export component CommanderWindow inherits Window {
                 height: 30px; background: Chrome.toolbar;
                 HorizontalLayout {
                     padding-left: 8px; spacing: 3px;
-                    for title in ["File", "Operations", "Navigate", "Selection", "View", "Help"]: ChromeButton {
+                    for title in ["File", "Operations", "Navigate", "Selection", "View", "Window", "Help"]: ChromeButton {
                         label: Words.translate(title,Words.version); show-label: true;
                         clicked => {root.menu-x=8;root.menu-y=30;root.menu(title);app-menu.show();}
                     }
@@ -454,13 +480,19 @@ export component CommanderWindow inherits Window {
                         }
                     }
                 }
-                left := FilePane {
+                pane-area := Rectangle {
+                  horizontal-stretch:1; min-width:0px;
+                  left := FilePane {
+                    x:0px;y:0px;
+                    width: root.single-pane || root.stacked ? parent.width : (parent.width - 5px)*root.pane-ratio;
+                    height: root.single-pane || !root.stacked ? parent.height : (parent.height - 5px)*root.pane-ratio;
+                    quick-find:root.left-quick-find;
                     visible: !root.single-pane || root.active-pane == 0; min-width: 0px; max-width: root.single-pane && root.active-pane == 1 ? 0px : 100000px;
                     breadcrumbs: root.left-breadcrumbs;
                     breadcrumb(index) => {root.breadcrumb(0,index);}
                     selection-payload: root.left-selection-payload;
                     cursor-index: root.left-cursor;
-                    side: 0; active: root.active-pane == 0; rows: root.left-rows; columns: root.columns; tabs: root.left-tabs; active-tab: root.left-tab;
+                    side: 0; active: root.active-pane == 0; rows: root.left-rows; columns: root.columns; auto-size-columns:root.auto-size-columns;column-total:root.column-total; tabs: root.left-tabs; active-tab: root.left-tab;
                     address <=> root.left-address; filter <=> root.left-filter; error: root.left-error; busy: root.left-busy; summary: root.left-summary;
                     accent: root.accent; selection-color: root.selection-color; selection-text: root.selection-text; inactive-selection: root.inactive-selection; dark: root.dark; text-size: root.text-size;
                     action(id) => { root.action(id + ":0"); } tab(index) => { root.tab(0, index); }
@@ -473,13 +505,18 @@ export component CommanderWindow inherits Window {
                     context-menu(x,y) => {root.menu-x=x;root.menu-y=y;root.menu("File");app-menu.show();} key-event(event) => { return root.pane-key(0, event); }
                     dropped(data) => { return root.dropped(0, data); }
                 }
-                right := FilePane {
+                  right := FilePane {
+                    x: root.single-pane || root.stacked ? 0px : left.width + 5px;
+                    y: root.single-pane || !root.stacked ? 0px : left.height + 5px;
+                    width: root.single-pane || root.stacked ? parent.width : parent.width - left.width - 5px;
+                    height: root.single-pane || !root.stacked ? parent.height : parent.height - left.height - 5px;
+                    quick-find:root.right-quick-find;
                     visible: !root.single-pane || root.active-pane == 1; min-width: 0px; max-width: root.single-pane && root.active-pane == 0 ? 0px : 100000px;
                     breadcrumbs: root.right-breadcrumbs;
                     breadcrumb(index) => {root.breadcrumb(1,index);}
                     selection-payload: root.right-selection-payload;
                     cursor-index: root.right-cursor;
-                    side: 1; active: root.active-pane == 1; rows: root.right-rows; columns: root.columns; tabs: root.right-tabs; active-tab: root.right-tab;
+                    side: 1; active: root.active-pane == 1; rows: root.right-rows; columns: root.columns; auto-size-columns:root.auto-size-columns;column-total:root.column-total; tabs: root.right-tabs; active-tab: root.right-tab;
                     address <=> root.right-address; filter <=> root.right-filter; error: root.right-error; busy: root.right-busy; summary: root.right-summary;
                     accent: root.accent; selection-color: root.selection-color; selection-text: root.selection-text; inactive-selection: root.inactive-selection; dark: root.dark; text-size: root.text-size;
                     action(id) => { root.action(id + ":1"); } tab(index) => { root.tab(1, index); }
@@ -491,6 +528,22 @@ export component CommanderWindow inherits Window {
                     resize-column(index,width,finished) => {root.resize-column(index,width,finished);}
                     context-menu(x,y) => {root.menu-x=x;root.menu-y=y;root.menu("File");app-menu.show();} key-event(event) => { return root.pane-key(1, event); }
                     dropped(data) => { return root.dropped(1, data); }
+                }
+                  if !root.single-pane: Rectangle {
+                    x:root.stacked?0px:left.width;y:root.stacked?left.height:0px;
+                    width:root.stacked?parent.width:5px;height:root.stacked?5px:parent.height;
+                    background:divider.has-hover || divider.pressed ? root.accent : Chrome.separator;
+                    divider := TouchArea {
+                      private property <length> start;
+                      private property <float> ratio;
+                      mouse-cursor:root.stacked?ns-resize:ew-resize;
+                      pointer-event(event)=>{
+                        if event.kind==PointerEventKind.down {self.start=root.stacked?self.absolute-position.y+self.mouse-y:self.absolute-position.x+self.mouse-x;self.ratio=root.pane-ratio;}
+                        if event.kind==PointerEventKind.up {root.resize-panes(root.pane-ratio,true);}
+                      }
+                      moved=>{if self.pressed {let position=root.stacked?self.absolute-position.y+self.mouse-y:self.absolute-position.x+self.mouse-x;let span=root.stacked?pane-area.height:pane-area.width;root.resize-panes(max(0.15,min(0.85,self.ratio+(position - self.start)/span)),false);}}
+                    }
+                  }
                 }
                 if root.preview-visible: VerticalBox {
                     width: 300px;
@@ -544,8 +597,8 @@ export component CommanderWindow inherits Window {
                 height: 34px; background: Chrome.toolbar;
                 HorizontalLayout {
                     padding-left:8px;padding-right:8px;spacing:4px;
-                    for command in [{id:"Help",key:"F1",title:"Help"},{id:"View",key:"F3",title:"View"},{id:"Edit",key:"F4",title:"Edit"},{id:"Copy",key:"F5",title:"Copy"},{id:"Move",key:"F6",title:"Move"},{id:"Mkdir",key:"F7",title:"New folder"},{id:"Trash",key:"F8",title:"Trash"}]: ShortcutButton {
-                        key-label:command.key;label:Words.translate(command.title,Words.version);clicked=>{root.action(command.id);}
+                    for command in root.command-buttons: ShortcutButton {
+                        key-label:command.key;label:Words.translate(command.title,Words.version);enabled:command.enabled;clicked=>{root.action(command.id);}
                     }
                 }
             }
@@ -568,6 +621,8 @@ export component CommanderWindow inherits Window {
             VerticalBox {
                 HorizontalBox {
                     Text { text: root.viewer-title; font-weight: 600; color: Palette.foreground; overflow: elide; }
+                    if root.viewer-text-controls: ComboBox {accessible-label:"Text encoding";model:["UTF-8","UTF-16 LE","UTF-16 BE","Windows-1252","ISO-8859-1"];current-value:root.viewer-encoding;selected(value)=>{root.viewer-action("encoding:"+value);}}
+                    if root.viewer-editable: ComboBox {accessible-label:"Save text encoding";model:["UTF-8","UTF-16 LE","UTF-16 BE","Windows-1252","ISO-8859-1"];current-value:root.viewer-save-encoding;selected(value)=>{root.viewer-action("save-encoding:"+value);}}
                     if root.viewer-pdf: Button { enabled: root.viewer-has-previous; text: Words.translate("‹", Words.version); clicked => { root.viewer-action("previous"); } }
                     if root.viewer-pdf: Text { text: root.viewer-page; color: Palette.foreground; }
                     if root.viewer-pdf: Button { enabled: root.viewer-has-next; text: Words.translate("›", Words.version); clicked => { root.viewer-action("next"); } }
@@ -589,7 +644,7 @@ export component CommanderWindow inherits Window {
                     Button { text: Words.translate("Keep editing", Words.version); clicked => { root.viewer-action("keep"); } }
                     Button { text: Words.translate("Discard changes", Words.version); clicked => { root.viewer-action("discard"); } }
                 }
-                if root.viewer-editable: Button { text: Words.translate("Save", Words.version); enabled: root.viewer-dirty && !root.busy; clicked => { root.viewer-action("save"); } }
+                if root.viewer-editable: Button { text: Words.translate("Save", Words.version)+(root.viewer-save-key == "" ? "":"  "+root.viewer-save-key); accessible-label:"Save"; enabled: root.viewer-dirty && !root.busy; clicked => { root.viewer-action("save"); } }
             }
         }
     }

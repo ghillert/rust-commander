@@ -361,3 +361,92 @@ This checks the reported lint; it does not link or run the Windows application.
 macOS formatting, all-targets Clippy with warnings denied, and all seven queue
 and resumable-transfer regression tests pass. Full Windows CI validation
 requires a new run with the fix.
+
+## Twelve parity additions (0.7.0)
+
+The [0.7 guide](../docs/FEATURES_0.7.md) describes the new behavior and limits.
+Implementation is compared with the existing pinned upstream source revision,
+including the five-row block increment, XML keymap filename/alternate binding
+attributes, nested visible preferences and upstream split-orientation terminology.
+The checklist records these areas as partial where platform validation or exact
+upstream compatibility remains incomplete.
+
+Automated validation on Apple Silicon macOS:
+
+- **166 normal tests** pass; the interactive clipboard and live SMB tests remain
+  ignored. The 26 added tests comprise 16 integration cases and ten headless
+  Slint/window-runtime cases.
+- Formatting, warnings-denied all-targets/all-features Clippy and whitespace
+  checks pass with the locked dependency graph.
+- Coverage includes Unicode normalization/cycling, atomic wildcard selection,
+  complete range marking, five-row blocks, locked/named tab navigation and
+  persistence, layout/drop routing, quick lists and cross-pane navigation,
+  custom command labels and bindings, metadata sorting, exact-byte encoded
+  save/Undo, unrepresentable legacy characters, UTF-8/UTF-16 page boundaries in
+  both directions, bounded recents and reviewed XML import with exact backups.
+- Headless window-runtime tests retain independent tabs while sharing preferences,
+  queue and history; closing another window does not cancel the job owner's work.
+  The editor conversion callback test saves through a remapped keyboard binding.
+- Trash tests exercise the confirmation guard and refusal to replay emptying
+  unattended. They never call the native empty-Trash operation.
+- Cupertino, Fluent and Cosmic styles compile on macOS. The optimized 0.7.0
+  macOS bundle builds and its ad hoc signature verifies.
+- The exact `src/native_actions.rs` module passes warnings-denied Windows-target
+  Clippy in a standalone harness with the locked native dependency versions.
+  This checks compilation of the new Recycle Bin API path; it does not link or
+  run the Windows application.
+
+Native macOS checks used a separate review bundle, configuration directory,
+XML samples and files under `/private/tmp/rust-commander-07`:
+
+| Workflow | Observed result |
+| --- | --- |
+| Quick find and selection | Typing a prefix selects the accented sample filename. Wildcard `*.txt` selects all five visible text files. |
+| Multiple windows and recovery | Cmd+N opens another window. Undo there reverses the first window's disposable transfer through shared history. |
+| Layout | Stacked panes render correctly with the common sidebar and independent location rows. |
+| Quick lists | Filtering for Destination and pressing Return navigates there. |
+| Tab locks | Locking the tab and choosing Parent leaves its original location locked and opens an unlocked parent tab. Window titles track the active tab and window number. |
+| Settings | Named command-bar choices and shortcut filtering are accessible in the native window. |
+| Text | A UTF-16 LE sample opens decoded and editable. Saving retains its `FF FE` BOM and CRLF. A 3.4 MB UTF-8 file opens read-only and advances from bytes 0–262144 to 262144–524288. |
+| Import | Preview reports supported content and an unsupported preference. Applying adds the sample bookmark and reports a backup path in the isolated configuration. |
+
+Windows and Linux desktop execution for 0.7 remains outstanding. Earlier Linux
+container checks above establish the 0.6 baseline only. Real system Trash opening
+and emptying, Finder automation prompts and GIO/GVfs integration have not been
+executed in this validation. Native file-drop completion, live remote services,
+additional encodings, full multiwindow session restoration, new-label translations
+and the remaining upstream actions are still open. No full-parity claim is made.
+
+## Windows nested archive paths
+
+[Windows job 117743365140](https://github.com/ghillert/rust-commander/actions/runs/39150610371/job/117743365140)
+checked out `941d7b9` (0.6.0), passed Clippy, then failed
+`additional_archives_round_trip_nested_content` with
+`Unsafe archive path: source\nested`. The macOS and Ubuntu jobs in the same run
+completed successfully, including release packaging. This failure predates the
+uncommitted 0.7 additions.
+
+The archive walker was passing a locally assembled Windows `PathBuf` to the
+strict raw-header validator before the writers could encode its separators.
+Extraction, archive edits and synchronization also revalidated native paths in
+the same way. A separate component-based conversion now emits forward-slash
+relative names at those internal boundaries, preserving filename bytes and
+rejecting roots, prefixes, parent traversal, NUL and colon components. Raw
+archive headers continue to use the unchanged strict validator, including its
+backslash rejection.
+
+Validation of this fix:
+
+- All **171 normal tests** pass on Apple Silicon macOS; two optional tests remain
+  ignored. Formatting, whitespace checks and warnings-denied all-targets/
+  all-features Clippy pass.
+- New regression cases cover native joined paths, revalidation of parsed member
+  paths, non-Unicode Unix filename preservation, nested ZIP/TAR/7z creation,
+  selected extraction, nested add/rename/remove, and actual forward-slash headers.
+- Raw ZIP, TAR and 7z fixtures still reject Windows backslashes, drive/UNC names,
+  parent traversal and colon names before creating an extraction directory.
+  Existing nested synchronization, conflict, recovery and archive tests pass.
+- The exact path helpers and their Windows-specific test branches pass
+  warnings-denied Clippy for `x86_64-pc-windows-msvc` in a standalone harness.
+  This is a compile check, not Windows test execution. A new Windows CI run with
+  the fix is still required to confirm the full suite there.

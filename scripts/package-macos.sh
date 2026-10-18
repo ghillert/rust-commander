@@ -19,10 +19,11 @@ cat > "$bundle_dir/Contents/Info.plist" <<'PLIST'
 <key>CFBundleIdentifier</key><string>io.github.ghillert.rust-commander</string>
 <key>CFBundleExecutable</key><string>rust-commander</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.6.0</string>
-<key>CFBundleVersion</key><string>6</string>
+<key>CFBundleShortVersionString</key><string>0.7.0</string>
+<key>CFBundleVersion</key><string>7</string>
 <key>LSMinimumSystemVersion</key><string>11.0</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>NSAppleEventsUsageDescription</key><string>Rust Commander uses Finder to open or empty the system Trash when you request these actions.</string>
 </dict></plist>
 PLIST
 codesign --force --deep --sign - "$bundle_dir"

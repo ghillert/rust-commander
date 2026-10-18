@@ -199,7 +199,7 @@ pub fn apply(plan: &Plan, task: &mut Task) -> Result<String> {
     let mut count = 0;
     for item in &plan.items {
         task.check()?;
-        let relative = crate::filesystem::safe_relative(&item.path)?;
+        let relative = crate::filesystem::portable_relative(&item.path)?;
         let (source, target) = match item.choice {
             Choice::Skip => continue,
             Choice::LeftToRight => (Some(plan.left.join(&relative)), plan.right.join(&relative)),

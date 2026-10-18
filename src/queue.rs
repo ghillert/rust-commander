@@ -78,7 +78,11 @@ impl Queue {
         matches!(op,Operation::PackProtected{password,..}|Operation::ExtractProtected{password,..} if password.is_empty())
             || matches!(
                 op,
-                Operation::SaveText { .. } | Operation::RemoteSave { .. }
+                Operation::EmptyTrash
+                    | Operation::SaveText { .. }
+                    | Operation::RemoteSave { .. }
+                    | Operation::SaveBytes { .. }
+                    | Operation::RemoteSaveBytes { .. }
             )
     }
     pub fn prepare(op: Operation) -> Result<Operation> {

@@ -43,6 +43,8 @@ pub enum Content {
         pages: usize,
     },
     Text(String),
+    EncodedText(crate::text_document::Document),
+    LargeText(crate::text_document::Page),
     Hex {
         text: String,
         truncated: bool,
@@ -59,6 +61,35 @@ pub fn load(location: &Location, path: &Path) -> Result<Content> {
         "png", "jpg", "jpeg", "gif", "bmp", "webp", "tif", "tiff", "ico",
     ]
     .contains(&extension.as_str());
+    if !image
+        && extension != "pdf"
+        && location.local().is_some()
+        && std::fs::metadata(path)?.len() > 2 * 1024 * 1024
+    {
+        use std::io::Read;
+        let mut prefix = [0; 3];
+        let n = std::fs::File::open(path)?.read(&mut prefix)?;
+        let encoding = if n >= 2 && prefix[..2] == [0xff, 0xfe] {
+            crate::text_document::Encoding::Utf16Le
+        } else if n >= 2 && prefix[..2] == [0xfe, 0xff] {
+            crate::text_document::Encoding::Utf16Be
+        } else {
+            crate::text_document::Encoding::Utf8
+        };
+        if let Ok(page) = crate::text_document::Page::read(path, 0, encoding).or_else(|_| {
+            crate::text_document::Page::read(path, 0, crate::text_document::Encoding::Windows1252)
+        }) {
+            return Ok(Content::LargeText(page));
+        }
+        let mut bytes = Vec::new();
+        std::fs::File::open(path)?
+            .take(512 * 1024)
+            .read_to_end(&mut bytes)?;
+        return Ok(Content::Hex {
+            text: hex_dump(&bytes),
+            truncated: true,
+        });
+    }
     let limit = if image || extension == "pdf" {
         32 * 1024 * 1024
     } else {
@@ -86,6 +117,14 @@ pub fn load(location: &Location, path: &Path) -> Result<Content> {
                 [image.width() as usize, image.height() as usize],
                 image.as_raw(),
             ),
+        ));
+    }
+    if bytes.starts_with(&[0xff, 0xfe])
+        || bytes.starts_with(&[0xfe, 0xff])
+        || bytes.starts_with(&[0xef, 0xbb, 0xbf])
+    {
+        return Ok(Content::EncodedText(
+            crate::text_document::Document::detect(bytes)?,
         ));
     }
     if !bytes.contains(&0)

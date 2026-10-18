@@ -13,6 +13,22 @@ use std::{
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Operation {
+    EmptyTrash,
+    SaveBytes {
+        path: PathBuf,
+        #[serde(skip)]
+        original: Vec<u8>,
+        #[serde(skip)]
+        bytes: Vec<u8>,
+    },
+    RemoteSaveBytes {
+        connection: String,
+        path: PathBuf,
+        #[serde(skip)]
+        original: Vec<u8>,
+        #[serde(skip)]
+        bytes: Vec<u8>,
+    },
     RemoteTransferResolved {
         from: crate::filesystem::Location,
         entries: Vec<crate::filesystem::Entry>,
@@ -152,9 +168,13 @@ pub enum Operation {
 impl Operation {
     pub fn label(&self) -> &'static str {
         match self {
+            Self::EmptyTrash => "Empty Trash",
             Self::Undo(_) => "Undo",
             Self::Redo(_) => "Redo",
-            Self::SaveText { .. } | Self::RemoteSave { .. } => "Save text",
+            Self::SaveText { .. }
+            | Self::RemoteSave { .. }
+            | Self::SaveBytes { .. }
+            | Self::RemoteSaveBytes { .. } => "Save text",
             Self::ResumeLocal { .. } => "Resumable transfer",
             Self::Sync(_) => "Synchronize folders",
             Self::Transfer { moving: true, .. }
@@ -235,9 +255,10 @@ impl Operation {
             Self::ArchiveEdit { archive, .. }
             | Self::Extract { archive, .. }
             | Self::ExtractProtected { archive, .. } => archive.display().to_string(),
-            Self::SaveText { path, .. } | Self::RemoteSave { path, .. } => {
-                path.display().to_string()
-            }
+            Self::SaveText { path, .. }
+            | Self::RemoteSave { path, .. }
+            | Self::SaveBytes { path, .. }
+            | Self::RemoteSaveBytes { path, .. } => path.display().to_string(),
             _ => self.label().into(),
         }
     }
@@ -455,6 +476,10 @@ pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
 pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
     task.check()?;
     match operation {
+        Operation::EmptyTrash => {
+            crate::native_actions::trash_action(true)?;
+            Ok("Emptied system Trash.".into())
+        }
         Operation::RemoteTransferResolved {
             from,
             entries,
@@ -465,6 +490,21 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
         } => crate::remote::transfer_resolved(
             &from, &entries, &to, moving, options, &overrides, task,
         ),
+        Operation::SaveBytes {
+            path,
+            original,
+            bytes,
+        } => {
+            task.capture(&path)?;
+            save_bytes(&path, &original, &bytes)?;
+            Ok("Saved text.".into())
+        }
+        Operation::RemoteSaveBytes {
+            connection,
+            path,
+            original,
+            bytes,
+        } => crate::remote::save_bytes(&connection, &path, &original, &bytes, task),
         Operation::RemoteSave {
             connection,
             path,
@@ -844,6 +884,9 @@ pub fn read_text(path: &Path, limit: u64) -> Result<String> {
 
 /// Refuses external changes and replaces the target only after a complete write.
 pub fn save_text(path: &Path, original: &[u8], text: &str) -> Result<()> {
+    save_bytes(path, original, text.as_bytes())
+}
+pub fn save_bytes(path: &Path, original: &[u8], bytes: &[u8]) -> Result<()> {
     if fs::symlink_metadata(path)?.file_type().is_symlink() {
         bail!("Edit the symlink target directly.");
     }
@@ -857,7 +900,7 @@ pub fn save_text(path: &Path, original: &[u8], text: &str) -> Result<()> {
     let permissions = fs::metadata(path)?.permissions();
     let mut temporary =
         tempfile::NamedTempFile::new_in(path.parent().context("Missing parent folder")?)?;
-    temporary.write_all(text.as_bytes())?;
+    temporary.write_all(bytes)?;
     temporary.as_file().set_permissions(permissions)?;
     temporary.as_file().sync_all()?;
     temporary.persist(path).map_err(|e| e.error)?;

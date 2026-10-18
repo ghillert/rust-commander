@@ -49,6 +49,25 @@ fn normalized_key(text: &str) -> Option<Key> {
     Key::from_name(&text.to_uppercase())
 }
 
+fn configured_action(
+    preferences: &crate::preferences::Preferences,
+    event: &slint::language::KeyEvent,
+) -> Option<String> {
+    let key = normalized_key(event.text.as_str())?;
+    preferences
+        .shortcuts
+        .iter()
+        .chain(preferences.alternate_shortcuts.iter())
+        .find_map(|(name, binding)| {
+            let binding = crate::preferences::shortcut(binding).ok()?;
+            (binding.logical_key == key
+                && binding.modifiers.command == event.modifiers.control
+                && binding.modifiers.shift == event.modifiers.shift
+                && binding.modifiers.alt == event.modifiers.alt)
+                .then(|| name.clone())
+        })
+}
+
 impl Adapter {
     pub(super) fn global_key(
         &mut self,
@@ -56,10 +75,16 @@ impl Adapter {
         event: slint::language::KeyEvent,
     ) -> bool {
         // Slint maps macOS Command to `control` and physical Control to `meta`.
-        let command = event.modifiers.control;
         let text = event.text.as_str();
-        if command && text.eq_ignore_ascii_case("q") {
-            self.request_close();
+        if self.parity_list_key(&event) {
+            return true;
+        }
+        if self.extra.dialog.is_some() && key_is(text, slint::platform::Key::Escape) {
+            self.extra.dialog = None;
+            return true;
+        }
+        if self.extra.dialog.is_some() && key_is(text, slint::platform::Key::Return) {
+            self.parity_dialog_action("accept");
             return true;
         }
         if self.blocked() {
@@ -82,8 +107,10 @@ impl Adapter {
                 }
                 return true;
             }
-            if command && text.eq_ignore_ascii_case("s") && self.app.editor.is_some() {
-                self.viewer_action("save");
+            if let Some(action) = configured_action(&self.app.preferences, &event)
+                && matches!(action.as_str(), "SaveText" | "Quit" | "CloseWindow")
+            {
+                self.action(&action);
                 return true;
             }
             if key_is(text, slint::platform::Key::Return) && self.app.prompt.is_some() {
@@ -92,69 +119,12 @@ impl Adapter {
             }
             return false;
         }
-        if self.app.terminal_visible && ui.get_terminal_focused() {
+        if self.app.terminal_visible && ui.get_terminal_focused() && !event.modifiers.control {
             return false;
         }
-        if command
-            && !event.modifiers.shift
-            && !event.modifiers.alt
-            && text.eq_ignore_ascii_case("l")
-        {
-            ui.invoke_focus_address(self.app.active as i32);
+        if let Some(action) = configured_action(&self.app.preferences, &event) {
+            self.action(&action);
             return true;
-        }
-        if command
-            && !event.modifiers.shift
-            && !event.modifiers.alt
-            && text.eq_ignore_ascii_case("f")
-        {
-            ui.invoke_focus_filter(self.app.active as i32);
-            return true;
-        }
-        if command && event.modifiers.shift && text.eq_ignore_ascii_case("z") {
-            self.action("Redo");
-            return true;
-        }
-        if command && text.eq_ignore_ascii_case("p") {
-            self.action("Preview");
-            return true;
-        }
-        if command && text == "," {
-            self.action("Preferences");
-            return true;
-        }
-        if (cfg!(target_os = "macos") && command && event.modifiers.shift && text == ".")
-            || (!cfg!(target_os = "macos") && command && text.eq_ignore_ascii_case("h"))
-        {
-            self.action("ToggleHidden");
-            return true;
-        }
-        if event.modifiers.alt && key_is(text, slint::platform::Key::LeftArrow) {
-            self.action("Back");
-            return true;
-        }
-        if event.modifiers.alt && key_is(text, slint::platform::Key::RightArrow) {
-            self.action("Forward");
-            return true;
-        }
-        if let Some(key) = normalized_key(text) {
-            let action = self
-                .app
-                .preferences
-                .shortcuts
-                .iter()
-                .find_map(|(name, binding)| {
-                    let binding = crate::preferences::shortcut(binding).ok()?;
-                    (binding.logical_key == key
-                        && binding.modifiers.command == command
-                        && binding.modifiers.shift == event.modifiers.shift
-                        && binding.modifiers.alt == event.modifiers.alt)
-                        .then(|| name.clone())
-                });
-            if let Some(action) = action {
-                self.action(&action);
-                return true;
-            }
         }
         false
     }
@@ -169,75 +139,104 @@ impl Adapter {
             return self.global_key(ui, event);
         }
         self.app.active = side as usize;
-        let text = event.text.as_str();
-        let shift = event.modifiers.shift;
-        let hidden = self.app.show_hidden;
-        if key_is(text, slint::platform::Key::Tab) {
-            self.app.active = 1 - self.app.active;
-            ui.invoke_focus_files(self.app.active as i32);
+        if self.quick_find_consumes(side as usize, &event) && self.parity_key(side as usize, &event)
+        {
             return true;
         }
-        if key_is(text, slint::platform::Key::UpArrow) {
-            self.app.tab_mut().move_cursor(-1, shift, hidden);
+        if self.global_key(ui, event.clone()) {
             return true;
         }
-        if key_is(text, slint::platform::Key::DownArrow) {
-            self.app.tab_mut().move_cursor(1, shift, hidden);
-            return true;
-        }
-        if key_is(text, slint::platform::Key::PageUp) {
-            self.app.tab_mut().move_cursor(-15, shift, hidden);
-            return true;
-        }
-        if key_is(text, slint::platform::Key::PageDown) {
-            self.app.tab_mut().move_cursor(15, shift, hidden);
-            return true;
-        }
-        if key_is(text, slint::platform::Key::Home) {
-            self.app.tab_mut().move_cursor(-isize::MAX, shift, hidden);
-            return true;
-        }
-        if key_is(text, slint::platform::Key::End) {
-            self.app.tab_mut().move_cursor(isize::MAX, shift, hidden);
-            return true;
-        }
-        if key_is(text, slint::platform::Key::Return) {
-            if let Some(entry) = self.app.tab().chosen(hidden).first().cloned() {
-                self.app.open_entry(entry, &self.ctx);
-            }
-            return true;
-        }
-        if key_is(text, slint::platform::Key::Backspace) {
-            self.action("Parent");
-            return true;
-        }
-        if text == " " || key_is(text, slint::platform::Key::Insert) {
-            if let Some(path) = self.app.tab().cursor.clone() {
-                let tab = self.app.tab_mut();
-                if !tab.selected.remove(&path) {
-                    tab.selected.insert(path);
-                }
-            }
-            return true;
-        }
-        if key_is(text, slint::platform::Key::Escape) {
-            self.app.tab_mut().selected.clear();
-            self.app.tab_mut().filter.clear();
-            return true;
-        }
-        // Slint maps macOS Command to `control` and physical Control to `meta`.
-        let command = event.modifiers.control;
-        if command && text.eq_ignore_ascii_case("a") {
-            self.action("MarkAll");
-            return true;
-        }
-        self.global_key(ui, event)
+        self.parity_key(side as usize, &event)
     }
 
     pub(super) fn viewer_action(&mut self, action: &str) {
         let Some(mut editor) = self.app.editor.take() else {
             return;
         };
+        if action.starts_with("encoding:") || action.starts_with("save-encoding:") {
+            let (kind, value) = action.split_once(':').unwrap();
+            let result = (|| -> anyhow::Result<()> {
+                let encoding = crate::text_document::Encoding::named(value)
+                    .ok_or_else(|| anyhow::anyhow!("Unknown encoding"))?;
+                if kind == "save-encoding" {
+                    if let Some(document) = &mut editor.document {
+                        let mut candidate = document.clone();
+                        candidate.encoding = encoding;
+                        candidate.encode(&editor.text)?;
+                        *document = candidate;
+                    }
+                } else {
+                    anyhow::ensure!(
+                        !editor.dirty(),
+                        "Save or discard edits before changing the decoding"
+                    );
+                    if editor.text_page.is_some()
+                        || editor
+                            .path
+                            .as_ref()
+                            .and_then(|p| std::fs::metadata(p).ok())
+                            .is_some_and(|m| m.len() > 2 * 1024 * 1024)
+                    {
+                        let path = editor
+                            .path
+                            .as_ref()
+                            .ok_or_else(|| anyhow::anyhow!("A local file is required"))?;
+                        let offset = editor.text_page.as_ref().map(|p| p.offset).unwrap_or(0);
+                        let next = crate::text_document::Page::read(path, offset, encoding)?;
+                        editor.text = next.document.text.clone();
+                        editor.original = editor.text.clone();
+                        editor.text_page = Some(next);
+                        editor.document = None;
+                        editor.editable = false;
+                        editor.kind = "Paged text viewer";
+                    } else {
+                        let bytes = if let Some(document) = &editor.document {
+                            document.original.clone()
+                        } else if let Some(path) = &editor.path {
+                            crate::viewer::read(
+                                &Location::Local(path.clone()),
+                                path,
+                                2 * 1024 * 1024,
+                            )?
+                        } else if let Some((connection, path)) = &editor.remote {
+                            crate::remote::read_bytes(connection, path, 2 * 1024 * 1024)?
+                        } else {
+                            anyhow::bail!("Text encoding is unavailable")
+                        };
+                        let document = crate::text_document::Document::decode(bytes, encoding)?;
+                        editor.text = document.text.clone();
+                        editor.original = editor.text.clone();
+                        editor.document = Some(document);
+                        editor.kind = "Text viewer";
+                        editor.editable = editor.can_edit;
+                    }
+                }
+                Ok(())
+            })();
+            editor.error = result.err().map(|e| format!("{e:#}"));
+            self.app.editor = Some(editor);
+            return;
+        }
+        if matches!(action, "next" | "previous")
+            && let Some(page) = &editor.text_page
+        {
+            let offset = if action == "next" {
+                page.next
+            } else {
+                page.offset.saturating_sub(crate::text_document::PAGE_SIZE)
+            };
+            if let Some(path) = &editor.path {
+                match crate::text_document::Page::read(path, offset, page.document.encoding) {
+                    Ok(next) => {
+                        editor.text = next.document.text.clone();
+                        editor.text_page = Some(next);
+                    }
+                    Err(error) => editor.error = Some(error.to_string()),
+                }
+            }
+            self.app.editor = Some(editor);
+            return;
+        }
         match action {
             "save" => self.app.save_editor(&editor, &self.ctx),
             "close" => {

@@ -20,7 +20,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | CloseDuplicateTabs | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | CloseOtherTabs | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | CloseTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| CloseWindow | partial | src/app.rs — Implemented UI and close protection; full lifecycle validation pending. |
+| CloseWindow | partial | src/app/slint_ui/windows.rs, parity/VALIDATION.md — Independent window sessions share one queue/job/history/preferences runtime, with owned-job close and all-window quit guards. Mac second-window Undo passes; other desktop platforms and complete multiwindow restoration remain unvalidated. |
 | CombineFiles | implemented | src/desktop.rs, tests/desktop_tools.rs::split_and_combine_round_trip_every_chunk_boundary |
 | CompareFolders | partial | src/desktop.rs, tests/desktop_tools.rs — Local-only; search content has a size limit and comparison skips symlinks. |
 | ConnectToServer | partial | src/remote.rs, tests/webdav_backend.rs — Saved profiles, keychain integration and partial adapters; live services and keychain UI need validation. |
@@ -29,7 +29,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | CopyFileNames | partial | src/app.rs — UI implemented; native smoke validation pending. |
 | CopyFilePaths | partial | src/app.rs — UI implemented; native smoke validation pending. |
 | CopyFilesToClipboard | partial | src/native_files.rs, src/app.rs, tests/features.rs — Native local file clipboard plus remote pane selections. Mac copy/cut, Unicode paths and external clipboard changes pass a real desktop round-trip. Windows/Linux interoperability requires validation. |
-| CustomizeCommandBar | missing | — |
+| CustomizeCommandBar | partial | src/preferences.rs, src/app/slint_ui/dialogs.rs, src/app/slint_ui/keys.rs, src/app/slint_ui/parity_tests.rs::command_bar_and_shortcut_labels_follow_custom_bindings — Named command-bar slots and searchable primary/alternate bindings cover the supported command registry, with validation and current labels. Modal editing retains control-specific keys; upstream and platform edge cases remain. |
 | Delete | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
 | Donate | missing | — |
 | DuplicateTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
@@ -37,11 +37,11 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | EditBookmarks | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | EditCredentials | partial | src/remote.rs, tests/webdav_backend.rs — Saved profiles, keychain integration and partial adapters; live services and keychain UI need validation. |
 | Email | missing | — |
-| EmptyTrash | missing | — |
+| EmptyTrash | partial | src/native_actions.rs, src/operations.rs, src/queue.rs, src/app/slint_ui/parity_tests.rs::trash_emptying_requires_confirmation_and_cannot_resume_unattended — Native platform adapters exist with literal EMPTY confirmation and no unattended replay. Windows adapter cross-Clippy passes; real system Trash emptying has deliberately not been executed and native integration remains unvalidated. |
 | ExploreBookmarks | missing | — |
 | Find | partial | src/desktop.rs, src/remote.rs, tests/features_05.rs::remote_search_and_guarded_save_use_actual_storage_operations, tests/features_05.rs::smb_live_list_stream_upload_download_rename_edit_search_delete — Local and cancellable remote filename/content search; filesystem and live disposable Samba coverage. Full upstream search options remain open. |
-| FocusNext | missing | — |
-| FocusPrevious | missing | — |
+| FocusNext | partial | src/app/slint_ui/parity.rs, ui/commander.slint — Keyboard traversal covers the six pane list/address/filter controls and keyboard file context-menu opening. Full application-wide focus traversal/accessibility and native platform parity remain incomplete. |
+| FocusPrevious | partial | src/app/slint_ui/parity.rs, ui/commander.slint — Keyboard traversal covers the six pane list/address/filter controls and keyboard file context-menu opening. Full application-wide focus traversal/accessibility and native platform parity remain incomplete. |
 | GarbageCollect | inapplicable | src/main.rs — This upstream action explicitly triggers the JVM garbage collector; the Rust application does not run a JVM. |
 | GoBack | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | GoForward | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
@@ -49,8 +49,8 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | GoToForums | missing | — |
 | GoToHome | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | GoToParent | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| GoToParentInBothPanels | missing | — |
-| GoToParentInOtherPanel | missing | — |
+| GoToParentInBothPanels | partial | src/app/slint_ui/parity.rs, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Cross-pane folder/archive open and independent parent commands are implemented with tab locks honored; broader remote/archive and platform behavior remains unvalidated. |
+| GoToParentInOtherPanel | partial | src/app/slint_ui/parity.rs, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Cross-pane folder/archive open and independent parent commands are implemented with tab locks honored; broader remote/archive and platform behavior remains unvalidated. |
 | GoToRoot | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | GoToWebsite | missing | — |
 | InternalEdit | partial | src/app.rs, tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content — Local UTF-8 text editing only. |
@@ -58,34 +58,34 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | InvertSelection | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | LocalCopy | partial | src/transfer.rs, src/remote.rs, src/app.rs, tests/transfer_conflicts.rs, tests/features.rs — Local recursive conflict preview and per-file choices, recoverable replacements and optional folder merge. Remote top-level choices tested with filesystem adapter; live services and cross-platform behavior pending. |
 | MarkAll | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| MarkExtension | missing | — |
-| MarkGroup | missing | — |
-| MarkNextBlock | missing | — |
-| MarkNextPage | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
+| MarkExtension | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
+| MarkGroup | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
+| MarkNextBlock | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
+| MarkNextPage | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
 | MarkNextRow | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| MarkPreviousBlock | missing | — |
-| MarkPreviousPage | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
+| MarkPreviousBlock | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
+| MarkPreviousPage | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
 | MarkPreviousRow | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | MarkSelectedFile | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| MarkToFirstRow | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| MarkToLastRow | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
+| MarkToFirstRow | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
+| MarkToLastRow | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
 | MaximizeWindow | missing | — |
 | MinimizeWindow | missing | — |
 | Mkdir | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
 | Mkfile | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
 | Move | partial | src/transfer.rs, src/remote.rs, src/app.rs, tests/transfer_conflicts.rs, tests/features.rs — Local recursive conflict preview and per-file choices, recoverable replacements and optional folder merge. Remote top-level choices tested with filesystem adapter; live services and cross-platform behavior pending. |
-| MoveTabToOtherPanel | missing | — |
+| MoveTabToOtherPanel | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, src/workspaces.rs, src/app/slint_ui/parity_tests.rs::locked_named_tabs_move_between_panes_and_defer_navigation_to_a_new_tab — Named/locked tabs persist across sessions/workspaces and move between panes. Locked navigation opens an unlocked tab, verified on Mac; broader platform and upstream edge cases remain. |
 | NewTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| NewWindow | missing | — |
+| NewWindow | partial | src/app/slint_ui/windows.rs, parity/VALIDATION.md — Independent window sessions share one queue/job/history/preferences runtime, with owned-job close and all-window quit guards. Mac second-window Undo passes; other desktop platforms and complete multiwindow restoration remain unvalidated. |
 | NextTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | Open | partial | src/app.rs, parity/VALIDATION.md — Core local navigation/open workflow exists; full upstream action semantics and cross-platform behavior remain incomplete. |
 | OpenAs | missing | — |
 | OpenCommandPrompt | partial | src/terminal.rs, src/app.rs — PTY/VT100 screen ran a shell command in the packaged macOS app; full terminal compatibility and other platforms remain unverified. |
-| OpenInBothPanels | missing | — |
+| OpenInBothPanels | partial | src/app/slint_ui/parity.rs, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Cross-pane folder/archive open and independent parent commands are implemented with tab locks honored; broader remote/archive and platform behavior remains unvalidated. |
 | OpenInNewTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | OpenInOtherPanel | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | OpenNatively | partial | src/app.rs, parity/VALIDATION.md — Core local navigation/open workflow exists; full upstream action semantics and cross-platform behavior remain incomplete. |
-| OpenTrash | missing | — |
+| OpenTrash | partial | src/native_actions.rs, src/operations.rs, src/queue.rs, src/app/slint_ui/parity_tests.rs::trash_emptying_requires_confirmation_and_cannot_resume_unattended — Native platform adapters exist with literal EMPTY confirmation and no unattended replay. Windows adapter cross-Clippy passes; real system Trash emptying has deliberately not been executed and native integration remains unvalidated. |
 | OpenURLInBrowser | missing | — |
 | Pack | partial | src/archive.rs, src/archive_tools.rs, src/app.rs, tests/features.rs, tests/file_manager.rs, tests/extended_archives.rs — ZIP and 7z AES encryption, local ZIP editing and nested/remote archive browsing. Extract to new folders; archive links, non-ZIP mutation and broad format fixtures remain open. |
 | PasteClipboardFiles | partial | src/native_files.rs, src/app.rs, tests/features.rs — Native local file clipboard plus remote pane selections. Mac copy/cut, Unicode paths and external clipboard changes pass a real desktop round-trip. Windows/Linux interoperability requires validation. |
@@ -93,10 +93,10 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | PopupLeftDriveButton | partial | src/native_files.rs, src/app.rs — Mounted-drive sidebar and clickable local breadcrumbs provide navigation. Exact upstream quick-list behavior and cross-platform interactions remain open. |
 | PopupRightDriveButton | partial | src/native_files.rs, src/app.rs — Mounted-drive sidebar and clickable local breadcrumbs provide navigation. Exact upstream quick-list behavior and cross-platform interactions remain open. |
 | PreviousTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| QuickFind | missing | — |
+| QuickFind | partial | src/navigation.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::quick_find_normalizes_mac_decomposed_unicode_names, src/app/slint_ui/parity_tests.rs::quick_find_and_pattern_selection_use_the_real_slint_callbacks — Unicode-normalized prefix search, cycling and Escape are implemented and exercised in Slint; broader input-method/platform behavior remains unvalidated. |
 | Quit | partial | src/app.rs — Implemented UI and close protection; full lifecycle validation pending. |
-| RecallNextWindow | missing | — |
-| RecallPreviousWindow | missing | — |
+| RecallNextWindow | partial | src/app/slint_ui/windows.rs, parity/VALIDATION.md — Independent window sessions share one queue/job/history/preferences runtime, with owned-job close and all-window quit guards. Mac second-window Undo passes; other desktop platforms and complete multiwindow restoration remain unvalidated. |
+| RecallPreviousWindow | partial | src/app/slint_ui/windows.rs, parity/VALIDATION.md — Independent window sessions share one queue/job/history/preferences runtime, with owned-job close and all-window quit guards. Mac second-window Undo passes; other desktop platforms and complete multiwindow restoration remain unvalidated. |
 | RecallWindow10 | missing | — |
 | RecallWindow1 | missing | — |
 | RecallWindow2 | missing | — |
@@ -116,52 +116,52 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | Save | partial | src/app.rs, tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content — Local UTF-8 text editing only. |
 | SelectFirstRow | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | SelectLastRow | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| SelectNextBlock | missing | — |
+| SelectNextBlock | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
 | SelectNextPage | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | SelectNextRow | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| SelectPreviousBlock | missing | — |
+| SelectPreviousBlock | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
 | SelectPreviousPage | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | SelectPreviousRow | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | SetSameFolder | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| SetTabTitle | missing | — |
+| SetTabTitle | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, src/workspaces.rs, src/app/slint_ui/parity_tests.rs::locked_named_tabs_move_between_panes_and_defer_navigation_to_a_new_tab — Named/locked tabs persist across sessions/workspaces and move between panes. Locked navigation opens an unlocked tab, verified on Mac; broader platform and upstream edge cases remain. |
 | ShowAbout | partial | src/app.rs — Implemented UI and close protection; full lifecycle validation pending. |
-| ShowBookmarksQL | missing | — |
+| ShowBookmarksQL | partial | src/app/slint_ui/parity.rs, src/navigation.rs, tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete. |
 | ShowDebugConsole | missing | — |
-| ShowFilePopupMenu | missing | — |
+| ShowFilePopupMenu | partial | src/app/slint_ui/parity.rs, ui/commander.slint — Keyboard traversal covers the six pane list/address/filter controls and keyboard file context-menu opening. Full application-wide focus traversal/accessibility and native platform parity remain incomplete. |
 | ShowFileProperties | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
 | ShowInEnclosingFolder | partial | src/native_actions.rs, src/app.rs — Native Reveal actions are wired for local files; platform-specific launch behavior needs broader interactive validation. |
-| ShowKeyboardShortcuts | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
+| ShowKeyboardShortcuts | partial | src/preferences.rs, src/app/slint_ui/dialogs.rs, src/app/slint_ui/keys.rs, src/app/slint_ui/parity_tests.rs::command_bar_and_shortcut_labels_follow_custom_bindings — Named command-bar slots and searchable primary/alternate bindings cover the supported command registry, with validation and current labels. Modal editing retains control-specific keys; upstream and platform edge cases remain. |
 | ShowParentFoldersQL | partial | src/native_files.rs, src/app.rs — Mounted-drive sidebar and clickable local breadcrumbs provide navigation. Exact upstream quick-list behavior and cross-platform interactions remain open. |
 | ShowPreferences | partial | src/preferences.rs, src/feature_ui.rs, src/app.rs, tests/features.rs — Desktop preferences now include language, persistent column customization and toolbar action order. Full upstream preferences and cross-platform behavior remain incomplete. |
-| ShowRecentExecutedFilesQL | missing | — |
-| ShowRecentLocationsQL | missing | — |
-| ShowRootFoldersQL | missing | — |
+| ShowRecentExecutedFilesQL | partial | src/app/slint_ui/parity.rs, src/navigation.rs, tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete. |
+| ShowRecentLocationsQL | partial | src/app/slint_ui/parity.rs, src/navigation.rs, tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete. |
+| ShowRootFoldersQL | partial | src/app/slint_ui/parity.rs, src/navigation.rs, tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete. |
 | ShowServerConnections | partial | src/remote.rs, tests/webdav_backend.rs — Saved profiles, keychain integration and partial adapters; live services and keychain UI need validation. |
-| ShowTabsQL | missing | — |
+| ShowTabsQL | partial | src/app/slint_ui/parity.rs, src/navigation.rs, tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete. |
 | SortByDate | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | SortByExtension | partial | src/preferences.rs, src/app.rs, tests/features.rs — Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open. |
-| SortByGroup | missing | — |
+| SortByGroup | partial | src/filesystem.rs, src/preferences.rs, src/app/slint_ui/parity.rs, ui/commander.slint, tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata — Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete. |
 | SortByName | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| SortByOwner | missing | — |
-| SortByPermissions | missing | — |
+| SortByOwner | partial | src/filesystem.rs, src/preferences.rs, src/app/slint_ui/parity.rs, ui/commander.slint, tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata — Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete. |
+| SortByPermissions | partial | src/filesystem.rs, src/preferences.rs, src/app/slint_ui/parity.rs, ui/commander.slint, tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata — Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete. |
 | SortBySize | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| SplitEqually | missing | — |
+| SplitEqually | partial | src/navigation.rs, ui/commander.slint, src/app/slint_ui/parity_tests.rs::pane_orientation_and_divider_preserve_drop_target_routing — Saved side-by-side/stacked layout, bounded draggable ratio and equal reset are implemented. Mac stacked rendering passes; native divider interactions on other platforms remain unvalidated. |
 | SplitFile | implemented | src/desktop.rs, tests/desktop_tools.rs::split_and_combine_round_trip_every_chunk_boundary |
-| SplitHorizontally | missing | — |
-| SplitVertically | missing | — |
+| SplitHorizontally | partial | src/navigation.rs, ui/commander.slint, src/app/slint_ui/parity_tests.rs::pane_orientation_and_divider_preserve_drop_target_routing — Saved side-by-side/stacked layout, bounded draggable ratio and equal reset are implemented. Mac stacked rendering passes; native divider interactions on other platforms remain unvalidated. |
+| SplitVertically | partial | src/navigation.rs, ui/commander.slint, src/app/slint_ui/parity_tests.rs::pane_orientation_and_divider_preserve_drop_target_routing — Saved side-by-side/stacked layout, bounded draggable ratio and equal reset are implemented. Mac stacked rendering passes; native divider interactions on other platforms remain unvalidated. |
 | Stop | partial | src/app.rs, src/history.rs, tests/features.rs — Queue and active operation cancellation with persistent outcomes. Cancellation is cooperative; not all native/provider calls are interruptible. |
 | SwapFolders | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | SwitchActiveTable | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| ToggleAutoSize | missing | — |
+| ToggleAutoSize | partial | src/filesystem.rs, src/preferences.rs, src/app/slint_ui/parity.rs, ui/commander.slint, tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata — Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete. |
 | ToggleCommandBar | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
 | ToggleDateColumn | partial | src/preferences.rs, src/app.rs, tests/features.rs — Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open. |
 | ToggleExtensionColumn | partial | src/preferences.rs, src/app.rs, tests/features.rs — Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open. |
-| ToggleGroupColumn | missing | — |
+| ToggleGroupColumn | partial | src/filesystem.rs, src/preferences.rs, src/app/slint_ui/parity.rs, ui/commander.slint, tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata — Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete. |
 | ToggleHiddenFiles | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
-| ToggleLockTab | missing | — |
-| ToggleOwnerColumn | missing | — |
+| ToggleLockTab | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, src/workspaces.rs, src/app/slint_ui/parity_tests.rs::locked_named_tabs_move_between_panes_and_defer_navigation_to_a_new_tab — Named/locked tabs persist across sessions/workspaces and move between panes. Locked navigation opens an unlocked tab, verified on Mac; broader platform and upstream edge cases remain. |
+| ToggleOwnerColumn | partial | src/filesystem.rs, src/preferences.rs, src/app/slint_ui/parity.rs, ui/commander.slint, tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata — Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete. |
 | ToggleShowParentFolder | missing | — |
-| TogglePermissionsColumn | partial | src/preferences.rs, src/app.rs, tests/features.rs — Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open. |
+| TogglePermissionsColumn | partial | src/filesystem.rs, src/preferences.rs, src/app/slint_ui/parity.rs, ui/commander.slint, tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata — Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete. |
 | ToggleShowFoldersFirst | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
 | ToggleSizeColumn | partial | src/preferences.rs, src/app.rs, tests/features.rs — Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open. |
 | ToggleStatusBar | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
@@ -170,7 +170,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | ToggleTree | missing | — |
 | ToggleUseSinglePanel | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
 | UnmarkAll | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| UnmarkGroup | missing | — |
+| UnmarkGroup | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
 | Unpack | partial | src/archive.rs, src/archive_tools.rs, src/app.rs, tests/features.rs, tests/file_manager.rs, tests/extended_archives.rs — ZIP and 7z AES encryption, local ZIP editing and nested/remote archive browsing. Extract to new folders; archive links, non-ZIP mutation and broad format fixtures remain open. |
 | Undo | partial | src/history.rs, tests/features_05.rs, tests/features.rs — Guarded local Undo/Redo includes text saves, permissions, timestamps and synchronization. Remote Undo, permanent deletion and universal upstream coverage remain open. |
 | View | partial | src/viewer.rs, tests/desktop_tools.rs::image_and_hex_viewers_load_real_files, tests/desktop_tools.rs::pdf_viewer_renders_and_navigates_pages — Bounded input; format edge cases, text encodings, image animation and full PDF compatibility remain open. |
@@ -204,7 +204,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | mucommander-protocol-sftp | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/desktop_tools.rs::remote_service_choices_match_platform_support — SFTP uses OpenSSH key/agent authentication on macOS/Linux; the transport is Unix-only and Windows reports this limitation. Platform service choices are tested; live SFTP remains unvalidated. |
 | mucommander-protocol-smb | partial | src/smb.rs, tests/features_05.rs::smb_live_list_stream_upload_download_rename_edit_search_delete — Direct pure Rust SMB2/3 listing, streaming transfers, rename, editing, search and deletion validated against disposable Samba from macOS/Linux. Broader server/platform interoperability remains open. |
 | mucommander-protocol-vsphere | missing | — |
-| mucommander-viewer-text | partial | src/viewer.rs, tests/desktop_tools.rs — Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified. |
+| mucommander-viewer-text | partial | src/text_document.rs, src/viewer.rs, src/app/slint_ui/keys.rs, tests/features_07.rs::encoded_edit_preserves_bom_crlf_and_undo_restores_exact_original_bytes, tests/features_07.rs::utf16_pages_keep_surrogates_intact_in_both_directions — UTF-8/UTF-16/Windows-1252/Latin-1 editing preserves BOM/CRLF and guarded byte saves; local large-file viewing uses bounded pages. Native Mac UTF-16 save/paging passes; additional encodings/viewer behavior remain incomplete. |
 | mucommander-viewer-image | partial | src/viewer.rs, tests/desktop_tools.rs — Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified. |
 | mucommander-viewer-pdf | partial | src/viewer.rs, tests/desktop_tools.rs — Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified. |
 | mucommander-viewer-binary | partial | src/viewer.rs, tests/desktop_tools.rs — Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified. |

@@ -351,6 +351,7 @@ fn workspace_round_trip_preserves_tabs_and_layout() {
         ..Default::default()
     };
     settings.workspaces.push(Workspace {
+        tab_states: Default::default(),
         name: "Development".into(),
         tabs: [
             vec![

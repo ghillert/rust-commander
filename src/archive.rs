@@ -1,5 +1,5 @@
 use crate::{
-    filesystem::{Entry, safe_relative},
+    filesystem::{Entry, portable_relative, safe_relative},
     operations::{Task, exists},
 };
 use anyhow::{Context, Result, bail};
@@ -245,10 +245,10 @@ pub fn extract(
         bail!("Extraction folder already exists. Choose a new folder name.");
     }
     if !prefix.as_os_str().is_empty() {
-        safe_relative(prefix)?;
+        portable_relative(prefix)?;
     }
     for path in selected {
-        safe_relative(path)?;
+        portable_relative(path)?;
     }
     let mut count = 0usize;
     let mut bytes = 0u64;
@@ -298,7 +298,7 @@ pub fn extract(
         if relative.as_os_str().is_empty() {
             return Ok(());
         }
-        let target = destination.join(safe_relative(relative)?);
+        let target = destination.join(portable_relative(relative)?);
         if member.directory {
             fs::create_dir_all(&target)?;
             directories.push((target, member.mode));
@@ -354,7 +354,8 @@ fn walk(
     callback: &mut dyn FnMut(&Path, &Path, bool, &mut Task) -> Result<()>,
 ) -> Result<()> {
     task.tick(source, 0)?;
-    safe_relative(name)?;
+    let name = portable_relative(name)?;
+    let name = name.as_path();
     let metadata = fs::symlink_metadata(source)?;
     if metadata.file_type().is_symlink() {
         bail!(

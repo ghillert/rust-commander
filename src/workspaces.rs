@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Workspace {
     pub name: String,
+    #[serde(default)]
+    pub tab_states: [Vec<crate::navigation::TabState>; 2],
     pub tabs: [Vec<Location>; 2],
     pub active_tabs: [usize; 2],
     pub active_pane: usize,

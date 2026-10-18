@@ -1,6 +1,6 @@
 # Slint desktop interface
 
-Rust Commander 0.6 uses **Slint 1.18.1** for its desktop interface. There is no
+Rust Commander 0.7 uses **Slint 1.18.1** for its desktop interface. There is no
 egui/eframe runtime, JVM, or browser engine. The existing Rust file, archive,
 transfer, recovery, remote-service and terminal implementations remain in use.
 
@@ -60,7 +60,9 @@ style. The monochrome SVG glyphs are original project assets.
 
 The Slint frontend includes both file panes, tabs, breadcrumbs, editable paths,
 filtering, sorting, multiple selection, configurable columns and toolbar,
-favorites, devices, connections, the command bar and progress display.
+favorites, devices, connections, the configurable command bar and progress display.
+The [0.7 guide](FEATURES_0.7.md) covers quick find, advanced selection, locked tabs,
+stacked panes, quick lists, encoding choices, Trash, multiple windows and XML import.
 
 Its dialogs expose the existing file operations and conflict choices, archive
 editing/encryption/unlocking, connections and OAuth, batch rename, recursive
@@ -98,11 +100,22 @@ Native drag invocation is deferred until the controller is no longer borrowed.
 - `build.rs`: target style selection and resource embedding.
 - `src/app.rs`: operation/controller state and shared validation/workers.
 - `src/app/slint_ui/`: dialog models, commands, settings binding and keyboard input.
+- `src/app/slint_ui/windows.rs`: independent window sessions and the shared queue/job/history runtime.
+- `src/app/slint_ui/parity.rs`: quick find/lists, tab and layout commands, import and command-bar models.
+- `src/navigation.rs`: selection, recent locations, persistent tab and layout state.
+- `src/text_document.rs`: encoding/BOM/line-ending preservation and bounded text pages.
+- `src/config_import.rs`: bounded XML parsing, supported migration mappings and backup commit.
 - `src/ui_signal.rs`: worker notifications, clipboard commands and close requests.
 - `src/viewer.rs`: renderer-independent raster data for image and PDF viewing.
 
 The retained models update changed rows without rebuilding an unchanged
 directory. Native multi-file drag payloads are shared between selected rows.
+All windows use one desktop event loop and one transfer queue, active job and
+recovery history. A job retains its originating window for completion handling;
+closing another window does not cancel it. Preferences and saved collections
+are coordinated across windows, while navigation, drafts and terminals remain
+independent. The last saved window supplies the pane session restored on restart.
+
 All UI updates run on the desktop event-loop thread; worker results arrive
 through the existing channels. Dialog button models stay stable across worker
 refreshes so a press/release sequence cannot lose its target. Closing a modal
@@ -153,6 +166,9 @@ When updating, check all platform styles, native menus/window handles, external
 file-drop routing, drag-out and the saved preference/shortcut behavior. The
 [vendored native drag subset](../vendor/drag/README.md) remains necessary until
 the corresponding native integrations can be replaced without regressions.
+
+The window runtime uses [`run_event_loop_until_quit`](https://docs.slint.dev/latest/docs/rust/slint/fn.run_event_loop_until_quit)
+and explicitly quits after the final protected session closes.
 
 References: [Slint widget styles](https://docs.slint.dev/latest/docs/slint/reference/std-widgets/style/),
 [Slint Rust API](https://docs.slint.dev/latest/docs/rust/slint/).

@@ -11,7 +11,11 @@ pub(super) struct Field {
     pub choices: Vec<String>,
 }
 impl Field {
-    fn text(id: impl Into<String>, title: impl Into<String>, value: impl ToString) -> Self {
+    pub(super) fn text(
+        id: impl Into<String>,
+        title: impl Into<String>,
+        value: impl ToString,
+    ) -> Self {
         Self {
             id: id.into(),
             title: title.into(),
@@ -26,13 +30,13 @@ impl Field {
             ..Self::text(id, title, value)
         }
     }
-    fn check(id: impl Into<String>, title: impl Into<String>, value: bool) -> Self {
+    pub(super) fn check(id: impl Into<String>, title: impl Into<String>, value: bool) -> Self {
         Self {
             kind: 2,
             ..Self::text(id, title, value)
         }
     }
-    fn choice(
+    pub(super) fn choice(
         id: impl Into<String>,
         title: impl Into<String>,
         value: impl ToString,
@@ -50,7 +54,7 @@ impl Field {
             ..Self::text(id, title, value)
         }
     }
-    fn label(title: impl Into<String>, value: impl ToString) -> Self {
+    pub(super) fn label(title: impl Into<String>, value: impl ToString) -> Self {
         Self {
             kind: 6,
             ..Self::text("", title, value)
@@ -75,7 +79,7 @@ pub(super) struct Row {
     pub actions: Vec<(String, String, bool)>,
 }
 impl Row {
-    fn new(id: impl Into<String>, title: impl ToString, detail: impl ToString) -> Self {
+    pub(super) fn new(id: impl Into<String>, title: impl ToString, detail: impl ToString) -> Self {
         Self {
             id: id.into(),
             title: title.to_string(),
@@ -84,7 +88,7 @@ impl Row {
             actions: Vec::new(),
         }
     }
-    fn action(mut self, id: impl Into<String>, title: &str, enabled: bool) -> Self {
+    pub(super) fn action(mut self, id: impl Into<String>, title: &str, enabled: bool) -> Self {
         self.actions.push((id.into(), title.into(), enabled));
         self
     }
@@ -120,7 +124,7 @@ pub(super) struct Dialog {
     pub buttons: Vec<(String, String, bool)>,
 }
 impl Dialog {
-    fn new(kind: &str, title: &str) -> Self {
+    pub(super) fn new(kind: &str, title: &str) -> Self {
         Self {
             kind: kind.into(),
             title: tr(title).into_owned(),
@@ -139,7 +143,7 @@ impl Dialog {
             ..Default::default()
         }
     }
-    fn button(&mut self, id: &str, title: &str, enabled: bool) {
+    pub(super) fn button(&mut self, id: &str, title: &str, enabled: bool) {
         self.buttons.push((id.into(), title.into(), enabled));
     }
 }
@@ -165,10 +169,17 @@ fn parse_policy(value: &str) -> crate::transfer::ConflictPolicy {
 
 impl Adapter {
     pub(super) fn dialog(&self) -> Dialog {
+        if let Some(dialog) = self.parity_dialog() {
+            return dialog;
+        }
         let idle = self.app.job.is_none() && self.app.queue.is_empty();
         if self.app.confirm_exit {
             let mut d = Dialog::new("exit", "Close Rust Commander?");
-            d.description=tr("There is a running operation or unsaved text. Closing cancels the operation and discards unsaved text.").into_owned();
+            d.description = if self.extra.quit_all {
+                "Quit every Rust Commander window? Running work will be cancelled and unsaved text in all windows discarded.".into()
+            } else {
+                tr("There is a running operation or unsaved text. Closing cancels the operation and discards unsaved text.").into_owned()
+            };
             d.buttons = vec![
                 ("cancel".into(), "Keep working".into(), true),
                 ("accept".into(), "Cancel work and close".into(), true),
@@ -373,11 +384,47 @@ impl Adapter {
                         ),
                 );
             }
-            for (action, binding) in &p.shortcuts {
+            let catalog = super::parity::command_catalog();
+            let choices = std::iter::once("None".to_owned())
+                .chain(catalog.iter().map(|(_, title)| title.clone()))
+                .collect::<Vec<_>>();
+            for index in 0..12 {
+                let title = p
+                    .command_actions
+                    .get(index)
+                    .and_then(|id| catalog.iter().find(|(candidate, _)| candidate == id))
+                    .map(|(_, title)| title.as_str())
+                    .unwrap_or("None");
+                d.fields.push(Field::choice(
+                    format!("command-slot-{index}"),
+                    format!("Command bar button {}", index + 1),
+                    title,
+                    choices.clone(),
+                ));
+            }
+            d.fields.push(Field::text(
+                "shortcut-filter",
+                "Find a shortcut",
+                &self.extra.shortcut_filter,
+            ));
+            let query = self.extra.shortcut_filter.to_lowercase();
+            for (action, title) in catalog {
+                if !format!("{action} {title}").to_lowercase().contains(&query) {
+                    continue;
+                }
+                let binding = p.shortcuts.get(&action).map(String::as_str).unwrap_or("");
                 d.fields.push(Field::text(
                     format!("shortcut-{action}"),
-                    format!("Shortcut: {action}"),
+                    format!("Shortcut: {title}"),
                     binding,
+                ));
+                d.fields.push(Field::text(
+                    format!("alternate-{action}"),
+                    format!("Alternate shortcut: {title}"),
+                    p.alternate_shortcuts
+                        .get(&action)
+                        .map(String::as_str)
+                        .unwrap_or(""),
                 ));
             }
             d.button("defaults", "Restore defaults", true);

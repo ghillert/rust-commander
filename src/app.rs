@@ -21,6 +21,65 @@ fn tr(text: &str) -> std::borrow::Cow<'_, str> {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Action {
+    FocusAddress,
+    FocusFilter,
+    SelectNextRow,
+    SelectPreviousRow,
+    SelectNextPage,
+    SelectPreviousPage,
+    SelectFirstRow,
+    SelectLastRow,
+    MarkNextRow,
+    MarkPreviousRow,
+    MarkNextPage,
+    MarkPreviousPage,
+    MarkToFirstRow,
+    MarkToLastRow,
+    MarkSelectedFile,
+    ClearSelection,
+
+    QuickFind,
+    QuickFindNext,
+    QuickFindPrevious,
+    SelectPattern,
+    UnselectPattern,
+    SelectExtension,
+    SelectNextBlock,
+    SelectPreviousBlock,
+    MarkNextBlock,
+    MarkPreviousBlock,
+    LockTab,
+    TabTitle,
+    MoveTabOther,
+    MoveTabLeft,
+    MoveTabRight,
+    SideBySide,
+    Stacked,
+    EqualPanes,
+    QuickLists,
+    RecentLocations,
+    RecentFiles,
+    BookmarksList,
+    TabsList,
+    RootsList,
+    OpenBoth,
+    ParentBoth,
+    ParentOther,
+    SwitchPane,
+    FocusNext,
+    FocusPrevious,
+    FileContextMenu,
+    AutoSizeColumns,
+    OpenTrash,
+    EmptyTrash,
+    NewWindow,
+    CloseWindow,
+    NextWindow,
+    PreviousWindow,
+    WindowsList,
+    ImportSettings,
+    ImportedCommands,
+
     Undo,
     Redo,
     Recovery,
@@ -85,8 +144,188 @@ pub(crate) enum Action {
     Parent,
 }
 
+pub(crate) fn all_actions() -> Vec<Action> {
+    vec![
+        Action::FocusAddress,
+        Action::FocusFilter,
+        Action::SelectNextRow,
+        Action::SelectPreviousRow,
+        Action::SelectNextPage,
+        Action::SelectPreviousPage,
+        Action::SelectFirstRow,
+        Action::SelectLastRow,
+        Action::MarkNextRow,
+        Action::MarkPreviousRow,
+        Action::MarkNextPage,
+        Action::MarkPreviousPage,
+        Action::MarkToFirstRow,
+        Action::MarkToLastRow,
+        Action::MarkSelectedFile,
+        Action::ClearSelection,
+        Action::QuickFind,
+        Action::QuickFindNext,
+        Action::QuickFindPrevious,
+        Action::SelectPattern,
+        Action::UnselectPattern,
+        Action::SelectExtension,
+        Action::SelectNextBlock,
+        Action::SelectPreviousBlock,
+        Action::MarkNextBlock,
+        Action::MarkPreviousBlock,
+        Action::LockTab,
+        Action::TabTitle,
+        Action::MoveTabOther,
+        Action::MoveTabLeft,
+        Action::MoveTabRight,
+        Action::SideBySide,
+        Action::Stacked,
+        Action::EqualPanes,
+        Action::QuickLists,
+        Action::RecentLocations,
+        Action::RecentFiles,
+        Action::BookmarksList,
+        Action::TabsList,
+        Action::RootsList,
+        Action::OpenBoth,
+        Action::ParentBoth,
+        Action::ParentOther,
+        Action::SwitchPane,
+        Action::FocusNext,
+        Action::FocusPrevious,
+        Action::FileContextMenu,
+        Action::AutoSizeColumns,
+        Action::OpenTrash,
+        Action::EmptyTrash,
+        Action::NewWindow,
+        Action::CloseWindow,
+        Action::NextWindow,
+        Action::PreviousWindow,
+        Action::WindowsList,
+        Action::ImportSettings,
+        Action::ImportedCommands,
+        Action::Undo,
+        Action::Redo,
+        Action::Recovery,
+        Action::Synchronize,
+        Action::Preview,
+        Action::QuickLook,
+        Action::Reveal,
+        Action::OpenWith,
+        Action::PackageContents,
+        Action::Workspaces,
+        Action::Queue,
+        Action::ArchiveTools,
+        Action::NativeDrag,
+        Action::Quit,
+        Action::ToggleHidden,
+        Action::Preferences,
+        Action::Search,
+        Action::BatchRename,
+        Action::Properties,
+        Action::Mkfile,
+        Action::Split,
+        Action::Combine,
+        Action::Permissions,
+        Action::Modified,
+        Action::PermanentDelete,
+        Action::Compare,
+        Action::Swap,
+        Action::SameFolder,
+        Action::CloneTab,
+        Action::NextTab,
+        Action::PreviousTab,
+        Action::CloseOtherTabs,
+        Action::CloseDuplicateTabs,
+        Action::OpenOther,
+        Action::OpenNewTab,
+        Action::InvertSelection,
+        Action::MarkAll,
+        Action::UnmarkAll,
+        Action::CopyNames,
+        Action::CopyPaths,
+        Action::CopyClipboard,
+        Action::CutClipboard,
+        Action::PasteClipboard,
+        Action::Terminal,
+        Action::Connections,
+        Action::Copy,
+        Action::Move,
+        Action::Rename,
+        Action::Trash,
+        Action::Mkdir,
+        Action::Pack,
+        Action::Extract,
+        Action::View,
+        Action::Edit,
+        Action::External,
+        Action::Checksum,
+        Action::Refresh,
+        Action::Help,
+        Action::Bookmark,
+        Action::NewTab,
+        Action::CloseTab,
+        Action::Parent,
+    ]
+}
+
 pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)> {
-    Vec::from([
+    let mut groups = Vec::from([
+        (
+            "Navigation tools",
+            vec![
+                ("Quick find", Action::QuickFind),
+                ("Find next filename", Action::QuickFindNext),
+                ("Find previous filename", Action::QuickFindPrevious),
+                ("Quick lists…", Action::QuickLists),
+                ("Recent locations…", Action::RecentLocations),
+                ("Recently opened files…", Action::RecentFiles),
+                ("Bookmarks…", Action::BookmarksList),
+                ("Open tabs…", Action::TabsList),
+                ("Roots and drives…", Action::RootsList),
+                ("Open in both panes", Action::OpenBoth),
+                ("Parent in both panes", Action::ParentBoth),
+                ("Parent in other pane", Action::ParentOther),
+                ("Switch pane", Action::SwitchPane),
+                ("Focus next control", Action::FocusNext),
+                ("Focus previous control", Action::FocusPrevious),
+                ("File context menu", Action::FileContextMenu),
+            ],
+        ),
+        (
+            "Tab and layout",
+            vec![
+                ("Lock/unlock tab", Action::LockTab),
+                ("Name tab…", Action::TabTitle),
+                ("Move tab to other pane", Action::MoveTabOther),
+                ("Move tab left", Action::MoveTabLeft),
+                ("Move tab right", Action::MoveTabRight),
+                ("Side-by-side panes", Action::SideBySide),
+                ("Stacked panes", Action::Stacked),
+                ("Equal pane sizes", Action::EqualPanes),
+                ("Fit columns to content", Action::AutoSizeColumns),
+            ],
+        ),
+        (
+            "More tools",
+            vec![
+                ("Select by pattern…", Action::SelectPattern),
+                ("Unselect by pattern…", Action::UnselectPattern),
+                ("Select same extension", Action::SelectExtension),
+                ("Next block", Action::SelectNextBlock),
+                ("Previous block", Action::SelectPreviousBlock),
+                ("Mark next block", Action::MarkNextBlock),
+                ("Mark previous block", Action::MarkPreviousBlock),
+                ("Open Trash", Action::OpenTrash),
+                ("Empty Trash…", Action::EmptyTrash),
+                ("New window", Action::NewWindow),
+                ("Close window", Action::CloseWindow),
+                ("Next window", Action::NextWindow),
+                ("Previous window", Action::PreviousWindow),
+                ("Windows…", Action::WindowsList),
+                ("Import muCommander settings…", Action::ImportSettings),
+                ("Imported commands…", Action::ImportedCommands),
+            ],
+        ),
         (
             "File",
             vec![
@@ -165,7 +404,47 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Native drag-out", Action::NativeDrag),
             ],
         ),
-    ])
+    ]);
+    let extras = groups
+        .drain(..3)
+        .flat_map(|(_, items)| items)
+        .collect::<Vec<_>>();
+    groups.push((
+        "View",
+        vec![
+            ("Show hidden files", Action::ToggleHidden),
+            ("Settings…", Action::Preferences),
+        ],
+    ));
+    groups.push(("Window", Vec::new()));
+    for item in extras {
+        let target = match item.1 {
+            Action::NewWindow
+            | Action::CloseWindow
+            | Action::NextWindow
+            | Action::PreviousWindow
+            | Action::WindowsList => "Window",
+            Action::SideBySide | Action::Stacked | Action::EqualPanes | Action::AutoSizeColumns => {
+                "View"
+            }
+            Action::SelectPattern
+            | Action::UnselectPattern
+            | Action::SelectExtension
+            | Action::SelectNextBlock
+            | Action::SelectPreviousBlock
+            | Action::MarkNextBlock
+            | Action::MarkPreviousBlock => "Selection",
+            Action::OpenTrash
+            | Action::EmptyTrash
+            | Action::ImportSettings
+            | Action::ImportedCommands => "File",
+            _ => "Navigate",
+        };
+        if let Some((_, items)) = groups.iter_mut().find(|(title, _)| *title == target) {
+            items.push(item);
+        }
+    }
+    groups
 }
 
 struct Prompt {
@@ -233,6 +512,8 @@ enum PromptKind {
 }
 
 struct Editor {
+    document: Option<crate::text_document::Document>,
+    text_page: Option<crate::text_document::Page>,
     pdf: Option<PdfState>,
     image: Option<crate::viewer::RasterImage>,
     zoom: f32,
@@ -243,6 +524,7 @@ struct Editor {
     text: String,
     original: String,
     editable: bool,
+    can_edit: bool,
     error: Option<String>,
     confirm_close: bool,
 }
@@ -254,7 +536,12 @@ struct PdfState {
 type PdfResult = Result<(String, usize, crate::viewer::RasterImage), String>;
 impl Editor {
     fn dirty(&self) -> bool {
-        self.editable && self.text != self.original
+        self.editable
+            && (self.text != self.original
+                || self
+                    .document
+                    .as_ref()
+                    .is_some_and(|d| d.encoding != d.original_encoding))
     }
 }
 
@@ -263,6 +550,7 @@ enum JobEvent {
     Done(Result<crate::history::Record, String>),
 }
 struct Job {
+    owner: usize,
     label: String,
 
     receiver: Receiver<JobEvent>,
@@ -279,6 +567,7 @@ struct ConnectionForm {
 }
 
 pub struct Commander {
+    window_id: usize,
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     native_window: Option<crate::native_files::Window>,
     native_files: crate::native_files::NativeFiles,
@@ -286,6 +575,9 @@ pub struct Commander {
     features: crate::next_ui::Features,
     preview: crate::preview::Preview,
     workspaces: Vec<crate::workspaces::Workspace>,
+    recent_locations: Vec<crate::navigation::RecentLocation>,
+    recent_files: Vec<PathBuf>,
+    imported_commands: Vec<crate::config_import::ImportedCommand>,
     pending_save: Option<(String, String)>,
     history: Vec<crate::history::Record>,
     show_history: bool,
@@ -336,6 +628,7 @@ impl Commander {
                 &std::env::current_dir().unwrap_or_else(|_| filesystem::home()),
             );
             settings.tabs[side] = vec![Location::Local(path)];
+            settings.tab_states[side].clear();
             settings.active_tabs[side] = 0;
         }
         let panes = std::array::from_fn(|i| {
@@ -347,7 +640,15 @@ impl Commander {
             let tabs: Vec<_> = locations
                 .into_iter()
                 .take(32)
-                .map(|l| Tab::new(l, ctx))
+                .enumerate()
+                .map(|(index, l)| {
+                    let mut tab = Tab::new(l, ctx);
+                    tab.state = settings.tab_states[i]
+                        .get(index)
+                        .cloned()
+                        .unwrap_or_default();
+                    tab
+                })
                 .collect();
             Pane {
                 active: settings.active_tabs[i].min(tabs.len() - 1),
@@ -362,12 +663,16 @@ impl Commander {
         crate::i18n::set(settings.preferences.language);
 
         Self {
+            window_id: 0,
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             native_window: None,
             native_files: Default::default(),
             queue: crate::queue::Queue::load(),
             features: Default::default(),
             preview: Default::default(),
+            recent_locations: settings.recent_locations,
+            recent_files: settings.recent_files,
+            imported_commands: settings.imported_commands,
             workspaces: settings.workspaces,
             pending_save: None,
             history: crate::history::load().unwrap_or_default(),
@@ -484,6 +789,7 @@ impl Commander {
             worker_ctx.request_repaint();
         });
         self.job = Some(Job {
+            owner: self.window_id,
             label,
             receiver,
             cancel,
@@ -548,6 +854,18 @@ impl Commander {
             }
         }
         for pane in &mut self.panes {
+            let requested = pane
+                .tabs
+                .iter_mut()
+                .find_map(|tab| tab.requested_location.take());
+            if let Some(location) = requested {
+                if pane.tabs.len() < 32 {
+                    pane.tabs.push(Tab::new(location, ctx));
+                    pane.active = pane.tabs.len() - 1;
+                } else {
+                    pane.tab_mut().error = Some("At most 32 tabs per pane are supported.".into());
+                }
+            }
             for tab in &mut pane.tabs {
                 tab.folders_first = self.preferences.folders_first;
                 if self.preferences.auto_refresh {
@@ -557,7 +875,7 @@ impl Commander {
             }
         }
         let mut completed = None;
-        if let Some(job) = &mut self.job {
+        if let Some(job) = self.job.as_mut().filter(|j| j.owner == self.window_id) {
             loop {
                 match job.receiver.try_recv() {
                     Ok(JobEvent::Progress(progress)) => job.progress = progress,
@@ -585,6 +903,13 @@ impl Commander {
                 && editor.title == title
             {
                 if success {
+                    if let Some(document) = &mut editor.document
+                        && let Ok(bytes) = document.encode(&text)
+                    {
+                        document.original = bytes;
+                        document.original_encoding = document.encoding;
+                        document.text = text.clone();
+                    }
                     editor.original = text;
                     editor.error = None;
                 } else {
@@ -691,19 +1016,43 @@ impl Commander {
             self.view(entry, false, ctx);
         }
     }
+    fn remember_opened_file(&mut self, path: PathBuf) {
+        self.recent_files.retain(|old| old != &path);
+        self.recent_files.insert(0, path);
+        self.recent_files.truncate(50);
+    }
     fn view(&mut self, entry: Entry, editable: bool, ctx: &UiSignal) {
         if entry.is_dir {
             self.fail("Select a text file to view or edit.");
             return;
         }
         let location = self.tab().location.clone();
+        if location.local().is_some() {
+            self.remember_opened_file(entry.path.clone());
+        }
         let (sender, receiver) = mpsc::channel();
         let ctx = ctx.clone();
         self.pending_view = Some(receiver);
         std::thread::spawn(move || {
             let result = (|| -> anyhow::Result<Editor> {
+                let mut document = None;
+                let mut text_page = None;
                 let (text, image, kind, pdf) = match crate::viewer::load(&location, &entry.path)? {
-                    crate::viewer::Content::Text(text) => (text, None, "Text viewer", None),
+                    crate::viewer::Content::Text(text) => {
+                        document =
+                            crate::text_document::Document::detect(text.as_bytes().to_vec()).ok();
+                        (text, None, "Text viewer", None)
+                    }
+                    crate::viewer::Content::EncodedText(doc) => {
+                        let text = doc.text.clone();
+                        document = Some(doc);
+                        (text, None, "Text viewer", None)
+                    }
+                    crate::viewer::Content::LargeText(page) => {
+                        let text = page.document.text.clone();
+                        text_page = Some(page);
+                        (text, None, "Paged text viewer", None)
+                    }
                     crate::viewer::Content::Hex { text, truncated } => (
                         text,
                         None,
@@ -739,11 +1088,14 @@ impl Commander {
                     None
                 };
                 Ok(Editor {
+                    document,
+                    text_page,
                     pdf,
                     image,
                     zoom: 1.0,
                     kind,
                     title: entry.path.display().to_string(),
+                    can_edit: editable && (path.is_some() || remote.is_some()) && !entry.is_symlink,
                     editable: editable
                         && kind == "Text viewer"
                         && (path.is_some() || remote.is_some())
@@ -1308,6 +1660,7 @@ impl Commander {
             }
             Action::External => {
                 if local.is_some() {
+                    self.remember_opened_file(sources[0].clone());
                     if let Err(e) = open::that_detached(&sources[0]) {
                         self.fail(e);
                     }
@@ -1467,6 +1820,63 @@ impl Commander {
                     },
                 ));
             }
+            Action::FocusAddress
+            | Action::FocusFilter
+            | Action::SelectNextRow
+            | Action::SelectPreviousRow
+            | Action::SelectNextPage
+            | Action::SelectPreviousPage
+            | Action::SelectFirstRow
+            | Action::SelectLastRow
+            | Action::MarkNextRow
+            | Action::MarkPreviousRow
+            | Action::MarkNextPage
+            | Action::MarkPreviousPage
+            | Action::MarkToFirstRow
+            | Action::MarkToLastRow
+            | Action::MarkSelectedFile
+            | Action::ClearSelection
+            | Action::QuickFind
+            | Action::QuickFindNext
+            | Action::QuickFindPrevious
+            | Action::SelectPattern
+            | Action::UnselectPattern
+            | Action::SelectExtension
+            | Action::SelectNextBlock
+            | Action::SelectPreviousBlock
+            | Action::MarkNextBlock
+            | Action::MarkPreviousBlock
+            | Action::LockTab
+            | Action::TabTitle
+            | Action::MoveTabOther
+            | Action::MoveTabLeft
+            | Action::MoveTabRight
+            | Action::SideBySide
+            | Action::Stacked
+            | Action::EqualPanes
+            | Action::QuickLists
+            | Action::RecentLocations
+            | Action::RecentFiles
+            | Action::BookmarksList
+            | Action::TabsList
+            | Action::RootsList
+            | Action::OpenBoth
+            | Action::ParentBoth
+            | Action::ParentOther
+            | Action::SwitchPane
+            | Action::FocusNext
+            | Action::FocusPrevious
+            | Action::FileContextMenu
+            | Action::AutoSizeColumns
+            | Action::OpenTrash
+            | Action::EmptyTrash
+            | Action::NewWindow
+            | Action::CloseWindow
+            | Action::NextWindow
+            | Action::PreviousWindow
+            | Action::WindowsList
+            | Action::ImportSettings
+            | Action::ImportedCommands => return,
             Action::Checksum => {
                 if local.is_some() && !chosen[0].is_dir {
                     self.start_job(Operation::Checksum(sources[0].clone()), ctx);
@@ -1493,11 +1903,18 @@ impl Commander {
             self.fail("This operation requires local folders. Archive contents are read-only.");
         }
     }
-    fn save_settings(&self) {
-        if !self.settings_valid {
-            return;
-        }
-        let settings = Settings {
+    fn snapshot_settings(&self) -> Settings {
+        Settings {
+            tab_states: std::array::from_fn(|i| {
+                self.panes[i]
+                    .tabs
+                    .iter()
+                    .map(|t| t.state.persistent())
+                    .collect()
+            }),
+            recent_locations: self.recent_locations.clone(),
+            recent_files: self.recent_files.clone(),
+            imported_commands: self.imported_commands.clone(),
             workspaces: self.workspaces.clone(),
             preferences: self.preferences.clone(),
             connections: self.connections.clone(),
@@ -1513,7 +1930,13 @@ impl Commander {
             bookmarks: self.bookmarks.clone(),
             show_hidden: self.show_hidden,
             dark_mode: self.preferences.color_scheme == crate::appearance::ColorScheme::Dark,
-        };
+        }
+    }
+    fn save_settings(&self) {
+        if !self.settings_valid {
+            return;
+        }
+        let settings = self.snapshot_settings();
         if let Err(error) = settings::save(&settings) {
             eprintln!("Could not save settings: {error:#}");
         }
@@ -1760,6 +2183,13 @@ impl Commander {
                         } else {
                             let w = crate::workspaces::Workspace {
                                 name,
+                                tab_states: std::array::from_fn(|i| {
+                                    self.panes[i]
+                                        .tabs
+                                        .iter()
+                                        .map(|t| t.state.persistent())
+                                        .collect()
+                                }),
                                 tabs: std::array::from_fn(|i| {
                                     self.panes[i]
                                         .tabs
@@ -1812,7 +2242,13 @@ impl Commander {
                             .iter()
                             .take(32)
                             .cloned()
-                            .map(|l| Tab::new(l, ctx))
+                            .enumerate()
+                            .map(|(index, l)| {
+                                let mut tab = Tab::new(l, ctx);
+                                tab.state =
+                                    w.tab_states[side].get(index).cloned().unwrap_or_default();
+                                tab
+                            })
                             .collect::<Vec<_>>();
                         if tabs.is_empty() {
                             tabs.push(Tab::new(Location::Local(filesystem::home()), ctx));
@@ -1897,18 +2333,35 @@ impl Commander {
         if !editor.editable || !editor.dirty() || self.job.is_some() || !self.queue.is_empty() {
             return;
         }
+        let bytes = match editor
+            .document
+            .as_ref()
+            .map(|doc| doc.encode(&editor.text))
+            .unwrap_or_else(|| Ok(editor.text.as_bytes().to_vec()))
+        {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.fail(error);
+                return;
+            }
+        };
+        let original = editor
+            .document
+            .as_ref()
+            .map(|doc| doc.original.clone())
+            .unwrap_or_else(|| editor.original.as_bytes().to_vec());
         let operation = if let Some((connection, path)) = &editor.remote {
-            Some(Operation::RemoteSave {
+            Some(Operation::RemoteSaveBytes {
                 connection: connection.clone(),
                 path: path.clone(),
-                original: editor.original.as_bytes().to_vec(),
-                text: editor.text.clone(),
+                original: original.clone(),
+                bytes: bytes.clone(),
             })
         } else {
-            editor.path.as_ref().map(|path| Operation::SaveText {
+            editor.path.as_ref().map(|path| Operation::SaveBytes {
                 path: path.clone(),
-                original: editor.original.as_bytes().to_vec(),
-                text: editor.text.clone(),
+                original: original.clone(),
+                bytes: bytes.clone(),
             })
         };
         if let Some(operation) = operation {

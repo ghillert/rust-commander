@@ -15,6 +15,7 @@ pub struct NativeMenu {
     items: Vec<(MenuItem, Action, &'static str)>,
     submenu_labels: Vec<(Submenu, &'static str)>,
     receiver: Receiver<muda::MenuId>,
+    binding_cache: std::cell::RefCell<std::collections::BTreeMap<String, String>>,
 }
 impl NativeMenu {
     pub fn new(ctx: &UiSignal) -> muda::Result<Self> {
@@ -61,18 +62,16 @@ impl NativeMenu {
                 &PredefinedMenuItem::fullscreen(None),
             ],
         )?;
-        submenu_labels.push((window.clone(), "Window"));
-        for (title, entries) in action_menus().into_iter().chain([
-            (
-                "View",
-                vec![
-                    ("Show Hidden Files", Action::ToggleHidden),
-                    ("Appearance…", Action::Preferences),
-                ],
-            ),
-            ("Help", vec![("Rust Commander Help", Action::Help)]),
-        ]) {
-            let submenu = Submenu::new(crate::i18n::text(title).as_ref(), true);
+
+        for (title, entries) in action_menus()
+            .into_iter()
+            .chain([("Help", vec![("Rust Commander Help", Action::Help)])])
+        {
+            let submenu = if title == "Window" {
+                window.clone()
+            } else {
+                Submenu::new(crate::i18n::text(title).as_ref(), true)
+            };
             for (label, action) in entries {
                 let item = MenuItem::with_id(
                     format!("{title}-{action:?}"),
@@ -85,7 +84,6 @@ impl NativeMenu {
             }
             submenu_labels.push((submenu.clone(), title));
             if title == "Help" {
-                menu.append(&window)?;
                 submenu.set_as_help_menu_for_nsapp();
             }
             menu.append(&submenu)?;
@@ -103,17 +101,53 @@ impl NativeMenu {
             items,
             submenu_labels,
             receiver,
+            binding_cache: Default::default(),
         })
     }
 
     /// Keep the event receiver alive: muda installs its global handler only once.
     pub fn localize(&self) {
+        self.binding_cache.borrow_mut().clear();
         for (item, _, label) in &self.items {
             item.set_text(crate::i18n::text(label.split("  F").next().unwrap_or(label)).as_ref());
         }
         for (submenu, label) in &self.submenu_labels {
             submenu.set_text(crate::i18n::text(label).as_ref());
         }
+    }
+
+    pub fn update_bindings(&self, preferences: &crate::preferences::Preferences) {
+        if *self.binding_cache.borrow() == preferences.shortcuts {
+            return;
+        }
+        for (item, action, label) in &self.items {
+            let id = format!("{action:?}");
+            let binding = preferences
+                .shortcuts
+                .get(&id)
+                .map(String::as_str)
+                .unwrap_or("");
+            // Other accelerators stay in Slint so native text editing retains
+            // ownership of Copy/Cut/Paste/Undo while a text field has focus.
+            if matches!(action, Action::Quit | Action::Preferences) {
+                let accelerator = if binding.is_empty() {
+                    None
+                } else {
+                    binding.parse().ok()
+                };
+                let _ = item.set_accelerator(accelerator);
+                item.set_text(crate::i18n::text(label).as_ref());
+            } else {
+                let title = crate::i18n::text(label.split("  F").next().unwrap_or(label));
+                let text = if binding.is_empty() {
+                    title.into_owned()
+                } else {
+                    format!("{title}   {binding}")
+                };
+                item.set_text(text);
+            }
+        }
+        *self.binding_cache.borrow_mut() = preferences.shortcuts.clone();
     }
 
     pub fn poll(&self, blocked: bool) -> Vec<Action> {

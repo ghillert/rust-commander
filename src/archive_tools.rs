@@ -1,5 +1,5 @@
 use crate::{
-    filesystem::{Location, safe_relative},
+    filesystem::{Location, portable_relative, safe_relative},
     operations::{self, Task},
 };
 use anyhow::{Context, Result, bail};
@@ -45,19 +45,19 @@ pub fn edit_zip(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> {
     let mut mapping = Vec::new();
     match edit {
         ZipEdit::Add { prefix, .. } if !prefix.as_os_str().is_empty() => {
-            safe_relative(prefix)?;
+            portable_relative(prefix)?;
         }
         ZipEdit::Remove(selected) => {
             if selected.is_empty() {
                 bail!("Select entries to remove.");
             }
             for path in selected {
-                safe_relative(path)?;
+                portable_relative(path)?;
             }
         }
         ZipEdit::Rename { source, target } => {
-            safe_relative(source)?;
-            safe_relative(target)?;
+            portable_relative(source)?;
+            portable_relative(target)?;
         }
         _ => {}
     }
@@ -95,13 +95,13 @@ pub fn edit_zip(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> {
             }
             _ => {}
         }
-        let target = target.map(|path| {
-            format!(
-                "{}{}",
-                path.to_str().unwrap_or("").replace('\\', "/"),
-                if entry.is_dir() { "/" } else { "" }
-            )
-        });
+        let target = target
+            .map(|path| -> Result<String> {
+                let name = portable_relative(&path)?;
+                let name = name.to_str().context("ZIP filenames must be UTF-8")?;
+                Ok(format!("{name}{}", if entry.is_dir() { "/" } else { "" }))
+            })
+            .transpose()?;
         if let Some(name) = &target
             && (name.is_empty() || !paths.insert(name.trim_end_matches('/').to_string()))
         {
@@ -144,7 +144,7 @@ pub fn edit_zip(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> {
                 {
                     bail!("ZIP additions refuse links and special files.");
                 }
-                let name = safe_relative(name)?
+                let name = portable_relative(name)?
                     .to_str()
                     .context("ZIP filenames must be UTF-8")?
                     .replace('\\', "/");
@@ -368,7 +368,7 @@ pub fn edit_archive(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> 
             let parent = if prefix.as_os_str().is_empty() {
                 tree.clone()
             } else {
-                tree.join(safe_relative(prefix)?)
+                tree.join(portable_relative(prefix)?)
             };
             fs::create_dir_all(&parent)?;
             operations::validate_sources(sources)?;
@@ -392,7 +392,7 @@ pub fn edit_archive(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> 
             }
             let mut paths = paths
                 .iter()
-                .map(|p| safe_relative(p))
+                .map(|p| portable_relative(p))
                 .collect::<Result<Vec<_>>>()?;
             paths.sort_by_key(|p| p.components().count());
             let mut removed: Vec<PathBuf> = Vec::new();
@@ -409,8 +409,8 @@ pub fn edit_archive(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> 
             }
         }
         ZipEdit::Rename { source, target } => {
-            let source = tree.join(safe_relative(source)?);
-            let target = tree.join(safe_relative(target)?);
+            let source = tree.join(portable_relative(source)?);
+            let target = tree.join(portable_relative(target)?);
             if target.starts_with(&source) {
                 bail!("Cannot move an archive folder inside itself");
             }

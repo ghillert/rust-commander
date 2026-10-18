@@ -1027,7 +1027,16 @@ pub fn save_text(
     text: &str,
     task: &mut Task,
 ) -> Result<String> {
-    if original.len() > 2 * 1024 * 1024 || text.len() > 2 * 1024 * 1024 {
+    save_bytes(id, path, original, text.as_bytes(), task)
+}
+pub fn save_bytes(
+    id: &str,
+    path: &Path,
+    original: &[u8],
+    bytes: &[u8],
+    task: &mut Task,
+) -> Result<String> {
+    if original.len() > 2 * 1024 * 1024 || bytes.len() > 2 * 1024 * 1024 {
         bail!("Remote text editing is limited to 2 MiB");
     }
     task.check()?;
@@ -1047,12 +1056,7 @@ pub fn save_text(
                 backup.display()
             );
         }
-        smb.write(
-            path,
-            &mut std::io::Cursor::new(text.as_bytes()),
-            task,
-            false,
-        )?;
+        smb.write(path, &mut std::io::Cursor::new(bytes), task, false)?;
     } else {
         let operator = session.operator()?;
         let metadata = operator.stat(&key(path, false)?)?;
@@ -1081,10 +1085,10 @@ pub fn save_text(
             ..Default::default()
         };
         operator
-            .write_options(&key(path, false)?, text.as_bytes().to_vec(), options)
+            .write_options(&key(path, false)?, bytes.to_vec(), options)
             .map_err(|e| clean_error(e, &session.secrets))?;
     }
-    if read_bytes(id, path, 2 * 1024 * 1024)? != text.as_bytes() {
+    if read_bytes(id, path, 2 * 1024 * 1024)? != bytes {
         bail!(
             "Uploaded content did not verify. Recovery copy: {}",
             backup.display()

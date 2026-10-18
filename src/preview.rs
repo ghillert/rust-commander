@@ -63,6 +63,8 @@ impl Preview {
         if let Some(result) = crate::background::poll(&mut self.pending) {
             match result {
                 Ok(Content::Text(t)) | Ok(Content::Hex { text: t, .. }) => self.text = t,
+                Ok(Content::EncodedText(document)) => self.text = document.text,
+                Ok(Content::LargeText(page)) => self.text = page.document.text,
                 Ok(Content::Image(i)) | Ok(Content::Pdf { image: i, .. }) => {
                     self.image = Some(i.clone());
                 }

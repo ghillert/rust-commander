@@ -13,9 +13,13 @@ pub struct Bookmark {
     pub location: Location,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    pub tab_states: [Vec<crate::navigation::TabState>; 2],
+    pub recent_locations: Vec<crate::navigation::RecentLocation>,
+    pub recent_files: Vec<PathBuf>,
+    pub imported_commands: Vec<crate::config_import::ImportedCommand>,
     pub workspaces: Vec<crate::workspaces::Workspace>,
     pub tabs: [Vec<Location>; 2],
     pub active_tabs: [usize; 2],
@@ -30,6 +34,10 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            tab_states: Default::default(),
+            recent_locations: Vec::new(),
+            recent_files: Vec::new(),
+            imported_commands: Vec::new(),
             workspaces: Vec::new(),
             tabs: [vec![Location::Local(home())], vec![Location::Local(home())]],
             active_tabs: [0, 0],

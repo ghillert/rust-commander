@@ -40,3 +40,8 @@ pub mod preview;
 pub mod linux_drag;
 
 pub mod ui_signal;
+
+pub mod navigation;
+
+pub mod config_import;
+pub mod text_document;

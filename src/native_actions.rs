@@ -71,3 +71,50 @@ pub fn quick_look(paths: &[PathBuf]) -> Result<()> {
         bail!("Use the built-in preview pane on this platform")
     }
 }
+
+/// Native system Trash actions. Emptying is invoked only after explicit UI confirmation.
+pub fn trash_action(empty: bool) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    let status = Command::new("/usr/bin/osascript")
+        .args([
+            "-e",
+            if empty {
+                "tell application \"Finder\" to empty trash"
+            } else {
+                "tell application \"Finder\" to open trash"
+            },
+        ])
+        .status()?;
+    #[cfg(target_os = "windows")]
+    {
+        if empty {
+            let result = unsafe {
+                windows_sys::Win32::UI::Shell::SHEmptyRecycleBinW(
+                    std::ptr::null_mut(),
+                    std::ptr::null(),
+                    0,
+                )
+            };
+            if result < 0 {
+                bail!("Windows could not empty the Recycle Bin: {result:#x}");
+            }
+            return Ok(());
+        }
+        Command::new("explorer.exe")
+            .arg("shell:RecycleBinFolder")
+            .spawn()?;
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let status = if empty {
+        Command::new("gio").args(["trash", "--empty"]).status()?
+    } else {
+        Command::new("gio").args(["open", "trash:///"]).status()?
+    };
+    #[cfg(not(target_os = "windows"))]
+    if !status.success() {
+        bail!("The native Trash action was cancelled or denied (status {status}).");
+    }
+    #[cfg(not(target_os = "windows"))]
+    Ok(())
+}

@@ -90,9 +90,10 @@
   },
   "CloseWindow": {
     "evidence": [
-      "src/app.rs"
+      "src/app/slint_ui/windows.rs",
+      "parity/VALIDATION.md"
     ],
-    "note": "Implemented UI and close protection; full lifecycle validation pending.",
+    "note": "Independent window sessions share one queue/job/history/preferences runtime, with owned-job close and all-window quit guards. Mac second-window Undo passes; other desktop platforms and complete multiwindow restoration remain unvalidated.",
     "status": "partial"
   },
   "CombineFiles": {
@@ -158,8 +159,14 @@
     "status": "partial"
   },
   "CustomizeCommandBar": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app/slint_ui/dialogs.rs",
+      "src/app/slint_ui/keys.rs",
+      "src/app/slint_ui/parity_tests.rs::command_bar_and_shortcut_labels_follow_custom_bindings"
+    ],
+    "note": "Named command-bar slots and searchable primary/alternate bindings cover the supported command registry, with validation and current labels. Modal editing retains control-specific keys; upstream and platform edge cases remain.",
+    "status": "partial"
   },
   "Delete": {
     "evidence": [
@@ -211,8 +218,14 @@
     "status": "missing"
   },
   "EmptyTrash": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/native_actions.rs",
+      "src/operations.rs",
+      "src/queue.rs",
+      "src/app/slint_ui/parity_tests.rs::trash_emptying_requires_confirmation_and_cannot_resume_unattended"
+    ],
+    "note": "Native platform adapters exist with literal EMPTY confirmation and no unattended replay. Windows adapter cross-Clippy passes; real system Trash emptying has deliberately not been executed and native integration remains unvalidated.",
+    "status": "partial"
   },
   "ExploreBookmarks": {
     "evidence": [],
@@ -229,12 +242,20 @@
     "status": "partial"
   },
   "FocusNext": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/parity.rs",
+      "ui/commander.slint"
+    ],
+    "note": "Keyboard traversal covers the six pane list/address/filter controls and keyboard file context-menu opening. Full application-wide focus traversal/accessibility and native platform parity remain incomplete.",
+    "status": "partial"
   },
   "FocusPrevious": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/parity.rs",
+      "ui/commander.slint"
+    ],
+    "note": "Keyboard traversal covers the six pane list/address/filter controls and keyboard file context-menu opening. Full application-wide focus traversal/accessibility and native platform parity remain incomplete.",
+    "status": "partial"
   },
   "GarbageCollect": {
     "evidence": [
@@ -284,12 +305,20 @@
     "status": "partial"
   },
   "GoToParentInBothPanels": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/parity.rs",
+      "src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes"
+    ],
+    "note": "Cross-pane folder/archive open and independent parent commands are implemented with tab locks honored; broader remote/archive and platform behavior remains unvalidated.",
+    "status": "partial"
   },
   "GoToParentInOtherPanel": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/parity.rs",
+      "src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes"
+    ],
+    "note": "Cross-pane folder/archive open and independent parent commands are implemented with tab locks honored; broader remote/archive and platform behavior remains unvalidated.",
+    "status": "partial"
   },
   "GoToRoot": {
     "evidence": [
@@ -348,23 +377,47 @@
     "status": "partial"
   },
   "MarkExtension": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row",
+      "src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments"
+    ],
+    "note": "Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated.",
+    "status": "partial"
   },
   "MarkGroup": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row",
+      "src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments"
+    ],
+    "note": "Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated.",
+    "status": "partial"
   },
   "MarkNextBlock": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row",
+      "src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments"
+    ],
+    "note": "Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated.",
+    "status": "partial"
   },
   "MarkNextPage": {
     "evidence": [
-      "src/app.rs",
-      "src/model.rs"
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row",
+      "src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments"
     ],
-    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "note": "Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated.",
     "status": "partial"
   },
   "MarkNextRow": {
@@ -376,15 +429,25 @@
     "status": "partial"
   },
   "MarkPreviousBlock": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row",
+      "src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments"
+    ],
+    "note": "Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated.",
+    "status": "partial"
   },
   "MarkPreviousPage": {
     "evidence": [
-      "src/app.rs",
-      "src/model.rs"
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row",
+      "src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments"
     ],
-    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "note": "Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated.",
     "status": "partial"
   },
   "MarkPreviousRow": {
@@ -405,18 +468,24 @@
   },
   "MarkToFirstRow": {
     "evidence": [
-      "src/app.rs",
-      "src/model.rs"
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row",
+      "src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments"
     ],
-    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "note": "Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated.",
     "status": "partial"
   },
   "MarkToLastRow": {
     "evidence": [
-      "src/app.rs",
-      "src/model.rs"
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row",
+      "src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments"
     ],
-    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "note": "Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated.",
     "status": "partial"
   },
   "MaximizeWindow": {
@@ -455,8 +524,15 @@
     "status": "partial"
   },
   "MoveTabToOtherPanel": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "src/workspaces.rs",
+      "src/app/slint_ui/parity_tests.rs::locked_named_tabs_move_between_panes_and_defer_navigation_to_a_new_tab"
+    ],
+    "note": "Named/locked tabs persist across sessions/workspaces and move between panes. Locked navigation opens an unlocked tab, verified on Mac; broader platform and upstream edge cases remain.",
+    "status": "partial"
   },
   "NewTab": {
     "evidence": [
@@ -467,8 +543,12 @@
     "status": "partial"
   },
   "NewWindow": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/windows.rs",
+      "parity/VALIDATION.md"
+    ],
+    "note": "Independent window sessions share one queue/job/history/preferences runtime, with owned-job close and all-window quit guards. Mac second-window Undo passes; other desktop platforms and complete multiwindow restoration remain unvalidated.",
+    "status": "partial"
   },
   "NextTab": {
     "evidence": [
@@ -499,8 +579,12 @@
     "status": "partial"
   },
   "OpenInBothPanels": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/parity.rs",
+      "src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes"
+    ],
+    "note": "Cross-pane folder/archive open and independent parent commands are implemented with tab locks honored; broader remote/archive and platform behavior remains unvalidated.",
+    "status": "partial"
   },
   "OpenInNewTab": {
     "evidence": [
@@ -527,8 +611,14 @@
     "status": "partial"
   },
   "OpenTrash": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/native_actions.rs",
+      "src/operations.rs",
+      "src/queue.rs",
+      "src/app/slint_ui/parity_tests.rs::trash_emptying_requires_confirmation_and_cannot_resume_unattended"
+    ],
+    "note": "Native platform adapters exist with literal EMPTY confirmation and no unattended replay. Windows adapter cross-Clippy passes; real system Trash emptying has deliberately not been executed and native integration remains unvalidated.",
+    "status": "partial"
   },
   "OpenURLInBrowser": {
     "evidence": [],
@@ -588,8 +678,14 @@
     "status": "partial"
   },
   "QuickFind": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "src/app/slint_ui/parity.rs",
+      "tests/features_07.rs::quick_find_normalizes_mac_decomposed_unicode_names",
+      "src/app/slint_ui/parity_tests.rs::quick_find_and_pattern_selection_use_the_real_slint_callbacks"
+    ],
+    "note": "Unicode-normalized prefix search, cycling and Escape are implemented and exercised in Slint; broader input-method/platform behavior remains unvalidated.",
+    "status": "partial"
   },
   "Quit": {
     "evidence": [
@@ -599,12 +695,20 @@
     "status": "partial"
   },
   "RecallNextWindow": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/windows.rs",
+      "parity/VALIDATION.md"
+    ],
+    "note": "Independent window sessions share one queue/job/history/preferences runtime, with owned-job close and all-window quit guards. Mac second-window Undo passes; other desktop platforms and complete multiwindow restoration remain unvalidated.",
+    "status": "partial"
   },
   "RecallPreviousWindow": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/windows.rs",
+      "parity/VALIDATION.md"
+    ],
+    "note": "Independent window sessions share one queue/job/history/preferences runtime, with owned-job close and all-window quit guards. Mac second-window Undo passes; other desktop platforms and complete multiwindow restoration remain unvalidated.",
+    "status": "partial"
   },
   "RecallWindow1": {
     "evidence": [],
@@ -715,8 +819,15 @@
     "status": "partial"
   },
   "SelectNextBlock": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row",
+      "src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments"
+    ],
+    "note": "Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated.",
+    "status": "partial"
   },
   "SelectNextPage": {
     "evidence": [
@@ -735,8 +846,15 @@
     "status": "partial"
   },
   "SelectPreviousBlock": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row",
+      "src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments"
+    ],
+    "note": "Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated.",
+    "status": "partial"
   },
   "SelectPreviousPage": {
     "evidence": [
@@ -763,8 +881,15 @@
     "status": "partial"
   },
   "SetTabTitle": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "src/workspaces.rs",
+      "src/app/slint_ui/parity_tests.rs::locked_named_tabs_move_between_panes_and_defer_navigation_to_a_new_tab"
+    ],
+    "note": "Named/locked tabs persist across sessions/workspaces and move between panes. Locked navigation opens an unlocked tab, verified on Mac; broader platform and upstream edge cases remain.",
+    "status": "partial"
   },
   "ShowAbout": {
     "evidence": [
@@ -774,16 +899,26 @@
     "status": "partial"
   },
   "ShowBookmarksQL": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/parity.rs",
+      "src/navigation.rs",
+      "tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first",
+      "src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes"
+    ],
+    "note": "Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete.",
+    "status": "partial"
   },
   "ShowDebugConsole": {
     "evidence": [],
     "status": "missing"
   },
   "ShowFilePopupMenu": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/parity.rs",
+      "ui/commander.slint"
+    ],
+    "note": "Keyboard traversal covers the six pane list/address/filter controls and keyboard file context-menu opening. Full application-wide focus traversal/accessibility and native platform parity remain incomplete.",
+    "status": "partial"
   },
   "ShowFileProperties": {
     "evidence": [
@@ -804,10 +939,11 @@
   "ShowKeyboardShortcuts": {
     "evidence": [
       "src/preferences.rs",
-      "src/app.rs",
-      "tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions"
+      "src/app/slint_ui/dialogs.rs",
+      "src/app/slint_ui/keys.rs",
+      "src/app/slint_ui/parity_tests.rs::command_bar_and_shortcut_labels_follow_custom_bindings"
     ],
-    "note": "Common preferences only; all upstream settings and shortcut actions are not ported.",
+    "note": "Named command-bar slots and searchable primary/alternate bindings cover the supported command registry, with validation and current labels. Modal editing retains control-specific keys; upstream and platform edge cases remain.",
     "status": "partial"
   },
   "ShowParentFoldersQL": {
@@ -829,16 +965,34 @@
     "status": "partial"
   },
   "ShowRecentExecutedFilesQL": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/parity.rs",
+      "src/navigation.rs",
+      "tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first",
+      "src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes"
+    ],
+    "note": "Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete.",
+    "status": "partial"
   },
   "ShowRecentLocationsQL": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/parity.rs",
+      "src/navigation.rs",
+      "tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first",
+      "src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes"
+    ],
+    "note": "Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete.",
+    "status": "partial"
   },
   "ShowRootFoldersQL": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/parity.rs",
+      "src/navigation.rs",
+      "tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first",
+      "src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes"
+    ],
+    "note": "Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete.",
+    "status": "partial"
   },
   "ShowServerConnections": {
     "evidence": [
@@ -849,8 +1003,14 @@
     "status": "partial"
   },
   "ShowTabsQL": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/parity.rs",
+      "src/navigation.rs",
+      "tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first",
+      "src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes"
+    ],
+    "note": "Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete.",
+    "status": "partial"
   },
   "SortByDate": {
     "evidence": [
@@ -870,8 +1030,15 @@
     "status": "partial"
   },
   "SortByGroup": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/filesystem.rs",
+      "src/preferences.rs",
+      "src/app/slint_ui/parity.rs",
+      "ui/commander.slint",
+      "tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata"
+    ],
+    "note": "Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete.",
+    "status": "partial"
   },
   "SortByName": {
     "evidence": [
@@ -882,12 +1049,26 @@
     "status": "partial"
   },
   "SortByOwner": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/filesystem.rs",
+      "src/preferences.rs",
+      "src/app/slint_ui/parity.rs",
+      "ui/commander.slint",
+      "tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata"
+    ],
+    "note": "Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete.",
+    "status": "partial"
   },
   "SortByPermissions": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/filesystem.rs",
+      "src/preferences.rs",
+      "src/app/slint_ui/parity.rs",
+      "ui/commander.slint",
+      "tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata"
+    ],
+    "note": "Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete.",
+    "status": "partial"
   },
   "SortBySize": {
     "evidence": [
@@ -898,8 +1079,13 @@
     "status": "partial"
   },
   "SplitEqually": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "ui/commander.slint",
+      "src/app/slint_ui/parity_tests.rs::pane_orientation_and_divider_preserve_drop_target_routing"
+    ],
+    "note": "Saved side-by-side/stacked layout, bounded draggable ratio and equal reset are implemented. Mac stacked rendering passes; native divider interactions on other platforms remain unvalidated.",
+    "status": "partial"
   },
   "SplitFile": {
     "evidence": [
@@ -910,12 +1096,22 @@
     "status": "implemented"
   },
   "SplitHorizontally": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "ui/commander.slint",
+      "src/app/slint_ui/parity_tests.rs::pane_orientation_and_divider_preserve_drop_target_routing"
+    ],
+    "note": "Saved side-by-side/stacked layout, bounded draggable ratio and equal reset are implemented. Mac stacked rendering passes; native divider interactions on other platforms remain unvalidated.",
+    "status": "partial"
   },
   "SplitVertically": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "ui/commander.slint",
+      "src/app/slint_ui/parity_tests.rs::pane_orientation_and_divider_preserve_drop_target_routing"
+    ],
+    "note": "Saved side-by-side/stacked layout, bounded draggable ratio and equal reset are implemented. Mac stacked rendering passes; native divider interactions on other platforms remain unvalidated.",
+    "status": "partial"
   },
   "Stop": {
     "evidence": [
@@ -943,8 +1139,15 @@
     "status": "partial"
   },
   "ToggleAutoSize": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/filesystem.rs",
+      "src/preferences.rs",
+      "src/app/slint_ui/parity.rs",
+      "ui/commander.slint",
+      "tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata"
+    ],
+    "note": "Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete.",
+    "status": "partial"
   },
   "ToggleCommandBar": {
     "evidence": [
@@ -974,8 +1177,15 @@
     "status": "partial"
   },
   "ToggleGroupColumn": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/filesystem.rs",
+      "src/preferences.rs",
+      "src/app/slint_ui/parity.rs",
+      "ui/commander.slint",
+      "tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata"
+    ],
+    "note": "Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete.",
+    "status": "partial"
   },
   "ToggleHiddenFiles": {
     "evidence": [
@@ -987,20 +1197,36 @@
     "status": "partial"
   },
   "ToggleLockTab": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "src/workspaces.rs",
+      "src/app/slint_ui/parity_tests.rs::locked_named_tabs_move_between_panes_and_defer_navigation_to_a_new_tab"
+    ],
+    "note": "Named/locked tabs persist across sessions/workspaces and move between panes. Locked navigation opens an unlocked tab, verified on Mac; broader platform and upstream edge cases remain.",
+    "status": "partial"
   },
   "ToggleOwnerColumn": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/filesystem.rs",
+      "src/preferences.rs",
+      "src/app/slint_ui/parity.rs",
+      "ui/commander.slint",
+      "tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata"
+    ],
+    "note": "Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete.",
+    "status": "partial"
   },
   "TogglePermissionsColumn": {
     "evidence": [
+      "src/filesystem.rs",
       "src/preferences.rs",
-      "src/app.rs",
-      "tests/features.rs"
+      "src/app/slint_ui/parity.rs",
+      "ui/commander.slint",
+      "tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata"
     ],
-    "note": "Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open.",
+    "note": "Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete.",
     "status": "partial"
   },
   "ToggleShowFoldersFirst": {
@@ -1083,8 +1309,15 @@
     "status": "partial"
   },
   "UnmarkGroup": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row",
+      "src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments"
+    ],
+    "note": "Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated.",
+    "status": "partial"
   },
   "Unpack": {
     "evidence": [
@@ -1377,10 +1610,13 @@
   },
   "mucommander-viewer-text": {
     "evidence": [
+      "src/text_document.rs",
       "src/viewer.rs",
-      "tests/desktop_tools.rs"
+      "src/app/slint_ui/keys.rs",
+      "tests/features_07.rs::encoded_edit_preserves_bom_crlf_and_undo_restores_exact_original_bytes",
+      "tests/features_07.rs::utf16_pages_keep_surrogates_intact_in_both_directions"
     ],
-    "note": "Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified.",
+    "note": "UTF-8/UTF-16/Windows-1252/Latin-1 editing preserves BOM/CRLF and guarded byte saves; local large-file viewing uses bounded pages. Native Mac UTF-16 save/paging passes; additional encodings/viewer behavior remain incomplete.",
     "status": "partial"
   }
 }

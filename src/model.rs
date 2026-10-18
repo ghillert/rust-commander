@@ -19,6 +19,8 @@ pub struct Tab {
     changed: Arc<AtomicBool>,
     last_refresh: Instant,
     pub id: u64,
+    pub state: crate::navigation::TabState,
+    pub(crate) requested_location: Option<Location>,
     pub(crate) revision: u64,
     pub location: Location,
     pub address: String,
@@ -47,6 +49,8 @@ impl Tab {
             changed: Arc::new(AtomicBool::new(false)),
             last_refresh: Instant::now(),
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            state: Default::default(),
+            requested_location: None,
             revision: 0,
             address: location.label(),
             history: vec![location.clone()],
@@ -158,7 +162,20 @@ impl Tab {
         }
     }
 
+    pub fn requested_navigation(&self) -> Option<&Location> {
+        self.requested_location.as_ref()
+    }
+
     pub fn navigate(&mut self, location: Location, ctx: &crate::ui_signal::UiSignal) {
+        if self
+            .state
+            .locked
+            .as_ref()
+            .is_some_and(|locked| locked != &location)
+        {
+            self.requested_location = Some(location);
+            return;
+        }
         if self.location != location {
             self.history.truncate(self.history_index + 1);
             self.history.push(location.clone());
@@ -178,6 +195,17 @@ impl Tab {
     }
 
     pub fn history(&mut self, forward: bool, ctx: &crate::ui_signal::UiSignal) {
+        if self.state.locked.is_some() {
+            let index = if forward {
+                self.history_index.checked_add(1)
+            } else {
+                self.history_index.checked_sub(1)
+            };
+            if let Some(location) = index.and_then(|i| self.history.get(i)).cloned() {
+                self.navigate(location, ctx);
+            }
+            return;
+        }
         if forward && self.history_index + 1 < self.history.len() {
             self.history_index += 1;
         } else if !forward && self.history_index > 0 {
@@ -236,8 +264,9 @@ impl Tab {
         let next = position.saturating_add_signed(delta).min(visible.len() - 1);
         self.cursor = Some(self.entries[visible[next]].path.clone());
         if extend {
-            self.selected
-                .insert(self.entries[visible[next]].path.clone());
+            for &index in &visible[position.min(next)..=position.max(next)] {
+                self.selected.insert(self.entries[index].path.clone());
+            }
         }
         self.scroll_to_cursor = true;
     }

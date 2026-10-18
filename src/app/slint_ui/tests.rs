@@ -1,6 +1,6 @@
 use super::*;
 
-fn fixture() -> (tempfile::TempDir, Adapter, PathBuf, PathBuf) {
+pub(super) fn fixture() -> (tempfile::TempDir, Adapter, PathBuf, PathBuf) {
     let root = tempfile::tempdir().unwrap();
     let left = root.path().join("left");
     let right = root.path().join("right");
@@ -231,6 +231,8 @@ fn invalid_numeric_fields_block_apply_until_corrected() {
 fn viewer_close_and_exit_preserve_unsaved_text_until_confirmed() {
     let (_root, mut adapter, left, _right) = fixture();
     adapter.app.editor = Some(Editor {
+        document: None,
+        text_page: None,
         pdf: None,
         image: None,
         zoom: 1.0,
@@ -241,6 +243,7 @@ fn viewer_close_and_exit_preserve_unsaved_text_until_confirmed() {
         text: "changed".into(),
         original: "alpha".into(),
         editable: true,
+        can_edit: true,
         error: None,
         confirm_close: false,
     });

@@ -352,6 +352,9 @@ fn zip_slip_and_windows_path_traversal_are_rejected_before_extraction() {
         "/absolute",
         "C:/escape",
         "..\\escape",
+        "source\\nested",
+        "C:\\escape",
+        "\\\\server\\share",
         "safe/../../escaped",
     ] {
         let root = tempfile::tempdir().unwrap();

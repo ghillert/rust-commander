@@ -11,6 +11,9 @@ fn checked(value: &str) -> bool {
 
 impl Adapter {
     pub(in super::super) fn edit_field(&mut self, id: &str, value: &str) {
+        if self.parity_edit(id, value) {
+            return;
+        }
         let result = (|| -> anyhow::Result<()> {
             match self.dialog_kind.as_str() {
                 "prompt" => {

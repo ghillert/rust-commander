@@ -20,6 +20,10 @@ pub struct Preferences {
     pub toolbar_actions: Vec<ToolbarAction>,
     pub recovery: crate::history::Retention,
     pub preview: bool,
+    pub layout: crate::navigation::Layout,
+    pub command_actions: Vec<String>,
+    pub alternate_shortcuts: BTreeMap<String, String>,
+    pub auto_size_columns: bool,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -30,6 +34,14 @@ impl Default for Preferences {
             toolbar: true,
             recovery: Default::default(),
             preview: false,
+            layout: Default::default(),
+            auto_size_columns: false,
+            alternate_shortcuts: [("MarkSelectedFile".into(), "Insert".into())]
+                .into_iter()
+                .collect(),
+            command_actions: ["Help", "View", "Edit", "Copy", "Move", "Mkdir", "Trash"]
+                .map(str::to_owned)
+                .to_vec(),
             command_bar: !cfg!(target_os = "macos"),
             status_bar: true,
             single_pane: false,
@@ -56,6 +68,47 @@ impl Default for Preferences {
                 ToolbarAction::Move,
             ],
             shortcuts: [
+                ("MarkAll", "Command+A"),
+                ("ClearSelection", "Escape"),
+                ("Redo", "Command+Shift+Z"),
+                ("SaveText", "Command+S"),
+                ("Preview", "Command+P"),
+                ("QuickLook", "Command+Shift+P"),
+                ("Quit", "Command+Q"),
+                ("Preferences", "Command+Comma"),
+                ("FocusAddress", "Command+L"),
+                ("FocusFilter", "Command+F"),
+                ("Back", "Alt+ArrowLeft"),
+                ("Forward", "Alt+ArrowRight"),
+                ("ToggleHidden", "Command+Shift+Period"),
+                ("NewWindow", "Command+N"),
+                ("CloseWindow", "Command+Shift+W"),
+                ("QuickLists", "Command+Shift+L"),
+                ("QuickFindNext", "Command+G"),
+                ("QuickFindPrevious", "Command+Shift+G"),
+                ("FileContextMenu", "Shift+F10"),
+                ("FocusNext", "Command+F6"),
+                ("FocusPrevious", "Command+Shift+F6"),
+                ("Open", "Enter"),
+                ("Parent", "Backspace"),
+                ("SwitchPane", "Tab"),
+                ("SelectNextRow", "ArrowDown"),
+                ("SelectPreviousRow", "ArrowUp"),
+                ("SelectNextPage", "PageDown"),
+                ("SelectPreviousPage", "PageUp"),
+                ("SelectFirstRow", "Home"),
+                ("SelectLastRow", "End"),
+                ("MarkNextRow", "Shift+ArrowDown"),
+                ("MarkPreviousRow", "Shift+ArrowUp"),
+                ("MarkNextPage", "Shift+PageDown"),
+                ("MarkPreviousPage", "Shift+PageUp"),
+                ("MarkToFirstRow", "Shift+Home"),
+                ("MarkToLastRow", "Shift+End"),
+                ("MarkSelectedFile", "Space"),
+                ("SelectNextBlock", "Command+ArrowDown"),
+                ("SelectPreviousBlock", "Command+ArrowUp"),
+                ("MarkNextBlock", "Command+Shift+ArrowDown"),
+                ("MarkPreviousBlock", "Command+Shift+ArrowUp"),
                 ("Help", "F1"),
                 ("Rename", "F2"),
                 ("View", "F3"),
@@ -192,8 +245,26 @@ pub fn validate(preferences: &Preferences) -> Result<()> {
         }
         actions.push(*action);
     }
+    let catalog = crate::app::slint_ui::supported_commands();
+    if preferences.command_actions.len() > 12 {
+        bail!("Choose at most 12 command-bar actions");
+    }
+    let mut command_names = std::collections::BTreeSet::new();
+    for name in &preferences.command_actions {
+        if !catalog.contains(name) || !command_names.insert(name) {
+            bail!("Command-bar actions must be supported and unique");
+        }
+    }
+    if !preferences.layout.ratio.is_finite() || !(0.15..=0.85).contains(&preferences.layout.ratio) {
+        bail!("Pane ratio must be between 0.15 and 0.85");
+    }
     let mut keys = Vec::new();
-    for value in preferences.shortcuts.values().filter(|v| !v.is_empty()) {
+    for value in preferences
+        .shortcuts
+        .values()
+        .chain(preferences.alternate_shortcuts.values())
+        .filter(|v| !v.is_empty())
+    {
         let key = shortcut(value)?;
         if keys.contains(&key) {
             bail!("Duplicate shortcut: {value}");
@@ -210,15 +281,19 @@ pub enum Column {
     Modified,
     Extension,
     Kind,
+    Owner,
+    Group,
     Permissions,
 }
 impl Column {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::Name,
         Self::Size,
         Self::Modified,
         Self::Extension,
         Self::Kind,
+        Self::Owner,
+        Self::Group,
         Self::Permissions,
     ];
     pub fn label(self) -> &'static str {
@@ -228,6 +303,8 @@ impl Column {
             Self::Modified => "Modified",
             Self::Extension => "Extension",
             Self::Kind => "Type",
+            Self::Owner => "Owner",
+            Self::Group => "Group",
             Self::Permissions => "Permissions",
         }
     }
@@ -237,7 +314,9 @@ impl Column {
             Self::Modified => crate::filesystem::Sort::Modified,
             Self::Extension => crate::filesystem::Sort::Extension,
             Self::Kind => crate::filesystem::Sort::Kind,
-            Self::Permissions => return None,
+            Self::Permissions => crate::filesystem::Sort::Permissions,
+            Self::Owner => crate::filesystem::Sort::Owner,
+            Self::Group => crate::filesystem::Sort::Group,
             _ => crate::filesystem::Sort::Name,
         })
     }
@@ -266,6 +345,19 @@ impl Column {
                 .to_string_lossy()
                 .into_owned(),
             Self::Kind => crate::i18n::text(entry.kind()).into_owned(),
+            Self::Owner | Self::Group => {
+                if local {
+                    let (owner, group, _) = crate::filesystem::ownership(&entry.path);
+                    if self == Self::Owner {
+                        owner.map(|n| n.to_string())
+                    } else {
+                        group.map(|n| n.to_string())
+                    }
+                    .unwrap_or_else(|| "—".into())
+                } else {
+                    "—".into()
+                }
+            }
             Self::Permissions => {
                 #[cfg(unix)]
                 {
@@ -343,29 +435,28 @@ impl ToolbarAction {
 impl Preferences {
     /// Add new bindings to legacy settings without stealing an existing custom shortcut.
     pub fn upgrade(&mut self) {
-        for (name, binding) in [
-            ("Undo", "Command+Z"),
-            ("Queue", "Command+J"),
-            ("Redo", "Command+Shift+Z"),
-            ("Preview", "Command+P"),
-            ("QuickLook", "Command+Shift+P"),
-        ] {
-            if self.shortcuts.contains_key(name) {
+        for (name, binding) in Self::default().alternate_shortcuts {
+            if self.alternate_shortcuts.get(&name) == Some(&binding)
+                && self
+                    .shortcuts
+                    .values()
+                    .any(|value| shortcut(value).ok() == shortcut(&binding).ok())
+            {
+                self.alternate_shortcuts.remove(&name);
+            }
+        }
+
+        for (name, binding) in Self::default().shortcuts {
+            if self.shortcuts.contains_key(&name) {
                 continue;
             }
             let reserved = self
                 .shortcuts
                 .values()
                 .filter(|value| !value.is_empty())
-                .any(|value| shortcut(value).ok() == shortcut(binding).ok());
-            self.shortcuts.insert(
-                name.into(),
-                if reserved {
-                    String::new()
-                } else {
-                    binding.into()
-                },
-            );
+                .any(|value| shortcut(value).ok() == shortcut(&binding).ok());
+            self.shortcuts
+                .insert(name, if reserved { String::new() } else { binding });
         }
     }
 }

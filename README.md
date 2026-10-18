@@ -12,7 +12,7 @@ The interface uses [Slint](https://slint.dev) and runs without a JVM or browser 
 Rust Commander is an independent project and is not affiliated with or endorsed
 by the Rust Project or Rust Foundation.
 
-> **Development preview — 0.6.0.** This is an independent implementation with
+> **Development preview — 0.7.0.** This is an independent implementation with
 > full upstream compatibility still in progress. Apple Silicon macOS has been
 > validated interactively; Windows/Linux desktop integration still needs testing.
 > See the [parity checklist](parity/PARITY.md) and
@@ -35,7 +35,8 @@ by the Rust Project or Rust Foundation.
 ## Features
 
 - **Dual-pane navigation:** tabs, history, editable locations, bookmarks,
-  filtering, sorting, hidden files, and single-pane mode.
+  Unicode type-ahead search, wildcard selection, locked/named tabs,
+  filtering, metadata sorting, stacked panes, adjustable dividers, and single-pane mode.
 - **Local file operations:** copy, move, rename, create, Trash, and permanent
   deletion, with skip, keep-both, recoverable replacement, and folder merging.
 - **Archive support:** create, browse, and extract ZIP, TAR variants, 7z, and
@@ -49,10 +50,15 @@ by the Rust Project or Rust Foundation.
 - **Languages:** system language, English, German, and Spanish.
 - **File tools:** batch rename with preview, recursive name/content search,
   folder comparison, checksums, properties, permissions, and split/combine.
-- **Built-in viewers:** local/remote UTF-8 editing, images, hex, PDF page navigation,
+- **Built-in viewers:** UTF-8, UTF-16 and legacy text editing, bounded local large-file paging,
+  images, hex, PDF page navigation,
   a persistent preview pane, and macOS Quick Look.
 - **Synchronization and workspaces:** reviewable local folder synchronization and
   named sets of pane locations, tabs and layout.
+- **Multiple windows:** independent tabs with a shared transfer queue, recovery
+  history and preferences, plus guarded application-wide quit.
+- **Migration:** preview and merge supported muCommander XML bookmarks, shortcuts,
+  commands and preferences, with a backup before applying.
 - **Embedded terminal:** a PTY-backed shell in the active local folder; hiding
   the terminal preserves its session.
 - **Desktop appearance:** macOS, Windows, Ubuntu, and GNOME profiles, installed
@@ -61,7 +67,8 @@ by the Rust Project or Rust Foundation.
   SMB2/3, SFTP, FTP, WebDAV, S3, and several cloud services. Validation is limited; see
   [Remote connections](#remote-connections).
 
-See the [Slint desktop guide](docs/SLINT_UI.md) for the 0.6 interface,
+See the [0.7 twelve-feature guide](docs/FEATURES_0.7.md) for the latest additions,
+and the [Slint desktop guide](docs/SLINT_UI.md) for the interface,
 the [0.5 twelve-feature guide](docs/FEATURES_0.5.md) for usage and limits,
 the [0.4 guide](docs/FEATURES_0.4.md) for earlier workflows, and
 [file operations and format support](docs/FILE_OPERATIONS.md) for recovery and
@@ -109,7 +116,9 @@ sudo apt-get install -y \
   libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev
 ```
 
-Other distributions need the equivalent development packages.
+Other distributions need the equivalent development packages. Opening and emptying
+the desktop Trash also requires `gio` and a working GVfs Trash backend (on
+Ubuntu/Debian: `libglib2.0-bin gvfs-backends`).
 
 </details>
 
@@ -217,8 +226,8 @@ it in Settings if desired; existing preferences are preserved.
 ## Keyboard shortcuts
 
 **Mod** means **Cmd** on macOS and **Ctrl** on Windows/Linux. Function keys may
-require **Fn**. Common operation bindings can be changed in Settings; some
-navigation shortcuts are fixed.
+require **Fn**. Command and navigation bindings, including alternate shortcuts, can be changed
+in Settings. Search by command name to find a binding.
 
 | Shortcut | Action |
 | --- | --- |
@@ -233,6 +242,9 @@ navigation shortcuts are fixed.
 | Mod + L / F | Focus location / filter |
 | Mod + Shift + F | Recursive search |
 | Mod + T / W | New tab / close tab |
+| Mod + N / Mod + Shift + W | New window / close window |
+| Mod + Shift + L | Searchable quick lists |
+| Mod + G / Mod + Shift + G | Next / previous quick-find match |
 | Mod + A / D / R | Mark all / bookmark / refresh |
 | Cmd + Shift + . (macOS) / Ctrl + H (Windows/Linux) | Show hidden files |
 | Mod + , | Settings |
@@ -262,13 +274,17 @@ service-specific behavior, and transfer limits.
 
 ## Configuration
 
-Tabs, named workspaces, bookmarks, connection profiles, and preferences are saved in
+Tab titles and locks, named workspaces, bookmarks, recent locations/files, connection profiles, and preferences are saved in
 `settings.json` in the operating system's application configuration folder.
 Invalid settings are reported and preserved. Undo snapshots and operation
 records are stored in a sibling `history/` directory; full recovery copies can
 grow substantially. Retention targets and optional automatic cleanup are available.
 Queue recipes are saved separately; passwords and editor drafts are excluded. See the
 [recovery and queue guide](docs/FEATURES_0.5.md#recovery-and-queue-details).
+
+Use **File → Import muCommander settings…** to preview an upstream configuration
+directory before merging supported XML content. Existing custom settings are
+preserved; unsupported content is reported. See the [migration guide](docs/FEATURES_0.7.md#12-mucommander-import).
 
 Use `RUST_COMMANDER_CONFIG_DIR` for an isolated configuration. On macOS/Linux:
 
@@ -337,8 +353,8 @@ Outstanding work includes:
 - Remote archive editing and broader archive format/metadata fixtures.
 - Remote/resumable multi-file transfers, remote synchronization, and broader
   Undo/Redo coverage beyond the journaled local operations.
-- Additional languages, remaining detailed diagnostics, upstream XML settings
-  migration, and broader text-encoding, viewer, and terminal compatibility.
+- Additional languages, remaining detailed diagnostics, broader upstream XML
+  compatibility, additional text encodings, and viewer/terminal compatibility.
 
 To refresh the upstream inventory while preserving recorded statuses:
 

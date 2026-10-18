@@ -79,15 +79,33 @@ Stream formats accept one regular file.
 
 | Tool | Current support and limits |
 | --- | --- |
-| Text viewer/editor | UTF-8 files up to 2 MiB |
+| Text viewer/editor | UTF-8, UTF-16 LE/BE, Windows-1252 and ISO-8859-1, up to 2 MiB |
+| Large local text viewer | Read-only 256 KiB pages, with selectable encoding |
 | Image viewer | Input up to 32 MiB; image dimensions are bounded |
 | PDF viewer | Input up to 32 MiB; page navigation and bounded output resolution |
-| Hex viewer | Displays at most 512 KiB from files within the 2 MiB input limit |
+| Hex viewer | Displays at most the first 512 KiB |
 | Checksums | SHA-256, SHA-512, SHA-1, and MD5 |
 
+Text saves preserve encoding, BOM and CRLF line endings, atomically replace the
+file and refuse changed contents. The save-encoding choice allows conversion;
+unrepresentable legacy characters are rejected. Invalid UTF-8 opens as hex and
+can be decoded explicitly. Large local files use bounded read-only pages;
+remote/archive text editing remains limited to 2 MiB.
+
 Text saves atomically replace the file and refuse changed contents. Symlinks,
-and archive entries are view-only. Remote UTF-8 entries support guarded saves
+and archive entries are view-only. Remote encoded text entries support guarded saves
 with server-side recovery copies; services without conditional writes cannot
 exclude simultaneous external writes atomically. Local saves are journaled for Undo/Redo. Use **Open externally** for
-other formats. Broader text encodings, image animation, and full PDF compatibility
+other formats. Additional text encodings, image animation, and full PDF compatibility
 remain part of the [roadmap](../README.md#roadmap).
+
+## System Trash
+
+**File → Open Trash** opens Finder Trash, Windows Recycle Bin or the Linux
+`trash:///` location. **Empty Trash…** requires typing `EMPTY` and an idle
+transfer queue. It empties the system-wide Trash, including other applications'
+files, and cannot be undone through Rust Commander's recovery journal. It is
+never automatically resumed from a persisted queue. macOS uses Finder automation
+and may request permission; Windows uses its native Recycle Bin API; Linux needs
+`gio` and a working GVfs Trash backend. Native emptying has not been executed as
+part of automated validation.

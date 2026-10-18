@@ -134,6 +134,9 @@ pub enum Sort {
     Modified,
     Extension,
     Kind,
+    Owner,
+    Group,
+    Permissions,
 }
 
 pub fn list(location: &Location) -> Result<Vec<Entry>> {
@@ -174,6 +177,14 @@ pub fn sort_entries_with_options(
     descending: bool,
     folders_first: bool,
 ) {
+    let ownership_cache = if matches!(sort, Sort::Owner | Sort::Group | Sort::Permissions) {
+        entries
+            .iter()
+            .map(|e| (e.path.clone(), ownership(&e.path)))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    } else {
+        Default::default()
+    };
     entries.sort_by(|a, b| {
         let dirs = b.is_dir.cmp(&a.is_dir);
         if folders_first && dirs != Ordering::Equal {
@@ -185,6 +196,18 @@ pub fn sort_entries_with_options(
             Sort::Modified => a.modified.cmp(&b.modified),
             Sort::Extension => a.path.extension().cmp(&b.path.extension()),
             Sort::Kind => a.kind().cmp(b.kind()),
+            Sort::Owner => ownership_cache
+                .get(&a.path)
+                .and_then(|m| m.0)
+                .cmp(&ownership_cache.get(&b.path).and_then(|m| m.0)),
+            Sort::Group => ownership_cache
+                .get(&a.path)
+                .and_then(|m| m.1)
+                .cmp(&ownership_cache.get(&b.path).and_then(|m| m.1)),
+            Sort::Permissions => ownership_cache
+                .get(&a.path)
+                .and_then(|m| m.2)
+                .cmp(&ownership_cache.get(&b.path).and_then(|m| m.2)),
         }
         .then_with(|| a.name.cmp(&b.name));
         if descending { order.reverse() } else { order }
@@ -261,6 +284,28 @@ pub fn validate_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Encode a native relative path using archive separators without changing filename bytes.
+/// Use this for locally assembled paths or already validated archive members.
+/// Untrusted archive headers must go through `safe_relative` directly.
+pub(crate) fn portable_relative(path: &Path) -> Result<PathBuf> {
+    let mut name = std::ffi::OsString::new();
+    for part in path.components() {
+        match part {
+            Component::Normal(component) => {
+                if !name.is_empty() {
+                    name.push("/");
+                }
+                name.push(component);
+            }
+            Component::CurDir => {}
+            _ => bail!("Unsafe relative path: {}", path.display()),
+        }
+    }
+    let name = PathBuf::from(name);
+    safe_relative(&name)?;
+    Ok(name)
+}
+
 /// Archive paths are interpreted portably, including Windows drive/UNC paths.
 pub fn safe_relative(path: &Path) -> Result<PathBuf> {
     let text = path.to_string_lossy();
@@ -310,4 +355,80 @@ pub fn entry_from_path(path: &Path) -> Result<Entry> {
         size: metadata.len(),
         modified: metadata.modified().ok(),
     })
+}
+
+/// Numeric IDs avoid blocking directory rendering on network name services.
+pub fn ownership(path: &Path) -> (Option<u32>, Option<u32>, Option<u32>) {
+    if !path.is_absolute() {
+        return (None, None, None);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let Ok(meta) = fs::symlink_metadata(path) {
+            return (
+                Some(meta.uid()),
+                Some(meta.gid()),
+                Some(meta.mode() & 0o7777),
+            );
+        }
+    }
+    let _ = path;
+    (None, None, None)
+}
+
+#[cfg(test)]
+mod relative_path_tests {
+    use super::*;
+
+    #[test]
+    fn native_components_encode_as_portable_names_and_can_be_revalidated() {
+        let native = Path::new("source").join("nested").join("café.txt");
+        let portable = portable_relative(&native).unwrap();
+        assert_eq!(portable.to_str(), Some("source/nested/café.txt"));
+        let validated = safe_relative(&portable).unwrap();
+        assert_eq!(validated, native);
+        assert_eq!(portable_relative(&validated).unwrap(), portable);
+        assert!(safe_relative(Path::new(r"source\nested")).is_err());
+    }
+
+    #[test]
+    fn native_conversion_keeps_traversal_and_unsafe_names_rejected() {
+        for path in [
+            "",
+            ".",
+            "..",
+            "source/../escape",
+            "/absolute",
+            "C:/escape",
+            "name:stream",
+            "bad\0name",
+        ] {
+            assert!(portable_relative(Path::new(path)).is_err(), "{path:?}");
+        }
+        #[cfg(windows)]
+        for path in [
+            r"..\escape",
+            r"source\..\escape",
+            r"\absolute",
+            r"C:\escape",
+            r"\\server\share",
+            r"\\?\C:\escape",
+        ] {
+            assert!(portable_relative(Path::new(path)).is_err(), "{path:?}");
+        }
+        #[cfg(unix)]
+        assert!(portable_relative(Path::new(r"literal\backslash")).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_conversion_preserves_non_unicode_unix_filenames() {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+        let path = Path::new("source").join(std::ffi::OsString::from_vec(vec![0xff]));
+        assert_eq!(
+            portable_relative(&path).unwrap().as_os_str().as_bytes(),
+            b"source/\xff"
+        );
+    }
 }
