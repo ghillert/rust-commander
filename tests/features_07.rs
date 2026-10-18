@@ -231,14 +231,22 @@ fn large_unicode_file_pages_are_bounded_and_reassemble_without_splitting_charact
 #[test]
 fn mucommander_xml_preview_merges_supported_content_without_touching_sources() {
     let root = tempfile::tempdir().unwrap();
-    let bookmarks = r#"<bookmarks><bookmark><name>Work &amp; café</name><location>file:///tmp/work%20space</location></bookmark><bookmark><name>Server</name><location>sftp://user:secret@host/path</location></bookmark></bookmarks>"#;
-    fs::write(root.path().join("bookmarks.xml"), bookmarks).unwrap();
+    let bookmark_path = root.path().join("work space");
+    let bookmark_url = url::Url::from_file_path(&bookmark_path).unwrap();
+    let bookmarks = format!(
+        r#"<bookmarks><bookmark><name>Work &amp; café</name><location>{bookmark_url}</location></bookmark><bookmark><name>Server</name><location>sftp://user:secret@host/path</location></bookmark></bookmarks>"#
+    );
+    fs::write(root.path().join("bookmarks.xml"), &bookmarks).unwrap();
     fs::write(root.path().join("commands.xml"),r#"<commands><command alias="open" value="open $f" type="system"/><command alias="pipe" value="cat $f | less" type="system"/></commands>"#).unwrap();
     fs::write(root.path().join("action_keymap.xml"),r#"<keymap><action id="Copy" keystroke="ctrl pressed F9"/><action id="Unported" keystroke="F10"/><action id="SplitHorizontally" keystroke="alt pressed F11"/><action id="SplitVertically" keystroke="alt pressed F12"/></keymap>"#).unwrap();
     fs::write(root.path().join("preferences.xml"),"<prefs><ui><toolbar><visible>false</visible></toolbar></ui><show_hidden_files>true</show_hidden_files><unknown>value</unknown></prefs>").unwrap();
     let preview = config_import::preview(root.path()).unwrap();
     assert_eq!(preview.bookmarks.len(), 1);
     assert_eq!(preview.bookmarks[0].name, "Work & café");
+    assert_eq!(
+        preview.bookmarks[0].location,
+        Location::Local(bookmark_path)
+    );
     assert_eq!(preview.commands.len(), 1);
     assert_eq!(preview.shortcuts["Copy"], "Command+F9");
     assert_eq!(preview.shortcuts["Stacked"], "Alt+F11");
