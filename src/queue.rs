@@ -291,6 +291,10 @@ fn remove_checkpoint_file(path: &Path) -> Result<()> {
     #[cfg(windows)]
     {
         let mut p = fs::metadata(path)?.permissions();
+        #[allow(
+            clippy::permissions_set_readonly_false,
+            reason = "Windows-only: clear FILE_ATTRIBUTE_READONLY so the checkpoint can be deleted"
+        )]
         p.set_readonly(false);
         fs::set_permissions(path, p)?;
     }

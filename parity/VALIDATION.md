@@ -344,3 +344,20 @@ toolbar retain the alignment. The standard controls remain accessible, and
 the toolbar Settings action remains usable. The native title-bar hit area is
 resized with the header to accommodate the controls. The four existing Slint UI
 regression tests and Clippy with warnings denied pass after this adjustment.
+
+## Windows checkpoint cleanup Clippy fix
+
+[Windows job 117624736709](https://github.com/ghillert/rust-commander/actions/runs/39110262325/job/117624736709)
+ran commit `5d2b57c` (before the Slint migration). Dependency installation
+succeeded, but Clippy rejected `set_readonly(false)` in the Windows-only
+checkpoint cleanup block. On Windows this clears `FILE_ATTRIBUTE_READONLY`;
+the lint concerns the different Unix behavior. A statement-scoped exception
+with an explicit reason preserves the Windows cleanup behavior and keeps the
+workflow's warnings-denied policy enabled.
+
+A standalone harness containing the exact cleanup function reproduces the
+original error with Windows-target Clippy and accepts the fixed function.
+This checks the reported lint; it does not link or run the Windows application.
+macOS formatting, all-targets Clippy with warnings denied, and all seven queue
+and resumable-transfer regression tests pass. Full Windows CI validation
+requires a new run with the fix.
