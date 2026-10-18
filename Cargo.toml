@@ -1,6 +1,6 @@
 [package]
 name = "rust-commander"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.92"
 description = "A native Rust dual-pane file manager inspired by muCommander"
@@ -47,6 +47,7 @@ sys-locale = "0.3"
 filetime = "0.2"
 same-file = "1"
 base64 = "0.22"
+smb2 = "=0.27.0"
 
 [target.'cfg(unix)'.dependencies]
 # OpenDAL SFTP uses the Unix-only openssh transport.
@@ -75,4 +76,5 @@ keyring = { version = "3", features = ["windows-native"] }
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+gtk4 = {version="0.10.3", default-features=false, features=["v4_8"]}
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }

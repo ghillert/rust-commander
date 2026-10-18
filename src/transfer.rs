@@ -10,7 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConflictPolicy {
     #[default]
     Refuse,
@@ -19,7 +19,7 @@ pub enum ConflictPolicy {
     Replace,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct TransferOptions {
     pub conflicts: ConflictPolicy,
     pub merge_folders: bool,

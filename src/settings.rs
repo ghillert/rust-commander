@@ -16,6 +16,7 @@ pub struct Bookmark {
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    pub workspaces: Vec<crate::workspaces::Workspace>,
     pub tabs: [Vec<Location>; 2],
     pub active_tabs: [usize; 2],
     pub active_pane: usize,
@@ -29,6 +30,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            workspaces: Vec::new(),
             tabs: [vec![Location::Local(home())], vec![Location::Local(home())]],
             active_tabs: [0, 0],
             active_pane: 0,

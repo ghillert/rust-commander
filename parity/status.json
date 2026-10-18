@@ -184,9 +184,10 @@
   "Edit": {
     "evidence": [
       "src/app.rs",
-      "tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content"
+      "src/remote.rs",
+      "tests/features_05.rs::remote_search_and_guarded_save_use_actual_storage_operations"
     ],
-    "note": "Local UTF-8 text editing only.",
+    "note": "Local and guarded remote UTF-8 editing up to 2 MiB. Native macOS Save/Undo and disposable Samba checks pass; broader encoding/editor compatibility remains open.",
     "status": "partial"
   },
   "EditBookmarks": {
@@ -220,9 +221,11 @@
   "Find": {
     "evidence": [
       "src/desktop.rs",
-      "tests/desktop_tools.rs"
+      "src/remote.rs",
+      "tests/features_05.rs::remote_search_and_guarded_save_use_actual_storage_operations",
+      "tests/features_05.rs::smb_live_list_stream_upload_download_rename_edit_search_delete"
     ],
-    "note": "Local search and native filename-filter smoke test pass; remote search and complete upstream search options remain open.",
+    "note": "Local and cancellable remote filename/content search; filesystem and live disposable Samba coverage. Full upstream search options remain open.",
     "status": "partial"
   },
   "FocusNext": {
@@ -644,8 +647,13 @@
     "status": "missing"
   },
   "Redo": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/history.rs",
+      "tests/features_05.rs::text_save_undo_redo_survives_history_reload",
+      "tests/features_05.rs::redo_refuses_external_edits"
+    ],
+    "note": "Guarded Redo for journaled local operations; macOS native menu smoke check. Remote/universal Redo and Windows interaction remain open.",
+    "status": "partial"
   },
   "Refresh": {
     "evidence": [
@@ -786,8 +794,12 @@
     "status": "partial"
   },
   "ShowInEnclosingFolder": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/native_actions.rs",
+      "src/app.rs"
+    ],
+    "note": "Native Reveal actions are wired for local files; platform-specific launch behavior needs broader interactive validation.",
+    "status": "partial"
   },
   "ShowKeyboardShortcuts": {
     "evidence": [
@@ -1056,10 +1068,10 @@
   "Undo": {
     "evidence": [
       "src/history.rs",
-      "src/app.rs",
+      "tests/features_05.rs",
       "tests/features.rs"
     ],
-    "note": "Guarded local operation Undo, full recovery copies and persistent history; no Redo, remote Undo or universal operation coverage. Cross-platform interaction validation pending.",
+    "note": "Guarded local Undo/Redo includes text saves, permissions, timestamps and synchronization. Remote Undo, permanent deletion and universal upstream coverage remain open.",
     "status": "partial"
   },
   "UnmarkAll": {
@@ -1324,8 +1336,12 @@
     "status": "partial"
   },
   "mucommander-protocol-smb": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/smb.rs",
+      "tests/features_05.rs::smb_live_list_stream_upload_download_rename_edit_search_delete"
+    ],
+    "note": "Direct pure Rust SMB2/3 listing, streaming transfers, rename, editing, search and deletion validated against disposable Samba from macOS/Linux. Broader server/platform interoperability remains open.",
+    "status": "partial"
   },
   "mucommander-protocol-vsphere": {
     "evidence": [],

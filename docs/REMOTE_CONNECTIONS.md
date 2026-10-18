@@ -3,7 +3,7 @@
 [← Back to README](../README.md)
 
 Open **File → Connections** to add or edit a connection profile. Available
-adapters are SFTP, FTP, WebDAV, S3, HTTP, Dropbox, Google Drive, OneDrive, GCS,
+adapters are SMB2/3, SFTP, FTP, WebDAV, S3, HTTP, Dropbox, Google Drive, OneDrive, GCS,
 and WebHDFS. Configure the endpoint, root, and service-specific fields; unused
 fields may remain blank.
 
@@ -25,6 +25,11 @@ There is no plaintext fallback. Credential-store UI behavior still needs live
 validation on the supported platforms.
 
 ## Service-specific behavior
+
+- **SMB2/3** connects directly without a mounted share. Set Endpoint to
+  `smb://host:445`, Share to its name, and Root folder to a path within it.
+  Domain usernames can use `DOMAIN\user`. The pure Rust adapter streams files
+  and supports the same search/edit/transfer workflows as other writable services.
 
 - **SFTP** uses the system OpenSSH executable, an agent or private key, and
   strict known-host verification on **macOS and Linux**. The current OpenDAL
@@ -60,7 +65,10 @@ recovery behavior, see [File operations](FILE_OPERATIONS.md).
 
 Remote behavior is tested through an isolated filesystem adapter and a real
 loopback HTTP WebDAV fixture. Those tests establish only their tested contracts.
-Live FTP, SFTP, S3, and cloud services have not been tested.
+A disposable Samba server additionally validates direct SMB listing, upload/download,
+rename, search, guarded editing and deletion. Live FTP, SFTP, S3, and cloud services
+have not been tested. See the [0.5 guide](FEATURES_0.5.md) for remote editing and
+search limits.
 
 See the [validation record](../parity/VALIDATION.md) and
 [upstream parity checklist](../parity/PARITY.md) for current evidence and gaps.

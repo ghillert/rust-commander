@@ -11,7 +11,7 @@ use std::{
     time::{Instant, SystemTime},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Operation {
     RemoteTransferResolved {
         from: crate::filesystem::Location,
@@ -23,6 +23,30 @@ pub enum Operation {
     },
 
     Undo(Box<crate::history::Record>),
+    Redo(Box<crate::history::Record>),
+    SaveText {
+        path: PathBuf,
+        #[serde(skip)]
+        original: Vec<u8>,
+        #[serde(skip)]
+        text: String,
+    },
+    Sync(crate::sync::Plan),
+    RemoteSave {
+        connection: String,
+        path: PathBuf,
+        #[serde(skip)]
+        original: Vec<u8>,
+        #[serde(skip)]
+        text: String,
+    },
+    ResumeLocal {
+        source: PathBuf,
+        destination: PathBuf,
+        moving: bool,
+        partial: PathBuf,
+        stamp: String,
+    },
     ResolvedTransfer {
         sources: Vec<PathBuf>,
         destination: PathBuf,
@@ -42,6 +66,7 @@ pub enum Operation {
     PackProtected {
         sources: Vec<PathBuf>,
         destination: PathBuf,
+        #[serde(skip)]
         password: String,
     },
     ExtractProtected {
@@ -49,6 +74,7 @@ pub enum Operation {
         selected: Vec<PathBuf>,
         prefix: PathBuf,
         destination: PathBuf,
+        #[serde(skip)]
         password: String,
     },
     Transfer {
@@ -127,6 +153,10 @@ impl Operation {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Undo(_) => "Undo",
+            Self::Redo(_) => "Redo",
+            Self::SaveText { .. } | Self::RemoteSave { .. } => "Save text",
+            Self::ResumeLocal { .. } => "Resumable transfer",
+            Self::Sync(_) => "Synchronize folders",
             Self::Transfer { moving: true, .. }
             | Self::ResolvedTransfer { moving: true, .. }
             | Self::Move { .. } => "Move files",
@@ -141,7 +171,7 @@ impl Operation {
             Self::PermanentDelete(_) | Self::RemoteDelete { .. } => "Delete",
             Self::Pack { .. } | Self::PackProtected { .. } => "Create archive",
             Self::Extract { .. } | Self::ExtractProtected { .. } => "Extract archive",
-            Self::ArchiveEdit { .. } => "Edit ZIP archive",
+            Self::ArchiveEdit { .. } => "Edit archive",
             Self::RemoteTransfer { .. } | Self::RemoteTransferResolved { .. } => "Remote transfer",
             Self::Properties(_) => "Properties",
             Self::Compare { .. } => "Compare folders",
@@ -152,11 +182,70 @@ impl Operation {
             Self::Combine { .. } => "Combine files",
         }
     }
+    /// Recipe details exclude passwords and editor buffers.
+    pub fn description(&self) -> String {
+        match self {
+            Self::ResumeLocal {
+                source,
+                destination,
+                ..
+            } => format!("{} → {}", source.display(), destination.display()),
+            Self::Copy {
+                sources,
+                destination,
+            }
+            | Self::Move {
+                sources,
+                destination,
+            }
+            | Self::Transfer {
+                sources,
+                destination,
+                ..
+            }
+            | Self::ResolvedTransfer {
+                sources,
+                destination,
+                ..
+            } => format!(
+                "{}\n→ {}",
+                sources
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                destination.display()
+            ),
+            Self::RemoteTransfer {
+                from, entries, to, ..
+            }
+            | Self::RemoteTransferResolved {
+                from, entries, to, ..
+            } => format!(
+                "{}\n{}\n→ {}",
+                from.label(),
+                entries
+                    .iter()
+                    .map(|e| e.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                to.label()
+            ),
+            Self::Sync(plan) => format!("{} ⇄ {}", plan.left.display(), plan.right.display()),
+            Self::ArchiveEdit { archive, .. }
+            | Self::Extract { archive, .. }
+            | Self::ExtractProtected { archive, .. } => archive.display().to_string(),
+            Self::SaveText { path, .. } | Self::RemoteSave { path, .. } => {
+                path.display().to_string()
+            }
+            _ => self.label().into(),
+        }
+    }
 }
 
 pub type ChangeHook = Box<dyn FnMut(&Path) -> Result<()> + Send>;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Progress {
     pub current: String,
     pub bytes: u64,
@@ -164,6 +253,7 @@ pub struct Progress {
 }
 
 pub struct Task {
+    pub undo_blocked: bool,
     pub before_change: Option<ChangeHook>,
     pub cancel: Arc<AtomicBool>,
     pub progress: Progress,
@@ -180,6 +270,7 @@ impl Default for Task {
 impl Task {
     pub fn new(cancel: Arc<AtomicBool>, report: impl FnMut(Progress) + Send + 'static) -> Self {
         Self {
+            undo_blocked: false,
             before_change: None,
             cancel,
             progress: Progress::default(),
@@ -342,6 +433,7 @@ pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
         task.stream(&mut input, &mut temporary, source)?;
         let after = fs::symlink_metadata(source)?;
         if metadata.len() != after.len() || metadata.modified().ok() != after.modified().ok() {
+            task.undo_blocked = true;
             bail!("Source changed while copying: {}", source.display());
         }
         if let Ok(modified) = metadata.modified() {
@@ -373,6 +465,33 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
         } => crate::remote::transfer_resolved(
             &from, &entries, &to, moving, options, &overrides, task,
         ),
+        Operation::RemoteSave {
+            connection,
+            path,
+            original,
+            text,
+        } => crate::remote::save_text(&connection, &path, &original, &text, task),
+        Operation::ResumeLocal {
+            source,
+            destination,
+            moving,
+            partial,
+            stamp,
+        } => crate::queue::resume_local(&source, &destination, moving, &partial, &stamp, task),
+        Operation::Sync(plan) => crate::sync::apply(&plan, task),
+        Operation::SaveText {
+            path,
+            original,
+            text,
+        } => {
+            task.capture(&path)?;
+            save_text(&path, &original, &text)?;
+            Ok("Saved text.".into())
+        }
+        Operation::Redo(record) => {
+            crate::history::undo(&record, task)?;
+            Ok("Redid operation.".into())
+        }
         Operation::Undo(record) => {
             crate::history::undo(&record, task)?;
             Ok(format!("Undid {}", record.label))
@@ -401,7 +520,7 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
         }
         Operation::ArchiveEdit { archive, edit } => {
             task.capture(&archive)?;
-            crate::archive_tools::edit_zip(&archive, &edit, task)?;
+            crate::archive_tools::edit_archive(&archive, &edit, task)?;
             Ok("ZIP archive updated.".into())
         }
         Operation::PackProtected {
@@ -487,6 +606,7 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             {
                 use std::os::unix::fs::PermissionsExt;
                 for path in paths {
+                    task.capture(&path)?;
                     task.check()?;
                     if fs::symlink_metadata(&path)?.file_type().is_symlink() {
                         bail!("Change the symlink target directly.");
@@ -502,6 +622,10 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             }
         }
         Operation::Modified { paths, time } => {
+            for path in &paths {
+                task.capture(path)?;
+            }
+            task.check()?;
             crate::desktop::change_modified(&paths, time)?;
             Ok("Modification time updated.".into())
         }

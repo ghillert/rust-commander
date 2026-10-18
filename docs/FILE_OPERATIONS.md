@@ -59,12 +59,13 @@ NRG, CPIO, and RPM still need dedicated format fixtures. Format-edge-case
 coverage is incomplete; see the [validation record](../parity/VALIDATION.md).
 
 Double-click a supported archive to browse it, then use **F5** to extract selected
-entries into a new folder. Archive tools edits local ZIPs (Add/Remove/Rename),
+entries into a new folder. Archive tools edits local ZIP/TAR/7z containers (Add/Remove/Rename),
 creates AES-encrypted ZIP/7z archives, and unlocks existing encrypted archives.
 Nested and remote archives are materialized into a bounded temporary cache and
 remain read-only. ZIP mutation preserves unchanged compressed entries and checks
-the original before replacement; adding plaintext to an encrypted ZIP is refused.
-See the [feature guide](FEATURES_0.4.md) for limits and local Undo behavior.
+the original before replacement. Encrypted ZIP edits repack with encryption after
+unlocking; new files are encrypted too. TAR/7z edits use guarded extraction/repacking.
+See the [feature guide](FEATURES_0.5.md) for limits and local Undo behavior.
 
 Extraction requires a new folder and rejects absolute paths, parent traversal,
 Windows drive/backslash paths, links, and special files. It never merges into
@@ -85,6 +86,8 @@ Stream formats accept one regular file.
 | Checksums | SHA-256, SHA-512, SHA-1, and MD5 |
 
 Text saves atomically replace the file and refuse changed contents. Symlinks,
-archive entries, and remote entries are view-only. Use **Open externally** for
+and archive entries are view-only. Remote UTF-8 entries support guarded saves
+with server-side recovery copies; services without conditional writes cannot
+exclude simultaneous external writes atomically. Local saves are journaled for Undo/Redo. Use **Open externally** for
 other formats. Broader text encodings, image animation, and full PDF compatibility
 remain part of the [roadmap](../README.md#roadmap).

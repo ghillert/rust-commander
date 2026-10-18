@@ -103,7 +103,7 @@ impl ArchiveForm {
             ui.heading(tr("Archive tools"));
             ui.horizontal(|ui| {
                 for (mode, label) in [
-                    (0, "Edit ZIP"),
+                    (0, "Edit archive"),
                     (1, "Create encrypted archive"),
                     (2, "Unlock archive"),
                 ] {
@@ -160,7 +160,7 @@ impl ArchiveForm {
                     if ui
                         .add_enabled(
                             self.edit_mode != 1 || !self.selected.is_empty(),
-                            egui::Button::new(tr("Apply ZIP edit")),
+                            egui::Button::new(tr("Apply archive edit")),
                         )
                         .clicked()
                     {

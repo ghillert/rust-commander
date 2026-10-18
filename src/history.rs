@@ -31,10 +31,24 @@ pub struct Record {
     #[serde(default)]
     pub created_at: u64,
     pub undone: bool,
+    #[serde(default)]
+    pub undo_blocked: bool,
     pub changes: Vec<Change>,
+    #[serde(default)]
+    pub inverse_of: Option<String>,
+    #[serde(default)]
+    pub logical_root: Option<String>,
+    #[serde(default)]
+    pub is_undo: bool,
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
+    pub expired: bool,
+    #[serde(default)]
+    pub revision: u128,
 }
 
-fn root() -> Result<PathBuf> {
+pub fn root() -> Result<PathBuf> {
     Ok(crate::settings::path()?
         .parent()
         .context("Missing configuration directory")?
@@ -67,14 +81,16 @@ pub fn load_in(root: &Path) -> Result<Vec<Record>> {
             {
                 if let Some(existing) = records.iter_mut().find(|existing| existing.id == record.id)
                 {
-                    existing.undone |= record.undone;
+                    if record.revision >= existing.revision {
+                        *existing = record;
+                    }
                 } else {
                     records.push(record);
                 }
             }
         }
     }
-    records.sort_by_key(|record| record.created_at);
+    records.sort_by_key(|record| (record.created_at, record.revision));
     Ok(records)
 }
 
@@ -241,9 +257,13 @@ pub fn execute_in(operation: Operation, task: &mut Task, root: &Path) -> Result<
         .into_owned();
     let label = operation.label().to_owned();
     let undo_of = match &operation {
-        Operation::Undo(record) => Some((**record).clone()),
+        Operation::Undo(record) | Operation::Redo(record) => Some((**record).clone()),
         _ => None,
     };
+    let is_undo = matches!(operation, Operation::Undo(_));
+    let logical_root = undo_of
+        .as_ref()
+        .map(|r| r.logical_root.clone().unwrap_or_else(|| r.id.clone()));
     let recorder = Arc::new(Mutex::new(Recorder {
         directory: directory.canonicalize()?,
         changes: Vec::new(),
@@ -295,13 +315,22 @@ pub fn execute_in(operation: Operation, task: &mut Task, root: &Path) -> Result<
         .changes
         .retain(|change| change.before != change.after);
     if result.is_ok()
-        && let Some(mut original) = undo_of
+        && let Some(mut original) = undo_of.clone()
     {
         original.undone = true;
+        original.revision = revision();
+        if let Some(root_id) = &logical_root
+            && root_id != &original.id
+            && let Some(mut logical) = load_in(root)?.into_iter().find(|r| &r.id == root_id)
+        {
+            logical.undone = is_undo;
+            logical.revision = revision();
+            write_record(&root.join(&logical.id).join("record.json"), &logical)?;
+        }
         write_record(&root.join(&original.id).join("record.json"), &original)?;
     }
     let changes = std::mem::take(&mut recorder.changes);
-    let record = Record {
+    let mut record = Record {
         id,
         label,
         success: result.is_ok(),
@@ -309,14 +338,31 @@ pub fn execute_in(operation: Operation, task: &mut Task, root: &Path) -> Result<
         created_at: crate::oauth::now(),
         result: result.unwrap_or_else(|error| format!("{error:#}")),
         undone: false,
+        undo_blocked: task.undo_blocked,
         changes,
+        inverse_of: undo_of.as_ref().map(|r| r.id.clone()),
+        logical_root,
+        is_undo,
+        pinned: false,
+        expired: false,
+        revision: revision(),
     };
+    if record.undo_blocked && !record.changes.is_empty() {
+        record.result.push_str(&format!("\nAutomatic Undo is unavailable because files changed externally during the operation. Recovery copies remain in {}.",directory.display()));
+    }
+    if record.inverse_of.is_none() && !record.changes.is_empty() {
+        for mut stale in load_in(root)?.into_iter().filter(|r| r.can_redo()) {
+            stale.undone = true;
+            stale.revision = revision();
+            write_record(&root.join(&stale.id).join("record.json"), &stale)?;
+        }
+    }
     write_record(&directory.join("record.json"), &record)?;
     Ok(record)
 }
 
 pub fn undo(record: &Record, task: &mut Task) -> Result<()> {
-    if record.undone || record.changes.is_empty() {
+    if record.undone || record.undo_blocked || record.changes.is_empty() {
         bail!("This operation has no pending undo.");
     }
     for change in &record.changes {
@@ -331,6 +377,9 @@ pub fn undo(record: &Record, task: &mut Task) -> Result<()> {
         {
             bail!("Undo backup changed: {}", backup.display());
         }
+    }
+    for change in &record.changes {
+        task.capture(&change.path)?;
     }
     let mut stages = Vec::new();
     for change in &record.changes {
@@ -422,6 +471,182 @@ pub fn cancelled(label: &str) -> Record {
         cancelled: true,
         created_at: crate::oauth::now(),
         undone: false,
+        undo_blocked: false,
         changes: Vec::new(),
+        inverse_of: None,
+        logical_root: None,
+        is_undo: false,
+        pinned: false,
+        expired: false,
+        revision: revision(),
     }
+}
+
+fn revision() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+}
+impl Record {
+    pub fn can_undo(&self) -> bool {
+        !self.undone
+            && !self.undo_blocked
+            && !self.is_undo
+            && !self.expired
+            && !self.changes.is_empty()
+    }
+    pub fn can_redo(&self) -> bool {
+        !self.undone
+            && !self.undo_blocked
+            && self.is_undo
+            && !self.expired
+            && !self.changes.is_empty()
+    }
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Retention {
+    pub max_mib: u64,
+    pub max_days: u64,
+    pub automatic: bool,
+}
+impl Default for Retention {
+    fn default() -> Self {
+        Self {
+            max_mib: 2048,
+            max_days: 30,
+            automatic: false,
+        }
+    }
+}
+#[derive(Default, Debug)]
+pub struct Storage {
+    pub bytes: u64,
+    pub backups: usize,
+    pub orphan_bytes: u64,
+}
+fn disk_usage(path: &Path) -> Result<u64> {
+    let meta = fs::symlink_metadata(path)?;
+    if meta.file_type().is_symlink() {
+        return Ok(meta.len());
+    }
+    if meta.is_dir() {
+        let mut total = 0;
+        for entry in fs::read_dir(path)? {
+            total += disk_usage(&entry?.path())?;
+        }
+        Ok(total)
+    } else {
+        Ok(meta.len())
+    }
+}
+pub fn storage_in(root: &Path) -> Result<Storage> {
+    let mut info = Storage::default();
+    if !root.exists() {
+        return Ok(info);
+    }
+    let records = load_in(root)?;
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let size = disk_usage(&entry.path())?;
+        info.bytes += size;
+        if entry.file_type()?.is_dir()
+            && !records
+                .iter()
+                .any(|r| entry.file_name() == std::ffi::OsStr::new(&r.id))
+        {
+            info.orphan_bytes += size;
+        }
+    }
+    info.backups = records
+        .iter()
+        .flat_map(|r| &r.changes)
+        .filter(|c| c.backup.is_some())
+        .count();
+    Ok(info)
+}
+/// Select whole recovery chains; pinned chains and the most recent reversible chain are protected.
+pub fn cleanup_candidates(
+    records: &[Record],
+    root: &Path,
+    policy: &Retention,
+    now: u64,
+) -> Result<Vec<String>> {
+    let mut total = storage_in(root)?.bytes;
+    let latest = records
+        .iter()
+        .rev()
+        .find(|r| r.can_undo() || r.can_redo())
+        .map(|r| r.logical_root.as_ref().unwrap_or(&r.id));
+    let mut groups: std::collections::BTreeMap<String, Vec<&Record>> = Default::default();
+    for r in records {
+        groups
+            .entry(r.logical_root.clone().unwrap_or_else(|| r.id.clone()))
+            .or_default()
+            .push(r);
+    }
+    let mut groups = groups.into_iter().collect::<Vec<_>>();
+    groups.sort_by_key(|(_, rs)| rs.iter().map(|r| r.created_at).max().unwrap_or(0));
+    let mut result = Vec::new();
+    for (id, rs) in groups {
+        if Some(&id) == latest || rs.iter().any(|r| r.pinned) {
+            continue;
+        }
+        let age = now.saturating_sub(rs.iter().map(|r| r.created_at).max().unwrap_or(now));
+        if total > policy.max_mib.saturating_mul(1024 * 1024)
+            || age > policy.max_days.saturating_mul(86400)
+        {
+            for r in rs {
+                if !r.expired && !r.changes.is_empty() {
+                    result.push(r.id.clone());
+                    for c in &r.changes {
+                        if let Some(p) = &c.backup {
+                            total = total.saturating_sub(disk_usage(p).unwrap_or(0));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(result)
+}
+pub fn cleanup_in(root: &Path, ids: &[String]) -> Result<Vec<Record>> {
+    let mut records = load_in(root)?;
+    let mut remove = Vec::new();
+    for r in &mut records {
+        if !ids.contains(&r.id) {
+            continue;
+        }
+        if r.pinned {
+            bail!("Pinned recovery record: {}", r.label);
+        }
+        crate::filesystem::validate_name(&r.id)?;
+        let directory = root.join(&r.id);
+        if fs::symlink_metadata(&directory)?.file_type().is_symlink() {
+            bail!("Recovery directory is a symlink");
+        }
+        for c in &r.changes {
+            if let Some(p) = &c.backup {
+                if p.parent() != Some(directory.canonicalize()?.as_path())
+                    || p.file_name()
+                        .is_none_or(|n| n.to_string_lossy().parse::<usize>().is_err())
+                {
+                    bail!("Invalid recovery path");
+                }
+                remove.push(p.clone());
+            }
+        }
+        r.changes.clear();
+        r.expired = true;
+        r.revision = revision();
+    }
+    // Persist the expiry before deleting; a crash can leave extra copies, never a false Undo promise.
+    save_in(&records, root)?;
+    for p in remove {
+        if operations::exists(&p) {
+            operations::remove(&p)?;
+        }
+    }
+    Ok(records)
 }

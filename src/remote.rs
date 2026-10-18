@@ -68,6 +68,7 @@ pub struct Secrets {
 pub const SERVICES: &[&str] = &[
     #[cfg(unix)]
     "sftp",
+    "smb",
     "ftp",
     "webdav",
     "s3",
@@ -80,9 +81,17 @@ pub const SERVICES: &[&str] = &[
 ];
 
 struct Session {
-    operator: opendal::blocking::Operator,
+    operator: Option<opendal::blocking::Operator>,
+    smb: Option<crate::smb::Share>,
     secrets: Secrets,
     remember: bool,
+}
+impl Session {
+    fn operator(&self) -> Result<&opendal::blocking::Operator> {
+        self.operator
+            .as_ref()
+            .context("This operation requires the SMB adapter")
+    }
 }
 static SESSIONS: OnceLock<RwLock<HashMap<String, Arc<Session>>>> = OnceLock::new();
 static PROFILES: OnceLock<RwLock<HashMap<String, Connection>>> = OnceLock::new();
@@ -92,7 +101,7 @@ fn sessions() -> &'static RwLock<HashMap<String, Arc<Session>>> {
 fn profiles() -> &'static RwLock<HashMap<String, Connection>> {
     PROFILES.get_or_init(Default::default)
 }
-fn runtime() -> &'static tokio::runtime::Runtime {
+pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().expect("Cannot create storage runtime"))
 }
@@ -171,7 +180,7 @@ fn options(connection: &Connection, secrets: &Secrets) -> HashMap<String, String
     map
 }
 
-fn clean_error(error: impl std::fmt::Display, secrets: &Secrets) -> anyhow::Error {
+pub(crate) fn clean_error(error: impl std::fmt::Display, secrets: &Secrets) -> anyhow::Error {
     let mut text = error.to_string();
     for secret in [
         &secrets.password,
@@ -190,22 +199,29 @@ fn clean_error(error: impl std::fmt::Display, secrets: &Secrets) -> anyhow::Erro
 
 pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Result<()> {
     validate(connection)?;
-    let _guard = runtime().enter();
-    let scheme = connection.service.parse::<opendal::Scheme>()?;
-    let operator = opendal::Operator::via_iter(scheme, options(connection, &secrets))
-        .map_err(|e| clean_error(e, &secrets))?;
-    let operator = operator.layer(
-        opendal::layers::TimeoutLayer::new()
-            .with_timeout(std::time::Duration::from_secs(30))
-            .with_io_timeout(std::time::Duration::from_secs(30)),
-    );
-    let operator = opendal::blocking::Operator::new(operator)?;
-    // Validate the credentials against the service, before storing them.
-    if operator.info().full_capability().list {
-        operator.list("").map_err(|e| clean_error(e, &secrets))?;
-    } else if operator.info().full_capability().stat {
-        operator.stat("").map_err(|e| clean_error(e, &secrets))?;
-    }
+    let (operator, smb) = if connection.service == "smb" {
+        let share = crate::smb::Share::new(connection, &secrets)?;
+        share.list(Path::new(""))?;
+        (None, Some(share))
+    } else {
+        let _guard = runtime().enter();
+        let scheme = connection.service.parse::<opendal::Scheme>()?;
+        let operator = opendal::Operator::via_iter(scheme, options(connection, &secrets))
+            .map_err(|e| clean_error(e, &secrets))?;
+        let operator = operator.layer(
+            opendal::layers::TimeoutLayer::new()
+                .with_timeout(std::time::Duration::from_secs(30))
+                .with_io_timeout(std::time::Duration::from_secs(30)),
+        );
+        let operator = opendal::blocking::Operator::new(operator)?;
+        // Validate the credentials against the service, before storing them.
+        if operator.info().full_capability().list {
+            operator.list("").map_err(|e| clean_error(e, &secrets))?;
+        } else if operator.info().full_capability().stat {
+            operator.stat("").map_err(|e| clean_error(e, &secrets))?;
+        }
+        (Some(operator), None)
+    };
     if remember {
         save_credentials(&connection.id, &secrets)?;
     }
@@ -220,6 +236,7 @@ pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Res
             connection.id.clone(),
             Arc::new(Session {
                 operator,
+                smb,
                 secrets,
                 remember,
             }),
@@ -392,7 +409,7 @@ pub fn display_path(path: &Path) -> String {
         .join("/")
 }
 
-fn key(path: &Path, directory: bool) -> Result<String> {
+pub(crate) fn key(path: &Path, directory: bool) -> Result<String> {
     if path.as_os_str().is_empty() {
         return Ok(String::new());
     }
@@ -416,15 +433,18 @@ fn key(path: &Path, directory: bool) -> Result<String> {
 
 pub fn list(id: &str, path: &Path) -> Result<Vec<Entry>> {
     let session = session(id)?;
+    if let Some(smb) = &session.smb {
+        return smb.list(path);
+    }
     let directory = key(path, true)?;
-    if !session.operator.info().full_capability().list {
+    if !session.operator()?.info().full_capability().list {
         if path.as_os_str().is_empty() {
             bail!(
                 "This service does not provide directory listings. Enter a full file path after remote://{id}/ to view or download it."
             );
         }
         let metadata = session
-            .operator
+            .operator()?
             .stat(&key(path, false)?)
             .map_err(|e| clean_error(e, &session.secrets))?;
         return Ok(vec![Entry {
@@ -441,7 +461,7 @@ pub fn list(id: &str, path: &Path) -> Result<Vec<Entry>> {
         }]);
     }
     let entries = session
-        .operator
+        .operator()?
         .list(&directory)
         .map_err(|e| clean_error(e, &session.secrets))?;
     entries
@@ -468,8 +488,11 @@ pub fn list(id: &str, path: &Path) -> Result<Vec<Entry>> {
 
 pub fn read(id: &str, path: &Path) -> Result<Box<dyn Read>> {
     let session = session(id)?;
+    if let Some(smb) = &session.smb {
+        return smb.reader(path);
+    }
     let reader = session
-        .operator
+        .operator()?
         .reader(&key(path, false)?)
         .map_err(|e| clean_error(e, &session.secrets))?;
     Ok(Box::new(
@@ -490,8 +513,11 @@ pub fn read_bytes(id: &str, path: &Path, limit: u64) -> Result<Vec<u8>> {
 
 pub fn mkdir(id: &str, path: &Path) -> Result<()> {
     let session = session(id)?;
+    if let Some(smb) = &session.smb {
+        return smb.mkdir(path);
+    }
     session
-        .operator
+        .operator()?
         .create_dir(&key(path, true)?)
         .map_err(|e| clean_error(e, &session.secrets))?;
     Ok(())
@@ -501,8 +527,12 @@ pub fn delete(id: &str, entries: &[Entry], task: &mut Task) -> Result<()> {
     let session = session(id)?;
     for entry in entries {
         task.tick(&entry.path, 0)?;
+        if let Some(smb) = &session.smb {
+            smb.delete(entry, task)?;
+            continue;
+        }
         session
-            .operator
+            .operator()?
             .remove_all(&key(&entry.path, entry.is_dir)?)
             .map_err(|e| clean_error(e, &session.secrets))?;
     }
@@ -613,8 +643,39 @@ fn snapshot(location: &Location, entries: &[Entry], task: &Task) -> Result<Vec<S
             let mut stack = entries.to_vec();
             while let Some(entry) = stack.pop() {
                 task.check()?;
+                if let Some(smb) = &session.smb {
+                    let current = smb
+                        .stat(&entry.path)?
+                        .context("Remote source disappeared")?;
+                    let mut version = format!(
+                        "{}|{}|{:?}",
+                        entry.path.display(),
+                        current.size,
+                        current.modified
+                    );
+                    if !current.is_dir {
+                        use sha2::{Digest, Sha256};
+                        let mut hash = Sha256::new();
+                        let mut read = smb.reader(&entry.path)?;
+                        let mut buffer = [0; 65536];
+                        loop {
+                            task.check()?;
+                            let n = read.read(&mut buffer)?;
+                            if n == 0 {
+                                break;
+                            }
+                            hash.update(&buffer[..n]);
+                        }
+                        version.push_str(&format!("|{:x}", hash.finalize()));
+                    }
+                    result.push(version);
+                    if current.is_dir {
+                        stack.extend(smb.list(&entry.path)?);
+                    }
+                    continue;
+                }
                 let metadata = session
-                    .operator
+                    .operator()?
                     .stat(&key(&entry.path, entry.is_dir)?)
                     .map_err(|e| clean_error(e, &session.secrets))?;
                 result.push(format!(
@@ -644,7 +705,13 @@ fn ensure_absent(location: &Location, path: &Path) -> Result<()> {
         }
         Location::Remote { connection, .. } => {
             let session = session(connection)?;
-            match session.operator.stat(&key(path, false)?) {
+            if let Some(smb) = &session.smb {
+                if smb.stat(path)?.is_some() {
+                    bail!("Remote destination already exists: {}", path.display());
+                }
+                return Ok(());
+            }
+            match session.operator()?.stat(&key(path, false)?) {
                 Ok(_) => bail!("Remote destination already exists: {}", path.display()),
                 Err(error) if error.kind() == opendal::ErrorKind::NotFound => {}
                 Err(error) => return Err(clean_error(error, &session.secrets)),
@@ -707,16 +774,19 @@ fn copy_entry(
             }
             Location::Remote { connection, .. } => {
                 let session = session(connection)?;
+                if let Some(smb) = &session.smb {
+                    return smb.write(target, &mut input, task, true);
+                }
                 let options = opendal::options::WriteOptions {
                     if_not_exists: session
-                        .operator
+                        .operator()?
                         .info()
                         .full_capability()
                         .write_with_if_not_exists,
                     ..Default::default()
                 };
                 let mut writer = session
-                    .operator
+                    .operator()?
                     .writer_options(&key(target, false)?, options)
                     .map_err(|e| clean_error(e, &session.secrets))?
                     .into_std_write();
@@ -742,7 +812,10 @@ fn entry_at(location: &Location, path: &Path) -> Result<Option<Entry>> {
         }
         Location::Remote { connection, .. } => {
             let session = session(connection)?;
-            let metadata = match session.operator.stat(&key(path, false)?) {
+            if let Some(smb) = &session.smb {
+                return smb.stat(path);
+            }
+            let metadata = match session.operator()?.stat(&key(path, false)?) {
                 Ok(metadata) => metadata,
                 Err(error) if error.kind() == opendal::ErrorKind::NotFound => return Ok(None),
                 Err(error) => return Err(clean_error(error, &session.secrets)),
@@ -944,6 +1017,163 @@ pub fn transfer_resolved(
         entries.len() - plans.len(),
         backups
     ))
+}
+
+/// Guarded remote editor save. Keep a server-side recovery copy before uploading.
+pub fn save_text(
+    id: &str,
+    path: &Path,
+    original: &[u8],
+    text: &str,
+    task: &mut Task,
+) -> Result<String> {
+    if original.len() > 2 * 1024 * 1024 || text.len() > 2 * 1024 * 1024 {
+        bail!("Remote text editing is limited to 2 MiB");
+    }
+    task.check()?;
+    if read_bytes(id, path, 2 * 1024 * 1024)? != original {
+        bail!("Remote file changed since it was opened. Reload before saving.");
+    }
+    let session = session(id)?;
+    let backup = path.with_file_name(format!(
+        ".rust-commander-edit-{:016x}.bak",
+        rand::random::<u64>()
+    ));
+    if let Some(smb) = &session.smb {
+        smb.write(&backup, &mut std::io::Cursor::new(original), task, true)?;
+        if read_bytes(id, path, 2 * 1024 * 1024)? != original {
+            bail!(
+                "Remote file changed before upload. Recovery copy: {}",
+                backup.display()
+            );
+        }
+        smb.write(
+            path,
+            &mut std::io::Cursor::new(text.as_bytes()),
+            task,
+            false,
+        )?;
+    } else {
+        let operator = session.operator()?;
+        let metadata = operator.stat(&key(path, false)?)?;
+        operator
+            .write_options(
+                &key(&backup, false)?,
+                original.to_vec(),
+                opendal::options::WriteOptions {
+                    if_not_exists: operator.info().full_capability().write_with_if_not_exists,
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| clean_error(e, &session.secrets))?;
+        if read_bytes(id, path, 2 * 1024 * 1024)? != original {
+            bail!(
+                "Remote file changed before upload. Recovery copy: {}",
+                backup.display()
+            );
+        }
+        let options = opendal::options::WriteOptions {
+            if_match: if operator.info().full_capability().write_with_if_match {
+                metadata.etag().map(str::to_owned)
+            } else {
+                None
+            },
+            ..Default::default()
+        };
+        operator
+            .write_options(&key(path, false)?, text.as_bytes().to_vec(), options)
+            .map_err(|e| clean_error(e, &session.secrets))?;
+    }
+    if read_bytes(id, path, 2 * 1024 * 1024)? != text.as_bytes() {
+        bail!(
+            "Uploaded content did not verify. Recovery copy: {}",
+            backup.display()
+        );
+    }
+    Ok(format!(
+        "Saved remote text. Recovery copy: {}. Services without conditional writes cannot make the external-edit check atomic.",
+        backup.display()
+    ))
+}
+pub fn search(
+    id: &str,
+    options: &crate::desktop::SearchOptions,
+    task: &mut Task,
+) -> Result<crate::desktop::SearchResult> {
+    let matcher = globset::GlobBuilder::new(&options.pattern)
+        .case_insensitive(true)
+        .build()?
+        .compile_matcher();
+    let mut result = crate::desktop::SearchResult {
+        paths: Vec::new(),
+        errors: Vec::new(),
+        truncated: false,
+    };
+    let mut stack = vec![(options.root.clone(), 0)];
+    let mut visited = std::collections::BTreeSet::new();
+    let mut count = 0;
+    while let Some((folder, depth)) = stack.pop() {
+        task.check()?;
+        if !visited.insert(folder.clone()) {
+            continue;
+        }
+        let entries = match list(id, &folder) {
+            Ok(e) => e,
+            Err(e) => {
+                if result.errors.len() < 1000 {
+                    result.errors.push(format!("{}: {e:#}", folder.display()));
+                }
+                continue;
+            }
+        };
+        for entry in entries {
+            task.check()?;
+            count += 1;
+            if count > 100_000 || depth > 256 {
+                result.truncated = true;
+                return Ok(result);
+            }
+            if !options.hidden && entry.name.starts_with('.') {
+                continue;
+            }
+            if entry.is_dir {
+                stack.push((entry.path.clone(), depth + 1));
+            }
+            if !matcher.is_match(&entry.name)
+                && !matcher.is_match(
+                    entry
+                        .path
+                        .strip_prefix(&options.root)
+                        .unwrap_or(&entry.path),
+                )
+            {
+                continue;
+            }
+            if !options.content.is_empty() {
+                if entry.is_dir {
+                    continue;
+                }
+                match read_bytes(id, &entry.path, 2 * 1024 * 1024) {
+                    Ok(bytes) if String::from_utf8_lossy(&bytes).contains(&options.content) => {}
+                    Ok(_) => continue,
+                    Err(e) => {
+                        if result.errors.len() < 1000 {
+                            result
+                                .errors
+                                .push(format!("{}: {e:#}", entry.path.display()));
+                        }
+                        continue;
+                    }
+                }
+            }
+            result.paths.push(entry.path);
+            if result.paths.len() >= options.max_results {
+                result.truncated = true;
+                return Ok(result);
+            }
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]

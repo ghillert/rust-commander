@@ -19,6 +19,8 @@ pub struct Preferences {
     pub language: crate::i18n::Language,
     pub columns: Vec<ColumnSpec>,
     pub toolbar_actions: Vec<ToolbarAction>,
+    pub recovery: crate::history::Retention,
+    pub preview: bool,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -27,6 +29,8 @@ impl Default for Preferences {
             color_scheme: Default::default(),
             font_size: 14.0,
             toolbar: true,
+            recovery: Default::default(),
+            preview: false,
             command_bar: !cfg!(target_os = "macos"),
             status_bar: true,
             single_pane: false,
@@ -279,7 +283,13 @@ impl ToolbarAction {
 impl Preferences {
     /// Add new bindings to legacy settings without stealing an existing custom shortcut.
     pub fn upgrade(&mut self) {
-        for (name, binding) in [("Undo", "Command+Z"), ("Queue", "Command+J")] {
+        for (name, binding) in [
+            ("Undo", "Command+Z"),
+            ("Queue", "Command+J"),
+            ("Redo", "Command+Shift+Z"),
+            ("Preview", "Command+P"),
+            ("QuickLook", "Command+Shift+P"),
+        ] {
             if self.shortcuts.contains_key(name) {
                 continue;
             }

@@ -157,3 +157,61 @@ Validation after these fixes:
 - The `x86_64-pc-windows-msvc` Cargo dependency graph excludes `openssh` and
   `openssh-sftp-client`; a full Windows build/test run remains pending.
 - Cargo.lock is unchanged and all checks use `--locked`.
+
+## Rust Commander 0.5.0 — next twelve features
+
+The [0.5 feature guide](../docs/FEATURES_0.5.md) records the delivered workflows
+and their boundaries. All twelve feature areas have working implementations;
+full upstream parity is still incomplete.
+
+Validation on Apple Silicon macOS:
+
+- Formatting, Clippy (`--all-targets -- -D warnings`) and all **140** normal tests
+  pass with the locked dependency graph. The interactive clipboard and optional
+  live SMB tests are excluded from the normal count.
+- The optional live SMB test passes against a disposable Samba server bound only
+  to loopback: list, mkdir, streamed upload/download, rename, guarded text save,
+  filename/content search and recursive deletion.
+- A separate signed test app used disposable files and isolated settings.
+  Native checks confirmed persistent text preview, workspace saving,
+  synchronization preview with a default Skip conflict, applying the one-sided
+  copy, Undo and menu-driven Redo, journaled editor Save/Undo, and recovery usage
+  and cleanup preview. Filesystem checks confirmed the saved workspace and the
+  file changes. Quick Look launched Apple's `qlmanage`; its preview output was
+  not visually validated. The utility's accessibility inspection timed out.
+- Native testing caught shifted shortcut overlap in egui's logical modifier
+  matching. Shift/Alt matching is now explicit; the regression test covers Redo
+  and Search dispatch. New primary controls have German/Spanish translations.
+- The release app is built and ad hoc signed. `codesign --verify --deep --strict`
+  succeeds, and both the executable and bundle report **0.5.0**.
+
+Validation on ARM64 Debian 12 in a disposable container:
+
+- Clippy with warnings denied and all **140** normal tests pass. Linux's optional
+  native GTK test is also ignored in the normal run.
+- The live Samba workflow above passes from Linux as well as macOS.
+- The GTK native drag-source test passes under Xvfb: the drag source advertises
+  a native FileList with Copy, and its window is realized. Xvfb emitted a missing
+  session-bus warning; actual cross-application drop completion and Wayland
+  interaction remain unverified.
+
+Additional regression coverage includes restart-safe history/Redo, external-edit
+refusal, permissions/timestamp Undo, protected cleanup chains, interrupted queue
+restoration without secrets, source-witness/prefix verification, checkpoint path
+validation, synchronization staleness before/after recovery preparation,
+TAR/7z mutation and Undo, encryption on every added ZIP file, remote guarded
+saves/search, remote/archive drop routing, workspace round trips and persistent
+locations for temporary archive tabs. Detected concurrent external changes
+conservatively disable automatic Undo and retain recovery copies for review.
+
+Remaining limits: no Windows machine was available; the Windows build and native
+integration require CI/interactive validation. SFTP remains Unix-only. Live
+cloud/OAuth flows and other remote servers are not established by the Samba
+fixture. Remote saves cannot guarantee atomic external-edit protection on
+services without conditional writes. Synchronization is local, and Linux
+native drag-out uses a separate GTK drag window. Recovery targets can be exceeded
+by protected chains. The parity completion gate still returns nonzero honestly.
+
+Windows dependency setup now retries vcpkg installation at most three times.
+This addresses the observed transient GitHub DNS download failure without masking
+an exhausted failure or weakening warnings-denied checks.

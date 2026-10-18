@@ -25,3 +25,16 @@ pub mod history;
 pub mod i18n;
 pub mod native_files;
 pub mod oauth;
+
+pub mod native_actions;
+pub mod queue;
+pub mod sync;
+pub mod workspaces;
+
+pub mod smb;
+
+pub mod next_ui;
+pub mod preview;
+
+#[cfg(target_os = "linux")]
+pub mod linux_drag;

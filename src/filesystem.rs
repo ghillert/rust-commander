@@ -102,7 +102,7 @@ impl Location {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Entry {
     pub path: PathBuf,
     pub name: String,

@@ -33,13 +33,13 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | Delete | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
 | Donate | missing | — |
 | DuplicateTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| Edit | partial | src/app.rs, tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content — Local UTF-8 text editing only. |
+| Edit | partial | src/app.rs, src/remote.rs, tests/features_05.rs::remote_search_and_guarded_save_use_actual_storage_operations — Local and guarded remote UTF-8 editing up to 2 MiB. Native macOS Save/Undo and disposable Samba checks pass; broader encoding/editor compatibility remains open. |
 | EditBookmarks | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | EditCredentials | partial | src/remote.rs, tests/webdav_backend.rs — Saved profiles, keychain integration and partial adapters; live services and keychain UI need validation. |
 | Email | missing | — |
 | EmptyTrash | missing | — |
 | ExploreBookmarks | missing | — |
-| Find | partial | src/desktop.rs, tests/desktop_tools.rs — Local search and native filename-filter smoke test pass; remote search and complete upstream search options remain open. |
+| Find | partial | src/desktop.rs, src/remote.rs, tests/features_05.rs::remote_search_and_guarded_save_use_actual_storage_operations, tests/features_05.rs::smb_live_list_stream_upload_download_rename_edit_search_delete — Local and cancellable remote filename/content search; filesystem and live disposable Samba coverage. Full upstream search options remain open. |
 | FocusNext | missing | — |
 | FocusPrevious | missing | — |
 | GarbageCollect | inapplicable | src/main.rs — This upstream action explicitly triggers the JVM garbage collector; the Rust application does not run a JVM. |
@@ -107,7 +107,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | RecallWindow7 | missing | — |
 | RecallWindow8 | missing | — |
 | RecallWindow9 | missing | — |
-| Redo | missing | — |
+| Redo | partial | src/history.rs, tests/features_05.rs::text_save_undo_redo_survives_history_reload, tests/features_05.rs::redo_refuses_external_edits — Guarded Redo for journaled local operations; macOS native menu smoke check. Remote/universal Redo and Windows interaction remain open. |
 | Refresh | partial | src/app.rs, src/model.rs — Manual refresh and automatic macOS file-change notifications smoke tested; other platforms and remote refresh behavior remain unverified. |
 | Rename | partial | src/operations.rs, src/remote.rs, src/archive_tools.rs, src/app.rs, tests/features.rs — Local, ZIP and remote rename implemented. Remote copy/check/delete validated through filesystem adapter; live services and full platform behavior pending. |
 | ReportBug | missing | — |
@@ -129,7 +129,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | ShowDebugConsole | missing | — |
 | ShowFilePopupMenu | missing | — |
 | ShowFileProperties | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
-| ShowInEnclosingFolder | missing | — |
+| ShowInEnclosingFolder | partial | src/native_actions.rs, src/app.rs — Native Reveal actions are wired for local files; platform-specific launch behavior needs broader interactive validation. |
 | ShowKeyboardShortcuts | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
 | ShowParentFoldersQL | partial | src/native_files.rs, src/app.rs — Mounted-drive sidebar and clickable local breadcrumbs provide navigation. Exact upstream quick-list behavior and cross-platform interactions remain open. |
 | ShowPreferences | partial | src/preferences.rs, src/feature_ui.rs, src/app.rs, tests/features.rs — Desktop preferences now include language, persistent column customization and toolbar action order. Full upstream preferences and cross-platform behavior remain incomplete. |
@@ -172,7 +172,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | UnmarkAll | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | UnmarkGroup | missing | — |
 | Unpack | partial | src/archive.rs, src/archive_tools.rs, src/app.rs, tests/features.rs, tests/file_manager.rs, tests/extended_archives.rs — ZIP and 7z AES encryption, local ZIP editing and nested/remote archive browsing. Extract to new folders; archive links, non-ZIP mutation and broad format fixtures remain open. |
-| Undo | partial | src/history.rs, src/app.rs, tests/features.rs — Guarded local operation Undo, full recovery copies and persistent history; no Redo, remote Undo or universal operation coverage. Cross-platform interaction validation pending. |
+| Undo | partial | src/history.rs, tests/features_05.rs, tests/features.rs — Guarded local Undo/Redo includes text saves, permissions, timestamps and synchronization. Remote Undo, permanent deletion and universal upstream coverage remain open. |
 | View | partial | src/viewer.rs, tests/desktop_tools.rs::image_and_hex_viewers_load_real_files, tests/desktop_tools.rs::pdf_viewer_renders_and_navigates_pages — Bounded input; format edge cases, text encodings, image animation and full PDF compatibility remain open. |
 | mucommander-protocol-api | missing | — |
 | mucommander-viewer-api | missing | — |
@@ -202,7 +202,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | mucommander-protocol-registry | missing | — |
 | mucommander-protocol-s3 | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
 | mucommander-protocol-sftp | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/desktop_tools.rs::remote_service_choices_match_platform_support — SFTP uses OpenSSH key/agent authentication on macOS/Linux; the transport is Unix-only and Windows reports this limitation. Platform service choices are tested; live SFTP remains unvalidated. |
-| mucommander-protocol-smb | missing | — |
+| mucommander-protocol-smb | partial | src/smb.rs, tests/features_05.rs::smb_live_list_stream_upload_download_rename_edit_search_delete — Direct pure Rust SMB2/3 listing, streaming transfers, rename, editing, search and deletion validated against disposable Samba from macOS/Linux. Broader server/platform interoperability remains open. |
 | mucommander-protocol-vsphere | missing | — |
 | mucommander-viewer-text | partial | src/viewer.rs, tests/desktop_tools.rs — Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified. |
 | mucommander-viewer-image | partial | src/viewer.rs, tests/desktop_tools.rs — Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified. |

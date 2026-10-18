@@ -698,7 +698,7 @@ pub fn read_text(file: &Path, path: &Path, limit: u64) -> Result<String> {
 static PASSWORDS: std::sync::OnceLock<
     std::sync::RwLock<std::collections::BTreeMap<PathBuf, String>>,
 > = std::sync::OnceLock::new();
-fn password(path: &Path) -> Option<String> {
+pub(crate) fn password(path: &Path) -> Option<String> {
     PASSWORDS
         .get_or_init(Default::default)
         .read()

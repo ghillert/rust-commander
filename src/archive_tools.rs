@@ -12,7 +12,7 @@ use std::{
 };
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum ZipEdit {
     Add {
         sources: Vec<PathBuf>,
@@ -311,4 +311,141 @@ pub fn clear_cache() {
     if let Ok(mut cache) = MATERIALIZED.get_or_init(Default::default).lock() {
         cache.clear();
     }
+}
+
+pub fn editable(file: &Path) -> bool {
+    origin(file).is_none()
+        && matches!(
+            crate::archive::format(file),
+            Some(
+                crate::archive::Format::Zip
+                    | crate::archive::Format::Tar
+                    | crate::archive::Format::TarGz
+                    | crate::archive::Format::TarBz2
+                    | crate::archive::Format::TarXz
+                    | crate::archive::Format::SevenZ
+            )
+        )
+}
+/// Rewrite TAR/7z and encrypted ZIP through a private, bounded extraction tree.
+pub fn edit_archive(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> {
+    if !editable(file) || fs::symlink_metadata(file)?.file_type().is_symlink() {
+        bail!("Choose a local ZIP, TAR or 7z archive; extract cached archives locally first.");
+    }
+    let kind = crate::archive::format(file).context("Unknown archive format")?;
+    let encrypted_zip = if kind == crate::archive::Format::Zip {
+        let mut zip = ZipArchive::new(File::open(file)?)?;
+        let mut encrypted = false;
+        for i in 0..zip.len() {
+            encrypted |= zip.by_index_raw(i)?.encrypted();
+        }
+        encrypted
+    } else {
+        false
+    };
+    if kind == crate::archive::Format::Zip && !encrypted_zip {
+        return edit_zip(file, edit, task);
+    }
+    let password = crate::archive::password(file);
+    if encrypted_zip && password.is_none() {
+        bail!("Unlock the encrypted archive in Archive tools before editing it.");
+    }
+    let stamp = crate::history::fingerprint(file, task)?;
+    let directory = tempfile::Builder::new()
+        .prefix(".rust-commander-archive-edit-")
+        .tempdir_in(file.parent().context("Missing archive folder")?)?;
+    let tree = directory.path().join("contents");
+    if crate::archive::list(file, Path::new(""))?.is_empty() {
+        fs::create_dir(&tree)?;
+    } else {
+        crate::archive::extract(file, &[], Path::new(""), &tree, task)?;
+    }
+    match edit {
+        ZipEdit::Add { sources, prefix } => {
+            if sources.is_empty() {
+                bail!("Select files to add");
+            }
+            let parent = if prefix.as_os_str().is_empty() {
+                tree.clone()
+            } else {
+                tree.join(safe_relative(prefix)?)
+            };
+            fs::create_dir_all(&parent)?;
+            operations::validate_sources(sources)?;
+            for source in sources {
+                if source.canonicalize()? == file.canonicalize()?
+                    || directory.path().starts_with(source.canonicalize()?)
+                {
+                    bail!("An archive cannot contain itself or its working directory");
+                }
+                let name = source.file_name().context("Cannot add a filesystem root")?;
+                let target = parent.join(name);
+                if operations::exists(&target) {
+                    bail!("Archive entry already exists: {}", name.to_string_lossy());
+                }
+                operations::copy_item(source, &target, task)?;
+            }
+        }
+        ZipEdit::Remove(paths) => {
+            if paths.is_empty() {
+                bail!("Select entries to remove");
+            }
+            let mut paths = paths
+                .iter()
+                .map(|p| safe_relative(p))
+                .collect::<Result<Vec<_>>>()?;
+            paths.sort_by_key(|p| p.components().count());
+            let mut removed: Vec<PathBuf> = Vec::new();
+            for p in paths {
+                if removed.iter().any(|r| p.starts_with(r)) {
+                    continue;
+                }
+                let target = tree.join(&p);
+                if !operations::exists(&target) {
+                    bail!("Archive entry missing: {}", p.display());
+                }
+                operations::remove(&target)?;
+                removed.push(p);
+            }
+        }
+        ZipEdit::Rename { source, target } => {
+            let source = tree.join(safe_relative(source)?);
+            let target = tree.join(safe_relative(target)?);
+            if target.starts_with(&source) {
+                bail!("Cannot move an archive folder inside itself");
+            }
+            fs::create_dir_all(target.parent().context("Missing entry parent")?)?;
+            crate::desktop::rename_exclusive(&source, &target)?;
+        }
+    }
+    let sources = fs::read_dir(&tree)?
+        .map(|e| e.map(|e| e.path()))
+        .collect::<std::io::Result<Vec<_>>>()?;
+    let output = directory
+        .path()
+        .join(file.file_name().context("Missing archive filename")?);
+    if let Some(password) = password.as_deref() {
+        crate::archive::pack_with_password(&sources, &output, password, task)?;
+    } else {
+        crate::archive::pack(&sources, &output, task)?;
+    }
+    // Validate the produced container before replacing the original.
+    if let Some(password) = password.as_deref() {
+        crate::archive::unlock(&output, password)?;
+    } else {
+        crate::archive::list(&output, Path::new(""))?;
+    }
+    if stamp != crate::history::fingerprint(file, task)? {
+        bail!("Archive changed during editing; the original was preserved");
+    }
+    task.capture(file)?;
+    fs::set_permissions(&output, fs::metadata(file)?.permissions())?;
+    let mut temporary = tempfile::NamedTempFile::new_in(file.parent().unwrap())?;
+    task.stream(&mut File::open(&output)?, &mut temporary, file)?;
+    temporary
+        .as_file()
+        .set_permissions(fs::metadata(file)?.permissions())?;
+    temporary.as_file().sync_all()?;
+    temporary.persist(file)?;
+    Ok(())
 }

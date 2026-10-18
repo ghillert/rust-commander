@@ -1,7 +1,7 @@
 use crate::{
     filesystem::{self, Entry, Location},
     model::{Pane, Tab},
-    operations::{self, Operation, Progress, Task},
+    operations::{Operation, Progress, Task},
     settings::{self, Bookmark, Settings},
 };
 use eframe::egui::{self, Color32, Key, RichText, Stroke, Vec2};
@@ -80,6 +80,15 @@ fn file_icon(
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Action {
     Undo,
+    Redo,
+    Recovery,
+    Synchronize,
+    Preview,
+    QuickLook,
+    Reveal,
+    OpenWith,
+    PackageContents,
+    Workspaces,
     Queue,
     ArchiveTools,
     NativeDrag,
@@ -149,6 +158,9 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("View  F3", Action::View),
                 ("Edit  F4", Action::Edit),
                 ("Open externally", Action::External),
+                ("Open With…", Action::OpenWith),
+                ("Reveal in file manager", Action::Reveal),
+                ("Show package contents", Action::PackageContents),
                 ("Rename  F2", Action::Rename),
                 ("New folder  F7", Action::Mkdir),
                 ("Move to Trash  F8", Action::Trash),
@@ -159,6 +171,9 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
             "Operations",
             vec![
                 ("Undo last operation", Action::Undo),
+                ("Redo last operation", Action::Redo),
+                ("Recovery storage…", Action::Recovery),
+                ("Synchronize folders…", Action::Synchronize),
                 ("Transfer queue and history…", Action::Queue),
                 ("Copy  F5", Action::Copy),
                 ("Move  F6", Action::Move),
@@ -175,6 +190,9 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
         (
             "Navigate",
             vec![
+                ("Preview pane", Action::Preview),
+                ("Quick Look", Action::QuickLook),
+                ("Workspaces…", Action::Workspaces),
                 ("Parent folder", Action::Parent),
                 ("New tab", Action::NewTab),
                 ("Close tab", Action::CloseTab),
@@ -281,6 +299,7 @@ struct Editor {
     kind: &'static str,
     title: String,
     path: Option<PathBuf>,
+    remote: Option<(String, PathBuf)>,
     text: String,
     original: String,
     editable: bool,
@@ -305,7 +324,7 @@ enum JobEvent {
 }
 struct Job {
     label: String,
-    undo_of: Option<String>,
+
     receiver: Receiver<JobEvent>,
     cancel: Arc<AtomicBool>,
     progress: Progress,
@@ -328,7 +347,11 @@ pub struct Commander {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     native_window: Option<crate::native_files::Window>,
     native_files: crate::native_files::NativeFiles,
-    queue: std::collections::VecDeque<Operation>,
+    queue: crate::queue::Queue,
+    features: crate::next_ui::Features,
+    preview: crate::preview::Preview,
+    workspaces: Vec<crate::workspaces::Workspace>,
+    pending_save: Option<(String, String)>,
     history: Vec<crate::history::Record>,
     show_history: bool,
     archive_form: Option<crate::feature_ui::ArchiveForm>,
@@ -431,7 +454,11 @@ impl Commander {
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             native_window: None,
             native_files: Default::default(),
-            queue: Default::default(),
+            queue: crate::queue::Queue::load(),
+            features: Default::default(),
+            preview: Default::default(),
+            workspaces: settings.workspaces,
+            pending_save: None,
             history: crate::history::load().unwrap_or_default(),
             show_history: false,
             archive_form: None,
@@ -500,21 +527,35 @@ impl Commander {
     }
 
     fn start_job(&mut self, operation: Operation, ctx: &egui::Context) {
+        let operation = match crate::queue::Queue::prepare(operation) {
+            Ok(op) => op,
+            Err(e) => {
+                self.fail(e);
+                return;
+            }
+        };
         if self.job.is_some() {
             if self.queue.len() >= 1000 {
-                self.fail("The transfer queue is full. Finish or cancel queued operations.");
+                self.fail("The transfer queue is full.");
                 return;
             }
             self.queue.push_back(operation);
+            if let Err(e) = self.queue.save() {
+                self.queue.pop_back();
+                self.fail(e);
+                return;
+            }
             self.status = format!("Queued {} operation(s).", self.queue.len());
             return;
         }
         let label = operation.label().to_owned();
-        let undo_of = if let Operation::Undo(record) = &operation {
-            Some(record.id.clone())
-        } else {
-            None
-        };
+        self.queue.active = Some(operation.clone());
+        if let Err(e) = self.queue.save() {
+            self.queue.active = None;
+            self.fail(e);
+            return;
+        }
+        let retention = self.preferences.recovery.clone();
         let (sender, receiver) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = cancel.clone();
@@ -530,12 +571,23 @@ impl Commander {
             });
             let result =
                 crate::history::execute(operation, &mut task).map_err(|e| format!("{e:#}"));
+            if retention.automatic
+                && let Ok(root) = crate::history::root()
+                && let Ok(records) = crate::history::load_in(&root)
+                && let Ok(ids) = crate::history::cleanup_candidates(
+                    &records,
+                    &root,
+                    &retention,
+                    crate::oauth::now(),
+                )
+            {
+                let _ = crate::history::cleanup_in(&root, &ids);
+            }
             let _ = sender.send(JobEvent::Done(result));
             worker_ctx.request_repaint();
         });
         self.job = Some(Job {
             label,
-            undo_of,
             receiver,
             cancel,
             progress: Progress::default(),
@@ -545,7 +597,8 @@ impl Commander {
     fn poll(&mut self, ctx: &egui::Context) {
         #[cfg(target_os = "macos")]
         if let Some(menu) = &self.native_menu {
-            let blocked = self.archive_form.is_some()
+            let blocked = self.features.active()
+                || self.archive_form.is_some()
                 || self.show_history
                 || self.prompt.is_some()
                 || self.editor.is_some()
@@ -643,17 +696,31 @@ impl Commander {
             }
         }
         if let Some(result) = completed {
-            let undo_of = self.job.as_ref().and_then(|job| job.undo_of.clone());
             self.job = None;
+            let recipe = self.queue.active.take();
+            let success = result.as_ref().is_ok_and(|r| r.success);
+            if !success && let Some(recipe) = recipe {
+                self.queue.failed.push(recipe);
+            }
+            if let Some((title, text)) = self.pending_save.take()
+                && let Some(editor) = &mut self.editor
+                && editor.title == title
+            {
+                if success {
+                    editor.original = text;
+                    editor.error = None;
+                } else {
+                    editor.error = Some(match &result {
+                        Ok(r) => r.result.clone(),
+                        Err(e) => e.clone(),
+                    });
+                }
+            }
+            if let Err(e) = self.queue.save() {
+                self.fail(e);
+            }
             match result {
                 Ok(record) => {
-                    if record.success
-                        && let Some(id) = undo_of
-                        && let Some(original) =
-                            self.history.iter_mut().find(|record| record.id == id)
-                    {
-                        original.undone = true;
-                    }
                     self.status = record.result.clone();
                     self.status_error = !record.success;
                     if record.result.contains("Replaced originals are kept")
@@ -663,7 +730,10 @@ impl Commander {
                     {
                         self.message = Some(record.result.clone());
                     }
-                    self.history.push(record);
+                    self.history = crate::history::load().unwrap_or_else(|_| self.history.clone());
+                    if !self.history.iter().any(|r| r.id == record.id) {
+                        self.history.push(record);
+                    }
                     if let Err(error) = crate::history::save(&self.history) {
                         self.fail(format!(
                             "Operation finished, but history could not be saved: {error:#}"
@@ -675,10 +745,17 @@ impl Commander {
             self.refresh(ctx);
         }
         if self.job.is_none()
+            && !self.queue.paused
             && !self.exiting
             && let Some(operation) = self.queue.pop_front()
         {
-            self.start_job(operation, ctx);
+            if crate::queue::Queue::requires_input(&operation) {
+                self.queue.push_front(operation);
+                self.queue.paused = true;
+                self.fail("This saved operation needs its password or editor contents again. Open the queue to review it.");
+            } else {
+                self.start_job(operation, ctx);
+            }
         }
         if let Some(result) = crate::background::poll(&mut self.pending_view) {
             match result {
@@ -701,6 +778,14 @@ impl Commander {
     }
 
     fn open_entry(&mut self, entry: Entry, ctx: &egui::Context) {
+        if self.tab().location.local().is_some()
+            && crate::native_actions::is_application(&entry.path)
+        {
+            if let Err(e) = open::that_detached(&entry.path) {
+                self.fail(e);
+            }
+            return;
+        }
         if !entry.is_dir
             && self.tab().location.local().is_none()
             && crate::archive::format(&entry.path).is_some()
@@ -772,6 +857,11 @@ impl Commander {
                     ),
                 };
                 let path = location.local().map(|_| entry.path.clone());
+                let remote = if let Location::Remote { connection, .. } = &location {
+                    Some((connection.clone(), entry.path.clone()))
+                } else {
+                    None
+                };
                 Ok(Editor {
                     pdf,
                     image,
@@ -781,11 +871,12 @@ impl Commander {
                     title: entry.path.display().to_string(),
                     editable: editable
                         && kind == "Text viewer"
-                        && path.is_some()
+                        && (path.is_some() || remote.is_some())
                         && !entry.is_symlink,
                     original: text.clone(),
                     text,
                     path,
+                    remote,
                     error: None,
                     confirm_close: false,
                 })
@@ -808,7 +899,7 @@ impl Commander {
         let local = location.local().map(Path::to_owned);
         let mut prompt = None;
         if let Location::Archive { file, .. } = &location
-            && crate::archive::format(file) == Some(crate::archive::Format::Zip)
+            && crate::archive_tools::editable(file)
             && crate::archive_tools::origin(file).is_none()
             && matches!(action, Action::Rename | Action::Trash)
         {
@@ -830,7 +921,7 @@ impl Commander {
         if matches!(action, Action::Copy) && location.local().is_some() {
             let other = self.panes[1 - self.active].tab();
             if let Location::Archive { file, .. } = &other.location
-                && crate::archive::format(file) == Some(crate::archive::Format::Zip)
+                && crate::archive_tools::editable(file)
                 && crate::archive_tools::origin(file).is_none()
             {
                 self.archive_form = Some(crate::feature_ui::ArchiveForm::new(
@@ -843,7 +934,7 @@ impl Commander {
             }
         }
         match action {
-            Action::Undo => {
+            Action::Undo | Action::Redo => {
                 if self.job.is_some() || !self.queue.is_empty() {
                     self.fail("Finish or cancel queued operations before undoing.");
                     return;
@@ -852,13 +943,98 @@ impl Commander {
                     .history
                     .iter()
                     .rev()
-                    .find(|record| !record.undone && !record.changes.is_empty())
+                    .find(|record| {
+                        if matches!(action, Action::Redo) {
+                            record.can_redo()
+                        } else {
+                            record.can_undo()
+                        }
+                    })
                     .cloned()
                 {
-                    self.start_job(Operation::Undo(Box::new(record)), ctx);
+                    self.start_job(
+                        if matches!(action, Action::Redo) {
+                            Operation::Redo(Box::new(record))
+                        } else {
+                            Operation::Undo(Box::new(record))
+                        },
+                        ctx,
+                    );
                 } else {
-                    self.fail("No operation is available to undo.");
+                    self.fail(if matches!(action, Action::Redo) {
+                        "No operation is available to redo."
+                    } else {
+                        "No operation is available to undo."
+                    });
                 }
+                return;
+            }
+            Action::Recovery => {
+                self.features.recovery(ctx);
+                return;
+            }
+            Action::Synchronize => {
+                if let (Some(left), Some(right)) = (
+                    self.panes[0].tab().location.local(),
+                    self.panes[1].tab().location.local(),
+                ) {
+                    self.features.sync(left.to_owned(), right.to_owned());
+                } else {
+                    self.fail("Choose two local folders to synchronize.");
+                }
+                return;
+            }
+            Action::Preview => {
+                self.preferences.preview = !self.preferences.preview;
+                self.save_settings();
+                return;
+            }
+            Action::QuickLook => {
+                #[cfg(target_os = "macos")]
+                if local.is_some() {
+                    if let Err(e) = crate::native_actions::quick_look(&sources) {
+                        self.fail(e);
+                    }
+                } else {
+                    self.preferences.preview = true;
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    self.preferences.preview = true;
+                }
+                return;
+            }
+            Action::Reveal => {
+                if local.is_some() {
+                    if let Some(path) = sources.first()
+                        && let Err(e) = crate::native_actions::reveal(path)
+                    {
+                        self.fail(e);
+                    }
+                } else {
+                    self.fail("Reveal requires a local file.");
+                }
+                return;
+            }
+            Action::OpenWith => {
+                if local.is_some() && sources.len() == 1 {
+                    self.features.open_with = Some((sources[0].clone(), String::new()));
+                    self.features.error = None;
+                } else {
+                    self.fail("Select one local file.");
+                }
+                return;
+            }
+            Action::PackageContents => {
+                if local.is_some() && chosen.len() == 1 && chosen[0].is_dir {
+                    self.tab_mut()
+                        .navigate(Location::Local(sources[0].clone()), ctx);
+                }
+                return;
+            }
+            Action::Workspaces => {
+                self.features.workspaces = true;
+                self.features.error = None;
                 return;
             }
             Action::Queue => {
@@ -897,10 +1073,10 @@ impl Commander {
                 return;
             }
             Action::Search => {
-                if let Some(path) = local {
-                    self.tools.search(path, self.show_hidden);
+                if matches!(location, Location::Local(_) | Location::Remote { .. }) {
+                    self.tools.search(location, self.show_hidden);
                 } else {
-                    self.fail("Recursive search currently requires a local folder.");
+                    self.fail("Search a local folder or a remote connection.");
                 }
                 return;
             }
@@ -1448,7 +1624,8 @@ impl Commander {
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
-        if self.prompt.is_some()
+        if self.features.active()
+            || self.prompt.is_some()
             || self.editor.is_some()
             || self.help
             || self.message.is_some()
@@ -1465,10 +1642,16 @@ impl Commander {
         let typing = ctx.wants_keyboard_input();
         let mut action = None;
         ctx.input_mut(|input| {
-            if input.consume_key(egui::Modifiers::COMMAND, Key::L) {
+            if !input.modifiers.shift
+                && !input.modifiers.alt
+                && input.consume_key(egui::Modifiers::COMMAND, Key::L)
+            {
                 self.tab_mut().focus_address = true;
             }
-            if input.consume_key(egui::Modifiers::COMMAND, Key::F) {
+            if !input.modifiers.shift
+                && !input.modifiers.alt
+                && input.consume_key(egui::Modifiers::COMMAND, Key::F)
+            {
                 self.tab_mut().focus_filter = true;
             }
             if typing {
@@ -1556,10 +1739,15 @@ impl Commander {
                 Action::CutClipboard,
                 Action::PasteClipboard,
                 Action::Undo,
+                Action::Redo,
+                Action::Preview,
+                Action::QuickLook,
                 Action::Queue,
             ] {
                 if let Some(binding) = self.preferences.shortcuts.get(&format!("{candidate:?}"))
                     && let Ok(shortcut) = crate::preferences::shortcut(binding)
+                    && input.modifiers.shift == shortcut.modifiers.shift
+                    && input.modifiers.alt == shortcut.modifiers.alt
                     && input.consume_shortcut(&shortcut)
                 {
                     action = Some(candidate);
@@ -2356,6 +2544,13 @@ impl Commander {
                                                         ("View", Action::View),
                                                         ("Edit", Action::Edit),
                                                         ("Open externally", Action::External),
+                                                        ("Open With…", Action::OpenWith),
+                                                        ("Reveal", Action::Reveal),
+                                                        ("Quick Look", Action::QuickLook),
+                                                        (
+                                                            "Show package contents",
+                                                            Action::PackageContents,
+                                                        ),
                                                         ("Copy", Action::Copy),
                                                         ("Move", Action::Move),
                                                         ("Rename", Action::Rename),
@@ -2414,7 +2609,8 @@ impl Commander {
                                     });
                                 });
                             });
-                        if let Some(destination) = self.panes[side].tab().location.local() {
+                        {
+                            let destination = self.panes[side].tab().location.clone();
                             let pointer_inside = ctx.input(|i| {
                                 i.pointer
                                     .latest_pos()
@@ -2435,11 +2631,8 @@ impl Commander {
                                 && let Some(payload) =
                                     egui::DragAndDrop::take_payload::<FileDrag>(ctx)
                             {
-                                dropped = Some((
-                                    side,
-                                    payload.sources.clone(),
-                                    destination.to_path_buf(),
-                                ));
+                                dropped =
+                                    Some((side, payload.sources.clone(), destination.clone()));
                             } else if pointer_inside {
                                 let sources: Vec<_> = ctx.input(|i| {
                                     i.raw
@@ -2449,7 +2642,7 @@ impl Commander {
                                         .collect()
                                 });
                                 if !sources.is_empty() {
-                                    dropped = Some((side, sources, destination.to_path_buf()));
+                                    dropped = Some((side, sources, destination.clone()));
                                 }
                             }
                         }
@@ -2471,31 +2664,80 @@ impl Commander {
                 && self.preferences_form.is_none()
                 && self.archive_form.is_none()
                 && !self.show_history
+                && !self.features.active()
                 && self.connection_form.is_none()
                 && !self.help
                 && self.message.is_none()
             {
                 self.active = side;
-                self.prompt = Some(Prompt {
-                    title: "Copy dropped files".into(),
-                    description: format!(
-                        "Copy {} dropped item(s) into this pane. Choose how to handle existing targets.",
-                        sources.len()
-                    ),
-                    value: destination.display().to_string(),
-                    kind: PromptKind::Transfer {
-                        sources,
-                        moving: false,
-                        base: destination,
-                    },
-                    focus: true,
-                    error: None,
-                    transfer_options: Default::default(),
-                    overrides: Default::default(),
-                    conflicts: Vec::new(),
-                    conflict_key: String::new(),
-                    pending_conflicts: None,
-                });
+                match destination {
+                    Location::Archive { file, prefix } => {
+                        self.archive_form = Some(crate::feature_ui::ArchiveForm {
+                            file: file.display().to_string(),
+                            prefix,
+                            additions: sources
+                                .iter()
+                                .map(|p| p.display().to_string())
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                            ..Default::default()
+                        });
+                    }
+                    Location::Remote { .. } => {
+                        match sources
+                            .iter()
+                            .map(|p| filesystem::entry_from_path(p))
+                            .collect::<anyhow::Result<Vec<_>>>()
+                        {
+                            Ok(entries) => {
+                                self.prompt = Some(Prompt {
+                                    title: "Copy dropped files".into(),
+                                    description: format!(
+                                        "Upload {} dropped item(s). Review conflicts before transferring.",
+                                        entries.len()
+                                    ),
+                                    value: destination.label(),
+                                    kind: PromptKind::RemoteTransfer {
+                                        from: Location::Local(filesystem::home()),
+                                        entries,
+                                        to: destination,
+                                        moving: false,
+                                    },
+                                    focus: true,
+                                    error: None,
+                                    transfer_options: Default::default(),
+                                    overrides: Default::default(),
+                                    conflicts: Vec::new(),
+                                    conflict_key: String::new(),
+                                    pending_conflicts: None,
+                                });
+                            }
+                            Err(e) => self.fail(e),
+                        }
+                    }
+                    Location::Local(destination) => {
+                        self.prompt = Some(Prompt {
+                            title: "Copy dropped files".into(),
+                            description: format!(
+                                "Copy {} dropped item(s) into this pane. Choose how to handle existing targets.",
+                                sources.len()
+                            ),
+                            value: destination.display().to_string(),
+                            kind: PromptKind::Transfer {
+                                sources,
+                                moving: false,
+                                base: destination,
+                            },
+                            focus: true,
+                            error: None,
+                            transfer_options: Default::default(),
+                            overrides: Default::default(),
+                            conflicts: Vec::new(),
+                            conflict_key: String::new(),
+                            pending_conflicts: None,
+                        });
+                    }
+                }
             } else {
                 self.fail("Finish or close the current dialog before dropping files.");
             }
@@ -2878,22 +3120,11 @@ impl Commander {
             if let Some(error) = &editor.error {
                 ui.colored_label(Color32::from_rgb(190, 65, 55), tr(error));
             }
-            if editor.editable
-                && (ui
-                    .add_enabled(editor.dirty(), egui::Button::new(tr("Save  ⌘/Ctrl+S")))
-                    .clicked()
-                    || ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::S)))
-                && let Some(path) = &editor.path
-            {
-                match operations::save_text(path, editor.original.as_bytes(), &editor.text) {
-                    Ok(()) => {
-                        editor.original = editor.text.clone();
-                        editor.error = None;
-                        self.status = "File saved.".into();
-                        self.status_error = false;
-                    }
-                    Err(error) => editor.error = Some(format!("{error:#}")),
-                }
+            if editor.remote.is_some() && editor.editable {ui.label("Remote saves keep a server-side recovery copy. External-edit checks are atomic only on services that support conditional writes.");}
+            let save_requested=ui.add_enabled(editor.dirty()&&self.job.is_none()&&self.queue.is_empty(),egui::Button::new(tr("Save  ⌘/Ctrl+S"))).clicked()||ui.input_mut(|i|i.consume_key(egui::Modifiers::COMMAND,Key::S));
+            if editor.editable&&save_requested&&self.job.is_none()&&self.queue.is_empty(){
+                let operation=if let Some((connection,path))=&editor.remote{Some(Operation::RemoteSave{connection:connection.clone(),path:path.clone(),original:editor.original.as_bytes().to_vec(),text:editor.text.clone()})}else{editor.path.as_ref().map(|path|Operation::SaveText{path:path.clone(),original:editor.original.as_bytes().to_vec(),text:editor.text.clone()})};
+                if let Some(operation)=operation{self.start_job(operation,ctx);if self.job.is_some(){self.pending_save=Some((editor.title.clone(),editor.text.clone()));}}
             }
             if ui.input(|i| i.key_pressed(Key::Escape)) {
                 close = true;
@@ -3078,7 +3309,7 @@ impl Commander {
                         for service in crate::remote::SERVICES { ui.selectable_value(&mut form.connection.service, (*service).into(), *service); }
                     }); ui.end_row();
                     for (label, value) in [("Endpoint", &mut form.connection.endpoint), ("Root folder", &mut form.connection.root),
-                        ("Bucket", &mut form.connection.bucket), ("Region", &mut form.connection.region), ("Username", &mut form.connection.username), ("Private key file", &mut form.connection.key_file)] {
+                        (if form.connection.service=="smb"{"Share"}else{"Bucket"}, &mut form.connection.bucket), ("Region", &mut form.connection.region), ("Username", &mut form.connection.username), ("Private key file", &mut form.connection.key_file)] {
                         ui.label(tr(label)); ui.text_edit_singleline(value); ui.end_row();
                     }
                     if form.connection.service != "sftp" { ui.label(tr("Password")); ui.add(egui::TextEdit::singleline(&mut form.secrets.password).password(true)); ui.end_row(); }
@@ -3096,6 +3327,7 @@ impl Commander {
                     ui.small(format!("Register redirect URI: http://{host}:{}/callback",form.connection.oauth_port));
                     if ui.add_enabled(self.pending_connection.is_none(),egui::Button::new(tr("Sign in with browser"))).clicked(){authorize=true;}
                 }
+                if form.connection.service == "smb" {ui.label("SMB: endpoint smb://nas.local[:445], Share = share name, Root folder = path within the share. Domain accounts can use DOMAIN\\user.");}
                 if form.connection.service == "sftp" { ui.label(tr("SFTP uses OpenSSH, your SSH agent or private key, and strict known-host verification. Add a trusted server to your OpenSSH known_hosts before connecting.")); }
                 ui.checkbox(&mut form.remember, tr("Remember credentials in the operating system credential store"));
                 if let Some(error) = &form.error { ui.colored_label(Color32::from_rgb(190, 65, 55), tr(error)); }
@@ -3169,10 +3401,10 @@ impl Commander {
                 ui.label(format!("{} · {}", tr("Native dual-pane file manager"), env!("CARGO_PKG_VERSION")));
                 ui.separator();
                 egui::Grid::new("shortcuts").num_columns(2).spacing([28.0, 7.0]).show(ui, |ui| {
-                    for (key, description) in [("Tab", "Switch active pane"), ("↑ / ↓ · Enter · Backspace", "Navigate files · Open · Parent folder"), ("Space / Insert", "Mark or unmark current file"), ("Shift / ⌘ / Ctrl + click", "Range / multiple selection"), ("F2 / F3 / F4", "Rename / View / Edit"), ("F5 / F6 / F7 / F8", "Copy / Move / New folder / Trash"), ("⌘ / Ctrl + L / F", "Focus address / filter"), ("⌘ / Ctrl + T / W", "New tab / close tab"), ("⌘ / Ctrl + A / D / R", "Select all / bookmark / refresh"), ("⌘+Shift+. / Ctrl+H", "Show hidden files"), ("⌘ / Ctrl + C / X / V", "System file copy / cut / paste"), ("⌘ / Ctrl + Z / J", "Undo / queue and history"), ("Alt + drag", "Native drag-out on macOS/Windows"), ("Alt + ← / →", "Back / forward"), ("Escape", "Clear marks and filter / close dialog")] { ui.label(RichText::new(key).monospace()); ui.label(tr(description)); ui.end_row(); }
+                    for (key, description) in [("Tab", "Switch active pane"), ("↑ / ↓ · Enter · Backspace", "Navigate files · Open · Parent folder"), ("Space / Insert", "Mark or unmark current file"), ("Shift / ⌘ / Ctrl + click", "Range / multiple selection"), ("F2 / F3 / F4", "Rename / View / Edit"), ("F5 / F6 / F7 / F8", "Copy / Move / New folder / Trash"), ("⌘ / Ctrl + L / F", "Focus address / filter"), ("⌘ / Ctrl + T / W", "New tab / close tab"), ("⌘ / Ctrl + A / D / R", "Select all / bookmark / refresh"), ("⌘+Shift+. / Ctrl+H", "Show hidden files"), ("⌘ / Ctrl + C / X / V", "System file copy / cut / paste"), ("⌘ / Ctrl + Z / Shift+Z / J", "Undo / Redo / queue and history"), ("⌘ / Ctrl + P", "Preview pane"), ("Alt + drag", "Native drag-out on macOS/Windows"), ("Alt + ← / →", "Back / forward"), ("Escape", "Clear marks and filter / close dialog")] { ui.label(RichText::new(key).monospace()); ui.label(tr(description)); ui.end_row(); }
                 });
                 ui.separator();
-                ui.label(tr("Double-click folders and supported archives to browse, or files to view text, images, hex and PDFs. Use Archive tools to edit local ZIPs or unlock encrypted archives. F5 extracts entries; nested and remote archives open read-only. Text editing supports local UTF-8 files up to 2 MiB."));
+                ui.label(tr("Double-click folders and supported archives to browse, or files to view text, images, hex and PDFs. Use Archive tools to edit local ZIP, TAR or 7z archives or unlock encrypted archives. F5 extracts entries; nested and remote archives open read-only. Text editing supports local and remote UTF-8 files up to 2 MiB."));
                 ui.label(tr("Inspired by muCommander. Independent Rust implementation; not an official release. GPL-3.0-only. You may redistribute this program under that license. No warranty."));
                 ui.hyperlink_to(tr("Original muCommander project"), "https://github.com/mucommander/mucommander");
                 ui.collapsing(tr("GNU General Public License v3"), |ui| { egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| { ui.label(include_str!("../LICENSE")); }); });
@@ -3225,13 +3457,14 @@ impl Commander {
             return;
         }
         let settings = Settings {
+            workspaces: self.workspaces.clone(),
             preferences: self.preferences.clone(),
             connections: self.connections.clone(),
             tabs: std::array::from_fn(|i| {
                 self.panes[i]
                     .tabs
                     .iter()
-                    .map(|t| t.location.clone())
+                    .map(|t| crate::workspaces::persistent_location(&t.location))
                     .collect()
             }),
             active_tabs: [self.panes[0].active, self.panes[1].active],
@@ -3258,13 +3491,138 @@ impl Commander {
                 self.fail("Native window handle unavailable.");
             }
         }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(target_os = "linux")]
         {
-            match self.native_files.copy(&paths,false){Ok(())=>self.status="Files copied to the system clipboard. Native drag-out is not supported by this Linux window backend.".into(),Err(error)=>self.fail(error)}
+            if let Err(e) = crate::linux_drag::launch(&paths) {
+                self.fail(e);
+            } else {
+                self.status =
+                    "Drag files from the native GTK window into another application.".into();
+            }
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        {
+            if let Err(e) = self.native_files.copy(&paths, false) {
+                self.fail(e);
+            }
         }
     }
 
     fn feature_dialogs(&mut self, ctx: &egui::Context) {
+        let idle = self.job.is_none() && self.queue.is_empty();
+        let features_were_active = self.features.active();
+        let effect = self.features.show(
+            ctx,
+            &mut self.history,
+            &mut self.preferences.recovery,
+            &self.workspaces,
+            idle,
+        );
+        let changed = effect.is_some();
+        if let Some(effect) = effect {
+            use crate::next_ui::Effect;
+            match effect {
+                Effect::Run(op) => self.start_job(op, ctx),
+                Effect::SaveHistory => {
+                    if let Err(e) = crate::history::save(&self.history) {
+                        self.fail(e);
+                    }
+                }
+                Effect::ReloadHistory => match crate::history::load() {
+                    Ok(r) => self.history = r,
+                    Err(e) => self.fail(e),
+                },
+                Effect::SaveWorkspace(name) => {
+                    match crate::workspaces::Workspace::validate_name(&name) {
+                        Ok(name) => {
+                            if self.workspaces.iter().any(|w| w.name == name) {
+                                self.features.error=Some("A workspace already uses that name. Rename it or choose another name.".into());
+                            } else {
+                                let w = crate::workspaces::Workspace {
+                                    name,
+                                    tabs: std::array::from_fn(|i| {
+                                        self.panes[i]
+                                            .tabs
+                                            .iter()
+                                            .map(|t| {
+                                                crate::workspaces::persistent_location(&t.location)
+                                            })
+                                            .collect()
+                                    }),
+                                    active_tabs: [self.panes[0].active, self.panes[1].active],
+                                    active_pane: self.active,
+                                    preferences: self.preferences.clone(),
+                                };
+                                self.workspaces.push(w);
+                                self.features.error = None;
+                            }
+                        }
+                        Err(e) => self.features.error = Some(e.to_string()),
+                    }
+                }
+                Effect::RenameWorkspace(i, name) => {
+                    match crate::workspaces::Workspace::validate_name(&name) {
+                        Ok(name)
+                            if !self
+                                .workspaces
+                                .iter()
+                                .enumerate()
+                                .any(|(n, w)| n != i && w.name == name) =>
+                        {
+                            if let Some(w) = self.workspaces.get_mut(i) {
+                                w.name = name;
+                            }
+                            self.features.error = None;
+                        }
+                        _ => {
+                            self.features.error =
+                                Some("Choose a unique workspace name of 1–80 characters.".into())
+                        }
+                    }
+                }
+                Effect::DeleteWorkspace(i) => {
+                    if i < self.workspaces.len() {
+                        self.workspaces.remove(i);
+                    }
+                }
+                Effect::LoadWorkspace(i) => {
+                    if let Some(w) = self.workspaces.get(i).cloned() {
+                        self.panes = std::array::from_fn(|side| {
+                            let mut tabs = w.tabs[side]
+                                .iter()
+                                .take(32)
+                                .cloned()
+                                .map(|l| Tab::new(l, ctx))
+                                .collect::<Vec<_>>();
+                            if tabs.is_empty() {
+                                tabs.push(Tab::new(Location::Local(filesystem::home()), ctx));
+                            }
+                            Pane {
+                                active: w.active_tabs[side].min(tabs.len() - 1),
+                                tabs,
+                            }
+                        });
+                        self.active = w.active_pane.min(1);
+                        self.preferences = w.preferences;
+                        self.preferences.upgrade();
+                        crate::appearance::install_fonts(ctx, self.preferences.desktop_style);
+                        crate::i18n::set(self.preferences.language);
+                        self.theme(ctx);
+                        #[cfg(target_os = "macos")]
+                        if let Some(menu) = &self.native_menu {
+                            menu.localize();
+                        }
+                        self.pending_view = None;
+                        self.pending_archive_target = None;
+                        self.pending_archive = None;
+                    }
+                }
+            }
+        }
+        if changed || (features_were_active && !self.features.active()) {
+            self.save_settings();
+        }
+
         if let Some(mut form) = self.archive_form.take() {
             let (close, action) = form.show(ctx);
             if let Some(action) = action {
@@ -3307,6 +3665,8 @@ impl Commander {
             let mut close = false;
             let mut remove = None;
             let mut undo = None;
+            let mut retry = None;
+            let mut discard = None;
             egui::Modal::new(egui::Id::new("queue_history")).show(ctx, |ui| {
                 ui.set_width(660.0);
                 ui.heading(tr("Transfer queue and history"));
@@ -3320,7 +3680,26 @@ impl Commander {
                     });
                 }
                 ui.separator();
-                ui.strong(tr("Queued operations"));
+                ui.horizontal(|ui| {
+                    ui.strong(tr("Queued operations"));
+                    if ui
+                        .button(if self.queue.paused {
+                            "Resume queue"
+                        } else {
+                            "Pause queue"
+                        })
+                        .clicked()
+                    {
+                        self.queue.paused = !self.queue.paused;
+                    }
+                });
+                if let Some(e) = &self.queue.error {
+                    ui.colored_label(egui::Color32::RED, e);
+                }
+                if self.queue.paused {
+                    ui.label("Queue paused. Review interrupted work before resuming.");
+                }
+
                 if self.queue.is_empty() {
                     ui.label(tr("No queued operations"));
                 }
@@ -3330,7 +3709,11 @@ impl Commander {
                     .show(ui, |ui| {
                         for (index, operation) in self.queue.iter().enumerate() {
                             ui.horizontal(|ui| {
-                                ui.label(format!("{}. {}", index + 1, tr(operation.label())));
+                                ui.label(format!("{}. {}", index + 1, tr(operation.label())))
+                                    .on_hover_text(operation.description());
+                                if crate::queue::Queue::requires_input(operation) {
+                                    ui.label("Reopen to supply password or text");
+                                }
                                 if ui.button(tr("Cancel")).clicked() {
                                     remove = Some(index);
                                 }
@@ -3338,6 +3721,25 @@ impl Commander {
                         }
                     });
                 ui.separator();
+                ui.collapsing("Interrupted or failed operations", |ui| {
+                    for (i, op) in self.queue.failed.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.label(tr(op.label())).on_hover_text(op.description());
+                            if ui
+                                .add_enabled(
+                                    self.job.is_none(),
+                                    egui::Button::new(tr("Retry / reopen")),
+                                )
+                                .clicked()
+                            {
+                                retry = Some(i);
+                            }
+                            if ui.button(tr("Discard recipe")).clicked() {
+                                discard = Some(i);
+                            }
+                        });
+                    }
+                });
                 ui.strong(tr("Operation history"));
                 egui::ScrollArea::vertical()
                     .max_height((ctx.content_rect().height() - 330.0).clamp(100.0, 350.0))
@@ -3359,11 +3761,14 @@ impl Commander {
                                         ui.label(tr(&record.result));
                                         if ui
                                             .add_enabled(
-                                                !record.undone
-                                                    && !record.changes.is_empty()
+                                                (record.can_undo() || record.can_redo())
                                                     && self.job.is_none()
                                                     && self.queue.is_empty(),
-                                                egui::Button::new(tr("Undo")),
+                                                egui::Button::new(if record.is_undo {
+                                                    "Redo"
+                                                } else {
+                                                    "Undo"
+                                                }),
                                             )
                                             .clicked()
                                         {
@@ -3383,14 +3788,97 @@ impl Commander {
             if let Some(index) = remove
                 && let Some(operation) = self.queue.remove(index)
             {
+                self.queue.failed.push(operation.clone());
                 self.history
                     .push(crate::history::cancelled(operation.label()));
                 if let Err(error) = crate::history::save(&self.history) {
                     self.fail(error);
                 }
             }
+            if let Some(i) = discard
+                && i < self.queue.failed.len()
+            {
+                let op = self.queue.failed.remove(i);
+                if let Err(e) = crate::queue::discard_checkpoint(&op) {
+                    self.queue.failed.push(op);
+                    self.fail(e);
+                }
+            }
+            if let Some(i) = retry
+                && i < self.queue.failed.len()
+            {
+                let op = self.queue.failed.remove(i);
+                self.show_history = false;
+                match op {
+                    Operation::PackProtected {
+                        sources,
+                        destination,
+                        password,
+                    } if password.is_empty() => {
+                        self.archive_form = Some(crate::feature_ui::ArchiveForm {
+                            sources,
+                            destination: destination.display().to_string(),
+                            mode: 1,
+                            ..Default::default()
+                        })
+                    }
+                    Operation::ExtractProtected { archive, .. } => {
+                        self.archive_form = Some(crate::feature_ui::ArchiveForm {
+                            file: archive.display().to_string(),
+                            mode: 2,
+                            ..Default::default()
+                        })
+                    }
+                    Operation::SaveText { path, .. } => {
+                        if let Ok(entry) = filesystem::entry_from_path(&path) {
+                            self.tab_mut().navigate(
+                                Location::Local(path.parent().unwrap_or(Path::new("/")).to_owned()),
+                                ctx,
+                            );
+                            self.view(entry, true, ctx);
+                        }
+                    }
+                    Operation::RemoteSave {
+                        connection, path, ..
+                    } => {
+                        self.tab_mut().navigate(
+                            Location::Remote {
+                                connection: connection.clone(),
+                                path: path.parent().unwrap_or(Path::new("")).to_owned(),
+                            },
+                            ctx,
+                        );
+                        let entry = Entry {
+                            path: path.clone(),
+                            name: path
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .into_owned(),
+                            is_dir: false,
+                            is_symlink: false,
+                            size: 0,
+                            modified: None,
+                        };
+                        self.view(entry, true, ctx);
+                    }
+                    op => self.start_job(op, ctx),
+                }
+            }
+            if (remove.is_some() || retry.is_some() || discard.is_some())
+                && let Err(e) = self.queue.save()
+            {
+                self.fail(e);
+            }
             if let Some(record) = undo {
-                self.start_job(Operation::Undo(Box::new(record)), ctx);
+                self.start_job(
+                    if record.is_undo {
+                        Operation::Redo(Box::new(record))
+                    } else {
+                        Operation::Undo(Box::new(record))
+                    },
+                    ctx,
+                );
             }
             if close {
                 self.show_history = false;
@@ -3429,6 +3917,14 @@ impl eframe::App for Commander {
                     }
                 });
         }
+        let selected = self
+            .tab()
+            .cursor
+            .as_ref()
+            .and_then(|p| self.tab().entries.iter().find(|e| &e.path == p))
+            .cloned();
+        self.preview.select(self.tab().location.clone(), selected);
+        self.preview.show(ctx, &mut self.preferences.preview);
         self.sidebar(ctx);
         self.panes(ctx);
         self.dialogs(ctx);
@@ -3549,6 +4045,83 @@ mod ui_tests {
             std::fs::read_to_string(left.join("drop.txt")).unwrap(),
             "keep me"
         );
+    }
+
+    #[test]
+    fn shifted_shortcuts_reach_redo_and_search() {
+        let (_root, ctx, mut app, _, _) = fixture();
+        app.history.clear();
+        app.queue = Default::default();
+        let modifiers = egui::Modifiers {
+            command: true,
+            mac_cmd: cfg!(target_os = "macos"),
+            ctrl: !cfg!(target_os = "macos"),
+            shift: true,
+            ..Default::default()
+        };
+        for key in [Key::Z, Key::F] {
+            let _ = ctx.run(
+                egui::RawInput {
+                    modifiers,
+                    events: vec![egui::Event::Key {
+                        key,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers,
+                    }],
+                    ..Default::default()
+                },
+                |ctx| app.shortcuts(ctx),
+            );
+            if key == Key::Z {
+                assert_eq!(app.status, "No operation is available to redo.");
+            } else {
+                assert!(app.tools.active());
+                assert!(!app.tab().focus_filter);
+            }
+        }
+    }
+
+    #[test]
+    fn external_drops_open_remote_and_archive_confirmation() {
+        let (_root, ctx, mut app, left, _) = fixture();
+        let sources = vec![egui::DroppedFile {
+            path: Some(left.join("drop.txt")),
+            ..Default::default()
+        }];
+        for destination in [
+            Location::Remote {
+                connection: "fixture-profile".into(),
+                path: "target".into(),
+            },
+            Location::Archive {
+                file: left.join("archive.tar"),
+                prefix: "inside".into(),
+            },
+        ] {
+            app.panes[1].tab_mut().location = destination.clone();
+            app.panes[1].tab_mut().entries.clear();
+            frame(
+                &mut app,
+                &ctx,
+                vec![egui::Event::PointerMoved(egui::pos2(950.0, 400.0))],
+                sources.clone(),
+            );
+            match destination {
+                Location::Remote { .. } => assert!(matches!(
+                    app.prompt.take().unwrap().kind,
+                    PromptKind::RemoteTransfer { moving: false, .. }
+                )),
+                Location::Archive { .. } => {
+                    let form = app.archive_form.take().unwrap();
+                    assert_eq!(form.prefix, Path::new("inside"));
+                    assert!(form.additions.ends_with("drop.txt"));
+                }
+                _ => unreachable!(),
+            }
+        }
+        assert_eq!(std::fs::read(left.join("drop.txt")).unwrap(), b"keep me");
     }
 
     #[test]

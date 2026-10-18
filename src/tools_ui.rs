@@ -27,6 +27,7 @@ pub struct RenameForm {
     error: Option<String>,
 }
 pub struct SearchForm {
+    connection: Option<String>,
     options: SearchOptions,
     result: Option<SearchResult>,
     pending: Option<Receiver<Result<SearchResult, String>>>,
@@ -49,8 +50,14 @@ impl Tools {
             error: None,
         });
     }
-    pub fn search(&mut self, root: PathBuf, hidden: bool) {
+    pub fn search(&mut self, location: Location, hidden: bool) {
+        let (root, connection) = match location {
+            Location::Local(root) => (root, None),
+            Location::Remote { connection, path } => (path, Some(connection)),
+            _ => return,
+        };
         self.search = Some(SearchForm {
+            connection,
             options: SearchOptions {
                 root,
                 pattern: "*".into(),
@@ -171,12 +178,22 @@ impl Tools {
                                     )
                                     .clicked()
                                 {
-                                    effect =
-                                        Some(Effect::Navigate(Location::Local(if path.is_dir() {
-                                            path.clone()
+                                    let folder =
+                                        path.parent().unwrap_or(&form.options.root).to_owned();
+                                    effect = Some(Effect::Navigate(
+                                        if let Some(id) = &form.connection {
+                                            Location::Remote {
+                                                connection: id.clone(),
+                                                path: folder,
+                                            }
                                         } else {
-                                            path.parent().unwrap_or(&form.options.root).to_owned()
-                                        })));
+                                            Location::Local(if path.is_dir() {
+                                                path.clone()
+                                            } else {
+                                                folder
+                                            })
+                                        },
+                                    ));
                                     close = true;
                                 }
                             }
@@ -190,6 +207,7 @@ impl Tools {
             });
             if search {
                 let options = form.options.clone();
+                let connection = form.connection.clone();
                 form.cancel = Arc::new(AtomicBool::new(false));
                 let cancel = form.cancel.clone();
                 let (sender, receiver) = mpsc::channel();
@@ -199,7 +217,12 @@ impl Tools {
                 let ctx = ctx.clone();
                 std::thread::spawn(move || {
                     let mut task = Task::new(cancel, |_| {});
-                    let result = desktop::search(&options, &mut task).map_err(|e| format!("{e:#}"));
+                    let result = if let Some(id) = connection {
+                        crate::remote::search(&id, &options, &mut task)
+                    } else {
+                        desktop::search(&options, &mut task)
+                    }
+                    .map_err(|e| format!("{e:#}"));
                     let _ = sender.send(result);
                     ctx.request_repaint();
                 });
