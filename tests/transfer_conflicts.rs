@@ -86,6 +86,8 @@ fn skip_move_keeps_conflicting_source_and_moves_other_items() {
 #[test]
 fn replace_retains_originals_with_paths_in_reported_recovery_folder() {
     let (_root, source, destination) = fixture();
+    // Exercise an equivalent path spelling; transfers canonicalize destinations.
+    let destination = destination.join("..").join("destination");
     fs::write(source.join("a"), "new").unwrap();
     fs::write(destination.join("a"), "old").unwrap();
     let message = transfer::transfer(
@@ -96,8 +98,12 @@ fn replace_retains_originals_with_paths_in_reported_recovery_folder() {
         &mut Task::default(),
     )
     .unwrap();
-    let recovery = recovery(&destination);
-    assert!(message.contains(&recovery.display().to_string()));
+    let recovery = recovery(&destination).canonicalize().unwrap();
+    assert!(
+        message.contains(&recovery.display().to_string()),
+        "Recovery path {} missing from transfer result: {message}",
+        recovery.display()
+    );
     assert_eq!(fs::read_to_string(recovery.join("items/a")).unwrap(), "old");
     assert_eq!(fs::read_to_string(destination.join("a")).unwrap(), "new");
     assert!(!source.join("a").exists());
