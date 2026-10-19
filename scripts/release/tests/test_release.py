@@ -9,6 +9,7 @@ import tempfile
 import unittest
 import os
 import platform
+import re
 import shutil
 import subprocess
 from unittest.mock import patch
@@ -75,6 +76,23 @@ class FakeGitHub:
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_debian_package_ownership_ignores_diversion_notices(self):
+        import package
+        text = ('diversion by libc6 from: /lib64/ld-linux-x86-64.so.2\n'
+                'diversion by libc6 to: /lib64/ld-linux-x86-64.so.2.usr-is-merged\n'
+                'libc6:amd64: /lib64/ld-linux-x86-64.so.2\n')
+        self.assertEqual(package.debian_package_owners(text), {'libc6'})
+        self.assertEqual(package.debian_package_owners('liba, libb:amd64: /shared\n'), {'liba', 'libb'})
+        self.assertEqual(package.debian_package_owners('diversion by libc6 from: /loader\n'), set())
+
+    @unittest.skipUnless(platform.system() == 'Linux', 'ELF package ownership requires Linux')
+    def test_linux_runtime_dependencies_have_valid_package_names(self):
+        import package
+        dependencies = package.linux_dependencies(Path('/bin/ls'))
+        self.assertIn('libc6', dependencies)
+        for name in dependencies:
+            self.assertRegex(name, re.compile(r'^[a-z0-9][a-z0-9+.-]+$'))
+
     @unittest.skipUnless(platform.system() == 'Linux', 'Debian package tools require Linux')
     def test_debian_prerelease_normalization_preserves_payload_and_upgrade_order(self):
         import package

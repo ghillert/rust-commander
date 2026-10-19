@@ -155,6 +155,20 @@ def windows_runtime(stage):
     return sorted(stage.glob("*.dll"))
 
 
+def debian_package_owners(text):
+    # dpkg-query can print diversion notices before the actual ownership line,
+    # notably for Ubuntu's merged-/usr dynamic loader. Only accept package names.
+    owners = set()
+    for line in text.splitlines():
+        names, separator, _ = line.partition(": ")
+        if separator:
+            for name in names.split(", "):
+                match = re.fullmatch(r"([a-z0-9][a-z0-9+.-]+)(?::[a-z0-9-]+)?", name)
+                if match:
+                    owners.add(match[1])
+    return owners
+
+
 def linux_dependencies(binary):
     text = output("ldd", binary)
     if "not found" in text:
@@ -169,15 +183,16 @@ def linux_dependencies(binary):
         candidates = [str(path), str(path.resolve())]
         if str(path).startswith("/lib/"):
             candidates.append("/usr" + str(path))
-        owner = None
+        owners = set()
         for candidate in candidates:
             result = subprocess.run(["dpkg-query", "-S", candidate], capture_output=True, text=True)
             if result.returncode == 0:
-                owner = result.stdout.split(": ", 1)[0].split(":", 1)[0]
-                break
-        if not owner:
+                owners = debian_package_owners(result.stdout)
+                if owners:
+                    break
+        if not owners:
             raise ValueError(f"Cannot map shared library to a Debian package: {path}")
-        packages.add(owner)
+        packages.update(owners)
     # SFTP uses the system OpenSSH client; desktop integration uses xdg-open.
     packages.update(["openssh-client", "xdg-utils", "libglib2.0-bin", "gvfs-backends",
                      "libegl1", "libgl1", "libgtk-4-1",
