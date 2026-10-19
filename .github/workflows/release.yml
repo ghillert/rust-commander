@@ -91,7 +91,7 @@ jobs:
         run: |
           for format in appimage deb; do
             docker build --target "$format" -t "rust-commander-smoke-$format" -f scripts/release/linux-smoke.Dockerfile .
-            docker run --rm --network none "rust-commander-smoke-$format"
+            docker run --rm --init --network none "rust-commander-smoke-$format"
           done
       - name: Upload tested release packages
         uses: actions/upload-artifact@v7

@@ -25,7 +25,7 @@ pub struct Features {
     pub error: Option<String>,
 }
 pub enum Effect {
-    Run(Operation),
+    Run(Box<Operation>),
     SaveWorkspace(String),
     LoadWorkspace(usize),
     RenameWorkspace(usize, String),

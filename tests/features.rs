@@ -801,6 +801,13 @@ fn native_clipboard_copy_cut_and_external_change_round_trip() {
     files.copy(&paths, true).unwrap();
     assert_eq!(files.paste().unwrap(), (paths.clone(), true));
     let external = ClipboardContext::new().unwrap();
+    #[cfg(target_os = "linux")]
+    for format in [
+        "x-special/gnome-copied-files",
+        "x-special/nautilus-clipboard",
+    ] {
+        assert!(external.get_buffer(format).unwrap().starts_with(b"cut\n"));
+    }
     external
         .set_files(
             paths

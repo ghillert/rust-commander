@@ -222,21 +222,25 @@ impl Adapter {
                                         target: form.target.clone().into(),
                                     },
                                 };
-                                crate::feature_ui::ArchiveAction::Run(Operation::ArchiveEdit {
-                                    archive: form.file.clone().into(),
-                                    edit,
-                                })
+                                crate::feature_ui::ArchiveAction::Run(Box::new(
+                                    Operation::ArchiveEdit {
+                                        archive: form.file.clone().into(),
+                                        edit,
+                                    },
+                                ))
                             }
                             1 => {
                                 anyhow::ensure!(
                                     !form.sources.is_empty() && !form.password.is_empty(),
                                     "Select local files and enter a password."
                                 );
-                                crate::feature_ui::ArchiveAction::Run(Operation::PackProtected {
-                                    sources: form.sources.clone(),
-                                    destination: form.destination.clone().into(),
-                                    password: form.password.clone(),
-                                })
+                                crate::feature_ui::ArchiveAction::Run(Box::new(
+                                    Operation::PackProtected {
+                                        sources: form.sources.clone(),
+                                        destination: form.destination.clone().into(),
+                                        password: form.password.clone(),
+                                    },
+                                ))
                             }
                             _ => crate::feature_ui::ArchiveAction::Unlock(
                                 form.file.clone().into(),

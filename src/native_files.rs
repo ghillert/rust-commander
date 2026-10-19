@@ -66,7 +66,22 @@ impl NativeFiles {
             .collect::<Result<Vec<_>>>()?;
         let mut marker = vec![0u8; 32];
         rand::rngs::OsRng.fill_bytes(&mut marker);
+        #[cfg(not(target_os = "linux"))]
         let mut contents = vec![ClipboardContent::Files(values)];
+        // On X11, Files also inserts GNOME/Nautilus formats with a hard-coded
+        // "copy" operation. Publishing those alongside "cut" creates duplicate
+        // targets whose first value wins. Supply each Linux format exactly once.
+        #[cfg(target_os = "linux")]
+        let mut contents = vec![
+            ClipboardContent::Other("text/uri-list".into(), values.join("\r\n").into_bytes()),
+            ClipboardContent::Text(
+                paths
+                    .iter()
+                    .map(|path| path.to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+        ];
         contents.push(ClipboardContent::Other(FILE_MARKER.into(), marker.clone()));
         #[cfg(target_os = "windows")]
         contents.push(ClipboardContent::Other(
@@ -76,16 +91,13 @@ impl NativeFiles {
         #[cfg(target_os = "linux")]
         {
             let operation = if moving { "cut" } else { "copy" };
-            let uris = paths
-                .iter()
-                .filter_map(|path| url::Url::from_file_path(path).ok())
-                .map(|url| url.to_string())
-                .collect::<Vec<_>>()
-                .join("\n");
-            contents.push(ClipboardContent::Other(
-                "x-special/gnome-copied-files".into(),
-                format!("{operation}\n{uris}").into_bytes(),
-            ));
+            let data = format!("{operation}\n{}", values.join("\n")).into_bytes();
+            for format in [
+                "x-special/gnome-copied-files",
+                "x-special/nautilus-clipboard",
+            ] {
+                contents.push(ClipboardContent::Other(format.into(), data.clone()));
+            }
         }
         self.context()?
             .set(contents)

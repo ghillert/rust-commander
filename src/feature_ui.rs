@@ -19,7 +19,7 @@ pub struct ArchiveForm {
     pub error: Option<String>,
 }
 pub enum ArchiveAction {
-    Run(Operation),
+    Run(Box<Operation>),
     Unlock(PathBuf, String),
     Browse(PathBuf),
 }

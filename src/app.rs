@@ -2296,7 +2296,7 @@ impl Commander {
     fn apply_feature_effect(&mut self, effect: crate::next_ui::Effect, ctx: &UiSignal) {
         use crate::next_ui::Effect;
         match effect {
-            Effect::Run(op) => self.start_job(op, ctx),
+            Effect::Run(op) => self.start_job(*op, ctx),
             Effect::SaveHistory => {
                 if let Err(e) = crate::history::save(&self.history) {
                     self.fail(e);
@@ -2416,7 +2416,7 @@ impl Commander {
                     ctx,
                 );
             }
-            crate::feature_ui::ArchiveAction::Run(operation) => self.start_job(operation, ctx),
+            crate::feature_ui::ArchiveAction::Run(operation) => self.start_job(*operation, ctx),
             crate::feature_ui::ArchiveAction::Unlock(file, password) => {
                 let (sender, receiver) = mpsc::channel();
                 self.pending_archive = Some(receiver);
