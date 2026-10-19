@@ -1,4 +1,6 @@
 /target/
+/dist/
+/out/
 /.tools/
 /.runtime/
 *.DS_Store

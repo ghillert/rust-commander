@@ -20,7 +20,7 @@ env:
 jobs:
   format:
     name: Formatting
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out source
@@ -44,100 +44,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-15, windows-2022]
     steps:
       - name: Check out source
         uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential pkg-config libarchive-dev libdbus-1-dev libgtk-4-dev libfontconfig1-dev \
-            libx11-dev libxfixes-dev libxi-dev libxrandr-dev libxcursor-dev libxinerama-dev \
-            libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
-            xvfb xauth xclip dbus-x11
-
-      - name: Install macOS dependencies
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/checks
+      - uses: ./.github/actions/packaging-tools
         if: runner.os == 'macOS'
-        run: |
-          brew install libarchive pkg-config
-          echo "PKG_CONFIG_PATH=$(brew --prefix libarchive)/lib/pkgconfig" >> "$GITHUB_ENV"
-
-      - name: Install Windows dependencies
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # vcpkg does not retry every curl DNS/download failure itself.
-          for ($attempt = 1; $attempt -le 3; $attempt++) {
-            Write-Host "Installing Windows dependencies (attempt $attempt/3)"
-            & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libarchive:x64-windows-static-md
-            $installExitCode = $LASTEXITCODE
-            if ($installExitCode -eq 0) { break }
-            if ($attempt -lt 3) {
-              Write-Warning "vcpkg failed with exit code $installExitCode; retrying."
-              Start-Sleep -Seconds (10 * $attempt)
-            }
-          }
-          if ($installExitCode -ne 0) { exit $installExitCode }
-          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
-          "VCPKGRS_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.os }}
-
-      - name: Run Clippy
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
-
-      - name: Run tests
-        run: cargo test --locked --all-targets --all-features
-
-      - name: Test disposable real remote services
-        if: runner.os == 'Linux'
-        timeout-minutes: 20
-        run: python3 scripts/test-remote.py
-
-      - name: Test native Linux clipboard and drag source
-        if: runner.os == 'Linux'
-        run: |
-          xvfb-run -a dbus-run-session -- bash -e <<'NATIVE_TESTS'
-          printf '%s' 'Disposable Rust Commander CI clipboard' | xclip -selection clipboard
-          cargo test --locked --all-features --test features native_clipboard_copy_cut_and_external_change_round_trip -- --ignored --exact --test-threads=1
-          cargo test --locked --all-features --lib gtk_native_drag_source_exposes_file_list -- --ignored --test-threads=1
-          NATIVE_TESTS
-
-      - name: Smoke test both desktop renderers
-        if: runner.os == 'Linux'
-        env:
-          LIBGL_ALWAYS_SOFTWARE: '1'
-        run: |
-          cargo build --locked --features screenshot
-          xvfb-run -a dbus-run-session -- python3 scripts/desktop-smoke.py
-
-      - name: Test optimized transfer recovery
-        run: cargo test --release --locked --jobs 1 --test stabilization --test features_08
-
-      - name: Upload stabilization reports
-        if: always() && runner.os == 'Linux'
-        uses: actions/upload-artifact@v7
-        with:
-          name: stabilization-reports-${{ runner.os }}-${{ runner.arch }}
-          path: |
-            target/remote-service-logs/*.log
-            target/desktop-smoke/*.png
-            target/desktop-smoke/*.log
-          if-no-files-found: ignore
-          retention-days: 7
 
       - name: Build release executable
         run: cargo build --locked --release

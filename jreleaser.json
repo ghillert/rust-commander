@@ -1,0 +1,55 @@
+{
+  "project": {
+    "name": "rust-commander",
+    "description": "Rust Commander, a native dual-pane file manager",
+    "links": {
+      "homepage": "https://github.com/ghillert/rust-commander"
+    },
+    "license": "GPL-3.0-only",
+    "authors": [
+      "Gunnar Hillert"
+    ],
+    "stereotype": "DESKTOP"
+  },
+  "release": {
+    "github": {
+      "owner": "ghillert",
+      "name": "rust-commander",
+      "tagName": "v{{projectVersion}}",
+      "releaseName": "Rust Commander {{projectVersion}}",
+      "branch": "release/v{{projectVersion}}",
+      "draft": true,
+      "skipTag": true,
+      "overwrite": false,
+      "immutableRelease": false,
+      "update": {
+        "enabled": true,
+        "sections": [
+          "ASSETS"
+        ]
+      },
+      "milestone": {
+        "close": false
+      },
+      "issues": {
+        "enabled": false
+      },
+      "changelog": {
+        "formatted": "ALWAYS",
+        "content": "## Changelog\n\n{{changelogChanges}}\n{{changelogContributors}}\n\n## Downloads\n\nChoose the DMG for your Mac (Apple Silicon/ARM64 or Intel/x64), the Windows x64 installer or portable ZIP, or the Linux x64 AppImage/DEB. macOS 15+ and Ubuntu 24.04+ are the initial packaged-release baselines.\n\nMac applications are ad hoc signed and **not notarized**. Windows downloads are **not Authenticode signed**. See the [release and installation guide](https://github.com/ghillert/rust-commander/blob/v{{projectVersion}}/docs/RELEASING.md) for installation, first-launch approval, checksums, and known platform limitations.\n\nThe SHA-256 checksum file and release-manifest.json identify the complete asset set and source commit."
+      }
+    }
+  },
+  "checksum": {
+    "algorithms": [
+      "SHA-256"
+    ],
+    "individual": false
+  },
+  "signing": {
+    "active": "NEVER"
+  },
+  "announce": {
+    "active": "NEVER"
+  }
+}

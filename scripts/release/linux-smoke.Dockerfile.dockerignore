@@ -1,0 +1,9 @@
+# Send only runtime validation inputs, never the Cargo build cache.
+**
+!scripts/
+!scripts/release/
+!scripts/release/**
+!dist/
+!dist/release/
+!dist/release/**
+**/__pycache__/

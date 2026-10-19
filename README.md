@@ -12,7 +12,7 @@ The interface uses [Slint](https://slint.dev) and runs without a JVM or browser 
 Rust Commander is an independent project and is not affiliated with or endorsed
 by the Rust Project or Rust Foundation.
 
-> **Development preview — 0.7.0.** This is an independent implementation with
+> **Development preview.** This is an independent implementation with
 > full upstream compatibility still in progress. Apple Silicon macOS has been
 > validated interactively; Windows/Linux desktop integration still needs testing.
 > See the [parity checklist](parity/PARITY.md) and
@@ -20,6 +20,7 @@ by the Rust Project or Rust Foundation.
 
 ## Contents
 
+- [Downloads and releases](#downloads-and-releases)
 - [Features](#features)
 - [Getting started](#getting-started)
 - [Usage](#usage)
@@ -31,6 +32,19 @@ by the Rust Project or Rust Foundation.
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
+
+## Downloads and releases
+
+Versioned installers and portable downloads are published on the
+[GitHub Releases page](https://github.com/ghillert/rust-commander/releases).
+Each completed release contains separate Apple Silicon/Intel DMGs, a Windows
+installer and ZIP, a Linux AppImage and DEB, and SHA-256 checksums.
+
+**Maintainers:** follow [Releasing Rust Commander](docs/RELEASING.md) for the
+one-time setup, manual version input, draft review, publication, and retry
+procedure. The guide also covers installation and the initial unnotarized Mac
+and unsigned Windows packages. Draft releases are visible to maintainers until
+published.
 
 ## Features
 
@@ -173,12 +187,14 @@ include a toolchain or build output.
 ### Package the macOS app
 
 ```sh
+./scripts/cargo-local.sh install cargo-packager --version 0.11.8 --locked --root .tools/packager
 ./scripts/package-macos.sh
 open "target/release/Rust Commander.app"
 ```
 
-The bundle uses an ad hoc signature. Notarization and release installers are
-not configured.
+The bundle targets macOS 15+, includes required non-system libraries, and uses
+an ad hoc signature. DMG creation and the future notarization setup are described
+in the [release guide](docs/RELEASING.md).
 
 ## Usage
 
@@ -333,6 +349,9 @@ builds on Ubuntu, macOS, and Windows. Successful platform jobs upload build
 artifacts to the workflow run's summary page for **7 days**, including an ad hoc
 signed macOS app bundle. These are CI builds, not release installers; native
 runtime dependencies still apply. The badge above shows the `main` branch.
+The separate [Release workflow](.github/workflows/release.yml) uses the same
+checks, then packages four native targets and assembles a draft GitHub release
+with JReleaser. See [Releasing Rust Commander](docs/RELEASING.md).
 Local validation is recorded in [parity/VALIDATION.md](parity/VALIDATION.md).
 
 The macOS/Windows drag dependency is a small vendored subset of `drag` 2.1.1.

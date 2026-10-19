@@ -1,0 +1,58 @@
+name: Application checks
+description: Shared formatting, tests, Clippy, and platform integration checks
+runs:
+  using: composite
+  steps:
+    - name: Check release automation
+      shell: bash
+      run: python scripts/release/tests/test_release.py
+    - name: Check formatting
+      shell: bash
+      run: cargo fmt --all -- --check
+    - name: Run Clippy
+      shell: bash
+      run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+    - name: Run tests
+      shell: bash
+      run: cargo test --locked --all-targets --all-features
+
+    - name: Test disposable real remote services
+      if: runner.os == 'Linux'
+      shell: bash
+      run: python3 scripts/test-remote.py
+
+    - name: Test native Linux clipboard and drag source
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        xvfb-run -a dbus-run-session -- bash -e <<'NATIVE_TESTS'
+        printf '%s' 'Disposable Rust Commander CI clipboard' | xclip -selection clipboard
+        cargo test --locked --all-features --test features native_clipboard_copy_cut_and_external_change_round_trip -- --ignored --exact --test-threads=1
+        cargo test --locked --all-features --lib gtk_native_drag_source_exposes_file_list -- --ignored --test-threads=1
+        NATIVE_TESTS
+
+    - name: Smoke test both desktop renderers
+      if: runner.os == 'Linux'
+      env:
+        LIBGL_ALWAYS_SOFTWARE: '1'
+      shell: bash
+      run: |
+        cargo build --locked --features screenshot
+        xvfb-run -a dbus-run-session -- python3 scripts/desktop-smoke.py
+
+    - name: Test optimized transfer recovery
+      shell: bash
+      run: cargo test --release --locked --jobs 1 --test stabilization --test features_08
+
+    - name: Upload stabilization reports
+      if: always() && runner.os == 'Linux'
+      uses: actions/upload-artifact@v7
+      with:
+        name: stabilization-reports-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ github.run_attempt }}
+        path: |
+          target/remote-service-logs/*.log
+          target/desktop-smoke/*.png
+          target/desktop-smoke/*.log
+        if-no-files-found: ignore
+        retention-days: 7

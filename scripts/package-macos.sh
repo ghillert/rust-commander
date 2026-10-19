@@ -5,26 +5,16 @@ if [ "$(uname -s)" != Darwin ]; then
     echo "Run this script on macOS." >&2
     exit 1
 fi
-"$project_dir/scripts/cargo-local.sh" build --release --locked
-bundle_dir="$project_dir/target/release/Rust Commander.app"
-mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Resources"
-cp "$project_dir/target/release/rust-commander" "$bundle_dir/Contents/MacOS/rust-commander"
-cp "$project_dir/LICENSE" "$project_dir/NOTICE" "$bundle_dir/Contents/Resources/"
-cat > "$bundle_dir/Contents/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleName</key><string>Rust Commander</string>
-<key>CFBundleDisplayName</key><string>Rust Commander</string>
-<key>CFBundleIdentifier</key><string>io.github.ghillert.rust-commander</string>
-<key>CFBundleExecutable</key><string>rust-commander</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.7.0</string>
-<key>CFBundleVersion</key><string>7</string>
-<key>LSMinimumSystemVersion</key><string>11.0</string>
-<key>NSHighResolutionCapable</key><true/>
-<key>NSAppleEventsUsageDescription</key><string>Rust Commander uses Finder to open or empty the system Trash when you request these actions.</string>
-</dict></plist>
-PLIST
-codesign --force --deep --sign - "$bundle_dir"
-printf 'Created %s\n' "$bundle_dir"
+cd "$project_dir"
+export MACOSX_DEPLOYMENT_TARGET=15.0
+case "${RUSTFLAGS:-}" in
+    *headerpad_max_install_names*) ;;
+    *) export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-Wl,-headerpad_max_install_names" ;;
+esac
+./scripts/cargo-local.sh build --release --locked
+case "$(uname -m)" in
+    arm64) target=macos-arm64 ;;
+    x86_64) target=macos-x64 ;;
+    *) echo "Unsupported Mac architecture" >&2; exit 1 ;;
+esac
+python3 scripts/release/package.py --target "$target" --app-only

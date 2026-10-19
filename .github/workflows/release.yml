@@ -1,0 +1,156 @@
+name: Release
+run-name: Prepare Rust Commander ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without v (for example 0.8.0 or 0.8.0-rc.1)'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-commander-release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  RUST_BACKTRACE: '1'
+
+jobs:
+  prepare:
+    name: Prepare verified release commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.prepare.outputs.commit }}
+      version: ${{ steps.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Test release guards
+        run: python scripts/release/tests/test_release.py
+      - name: Create or resume release branch
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: python scripts/release/release.py prepare
+
+  build:
+    name: Package ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: macos-arm64
+          - os: macos-15-intel
+            target: macos-x64
+          - os: windows-2022
+            target: windows-x64
+          - os: ubuntu-24.04
+            target: linux-x64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/checks
+      - uses: ./.github/actions/packaging-tools
+      - name: Build release executable
+        run: cargo build --release --locked
+      - name: Create desktop packages
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        shell: bash
+        run: python scripts/release/package.py --target "$RELEASE_TARGET"
+      - name: Smoke-test installed macOS or Windows package
+        if: runner.os != 'Linux'
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        shell: bash
+        run: python scripts/release/smoke.py --target "$RELEASE_TARGET"
+      - name: Smoke-test Linux packages in a clean runtime container
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          for format in appimage deb; do
+            docker build --target "$format" -t "rust-commander-smoke-$format" -f scripts/release/linux-smoke.Dockerfile .
+            docker run --rm --network none "rust-commander-smoke-$format"
+          done
+      - name: Upload tested release packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Upload packaging diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: packaging-diagnostics-${{ matrix.target }}-${{ github.run_attempt }}
+          path: |
+            target/release-packaging/**/packager.json
+            target/release-packaging/**/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Assemble draft and version PR
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist/release
+          merge-multiple: true
+      - name: Install JReleaser
+        run: python scripts/release/install-jreleaser.py
+      - name: Create or resume draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JRELEASER_GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: python scripts/release/release.py publish
+      - name: Upload release diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-publishing-reports-${{ github.run_attempt }}
+          path: |
+            out/jreleaser/trace.log
+            out/jreleaser/output.properties
+            target/release-publish/jreleaser.json
+          if-no-files-found: ignore
+          retention-days: 14

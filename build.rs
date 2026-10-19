@@ -1,6 +1,21 @@
 fn main() {
     println!("cargo:rerun-if-env-changed=SLINT_STYLE");
     let target = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target == "windows" {
+        println!("cargo:rerun-if-changed=assets/icons/rust-commander.ico");
+        let mut resource = winresource::WindowsResource::new();
+        resource
+            .set_icon("assets/icons/rust-commander.ico")
+            .set("ProductName", "Rust Commander")
+            .set("FileDescription", "Rust Commander dual-pane file manager")
+            .set("OriginalFilename", "rust-commander.exe")
+            .set("CompanyName", "Gunnar Hillert")
+            .set("FileVersion", env!("CARGO_PKG_VERSION"))
+            .set("ProductVersion", env!("CARGO_PKG_VERSION"));
+        resource
+            .compile()
+            .expect("compile Windows application resources");
+    }
     let style = std::env::var("SLINT_STYLE").unwrap_or_else(|_| {
         match target.as_str() {
             "macos" => "cupertino",
