@@ -150,14 +150,27 @@ impl Share {
         })
     }
     pub fn reader(&self, path: &Path) -> Result<Box<dyn Read>> {
+        self.reader_at(path, 0)
+    }
+    pub fn reader_at(&self, path: &Path, offset: u64) -> Result<Box<dyn Read>> {
         let reader = self.run(async {
             let (mut c, t) = self.connect().await?;
             Ok(c.open_file_reader(&t, &self.path(path)?).await?)
         })?;
         Ok(Box::new(Reader {
             reader: Some(reader),
-            offset: 0,
+            offset,
         }))
+    }
+    /// The pinned SMB client sets ReplaceIfExists=false for this rename.
+    pub fn publish_checkpoint(&self, stage: &Path, target: &Path) -> Result<()> {
+        self.run(async {
+            let (mut client, tree) = self.connect().await?;
+            client
+                .rename(&tree, &self.path(stage)?, &self.path(target)?)
+                .await?;
+            Ok(())
+        })
     }
     pub fn write(
         &self,

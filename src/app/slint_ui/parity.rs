@@ -44,7 +44,7 @@ pub(super) struct State {
     query: [String; 2],
     deadline: [Option<std::time::Instant>; 2],
     last_location: [String; 2],
-    focus_index: usize,
+    pub(super) focus_index: usize,
     page_rows: [usize; 2],
     focus_request: Option<usize>,
     context_request: bool,

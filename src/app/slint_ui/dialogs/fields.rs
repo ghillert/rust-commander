@@ -11,6 +11,9 @@ fn checked(value: &str) -> bool {
 
 impl Adapter {
     pub(in super::super) fn edit_field(&mut self, id: &str, value: &str) {
+        if self.enhancements_edit(id, value) {
+            return;
+        }
         if self.parity_edit(id, value) {
             return;
         }
@@ -20,6 +23,7 @@ impl Adapter {
                     if let Some(prompt) = &mut self.app.prompt {
                         match id {
                             "prompt" => prompt.value = value.into(),
+                            "resumable" => prompt.resumable = checked(value),
                             "policy" => prompt.transfer_options.conflicts = parse_policy(value),
                             "merge" => prompt.transfer_options.merge_folders = checked(value),
                             _ => {
@@ -350,7 +354,16 @@ impl Adapter {
                 "workspaces" if id == "workspace-name" => {
                     self.app.features.workspace_name = value.into()
                 }
-                "open-with" if id == "application" => {
+                "open-with" if id == "application-filter" => {
+                    self.app.features.application_filter = value.into()
+                }
+                "open-with" if id == "application-pattern" => {
+                    self.app.features.application_pattern = value.into()
+                }
+                "open-with" if id == "remember-application" => {
+                    self.app.features.remember_application = checked(value)
+                }
+                "open-with" if id == "application" || id == "installed-application" => {
                     if let Some((_, application)) = &mut self.app.features.open_with {
                         *application = value.into();
                     }

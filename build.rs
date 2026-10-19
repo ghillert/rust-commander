@@ -13,6 +13,9 @@ fn main() {
         "ui/commander.slint",
         slint_build::CompilerConfiguration::new()
             .with_style(style)
+            // Debug tests inspect the actual accessibility tree; release resources
+            // remain compact and do not carry element debug metadata.
+            .with_debug_info(std::env::var("PROFILE").is_ok_and(|p| p == "debug"))
             .embed_resources(slint_build::EmbedResourcesKind::EmbedFiles),
     )
     .expect("compile Rust Commander Slint interface");

@@ -314,20 +314,44 @@ pub fn transfer_resolved(
     };
     let result: Result<String> = (|| {
         let mut completed = Vec::new();
+        let mut renamed = BTreeSet::new();
         for plan in &plans {
+            // Preserve the inode, links and native metadata when rename is possible.
+            // The journal still captures both paths before either is changed.
+            if moving && matches!(plan.action, Action::Copy) {
+                task.capture(&plan.source)?;
+                task.capture(&plan.target)?;
+                match rename_exclusive(&plan.source, &plan.target) {
+                    Ok(()) => {
+                        task.tick(&plan.target, 0)?;
+                        if operations::exists(&plan.source) {
+                            task.undo_blocked = true;
+                            bail!(
+                                "The source path was recreated during the move. The moved item and new source were kept."
+                            );
+                        }
+                        task.progress.files += 1;
+                        renamed.insert(plan.source.clone());
+                        completed.push(true);
+                        continue;
+                    }
+                    Err(error) if cross_device(&error) => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
             completed.push(execution.copy(plan, task)?);
         }
         task.check()?;
         if moving {
             for (source, stamp) in sources.iter().zip(&before) {
-                if operations::source_stamp(source, task)? != *stamp {
+                if !renamed.contains(source) && operations::source_stamp(source, task)? != *stamp {
                     bail!(
                         "A source changed during the move. All originals and completed copies were kept."
                     );
                 }
             }
             for (source, complete) in sources.iter().zip(&completed) {
-                if *complete {
+                if *complete && !renamed.contains(source) {
                     task.check()?;
                     task.capture(source)?;
                     operations::remove(source)
@@ -430,4 +454,15 @@ pub fn conflicts(sources: &[PathBuf], destination: &Path, merge: bool) -> Result
         )?;
     }
     Ok(result)
+}
+
+fn cross_device(error: &std::io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        error.raw_os_error() == Some(libc::EXDEV)
+    }
+    #[cfg(windows)]
+    {
+        error.raw_os_error() == Some(17)
+    }
 }

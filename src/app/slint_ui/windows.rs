@@ -30,7 +30,12 @@ impl Runtime {
     }
     fn load_globals(&self, app: &mut Commander) {
         app.settings_valid &= self.settings_valid;
+        app.saved_windows = self.settings.window_sessions.clone();
+        let layout = app.preferences.layout.clone();
+        let single_pane = app.preferences.single_pane;
         app.preferences = self.settings.preferences.clone();
+        app.preferences.layout = layout;
+        app.preferences.single_pane = single_pane;
         app.bookmarks = self.settings.bookmarks.clone();
         app.connections = self.settings.connections.clone();
         app.workspaces = self.settings.workspaces.clone();
@@ -79,6 +84,10 @@ pub(super) fn entries() -> Vec<(usize, String)> {
     })
 }
 pub(super) fn open(paths: &[PathBuf], loaded: Result<Settings>) -> Result<CommanderWindow> {
+    anyhow::ensure!(
+        SESSIONS.with(|s| s.borrow().len()) < 16,
+        "At most sixteen windows can be open"
+    );
     let ui = CommanderWindow::new()?;
     let mut adapter = Adapter::new(paths, loaded);
     let id = NEXT_ID.with(|next| {
@@ -128,6 +137,107 @@ pub(super) fn open(paths: &[PathBuf], loaded: Result<Settings>) -> Result<Comman
         })
     });
     Ok(ui)
+}
+pub(super) fn restore(paths: &[PathBuf], loaded: Result<Settings>) -> Result<CommanderWindow> {
+    let saved = loaded
+        .as_ref()
+        .ok()
+        .filter(|_| paths.is_empty())
+        .map(|s| s.window_sessions.clone())
+        .unwrap_or_default();
+    if saved.is_empty() {
+        return open(paths, loaded);
+    }
+    let settings = loaded?;
+    anyhow::ensure!(
+        saved.len() <= 16,
+        "The saved session exceeds sixteen windows; settings have been preserved"
+    );
+    let mut first = None;
+    for session in saved.iter().take(16) {
+        let ui = open(&[], Ok(session.settings(&settings)))?;
+        if session.width.is_finite() && session.height.is_finite() {
+            ui.window().set_size(slint::LogicalSize::new(
+                session.width.clamp(900.0, 2400.0),
+                session.height.clamp(600.0, 1600.0),
+            ));
+        }
+        if let Some(position) = session.position {
+            use slint::winit_030::WinitWindowAccessor;
+            let visible = ui
+                .window()
+                .with_winit_window(|w| {
+                    w.available_monitors().any(|monitor| {
+                        let p = monitor.position();
+                        let size = monitor.size();
+                        position[0] >= p.x
+                            && position[1] >= p.y
+                            && position[0] < (p.x + size.width as i32 - 100)
+                            && position[1] < (p.y + size.height as i32 - 40)
+                    })
+                })
+                .unwrap_or(false);
+            if visible {
+                ui.window()
+                    .set_position(slint::PhysicalPosition::new(position[0], position[1]));
+            }
+        }
+        if first.is_none() {
+            first = Some(ui);
+        }
+    }
+    Ok(first.unwrap())
+}
+fn persist_sessions() {
+    let sessions = SESSIONS.with(|s| {
+        s.borrow()
+            .iter()
+            .map(|s| (s.ui.clone_strong(), s.state.clone()))
+            .collect::<Vec<_>>()
+    });
+    if sessions.is_empty() {
+        return;
+    }
+    let all_exiting = sessions.iter().all(|(_, s)| s.borrow().app.exiting);
+    let windows = sessions
+        .iter()
+        .filter(|(_, s)| all_exiting || !s.borrow().app.exiting)
+        .map(|(ui, state)| {
+            let app = &state.borrow().app;
+            let settings = app.snapshot_settings();
+            let size = ui.window().size();
+            let scale = ui.window().scale_factor();
+            crate::settings::WindowSession {
+                workspace: crate::workspaces::Workspace {
+                    name: String::new(),
+                    tabs: settings.tabs,
+                    tab_states: settings.tab_states,
+                    active_tabs: settings.active_tabs,
+                    active_pane: settings.active_pane,
+                    preferences: settings.preferences,
+                },
+                position: Some([ui.window().position().x, ui.window().position().y]),
+                width: size.width as f32 / scale,
+                height: size.height as f32 / scale,
+            }
+        })
+        .collect::<Vec<_>>();
+    for (_, state) in &sessions {
+        state.borrow_mut().app.saved_windows = windows.clone();
+    }
+    RUNTIME.with(|r| {
+        if let Some(r) = r.borrow_mut().as_mut() {
+            let changed = serde_json::to_vec(&r.settings.window_sessions).ok()
+                != serde_json::to_vec(&windows).ok();
+            r.settings.window_sessions = windows;
+            if changed
+                && r.settings_valid
+                && let Err(e) = settings::save(&r.settings)
+            {
+                eprintln!("Could not save window session: {e:#}");
+            }
+        }
+    });
 }
 fn raise(id: usize) {
     use slint::winit_030::WinitWindowAccessor;
@@ -198,9 +308,10 @@ pub(super) fn tick() {
             Request::Raise(id) => raise(id),
             Request::Quit => {
                 let job = RUNTIME.with(|r| r.borrow().as_ref().is_some_and(|r| r.job.is_some()));
-                let dirty = sessions
-                    .iter()
-                    .any(|(_, _, s)| s.borrow().app.editor.as_ref().is_some_and(Editor::dirty));
+                let dirty = sessions.iter().any(|(_, _, s)| {
+                    s.borrow().app.editor.as_ref().is_some_and(Editor::dirty)
+                        || s.borrow().enhancements.external.is_some()
+                });
                 if job || dirty {
                     if let Some((_, ui, state)) = sessions.iter().find(|(id, _, _)| *id == source) {
                         with_state(state, |a| {
@@ -230,6 +341,7 @@ pub(super) fn tick() {
             }
         }
     }
+    persist_sessions();
     let mut closed = Vec::new();
     for (id, ui, state) in sessions {
         let done = with_state(&state, |a| {
@@ -353,5 +465,62 @@ mod tests {
             assert!(!a.app.exiting);
         });
         assert!(!cancel.load(Ordering::Relaxed));
+    }
+    #[test]
+    fn all_windows_restore_independent_locations_panes_and_layouts() {
+        i_slint_backend_testing::init_no_event_loop();
+        let _reset = Reset;
+        let root = tempfile::tempdir().unwrap();
+        let mut settings = Settings::default();
+        for (index, ratio) in [0.3, 0.7].into_iter().enumerate() {
+            let path = root.path().join(format!("window-{index}"));
+            std::fs::create_dir(&path).unwrap();
+            let mut preferences = settings.preferences.clone();
+            preferences.layout.ratio = ratio;
+            settings
+                .window_sessions
+                .push(crate::settings::WindowSession {
+                    workspace: crate::workspaces::Workspace {
+                        name: String::new(),
+                        tabs: [
+                            vec![Location::Local(path.clone())],
+                            vec![Location::Local(path)],
+                        ],
+                        tab_states: Default::default(),
+                        active_tabs: [0, 0],
+                        active_pane: index,
+                        preferences,
+                    },
+                    width: 1200.0,
+                    height: 800.0,
+                    position: None,
+                });
+        }
+        restore(&[], Ok(settings)).unwrap();
+        RUNTIME.with(|r| r.borrow_mut().as_mut().unwrap().settings_valid = false);
+        let states = SESSIONS.with(|s| {
+            s.borrow()
+                .iter()
+                .map(|s| s.state.clone())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(states.len(), 2);
+        with_state(&states[0], |a| {
+            assert_eq!(a.app.active, 0);
+            assert_eq!(a.app.preferences.layout.ratio, 0.3);
+            a.app.settings_valid = false;
+        });
+        with_state(&states[1], |a| {
+            assert_eq!(a.app.active, 1);
+            assert_eq!(a.app.preferences.layout.ratio, 0.7);
+            a.app.settings_valid = false;
+        });
+        persist_sessions();
+        RUNTIME.with(|r| {
+            assert_eq!(
+                r.borrow().as_ref().unwrap().settings.window_sessions.len(),
+                2
+            )
+        });
     }
 }

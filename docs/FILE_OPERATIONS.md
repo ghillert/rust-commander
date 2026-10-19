@@ -17,8 +17,9 @@ Special files such as FIFOs are unsupported. Local output files use temporary
 files and a commit that refuses existing targets. Permissions and modification
 times are preserved for local file copies.
 
-Move and single rename currently use copy-then-remove. Originals are removed
-only after copying and metadata checks complete. Batch rename uses native
+Moves to unused targets and single renames use exclusive native rename where possible.
+Cross-device moves fall back to copy-then-remove with source checks. Undo still
+prepares recovery snapshots; see the [next feature guide](FEATURES_NEXT.md). Batch rename uses native
 exclusive renames through a staging folder and supports cycles. A rollback
 collision preserves staging files and reports their recovery location.
 
@@ -59,7 +60,7 @@ NRG, CPIO, and RPM still need dedicated format fixtures. Format-edge-case
 coverage is incomplete; see the [validation record](../parity/VALIDATION.md).
 
 Double-click a supported archive to browse it, then use **F5** to extract selected
-entries into a new folder. Archive tools edits local ZIP/TAR/7z containers (Add/Remove/Rename),
+entries into a new or existing folder, with normal conflict choices and optional merging. Archive tools edits local ZIP/TAR/7z containers (Add/Remove/Rename),
 creates AES-encrypted ZIP/7z archives, and unlocks existing encrypted archives.
 Nested and remote archives are materialized into a bounded temporary cache and
 remain read-only. ZIP mutation preserves unchanged compressed entries and checks
@@ -67,9 +68,9 @@ the original before replacement. Encrypted ZIP edits repack with encryption afte
 unlocking; new files are encrypted too. TAR/7z edits use guarded extraction/repacking.
 See the [feature guide](FEATURES_0.5.md) for limits and local Undo behavior.
 
-Extraction requires a new folder and rejects absolute paths, parent traversal,
-Windows drive/backslash paths, links, and special files. It never merges into
-an existing folder. Limits are **100,000 entries** and **10 GiB of declared
+Extraction stages into a new private folder before merging into an existing destination.
+It rejects absolute paths, parent traversal,
+Windows drive/backslash paths, links, and special files. Existing-folder merges use the local transfer/recovery planner. Limits are **100,000 entries** and **10 GiB of declared
 uncompressed data**. Failed extraction removes its new output folder.
 
 Archive creation rejects symlinks and outputs inside a selected source directory.
@@ -82,8 +83,8 @@ Stream formats accept one regular file.
 | Text viewer/editor | UTF-8, UTF-16 LE/BE, Windows-1252 and ISO-8859-1, up to 2 MiB |
 | Large local text viewer | Read-only 256 KiB pages, with selectable encoding |
 | Image viewer | Input up to 32 MiB; image dimensions are bounded |
-| PDF viewer | Input up to 32 MiB; page navigation and bounded output resolution |
-| Hex viewer | Displays at most the first 512 KiB |
+| PDF viewer | Input up to 32 MiB; password unlock, page navigation, rotation, fit-width and bounded page cache |
+| Hex viewer | Initially the first 512 KiB; local byte jumps/search display bounded 64 KiB windows |
 | Checksums | SHA-256, SHA-512, SHA-1, and MD5 |
 
 Text saves preserve encoding, BOM and CRLF line endings, atomically replace the
@@ -92,8 +93,9 @@ unrepresentable legacy characters are rejected. Invalid UTF-8 opens as hex and
 can be decoded explicitly. Large local files use bounded read-only pages;
 remote/archive text editing remains limited to 2 MiB.
 
-Text saves atomically replace the file and refuse changed contents. Symlinks,
-and archive entries are view-only. Remote encoded text entries support guarded saves
+Text saves atomically replace the file and refuse changed contents. Symlinks
+and archive entries are view-only in the built-in editor; reviewed external-editor
+save-back supports writable local archive entries. Remote encoded text entries support guarded saves
 with server-side recovery copies; services without conditional writes cannot
 exclude simultaneous external writes atomically. Local saves are journaled for Undo/Redo. Use **Open externally** for
 other formats. Additional text encodings, image animation, and full PDF compatibility

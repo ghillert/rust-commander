@@ -6,8 +6,10 @@ use std::{cell::RefCell, rc::Rc};
 
 slint::include_modules!();
 mod dialogs;
+mod enhancements;
 mod keys;
 mod parity;
+pub(in crate::app) mod viewer_tools;
 mod windows;
 
 #[derive(Clone, PartialEq)]
@@ -24,6 +26,7 @@ struct RowData {
 
 pub(super) struct Adapter {
     app: Commander,
+    enhancements: enhancements::State,
     extra: parity::State,
     ctx: UiSignal,
     rows: [Rc<VecModel<FileRow>>; 2],
@@ -114,6 +117,7 @@ impl Adapter {
         let app = Commander::with_settings(&ctx, paths, loaded);
         Self {
             app,
+            enhancements: Default::default(),
             extra: Default::default(),
             ctx,
             rows: std::array::from_fn(|_| Rc::new(VecModel::default())),
@@ -150,7 +154,8 @@ impl Adapter {
     }
 
     fn blocked(&self) -> bool {
-        self.extra.dialog.is_some()
+        self.enhancements_modal()
+            || self.extra.dialog.is_some()
             || self.app.features.active()
             || self.app.prompt.is_some()
             || self.app.editor.is_some()
@@ -279,6 +284,9 @@ impl Adapter {
         if let Some(side) = side.filter(|&side| side < 2) {
             self.app.active = side;
         }
+        if self.enhancements_action(name) {
+            return;
+        }
         if self.parity_action(name) {
             return;
         }
@@ -337,6 +345,7 @@ impl Adapter {
             .as_ref()
             .is_some_and(|job| job.owner == self.app.window_id)
             || self.app.editor.as_ref().is_some_and(Editor::dirty)
+            || self.enhancements.external.is_some()
         {
             self.app.confirm_exit = true;
         } else {
@@ -387,6 +396,8 @@ impl Adapter {
             }
         }
         self.app.poll(&self.ctx);
+        self.enhancements_tick();
+        self.viewer_tools_tick();
         self.parity_tick();
         self.app.poll_prompt(&self.ctx);
         self.poll_dialogs();
@@ -419,6 +430,7 @@ impl Adapter {
     }
 
     fn sync(&mut self, ui: &CommanderWindow) {
+        self.sync_tree(ui);
         let was_modal = !ui.get_dialog_title().is_empty() || ui.get_viewer_visible();
         use slint::winit_030::WinitWindowAccessor;
         if self.window_scheme != Some(self.app.preferences.color_scheme) {
@@ -894,9 +906,17 @@ impl Adapter {
     }
 
     fn sync_viewer(&mut self, ui: &CommanderWindow) {
+        let opening = self.app.editor.is_some() && !ui.get_viewer_visible();
         ui.set_viewer_visible(self.app.editor.is_some());
         if let Some(editor) = &self.app.editor {
             ui.set_viewer_title(format!("{} · {}", editor.title, editor.kind).into());
+            ui.set_viewer_pdf_document(editor.pdf.is_some());
+            ui.set_viewer_locked(editor.pdf.as_ref().is_some_and(|p| p.locked));
+            ui.set_viewer_busy(
+                self.app.pending_pdf.is_some() || editor.navigation.pending.is_some(),
+            );
+            ui.set_viewer_notice(editor.navigation.notice.as_str().into());
+            ui.set_viewer_fit_width(editor.navigation.fit_width);
             ui.set_viewer_text(editor.text.as_str().into());
             ui.set_viewer_editable(editor.editable);
             ui.set_viewer_dirty(editor.dirty());
@@ -960,7 +980,7 @@ impl Adapter {
                     .into(),
             );
             let stamp = (
-                editor.title.clone(),
+                format!("{}:{}", editor.title, editor.image_revision),
                 editor.pdf.as_ref().map(|pdf| pdf.page).unwrap_or(0),
             );
             if self.viewer_stamp.as_ref() != Some(&stamp) {
@@ -970,6 +990,17 @@ impl Adapter {
             }
         } else {
             self.viewer_stamp = None;
+        }
+        if let Some(selection) = self
+            .app
+            .editor
+            .as_mut()
+            .and_then(|e| e.navigation.selection.take())
+        {
+            ui.invoke_select_viewer(selection.0, selection.1);
+        }
+        if opening {
+            ui.invoke_focus_viewer();
         }
         ui.set_preview_visible(self.app.preferences.preview);
         if self.app.preferences.preview {
@@ -1146,7 +1177,7 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
     slint::BackendSelector::new()
         .backend_name("winit".into())
         .select()?;
-    let smoke_ui = windows::open(paths, settings::load())?;
+    let smoke_ui = windows::restore(paths, settings::load())?;
     #[cfg(not(feature = "screenshot"))]
     let _ = &smoke_ui;
     let timer = slint::Timer::default();
@@ -1166,9 +1197,19 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                 if let Some(ui) = action_ui.upgrade() {
                     if let Some(title) = action.strip_prefix("Menu:") {
                         ui.invoke_show_menu(title.into());
+                    } else if let Some(file) = action.strip_prefix("Open:") {
+                        ui.invoke_opened(0, path_id(Path::new(file)).into());
                     } else {
                         ui.invoke_action(action.into());
                     }
+                }
+            });
+        }
+        if let Ok(action) = std::env::var("RUST_COMMANDER_SCREENSHOT_VIEWER_ACTION") {
+            let viewer_ui = smoke_ui.as_weak();
+            slint::Timer::single_shot(Duration::from_millis(1250), move || {
+                if let Some(ui) = viewer_ui.upgrade() {
+                    ui.invoke_viewer_action(action.into());
                 }
             });
         }
@@ -1177,6 +1218,18 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
             Duration::from_secs(2),
             move || {
                 if let Some(ui) = weak.upgrade() {
+                    if ui.get_tree_visible() {
+                        let rows = ui.get_tree_rows();
+                        let selected = rows
+                            .iter()
+                            .find(|r| r.selected)
+                            .map(|r| (r.index, r.title.to_string()));
+                        eprintln!(
+                            "Tree snapshot: {} rows, selected {selected:?}, scroll {}",
+                            rows.row_count(),
+                            ui.get_tree_scroll_position()
+                        );
+                    }
                     let result = ui
                         .window()
                         .take_snapshot()
@@ -1249,7 +1302,16 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
         }};
     }
     callback!(on_action, |a, w, id| {
+        if matches!(id.as_str(), "FocusNext" | "FocusPrevious") && w.get_focused_control() >= 0 {
+            a.extra.focus_index = w.get_focused_control() as usize;
+        }
         a.action(&id);
+    });
+    callback!(on_tree_key, |a, w, index, event| {
+        a.tree_key(index, event)
+    });
+    callback!(on_tree_action, |a, w, index, toggle| {
+        a.tree_action(index, toggle);
     });
     callback!(on_place, |a, w, id| {
         if !a.blocked() {

@@ -87,6 +87,10 @@ impl Adapter {
             self.parity_dialog_action("accept");
             return true;
         }
+        if self.app.editor.is_some() && event.modifiers.control && text.eq_ignore_ascii_case("f") {
+            ui.invoke_focus_viewer_search();
+            return true;
+        }
         if self.blocked() {
             if key_is(text, slint::platform::Key::Escape) {
                 if self.app.editor.is_some() && !self.app.confirm_exit {
@@ -123,6 +127,16 @@ impl Adapter {
             return false;
         }
         if let Some(action) = configured_action(&self.app.preferences, &event) {
+            // Tab switches file panes only when the file list owns focus.
+            // Text fields and buttons retain normal forward/backward traversal.
+            if action == "SwitchPane" && key_is(text, slint::platform::Key::Tab) {
+                return false;
+            }
+            if matches!(action.as_str(), "FocusNext" | "FocusPrevious")
+                && ui.get_focused_control() >= 0
+            {
+                self.extra.focus_index = ui.get_focused_control() as usize;
+            }
             self.action(&action);
             return true;
         }
@@ -139,6 +153,20 @@ impl Adapter {
             return self.global_key(ui, event);
         }
         self.app.active = side as usize;
+        if key_is(event.text.as_str(), slint::platform::Key::Tab)
+            && !event.modifiers.control
+            && !event.modifiers.alt
+            && !event.modifiers.meta
+            && self
+                .app
+                .preferences
+                .shortcuts
+                .get("SwitchPane")
+                .is_some_and(|value| value == "Tab")
+        {
+            self.action("SwitchPane");
+            return true;
+        }
         if self.quick_find_consumes(side as usize, &event) && self.parity_key(side as usize, &event)
         {
             return true;
@@ -153,6 +181,10 @@ impl Adapter {
         let Some(mut editor) = self.app.editor.take() else {
             return;
         };
+        if self.viewer_tool_action(&mut editor, action) {
+            self.app.editor = Some(editor);
+            return;
+        }
         if action.starts_with("encoding:") || action.starts_with("save-encoding:") {
             let (kind, value) = action.split_once(':').unwrap();
             let result = (|| -> anyhow::Result<()> {
@@ -255,24 +287,11 @@ impl Adapter {
             "next" | "previous" => {
                 if let Some(pdf) = &editor.pdf {
                     let page = if action == "next" {
-                        pdf.page.saturating_add(1).min(pdf.pages.saturating_sub(1))
+                        (pdf.page + 1).min(pdf.pages.saturating_sub(1))
                     } else {
                         pdf.page.saturating_sub(1)
                     };
-                    if page != pdf.page && self.app.pending_pdf.is_none() {
-                        let bytes = pdf.bytes.clone();
-                        let title = editor.title.clone();
-                        let ctx = self.ctx.clone();
-                        let (sender, receiver) = mpsc::channel();
-                        self.app.pending_pdf = Some(receiver);
-                        std::thread::spawn(move || {
-                            let result = crate::viewer::render_pdf(&bytes, page)
-                                .map(|(image, _)| (title, page, image))
-                                .map_err(|error| error.to_string());
-                            let _ = sender.send(result);
-                            ctx.request_repaint();
-                        });
-                    }
+                    self.render_pdf_page(&mut editor, page, None, None);
                 }
             }
             _ => {}

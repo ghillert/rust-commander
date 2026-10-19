@@ -37,6 +37,9 @@ use std::{
 };
 
 pub enum Content {
+    LockedPdf {
+        bytes: std::sync::Arc<Vec<u8>>,
+    },
     Pdf {
         bytes: std::sync::Arc<Vec<u8>>,
         image: crate::viewer::RasterImage,
@@ -97,6 +100,14 @@ pub fn load(location: &Location, path: &Path) -> Result<Content> {
     };
     let bytes = read(location, path, limit)?;
     if extension == "pdf" {
+        if matches!(
+            hayro::hayro_syntax::Pdf::new(bytes.clone()),
+            Err(hayro::hayro_syntax::LoadPdfError::Decryption(_))
+        ) {
+            return Ok(Content::LockedPdf {
+                bytes: std::sync::Arc::new(bytes),
+            });
+        }
         let (image, pages) = render_pdf(&bytes, 0)?;
         return Ok(Content::Pdf {
             bytes: std::sync::Arc::new(bytes),
@@ -140,7 +151,14 @@ pub fn load(location: &Location, path: &Path) -> Result<Content> {
 }
 
 pub fn render_pdf(bytes: &[u8], index: usize) -> Result<(crate::viewer::RasterImage, usize)> {
-    let pdf = hayro::hayro_syntax::Pdf::new(bytes.to_vec())
+    render_pdf_password(bytes, index, "")
+}
+pub fn render_pdf_password(
+    bytes: &[u8],
+    index: usize,
+    password: &str,
+) -> Result<(RasterImage, usize)> {
+    let pdf = hayro::hayro_syntax::Pdf::new_with_password(bytes.to_vec(), password)
         .map_err(|e| anyhow::anyhow!("Cannot read PDF: {e:?}"))?;
     let page = pdf.pages().get(index).context("PDF page does not exist")?;
     let (width, height) = page.render_dimensions();
@@ -205,4 +223,68 @@ pub fn hex_dump(bytes: &[u8]) -> String {
         output.push('\n');
     }
     output
+}
+
+/// Small LRU of unrotated page images. Passwords and images remain in memory only.
+#[derive(Default)]
+pub struct PdfCache {
+    password: String,
+    pages: std::collections::VecDeque<(usize, RasterImage, usize)>,
+}
+impl PdfCache {
+    pub fn render(
+        &mut self,
+        bytes: &[u8],
+        page: usize,
+        password: &str,
+    ) -> Result<(RasterImage, usize)> {
+        if self.password != password {
+            self.pages.clear();
+            self.password = password.into();
+        }
+        if let Some(index) = self.pages.iter().position(|(p, _, _)| *p == page) {
+            let hit = self.pages.remove(index).unwrap();
+            let result = (hit.1.clone(), hit.2);
+            self.pages.push_back(hit);
+            return Ok(result);
+        }
+        let (image, count) = render_pdf_password(bytes, page, password)?;
+        while self.pages.len() >= 3
+            || self
+                .pages
+                .iter()
+                .map(|(_, i, _)| i.pixels.len() * 4)
+                .sum::<usize>()
+                + image.pixels.len() * 4
+                > 24 * 1024 * 1024
+        {
+            if self.pages.pop_front().is_none() {
+                break;
+            }
+        }
+        if image.pixels.len() * 4 <= 24 * 1024 * 1024 {
+            self.pages.push_back((page, image.clone(), count));
+        }
+        Ok((image, count))
+    }
+}
+pub fn rotate(image: &RasterImage, turns: usize) -> RasterImage {
+    let turns = turns % 4;
+    let [w, h] = image.size;
+    if turns == 0 {
+        return image.clone();
+    }
+    let size = if turns % 2 == 1 { [h, w] } else { [w, h] };
+    let mut pixels = vec![[0; 4]; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let (nx, ny) = match turns {
+                1 => (h - 1 - y, x),
+                2 => (w - 1 - x, h - 1 - y),
+                _ => (y, w - 1 - x),
+            };
+            pixels[ny * size[0] + nx] = image.pixels[y * w + x];
+        }
+    }
+    RasterImage { size, pixels }
 }

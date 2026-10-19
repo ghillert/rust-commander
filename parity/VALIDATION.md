@@ -521,3 +521,126 @@ Validation of this fix:
   Windows access enforcement or read-only behavior.
 - The new Windows-specific behavior and recovery regressions still require a
   native Windows CI run with this fix.
+
+## Release size and dependency features
+
+On Apple Silicon macOS with Rust/Cargo 1.99.1, the unchanged release at `96c97d7`
+was rebuilt at **40,163,792 bytes**. The selected `opt-level = "z"`, full LTO,
+single-codegen-unit profile produces **19,714,944 bytes**, a **50.9%** reduction.
+Panic unwinding, both renderers, accessibility, PDF/image formats, archives and
+remote services remain enabled. The dependency audit removes only unused
+OpenDAL in-memory storage and clipboard image-transfer features; package versions
+are unchanged.
+
+All **174 ordinary tests** pass in debug and optimized release; formatting and
+warnings-denied all-targets/all-features Clippy pass. The separate native clipboard
+round-trip passes and restores readable PNG/TIFF data. Both rendering backends
+open the selected executable and navigate the two-page PDF fixture. GPU text/image
+viewing, CLI contracts and strict macOS bundle signature verification also pass.
+Windows file/text clipboard APIs compile with the audited flags. Windows/Linux
+native release builds and sizes, live remote services and broader workload
+performance remain unverified in this run.
+
+See [the release size guide](../docs/RELEASE_SIZE.md) for the profile comparison,
+exact measurements, feature audit, reproduction steps and compiler tradeoffs.
+
+
+## Next twelve feature workflows (2026-10-19)
+
+The [next-feature guide](../docs/FEATURES_NEXT.md) describes the twelve additions,
+entry points and limits. They extend the Slint app while retaining Hayro and the
+optimized release profile. This validation does not establish full muCommander
+parity.
+
+- `test --locked --all-targets --all-features`: **197 passed**, no failures;
+  the optional native clipboard and live disposable SMB cases remain ignored.
+  The batch adds 18 backend regressions and five desktop/window callback tests.
+- `test --release --locked --test features_08`: **18 passed**, including native
+  move identity/Undo, archive merge/save-back, interrupted checkpoint recovery,
+  stale-source/partial-file refusal, remote merges/sync, legacy history records,
+  encrypted PDFs and macOS metadata. All **45 library tests** also pass after
+  the final PDF scroll-layout correction.
+- Formatting, whitespace checks and warnings-denied all-targets/all-features
+  Clippy pass. The Windows native metadata implementation passes standalone
+  warnings-denied Clippy for `x86_64-pc-windows-msvc`; this is a compile check,
+  not Windows execution or a complete Windows application build.
+- Native Apple Silicon macOS interaction uses a disposable application bundle,
+  configuration and files. Directory expansion and Down/Enter tree navigation,
+  text search at byte 22, hexadecimal byte jump to 16, wrong/correct PDF
+  passwords, direct page-two navigation, rotation, fit-width and vertical
+  scrolling pass. Quitting and restarting restores two windows at distinct
+  locations, both reachable through the Windows list.
+- Software and femtovg snapshots exercise the tree/PDF layout. Active-folder
+  reveal uses a fixed tree content height; an explicit PDF scroll-content size
+  fixes the clipped/blank rotated fit-width page found during native testing.
+- `scripts/package-macos.sh` completes and the rebuilt bundle passes
+  `codesign --verify --deep --strict`. The unbundled optimized executable is
+  **19,997,968 bytes**; this later feature build is separate from the preceding
+  release-profile-only comparison.
+
+The parity gate still correctly reports **4 implemented, 1 inapplicable,
+159 partial and 36 missing** actions/modules, returning nonzero. Windows/Linux
+native behavior, live remote authentication/services, cross-volume move fallback
+and provider-specific upload append/conditional-write semantics need dedicated
+platform/server runs. Filesystem-backed remote fixtures exercise the common
+transfer/sync/checkpoint code; they do not substitute for those protocol runs.
+Checkpoint copies currently require unused targets and do not offer local Undo;
+remote archive containers remain read-only. See the feature guide for the other
+bounded-input, metadata and recovery limits.
+
+
+## Stabilization pass (2026-10-19)
+
+See [the stabilization guide](../docs/STABILIZATION.md) for commands, fixture
+isolation, coverage and cleanup. The existing Windows/macOS/Ubuntu CI matrix now
+checks all features, adds optimized recovery tests on every OS, and runs real
+protocol services, native clipboard/GTK drag checks and two-renderer snapshots on
+Ubuntu. This records local evidence and configured CI coverage; the changed
+workflow has not yet executed on GitHub.
+
+Local Apple Silicon macOS results:
+
+- **207 ordinary tests pass**, including actual Slint accessibility actions,
+  focus routing/modal traversal, symlink-alias/hidden-ancestor tree following,
+  display-independent CLI contracts, file-backed upload buffers, subprocess
+  termination/retry, interrupted replacement and overlapping remote deletions.
+  Seven cases are intentionally ignored by the ordinary command; the parent
+  recovery test invokes its ignored crash helper explicitly.
+- All **four real protocol suites pass** against disposable Linux containers:
+  OpenSSH/SFTP, pyftpdlib FTP, Samba SMB2/3 and WsgiDAV. Each covers listing,
+  Unicode paths, upload/download, range reads, recursive merge conflicts,
+  cancelled download/retry, checkpoint publication, existing-target refusal,
+  synchronization/stale plans, remote copies, rename and deletion. Password
+  rejection is checked for FTP/WebDAV/SMB; SFTP uses an ephemeral key and a pinned
+  host key with strict verification. No user accounts/profiles/SSH files are used.
+  The harness removes its containers and private temporary configuration.
+- **21 optimized feature/recovery tests pass** (18 `features_08`, three
+  `stabilization`), with the crash helper invoked only by its parent.
+- Formatting, whitespace checks and warnings-denied all-target/all-feature
+  Clippy pass. CI YAML and Python syntax parse successfully.
+- Software and femtovg both render the file view and rotated PDF: all four PNGs
+  are 2480×1560. Visual review verifies the active aliased folder is revealed;
+  the final GPU tree diagnostic selects row 459 and scrolls to -12203. This is
+  a smoke check, not a pixel-perfect visual assertion.
+- The native Mac file clipboard copy/cut/external-change round-trip passes.
+  macOS emits sandbox-extension and legacy HTML pasteboard-type diagnostics;
+  this does not establish exact preservation of every private clipboard format.
+- The final macOS package builds and passes strict/deep signature verification.
+  The unbundled release executable is **19,998,032 bytes**. The existing size
+  profile is retained; bytes/memmap2 add direct edges to already-locked packages,
+  without adding or upgrading package versions.
+
+The live tests exposed and now guard two faults: FTP bulk deletion left nonempty
+parents behind while reporting success, and repeated writes through a
+single-request WebDAV upload adapter could spin instead of completing a large
+upload. Deletion now proceeds from children to parents and verifies absence;
+single-request uploads use an owned mapping of a private temporary file. Staging
+is cancellable and requires temporary disk space; provider commit calls retain
+cooperative cancellation/I/O timeout limits.
+
+Native Windows/Linux execution of the updated application and CI steps remains
+pending, including the protected Windows DACL regression and Linux Xvfb checks.
+Cloud OAuth/accounts, S3/GCS and other server implementations, full screen-reader
+interaction and cross-volume failure scenarios still need dedicated validation.
+The parity gate remains **4 implemented, 1 inapplicable, 159 partial, 36 missing**
+and correctly returns nonzero.

@@ -14,6 +14,27 @@ use std::{
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Operation {
     EmptyTrash,
+    ResumeRemote {
+        id: String,
+        from: crate::filesystem::Location,
+        entries: Vec<crate::filesystem::Entry>,
+        to: crate::filesystem::Location,
+    },
+    ArchiveSaveBytes {
+        archive: PathBuf,
+        path: PathBuf,
+        expected: Option<String>,
+        #[serde(skip)]
+        bytes: Vec<u8>,
+    },
+    ExtractResolved {
+        archive: PathBuf,
+        selected: Vec<PathBuf>,
+        prefix: PathBuf,
+        destination: PathBuf,
+        options: crate::transfer::TransferOptions,
+        overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
+    },
     SaveBytes {
         path: PathBuf,
         #[serde(skip)]
@@ -175,6 +196,7 @@ impl Operation {
             | Self::RemoteSave { .. }
             | Self::SaveBytes { .. }
             | Self::RemoteSaveBytes { .. } => "Save text",
+            Self::ResumeRemote { .. } => "Resumable remote copy",
             Self::ResumeLocal { .. } => "Resumable transfer",
             Self::Sync(_) => "Synchronize folders",
             Self::Transfer { moving: true, .. }
@@ -190,8 +212,10 @@ impl Operation {
             Self::Trash(_) => "Move to Trash",
             Self::PermanentDelete(_) | Self::RemoteDelete { .. } => "Delete",
             Self::Pack { .. } | Self::PackProtected { .. } => "Create archive",
-            Self::Extract { .. } | Self::ExtractProtected { .. } => "Extract archive",
-            Self::ArchiveEdit { .. } => "Edit archive",
+            Self::Extract { .. } | Self::ExtractProtected { .. } | Self::ExtractResolved { .. } => {
+                "Extract archive"
+            }
+            Self::ArchiveEdit { .. } | Self::ArchiveSaveBytes { .. } => "Edit archive",
             Self::RemoteTransfer { .. } | Self::RemoteTransferResolved { .. } => "Remote transfer",
             Self::Properties(_) => "Properties",
             Self::Compare { .. } => "Compare folders",
@@ -254,7 +278,8 @@ impl Operation {
             Self::Sync(plan) => format!("{} ⇄ {}", plan.left.display(), plan.right.display()),
             Self::ArchiveEdit { archive, .. }
             | Self::Extract { archive, .. }
-            | Self::ExtractProtected { archive, .. } => archive.display().to_string(),
+            | Self::ExtractProtected { archive, .. }
+            | Self::ExtractResolved { archive, .. } => archive.display().to_string(),
             Self::SaveText { path, .. }
             | Self::RemoteSave { path, .. }
             | Self::SaveBytes { path, .. }
@@ -280,6 +305,7 @@ pub struct Task {
     pub progress: Progress,
     report: Box<dyn FnMut(Progress) + Send>,
     last_report: Instant,
+    report_interval: std::time::Duration,
 }
 
 impl Default for Task {
@@ -297,7 +323,15 @@ impl Task {
             progress: Progress::default(),
             report: Box::new(report),
             last_report: Instant::now(),
+            report_interval: std::time::Duration::from_millis(40),
         }
+    }
+
+    /// Set the progress notification interval. Zero reports every tick, which
+    /// lets scripted callers coordinate deterministic interruption/recovery.
+    pub fn report_every(mut self, interval: std::time::Duration) -> Self {
+        self.report_interval = interval;
+        self
     }
 
     pub fn capture(&mut self, path: &Path) -> Result<()> {
@@ -321,7 +355,7 @@ impl Task {
         self.check()?;
         self.progress.current = path.display().to_string();
         self.progress.bytes += bytes;
-        if self.last_report.elapsed().as_millis() >= 40 {
+        if self.last_report.elapsed() >= self.report_interval {
             (self.report)(self.progress.clone());
             self.last_report = Instant::now();
         }
@@ -441,6 +475,7 @@ pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
                 filetime::FileTime::from_last_modification_time(&metadata),
             )?;
             fs::set_permissions(target, metadata.permissions())?;
+            crate::file_metadata::copy(source, target)?;
             Ok(())
         })();
         if result.is_err() {
@@ -465,6 +500,7 @@ pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
         temporary
             .as_file()
             .set_permissions(metadata.permissions())?;
+        crate::file_metadata::copy(source, temporary.path())?;
         temporary.as_file().sync_all()?;
         temporary.persist_noclobber(target).map_err(|e| e.error)?;
     } else {
@@ -476,6 +512,34 @@ pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
 pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
     task.check()?;
     match operation {
+        Operation::ResumeRemote {
+            id,
+            from,
+            entries,
+            to,
+        } => crate::resumable::run(&id, &from, &entries, &to, task),
+        Operation::ArchiveSaveBytes {
+            archive,
+            path,
+            expected,
+            bytes,
+        } => crate::external_edit::save_archive(&archive, &path, &expected, &bytes, task),
+        Operation::ExtractResolved {
+            archive,
+            selected,
+            prefix,
+            destination,
+            options,
+            overrides,
+        } => crate::archive::extract_resolved(
+            &archive,
+            &selected,
+            &prefix,
+            &destination,
+            options,
+            &overrides,
+            task,
+        ),
         Operation::EmptyTrash => {
             crate::native_actions::trash_action(true)?;
             Ok("Emptied system Trash.".into())
@@ -704,7 +768,7 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
         Operation::Move {
             sources,
             destination,
-        } => transfer(&sources, &destination, true, task),
+        } => crate::transfer::transfer(&sources, &destination, true, Default::default(), task),
         Operation::Rename { source, name } => {
             crate::filesystem::validate_name(&name)?;
             let target = source
@@ -716,14 +780,7 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             }
             task.capture(&source)?;
             task.capture(&target)?;
-            let before = source_stamp(&source, task)?;
-            copy_item(&source, &target, task)?;
-            task.check()?;
-            if before != source_stamp(&source, task)? {
-                bail!("The source changed during rename. Both copies were kept.");
-            }
-            remove(&source)
-                .context("The new copy is complete, but the original could not be removed")?;
+            crate::desktop::rename_exclusive(&source, &target)?;
             Ok("Renamed successfully.".into())
         }
         Operation::Trash(sources) => {
@@ -902,6 +959,7 @@ pub fn save_bytes(path: &Path, original: &[u8], bytes: &[u8]) -> Result<()> {
         tempfile::NamedTempFile::new_in(path.parent().context("Missing parent folder")?)?;
     temporary.write_all(bytes)?;
     temporary.as_file().set_permissions(permissions)?;
+    crate::file_metadata::copy(path, temporary.path())?;
     temporary.as_file().sync_all()?;
     temporary.persist(path).map_err(|e| e.error)?;
     Ok(())

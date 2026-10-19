@@ -34,10 +34,10 @@ by the Rust Project or Rust Foundation.
 
 ## Features
 
-- **Dual-pane navigation:** tabs, history, editable locations, bookmarks,
+- **Dual-pane navigation:** an expandable directory tree, tabs, history, editable locations, bookmarks,
   Unicode type-ahead search, wildcard selection, locked/named tabs,
   filtering, metadata sorting, stacked panes, adjustable dividers, and single-pane mode.
-- **Local file operations:** copy, move, rename, create, Trash, and permanent
+- **Local file operations:** copy, native moves/renames where possible, create, Trash, and permanent
   deletion, with skip, keep-both, recoverable replacement, and folder merging.
 - **Archive support:** create, browse, and extract ZIP, TAR variants, 7z, and
   compressed streams; edit local ZIP/TAR/7z containers, create/unlock encrypted ZIP and 7z,
@@ -52,10 +52,11 @@ by the Rust Project or Rust Foundation.
   folder comparison, checksums, properties, permissions, and split/combine.
 - **Built-in viewers:** UTF-8, UTF-16 and legacy text editing, bounded local large-file paging,
   images, hex, PDF page navigation,
-  a persistent preview pane, and macOS Quick Look.
-- **Synchronization and workspaces:** reviewable local folder synchronization and
-  named sets of pane locations, tabs and layout.
-- **Multiple windows:** independent tabs with a shared transfer queue, recovery
+  encrypted PDF unlock/rotation/fit-width, streaming text/hex search, a persistent
+  preview pane, and macOS Quick Look.
+- **Synchronization and workspaces:** reviewable local/remote folder synchronization
+  and named sets of pane locations, tabs and layout.
+- **Multiple windows:** restore all window sessions and independent tabs with a shared transfer queue, recovery
   history and preferences, plus guarded application-wide quit.
 - **Migration:** preview and merge supported muCommander XML bookmarks, shortcuts,
   commands and preferences, with a backup before applying.
@@ -63,11 +64,15 @@ by the Rust Project or Rust Foundation.
   the terminal preserves its session.
 - **Desktop appearance:** macOS, Windows, Ubuntu, and GNOME profiles, installed
   system fonts, light/dark mode, and native macOS menus and window controls.
-- **Remote adapters:** saved connection profiles and streaming transfers for
+- **Editor integration:** installed-application choices, remembered filename rules,
+  and reviewed external-editor save-back for local/remote files and local archive entries.
+- **Remote adapters:** checkpointed copies, recursive folder conflicts, saved connection profiles and streaming transfers for
   SMB2/3, SFTP, FTP, WebDAV, S3, and several cloud services. Validation is limited; see
   [Remote connections](#remote-connections).
 
-See the [0.7 twelve-feature guide](docs/FEATURES_0.7.md) for the latest additions,
+See [stabilization and integration testing](docs/STABILIZATION.md) for cross-platform checks
+and disposable protocol servers. See the [next twelve-feature guide](docs/FEATURES_NEXT.md)
+for the new workflows and limits, the [0.7 twelve-feature guide](docs/FEATURES_0.7.md) for the preceding additions,
 and the [Slint desktop guide](docs/SLINT_UI.md) for the interface,
 the [0.5 twelve-feature guide](docs/FEATURES_0.5.md) for usage and limits,
 the [0.4 guide](docs/FEATURES_0.4.md) for earlier workflows, and
@@ -192,7 +197,7 @@ Pass them after `--` when launching through Cargo. For example, on macOS/Linux:
 Double-click folders and supported archives to browse them. Double-click a file
 to open its built-in viewer, or choose **Open externally** for other formats.
 Use **F5** to copy marked files to the other pane and **F6** to move them.
-**F5** extracts archive entries into a new folder. **Operations → Archive tools**
+**F5** extracts archive entries into new or existing folders with conflict choices. **Operations → Archive tools**
 edits local ZIP/TAR/7z containers or creates/unlocks encrypted ZIP and 7z archives. Nested and
 remote archives open read-only. **Mod+Z / Mod+Shift+Z** undo/redo eligible local operations and
 **Mod+J** opens the queue and history. **Mod+P** toggles preview. Additional tools are available in the **File**, **Operations**,
@@ -315,6 +320,9 @@ used by CI with:
 
 On Windows, replace `./scripts/cargo-local.sh` with `cargo`.
 
+Release size measurements, compiler settings, and the dependency feature audit
+are documented in the [release size guide](docs/RELEASE_SIZE.md).
+
 The Slint UI is compiled from `ui/commander.slint` by `build.rs`. SVG assets are
 embedded in the executable. See the [Slint guide](docs/SLINT_UI.md) for platform
 styles, source layout, input integration and reproducible screenshots.
@@ -351,8 +359,8 @@ Outstanding work includes:
   browsing. Direct SMB2/3 access is available; broader NAS/server coverage remains open.
 - Live validation of browser OAuth, keychain prompts, and remote rename/conflicts.
 - Remote archive editing and broader archive format/metadata fixtures.
-- Remote/resumable multi-file transfers, remote synchronization, and broader
-  Undo/Redo coverage beyond the journaled local operations.
+- Broader live-provider coverage for checkpointed transfers and remote synchronization,
+  and Undo/Redo beyond journaled local operations.
 - Additional languages, remaining detailed diagnostics, broader upstream XML
   compatibility, additional text encodings, and viewer/terminal compatibility.
 

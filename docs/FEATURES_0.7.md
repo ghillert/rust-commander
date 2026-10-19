@@ -2,6 +2,9 @@
 
 [← Back to README](../README.md)
 
+This guide describes the preceding feature batch. The [next feature guide](FEATURES_NEXT.md)
+supersedes the window-restoration, viewer-search and related limitations below.
+
 This release expands the Slint desktop workflow. It does not establish full
 muCommander parity; see the [checklist](../parity/PARITY.md) and
 [validation record](../parity/VALIDATION.md). **Mod** means Cmd on macOS and Ctrl

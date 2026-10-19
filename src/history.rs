@@ -18,6 +18,12 @@ pub struct Change {
     pub backup_stamp: Option<String>,
     pub before: Option<String>,
     pub after: Option<String>,
+    #[serde(default)]
+    pub before_native: Option<String>,
+    #[serde(default)]
+    pub after_native: Option<String>,
+    #[serde(default)]
+    pub backup_native: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -184,6 +190,32 @@ pub(crate) fn fingerprint(path: &Path, task: &Task) -> Result<Option<String>> {
     Ok(Some(format!("{:x}", hash.finalize())))
 }
 
+fn native_fingerprint(path: &Path, task: &Task) -> Result<Option<String>> {
+    if !operations::exists(path) {
+        return Ok(None);
+    }
+    fn visit(path: &Path, hash: &mut Sha256, task: &Task) -> Result<()> {
+        task.check()?;
+        let metadata = fs::symlink_metadata(path)?;
+        if metadata.file_type().is_symlink() {
+            return Ok(());
+        }
+        hash.update(crate::file_metadata::digest(path)?);
+        if metadata.is_dir() {
+            let mut entries = fs::read_dir(path)?.collect::<std::io::Result<Vec<_>>>()?;
+            entries.sort_by_key(|e| e.file_name());
+            for entry in entries {
+                hash.update(entry.file_name().as_encoded_bytes());
+                visit(&entry.path(), hash, task)?;
+            }
+        }
+        Ok(())
+    }
+    let mut hash = Sha256::new();
+    visit(path, &mut hash, task)?;
+    Ok(Some(format!("{:x}", hash.finalize())))
+}
+
 struct Recorder {
     directory: PathBuf,
     changes: Vec<Change>,
@@ -214,10 +246,13 @@ impl Recorder {
         }
         let mut task = Task::new(self.cancel.clone(), |_| {});
         let before = fingerprint(&path, &task)?;
+        let before_native = native_fingerprint(&path, &task)?;
         let backup = if before.is_some() {
             let backup = self.directory.join(self.changes.len().to_string());
             operations::copy_item(&path, &backup, &mut task)?;
-            if before != fingerprint(&path, &task)? {
+            if before != fingerprint(&path, &task)?
+                || before_native != native_fingerprint(&path, &task)?
+            {
                 bail!("File changed while preparing undo: {}", path.display());
             }
             Some(backup)
@@ -229,7 +264,15 @@ impl Recorder {
             .map(|path| fingerprint(path, &task))
             .transpose()?
             .flatten();
+        let backup_native = backup
+            .as_deref()
+            .map(|path| native_fingerprint(path, &task))
+            .transpose()?
+            .flatten();
         self.changes.push(Change {
+            before_native,
+            after_native: None,
+            backup_native,
             path,
             backup,
             backup_stamp,
@@ -292,6 +335,7 @@ pub fn execute_in(operation: Operation, task: &mut Task, root: &Path) -> Result<
     // Cancellation must not prevent recording the actual partial result.
     let inspect = Task::default();
     for change in &mut recorder.changes {
+        change.after_native = native_fingerprint(&change.path, &inspect)?;
         change.after = fingerprint(&change.path, &inspect).with_context(|| {
             format!(
                 "Could not finalize the undo journal. Recovery copies remain in {}",
@@ -301,6 +345,7 @@ pub fn execute_in(operation: Operation, task: &mut Task, root: &Path) -> Result<
     }
     for change in &recorder.changes {
         if change.before == change.after
+            && change.before_native == change.after_native
             && let Some(backup) = &change.backup
         {
             operations::remove(backup).with_context(|| {
@@ -311,9 +356,9 @@ pub fn execute_in(operation: Operation, task: &mut Task, root: &Path) -> Result<
             })?;
         }
     }
-    recorder
-        .changes
-        .retain(|change| change.before != change.after);
+    recorder.changes.retain(|change| {
+        change.before != change.after || change.before_native != change.after_native
+    });
     if result.is_ok()
         && let Some(mut original) = undo_of.clone()
     {
@@ -366,14 +411,19 @@ pub fn undo(record: &Record, task: &mut Task) -> Result<()> {
         bail!("This operation has no pending undo.");
     }
     for change in &record.changes {
-        if fingerprint(&change.path, task)? != change.after {
+        if fingerprint(&change.path, task)? != change.after
+            || (change.after_native.is_some()
+                && native_fingerprint(&change.path, task)? != change.after_native)
+        {
             bail!(
                 "Undo refused: {} changed after the operation.",
                 change.path.display()
             );
         }
         if let Some(backup) = &change.backup
-            && fingerprint(backup, task)? != change.backup_stamp
+            && (fingerprint(backup, task)? != change.backup_stamp
+                || (change.backup_native.is_some()
+                    && native_fingerprint(backup, task)? != change.backup_native))
         {
             bail!("Undo backup changed: {}", backup.display());
         }
@@ -397,7 +447,10 @@ pub fn undo(record: &Record, task: &mut Task) -> Result<()> {
     }
     // Re-check after staging, before committing any restoration.
     for change in &record.changes {
-        if fingerprint(&change.path, task)? != change.after {
+        if fingerprint(&change.path, task)? != change.after
+            || (change.after_native.is_some()
+                && native_fingerprint(&change.path, task)? != change.after_native)
+        {
             bail!(
                 "Undo refused: {} changed while preparing restoration.",
                 change.path.display()

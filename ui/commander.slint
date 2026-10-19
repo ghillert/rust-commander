@@ -6,6 +6,7 @@ export { Chrome } from "chrome.slint";
 
 export struct CommandButton {id:string,title:string,key:string,enabled:bool}
 export struct Command { id: string, title: string, enabled: bool }
+export struct TreeRow { index:int, title:string, depth:int, expanded:bool, selected:bool, detail:string }
 export struct Place { id: string, title: string, detail: string, heading: bool }
 export struct FileColumn { title: string, width: float }
 export struct FileRow { id: string, name: string, cells: [string], directory: bool, selected: bool, cursor: bool, payload: string }
@@ -75,6 +76,7 @@ component FilePane inherits Rectangle {
         }
     }
     public function reset-native-drag() {root.native-drag=false;}
+    out property <int> focused-control: files-focus.has-focus ? 0 : location.has-focus ? 1 : filter-input.has-focus ? 2 : -1;
     public function focus-files() { files-focus.focus(); }
     public function focus-address() { root.editing-address=true; location.focus(); location.select-all(); }
     public function focus-filter() { filter-input.focus(); filter-input.select-all(); }
@@ -190,6 +192,11 @@ component FilePane inherits Rectangle {
             }
         }
         files-focus := FocusScope {
+            focus-on-tab-navigation: true;
+            accessible-role: AccessibleRole.list;
+            accessible-label: Words.translate(root.side == 0 ? "Left files" : "Right files",Words.version);
+            accessible-item-count: root.rows.length;
+            accessible-delegate-focus: root.cursor-index;
             key-pressed(event) => { return root.key-event(event) ? EventResult.accept : EventResult.reject; }
             list := ListView {
                 for row[index] in root.rows: Rectangle {
@@ -199,6 +206,13 @@ component FilePane inherits Rectangle {
                     border-color: row.cursor ? root.accent : transparent;
                     accessible-role: list-item;
                     accessible-label: row.name;
+                    accessible-description: row.directory ? "Folder" : "File";
+                    accessible-expandable: row.directory;
+                    accessible-item-selectable: true;
+                    accessible-item-selected: row.selected || (row.cursor && root.active);
+                    accessible-item-index: index;
+                    accessible-action-default => { files-focus.focus(); root.selected(row.id,false,false); }
+                    accessible-action-expand => { root.opened(row.id); }
                     HorizontalLayout {
                         spacing: 0px;
                         for column[col] in root.columns: Rectangle {
@@ -309,6 +323,17 @@ export component CommanderWindow inherits Window {
     in property <bool> status-error;
     in property <[Command]> toolbar;
     in property <[Place]> places;
+    in property <bool> tree-visible;
+    in property <[TreeRow]> tree-rows;
+    callback tree-action(int,bool);
+    callback tree-key(int,KeyEvent)->int;
+    in-out property <int> tree-focused-index;
+    out property <float> tree-scroll-position: tree-list.content-y/1px;
+    public function reveal-tree(index:int) {
+        let top=index*28px+tree-list.content-y;
+        if top<0px {tree-list.content-y -= top;}
+        if top+28px>tree-list.visible-height {tree-list.content-y -= top + 28px - tree-list.visible-height;}
+    }
     in property <[FileColumn]> columns;
     in property <[FileRow]> left-rows;
     in property <int> left-cursor: -1;
@@ -352,6 +377,19 @@ export component CommanderWindow inherits Window {
     in property <[FormRow]> dialog-rows;
     in property <[Command]> dialog-buttons;
     in property <bool> viewer-visible;
+    in property <bool> viewer-pdf-document;
+    in property <bool> viewer-locked;
+    in property <bool> viewer-busy;
+    in property <bool> viewer-fit-width;
+    in property <string> viewer-notice;
+    private property <string> viewer-query;
+    private property <string> viewer-password;
+    private property <string> viewer-jump;
+    private property <string> viewer-page-input;
+    public function focus-viewer() {viewer-overlay.focus();if root.viewer-image.width==0 {viewer-contents.focus();}}
+    public function select-viewer(start:int,end:int) { viewer-contents.set-selection-offsets(start,end); }
+    public function focus-viewer-search() { viewer-search.focus(); viewer-search.select-all(); }
+
     in property <string> viewer-title;
     in-out property <string> viewer-text;
     in property <image> viewer-image;
@@ -406,6 +444,8 @@ export component CommanderWindow inherits Window {
     public function show-file-menu() {root.menu-x=(root.active-pane==0 ? left.absolute-position.x : right.absolute-position.x)/1px + 24;root.menu-y=(root.active-pane==0 ? left.absolute-position.y : right.absolute-position.y)/1px + 150;root.menu("File");app-menu.show();}
     public function focus-files(side: int) { if side == 0 { left.focus-files(); } else { right.focus-files(); } }
     public function focus-address(side: int) { if side == 0 { left.focus-address(); } else { right.focus-address(); } }
+    out property <int> focused-control: left.focused-control >= 0 ? left.focused-control : right.focused-control >= 0 ? right.focused-control + 3 : -1;
+    public function focus-tree() { tree-focus.focus(); }
     public function focus-filter(side: int) { if side == 0 { left.focus-filter(); } else { right.focus-filter(); } }
 
     FocusScope {
@@ -456,11 +496,22 @@ export component CommanderWindow inherits Window {
                 Rectangle {
                     width: 186px; background: Chrome.sidebar;
                     ListView {
-                        for place in root.places: Rectangle {
+                        for place in root.places: place-focus := FocusScope {
+                            focus-on-tab-navigation: !place.heading;
+                            accessible-role: list-item;
+                            accessible-label: place.title;
+                            accessible-item-selectable: !place.heading;
+                            accessible-item-selected: !place.heading && place.detail != "" && place.detail == root.active-location;
+                            accessible-action-default => { if !place.heading {root.place(place.id);} }
+                            key-pressed(event) => {
+                                if !place.heading && !event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta && (event.text == Key.Return || event.text == " ") {root.place(place.id);return EventResult.accept;}
+                                return EventResult.reject;
+                            }
                             height: place.heading ? 32px : 29px;
                             Rectangle {
                                 x:7px;y:2px;width:parent.width - 14px;height:parent.height - 4px;border-radius:5px;
                                 background: !place.heading && place.detail != "" && place.detail == root.active-location ? Chrome.pressed : place-touch.has-hover ? Chrome.hover : transparent;
+                                border-width: place-focus.has-focus ? 1px : 0px; border-color:root.accent;
                             }
                             if !place.heading: Image {source:Glyphs.place(place.id);x:16px;y:(parent.height - 15px)/2;width:15px;height:15px;colorize:place.id == "place:0" || place.id == "place:1" || place.id == "place:2" || place.id == "place:3" || place.id.starts-with("bookmark:") ? root.accent : Chrome.secondary;accessible-role:none;}
                             Text {
@@ -470,7 +521,7 @@ export component CommanderWindow inherits Window {
                             }
                             place-touch := TouchArea {
                                 enabled: !place.heading;
-                                clicked=>{root.place(place.id);}
+                                clicked=>{place-focus.focus();root.place(place.id);}
                                 pointer-event(event)=>{
                                     if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
                                         if root.place-menu(place.id) {root.menu-x=(self.absolute-position.x+self.mouse-x)/1px;root.menu-y=(self.absolute-position.y+self.mouse-y)/1px;app-menu.show();}
@@ -478,6 +529,49 @@ export component CommanderWindow inherits Window {
                                 }
                             }
                             if !place.heading: Tooltip {text:@markdown("\{place.title}");}
+                        }
+                    }
+                }
+                Rectangle {
+                    visible:root.tree-visible;width:root.tree-visible?220px:0px;background:Chrome.sidebar;
+                    VerticalLayout {
+                        Rectangle {height:32px;Text {x:16px;text:"Folders";height:parent.height;vertical-alignment:center;color:Chrome.secondary;font-weight:600;font-size:10px;}}
+                        tree-focus := FocusScope {
+                            enabled: root.tree-visible;
+                            focus-on-tab-navigation: true;
+                            accessible-role: tree;
+                            accessible-label: "Folders";
+                            accessible-item-count: root.tree-rows.length;
+                            accessible-delegate-focus: root.tree-focused-index;
+                            key-pressed(event)=>{
+                                let next=root.tree-key(root.tree-focused-index,event);
+                                if next>=0 {root.tree-focused-index=next;root.reveal-tree(next);return EventResult.accept;}
+                                return root.global-key(event)?EventResult.accept:EventResult.reject;
+                            }
+                            tree-list := ListView {
+                                content-height:root.tree-rows.length*28px;
+                                for node in root.tree-rows: Rectangle {
+                                    height:28px;
+                                    accessible-role: list-item;
+                                    accessible-label: node.title;
+                                    accessible-description: node.detail;
+                                    accessible-expandable: true;
+                                    accessible-expanded: node.expanded;
+                                    accessible-item-index: node.index;
+                                    accessible-item-selectable: true;
+                                    accessible-item-selected: node.selected;
+                                    accessible-action-default => {tree-focus.focus();root.tree-focused-index=node.index;root.tree-action(node.index,false);}
+                                    accessible-action-expand => {tree-focus.focus();root.tree-focused-index=node.index;root.tree-action(node.index,true);}
+                                    Rectangle {x:5px;y:2px;width:parent.width - 10px;height:24px;border-radius:4px;
+                                        background:node.selected?Chrome.pressed:node-touch.has-hover || (tree-focus.has-focus && node.index==root.tree-focused-index)?Chrome.hover:transparent;}
+                                    Text {x:8px+min(node.depth,14)*12px;width:18px;height:parent.height;text:node.expanded?"▾":"▸";font-size:10px;color:Chrome.secondary;vertical-alignment:center;horizontal-alignment:center;}
+                                    Text {x:28px+min(node.depth,14)*12px;width:max(0px,parent.width - self.x - 8px);height:parent.height;text:node.title;font-size:12px;color:Chrome.foreground;vertical-alignment:center;overflow:elide;}
+                                    node-touch := TouchArea {x:26px+min(node.depth,14)*12px;width:parent.width - self.x;
+                                        clicked=>{tree-focus.focus();root.tree-focused-index=node.index;root.tree-action(node.index,false);}}
+                                    TouchArea {x:6px+min(node.depth,14)*12px;width:20px;clicked=>{tree-focus.focus();root.tree-focused-index=node.index;root.tree-action(node.index,true);}}
+                                    Tooltip {text:@markdown("\{node.title} \{node.detail}");}
+                                }
+                            }
                         }
                     }
                 }
@@ -627,31 +721,64 @@ export component CommanderWindow inherits Window {
         }
     }
 
-    if root.viewer-visible: Overlay {
+    viewer-overlay := Overlay {
+        visible:root.viewer-visible;
         key-event(event) => { return root.global-key(event); }
         Rectangle {
             x: 35px; y: 35px; width: parent.width - 70px; height: parent.height - 70px;
             background: Palette.background; border-radius: 10px;
             VerticalBox {
                 HorizontalBox {
+                    max-height:32px;
                     Text { text: root.viewer-title; font-weight: 600; color: Palette.foreground; overflow: elide; }
                     if root.viewer-text-controls: ComboBox {accessible-label:"Text encoding";model:["UTF-8","UTF-16 LE","UTF-16 BE","Windows-1252","ISO-8859-1"];current-value:root.viewer-encoding;selected(value)=>{root.viewer-action("encoding:"+value);}}
                     if root.viewer-editable: ComboBox {accessible-label:"Save text encoding";model:["UTF-8","UTF-16 LE","UTF-16 BE","Windows-1252","ISO-8859-1"];current-value:root.viewer-save-encoding;selected(value)=>{root.viewer-action("save-encoding:"+value);}}
-                    if root.viewer-pdf: Button { enabled: root.viewer-has-previous; text: Words.translate("‹", Words.version); clicked => { root.viewer-action("previous"); } }
+                    if root.viewer-pdf: Button { width:32px; enabled: root.viewer-has-previous; text: Words.translate("‹", Words.version); clicked => { root.viewer-action("previous"); } }
                     if root.viewer-pdf: Text { text: root.viewer-page; color: Palette.foreground; }
-                    if root.viewer-pdf: Button { enabled: root.viewer-has-next; text: Words.translate("›", Words.version); clicked => { root.viewer-action("next"); } }
-                    Button { text: Words.translate("Close", Words.version); clicked => { root.viewer-action("close"); } }
+                    if root.viewer-pdf: Button { width:32px; enabled: root.viewer-has-next; text: Words.translate("›", Words.version); clicked => { root.viewer-action("next"); } }
+                    Button { width:80px;text: Words.translate("Close", Words.version); clicked => { root.viewer-action("close"); } }
                 }
-                if root.viewer-image.width > 0: ScrollView {
-                    Image { source: root.viewer-image; width: self.source.width * root.viewer-zoom * 1px; height: self.source.height * root.viewer-zoom * 1px; }
+                if root.viewer-locked: HorizontalBox {max-height:32px;
+                    LineEdit {text <=> root.viewer-password;input-type:InputType.password;accessible-label:"PDF password";placeholder-text:"PDF password";accepted(value)=>{root.viewer-action("unlock:"+value);}}
+                    Button {text:"Unlock";enabled:!root.viewer-busy;clicked=>{root.viewer-action("unlock:"+root.viewer-password);root.viewer-password="";}}
                 }
-                if root.viewer-image.width == 0: TextEdit {
+                if root.viewer-pdf-document && !root.viewer-locked: HorizontalBox {max-height:32px;
+                    LineEdit {text <=> root.viewer-page-input;placeholder-text:"Page";accessible-label:"Go to PDF page";width:90px;accepted(value)=>{root.viewer-action("page:"+value);}}
+                    Button {text:"Go";enabled:!root.viewer-busy;clicked=>{root.viewer-action("page:"+root.viewer-page-input);}}
+                    Button {text:"Rotate";enabled:!root.viewer-busy;clicked=>{root.viewer-action("rotate");}}
+                    Button {text:"Fit width";clicked=>{root.viewer-action("fit-width");}}
+                    Rectangle {horizontal-stretch:1;}
+                }
+                HorizontalBox {
+                    visible:root.viewer-text-controls;max-height:root.viewer-text-controls?40px:0px;min-height:0px;
+                    viewer-search := LineEdit {text <=> root.viewer-query;placeholder-text:"Find text or hexadecimal bytes";accessible-label:"Find in file";accepted(value)=>{root.viewer-action("find:"+value);}}
+                    Button {text:"Find next";enabled:!root.viewer-busy;clicked=>{root.viewer-action("find:"+root.viewer-query);}}
+                    Button {text:"Find hex";enabled:!root.viewer-busy;clicked=>{root.viewer-action("hex-find:"+root.viewer-query);}}
+                    LineEdit {text <=> root.viewer-jump;placeholder-text:"Byte / 0x…";accessible-label:"Jump to byte offset";width:130px;accepted(value)=>{root.viewer-action("jump:"+value);}}
+                    Button {text:"Go";clicked=>{root.viewer-action("jump:"+root.viewer-jump);}}
+                    if root.viewer-busy: Button {text:"Cancel search";clicked=>{root.viewer-action("cancel-search");}}
+                }
+                if root.viewer-image.width > 0: image-scroll := ScrollView {
+                    content-width: max(self.visible-width, viewer-page.width);
+                    content-height: max(self.visible-height, viewer-page.height);
+                    viewer-page := Image {
+                        source: root.viewer-image;
+                        x: max(0px, (image-scroll.visible-width - self.width) / 2);
+                        y: 0px;
+                        width: root.viewer-fit-width ? image-scroll.visible-width : self.source.width * root.viewer-zoom * 1px;
+                        height: self.width * self.source.height / max(1, self.source.width);
+                    }
+                }
+                viewer-contents := TextEdit {
+                    visible:root.viewer-image.width == 0;max-height:self.visible?100000px:0px;min-height:0px;
                     init => { self.focus(); }
                     accessible-label: Words.translate("File contents",Words.version);
                     text <=> root.viewer-text; read-only: !root.viewer-editable; font-family: "monospace";
                     edited => { root.viewer-edit(root.viewer-text); }
                 }
                 if root.viewer-image.width > 0: Slider { minimum: 0.1; maximum: 4; value <=> root.viewer-zoom; }
+                if root.viewer-notice != "": Text {text:root.viewer-notice;color:Palette.foreground;}
+                if root.viewer-busy: ProgressIndicator {indeterminate:true;}
                 if root.viewer-error != "": Text { text: root.viewer-error; color: #c74343; wrap: word-wrap; }
                 if root.viewer-confirm-close: HorizontalBox {
                     Text { text: Words.translate("Discard unsaved changes?", Words.version); color: Palette.foreground; }

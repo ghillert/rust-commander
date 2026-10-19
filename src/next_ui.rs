@@ -18,6 +18,10 @@ pub struct Features {
     pub workspace_name: String,
     pub workspace_selected: Option<usize>,
     pub open_with: Option<(PathBuf, String)>,
+    pub applications: Vec<PathBuf>,
+    pub application_filter: String,
+    pub remember_application: bool,
+    pub application_pattern: String,
     pub error: Option<String>,
 }
 pub enum Effect {
@@ -70,8 +74,14 @@ impl SyncForm {
     pub(crate) fn start_preview(&mut self, ctx: &UiSignal) {
         self.cancel = Arc::new(AtomicBool::new(false));
         let cancel = self.cancel.clone();
-        let left = PathBuf::from(&self.left);
-        let right = PathBuf::from(&self.right);
+        let left = crate::filesystem::parse_location(
+            &self.left,
+            &crate::filesystem::Location::Local(crate::filesystem::home()),
+        );
+        let right = crate::filesystem::parse_location(
+            &self.right,
+            &crate::filesystem::Location::Local(crate::filesystem::home()),
+        );
         let direction = self.direction;
         let (sender, receiver) = mpsc::channel();
         self.pending = Some(receiver);
@@ -79,7 +89,17 @@ impl SyncForm {
         self.error = None;
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let result = crate::sync::preview(&left, &right, direction, &Task::new(cancel, |_| {}))
+            let result = left
+                .and_then(|left| {
+                    right.and_then(|right| {
+                        crate::sync::preview_locations(
+                            &left,
+                            &right,
+                            direction,
+                            &Task::new(cancel, |_| {}),
+                        )
+                    })
+                })
                 .map_err(|error| format!("{error:#}"));
             let _ = sender.send(result);
             ctx.request_repaint();

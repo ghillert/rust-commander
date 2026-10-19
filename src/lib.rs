@@ -45,3 +45,18 @@ pub mod navigation;
 
 pub mod config_import;
 pub mod text_document;
+
+pub mod file_metadata;
+
+pub mod directory_tree;
+
+pub mod viewer_search;
+
+pub mod associations;
+pub mod external_edit;
+
+pub mod storage;
+
+pub mod resumable;
+
+mod remote_upload;

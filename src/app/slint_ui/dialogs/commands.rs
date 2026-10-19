@@ -21,6 +21,9 @@ impl Adapter {
     }
 
     pub(in super::super) fn dialog_action(&mut self, id: &str) {
+        if self.enhancements_dialog_action(id) {
+            return;
+        }
         if self.parity_dialog_action(id) {
             return;
         }
@@ -372,7 +375,20 @@ impl Adapter {
                 }
                 "open-with" if id == "accept" => {
                     if let Some((path, application)) = &self.app.features.open_with {
-                        crate::native_actions::open_with(path, &PathBuf::from(application))?;
+                        let rule = crate::associations::Rule {
+                            pattern: self.app.features.application_pattern.clone(),
+                            application: PathBuf::from(application),
+                        };
+                        rule.validate()?;
+                        crate::native_actions::open_with(path, &rule.application)?;
+                        if self.app.features.remember_application {
+                            self.app
+                                .preferences
+                                .associations
+                                .retain(|r| !r.pattern.eq_ignore_ascii_case(&rule.pattern));
+                            self.app.preferences.associations.insert(0, rule);
+                            self.app.save_settings();
+                        }
                         self.app.features.open_with = None;
                     }
                 }

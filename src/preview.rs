@@ -68,6 +68,9 @@ impl Preview {
                 Ok(Content::Image(i)) | Ok(Content::Pdf { image: i, .. }) => {
                     self.image = Some(i.clone());
                 }
+                Ok(Content::LockedPdf { .. }) => {
+                    self.text = "Password-protected PDF — open the viewer to unlock it.".into()
+                }
                 Err(e) => self.text = e,
             }
         }

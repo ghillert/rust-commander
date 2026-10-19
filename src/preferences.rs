@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
+    pub directory_tree: bool,
+    pub associations: Vec<crate::associations::Rule>,
     pub desktop_style: crate::appearance::DesktopStyle,
     pub color_scheme: crate::appearance::ColorScheme,
     pub font_size: f32,
@@ -28,6 +30,8 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            directory_tree: false,
+            associations: Vec::new(),
             desktop_style: Default::default(),
             color_scheme: Default::default(),
             font_size: 14.0,

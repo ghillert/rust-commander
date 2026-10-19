@@ -773,3 +773,97 @@ pub fn extract_with_password(
     unlock(file, secret)?;
     extract(file, selected, prefix, destination, task)
 }
+
+/// Inspect conflicts without inflating archive data or changing the destination.
+pub fn extraction_conflicts(
+    file: &Path,
+    selected: &[PathBuf],
+    prefix: &Path,
+    destination: &Path,
+    merge: bool,
+) -> Result<Vec<crate::transfer::Conflict>> {
+    use std::collections::BTreeMap;
+    let mut members = BTreeMap::new();
+    visit(file, |member, _| {
+        if !included(&member.path, selected, prefix) {
+            return Ok(());
+        }
+        if member.link || (!member.directory && !member.regular) {
+            bail!("Archive links and special files cannot be extracted");
+        }
+        let relative = member.path.strip_prefix(prefix)?;
+        if relative.as_os_str().is_empty() {
+            return Ok(());
+        }
+        let relative = portable_relative(relative)?;
+        members.insert(relative.clone(), (member.directory, member.size));
+        let mut parent = relative.parent();
+        while let Some(p) = parent.filter(|p| !p.as_os_str().is_empty()) {
+            members.entry(p.to_owned()).or_insert((true, 0));
+            parent = p.parent();
+        }
+        if members.len() > 100_000 {
+            bail!("Archive exceeds the entry limit");
+        }
+        Ok(())
+    })?;
+    let mut blocked: Vec<PathBuf> = Vec::new();
+    let mut result = Vec::new();
+    for (relative, (directory, size)) in members {
+        if blocked.iter().any(|p| relative.starts_with(p)) {
+            continue;
+        }
+        let target = destination.join(&relative);
+        let metadata = match fs::symlink_metadata(&target) {
+            Ok(m) => m,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e.into()),
+        };
+        if merge && directory && metadata.is_dir() && !metadata.file_type().is_symlink() {
+            continue;
+        }
+        blocked.push(relative.clone());
+        result.push(crate::transfer::Conflict {
+            source: relative,
+            target,
+            source_size: size,
+            target_size: metadata.len(),
+        });
+        if result.len() > 5000 {
+            bail!("Too many extraction conflicts; select fewer entries");
+        }
+    }
+    Ok(result)
+}
+
+/// Validate and stage the entire selection before merging through the normal
+/// transfer planner. Existing files use exactly the same recovery/Undo guards.
+pub fn extract_resolved(
+    file: &Path,
+    selected: &[PathBuf],
+    prefix: &Path,
+    destination: &Path,
+    options: crate::transfer::TransferOptions,
+    overrides: &std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
+    task: &mut Task,
+) -> Result<String> {
+    if !exists(destination) {
+        task.capture(destination)?;
+        extract(file, selected, prefix, destination, task)?;
+        return Ok("Extracted archive.".into());
+    }
+    let meta = fs::symlink_metadata(destination)?;
+    anyhow::ensure!(
+        meta.is_dir() && !meta.file_type().is_symlink(),
+        "Choose a real destination directory"
+    );
+    let stage = tempfile::Builder::new()
+        .prefix("rust-commander-extract-")
+        .tempdir()?;
+    let root = stage.path().join("contents");
+    extract(file, selected, prefix, &root, task)?;
+    let sources = fs::read_dir(&root)?
+        .map(|e| e.map(|e| e.path()))
+        .collect::<std::io::Result<Vec<_>>>()?;
+    crate::transfer::transfer_resolved(&sources, destination, false, options, overrides, task)
+}

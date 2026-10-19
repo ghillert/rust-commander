@@ -16,6 +16,7 @@ pub struct Bookmark {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    pub window_sessions: Vec<WindowSession>,
     pub tab_states: [Vec<crate::navigation::TabState>; 2],
     pub recent_locations: Vec<crate::navigation::RecentLocation>,
     pub recent_files: Vec<PathBuf>,
@@ -34,6 +35,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            window_sessions: Vec::new(),
             tab_states: Default::default(),
             recent_locations: Vec::new(),
             recent_files: Vec::new(),
@@ -172,5 +174,26 @@ mod tests {
         let settings = load_from_paths(&current, Some(&legacy)).unwrap();
         assert_eq!(settings.active_pane, 0);
         assert!(!settings.show_hidden);
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct WindowSession {
+    pub workspace: crate::workspaces::Workspace,
+    pub width: f32,
+    pub height: f32,
+    #[serde(default)]
+    pub position: Option<[i32; 2]>,
+}
+impl WindowSession {
+    pub fn settings(&self, globals: &Settings) -> Settings {
+        let mut settings = globals.clone();
+        settings.tabs = self.workspace.tabs.clone();
+        settings.tab_states = self.workspace.tab_states.clone();
+        settings.active_tabs = self.workspace.active_tabs;
+        settings.active_pane = self.workspace.active_pane;
+        settings.preferences.layout = self.workspace.preferences.layout.clone();
+        settings.preferences.single_pane = self.workspace.preferences.single_pane;
+        settings
     }
 }

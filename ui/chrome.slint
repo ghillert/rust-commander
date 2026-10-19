@@ -81,6 +81,7 @@ export component ChromeButton inherits Rectangle {
     accessible-action-default => { root.activate(); }
     public function activate() { if root.enabled { root.clicked(); } }
     keyboard := FocusScope {
+        focus-on-tab-navigation: true;
         enabled: root.enabled;
         key-pressed(event) => {
             if event.text == Key.Return || event.text == " " {root.activate();return EventResult.accept;}
@@ -206,6 +207,7 @@ export component ShortcutButton inherits Rectangle {
     accessible-enabled: root.enabled;
     accessible-action-default => { if root.enabled {root.clicked();} }
     keyboard := FocusScope {
+        focus-on-tab-navigation: true;
         enabled: root.enabled;
         key-pressed(event) => {
             if event.text == Key.Return || event.text == " " {root.clicked();return EventResult.accept;}

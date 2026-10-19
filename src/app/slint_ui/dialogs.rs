@@ -169,6 +169,12 @@ fn parse_policy(value: &str) -> crate::transfer::ConflictPolicy {
 
 impl Adapter {
     pub(super) fn dialog(&self) -> Dialog {
+        if !self.app.confirm_exit
+            && self.app.message.is_none()
+            && let Some(dialog) = self.enhancements_dialog()
+        {
+            return dialog;
+        }
         if let Some(dialog) = self.parity_dialog() {
             return dialog;
         }
@@ -239,15 +245,32 @@ impl Adapter {
             }
             if matches!(
                 prompt.kind,
-                PromptKind::Transfer { .. } | PromptKind::RemoteTransfer { .. }
+                PromptKind::Transfer { .. }
+                    | PromptKind::RemoteTransfer { .. }
+                    | PromptKind::Extract { .. }
             ) {
+                if matches!(
+                    prompt.kind,
+                    PromptKind::RemoteTransfer { moving: false, .. }
+                ) {
+                    d.fields.push(Field::check(
+                        "resumable",
+                        "Checkpoint this copy (new targets; retry from queue)",
+                        prompt.resumable,
+                    ));
+                }
                 d.fields.push(Field::choice(
                     "policy",
                     "When a target exists",
                     policy_label(prompt.transfer_options.conflicts),
                     POLICIES,
                 ));
-                if matches!(prompt.kind, PromptKind::Transfer { .. }) {
+                if matches!(
+                    prompt.kind,
+                    PromptKind::Transfer { .. }
+                        | PromptKind::RemoteTransfer { .. }
+                        | PromptKind::Extract { .. }
+                ) {
                     d.fields.push(Field::check(
                         "merge",
                         "Merge existing folders",
@@ -792,6 +815,36 @@ impl Adapter {
             let mut d = Dialog::new("open-with", "Open With");
             d.description = path.display().to_string();
             d.error = self.app.features.error.clone().unwrap_or_default();
+            d.fields.push(Field::text(
+                "application-filter",
+                "Find application",
+                &self.app.features.application_filter,
+            ));
+            let filter = self.app.features.application_filter.to_lowercase();
+            let choices = self
+                .app
+                .features
+                .applications
+                .iter()
+                .filter(|p| p.to_string_lossy().to_lowercase().contains(&filter))
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>();
+            d.fields.push(Field::choice(
+                "installed-application",
+                "Installed applications",
+                application,
+                choices,
+            ));
+            d.fields.push(Field::check(
+                "remember-application",
+                "Remember this application",
+                self.app.features.remember_application,
+            ));
+            d.fields.push(Field::text(
+                "application-pattern",
+                "Filename pattern",
+                &self.app.features.application_pattern,
+            ));
             d.fields.push(Field::text(
                 "application",
                 "Application or executable",

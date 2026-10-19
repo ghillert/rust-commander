@@ -47,11 +47,11 @@ validation on the supported platforms.
 
 ## Transfer behavior and limits
 
-Remote transfers preview top-level conflicts and offer Stop, Skip, Keep both and
+Remote transfers preview conflicts and offer Stop, Skip, Keep both and
 Replace, with per-item overrides. Replace streams the old target into a hidden
 recovery copy before removal; completed copies and backups can remain after an
-error. Folder conflicts apply to whole folders; remote folder merging is not
-implemented. Some services lack conditional-create
+error. Folder conflicts can be reviewed recursively with Merge existing folders enabled;
+per-file choices and recovery copies apply to nested conflicts. Some services lack conditional-create
 support: conflict checks do not lock out simultaneous writes by other clients.
 Failed remote transfers can leave partial output.
 
@@ -72,3 +72,14 @@ search limits.
 
 See the [validation record](../parity/VALIDATION.md) and
 [upstream parity checklist](../parity/PARITY.md) for current evidence and gaps.
+
+## Checkpointed copies and synchronization
+
+Copies can opt into durable batch checkpoints for new targets. Verified downloads
+use ranged readers; uploads append to hidden staging files when the service
+supports it and restart that staged file otherwise. Interrupted final publishes
+can require review of a partial destination. Synchronization accepts local/remote
+or remote/remote pairs with content-based previews and stale-plan guards.
+See the [next twelve-feature guide](FEATURES_NEXT.md) for the review steps,
+checkpoint storage/cleanup and remaining provider limits. These workflows have
+filesystem-adapter regression coverage; live-provider behavior still needs testing.

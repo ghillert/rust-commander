@@ -524,17 +524,70 @@ pub fn mkdir(id: &str, path: &Path) -> Result<()> {
 }
 
 pub fn delete(id: &str, entries: &[Entry], task: &mut Task) -> Result<()> {
-    let session = session(id)?;
-    for entry in entries {
-        task.tick(&entry.path, 0)?;
+    fn remove(
+        id: &str,
+        session: &Session,
+        entry: &Entry,
+        task: &mut Task,
+        visited: &mut std::collections::BTreeSet<PathBuf>,
+        depth: usize,
+    ) -> Result<()> {
+        task.check()?;
+        anyhow::ensure!(
+            depth < 64 && visited.len() < 100_000,
+            "Remote deletion exceeds the tree limit"
+        );
+        anyhow::ensure!(
+            !entry.path.as_os_str().is_empty(),
+            "Cannot delete a connection root"
+        );
+        let location = Location::Remote {
+            connection: id.into(),
+            path: PathBuf::new(),
+        };
+        let Some(current) = entry_at(&location, &entry.path)? else {
+            return Ok(());
+        };
+        anyhow::ensure!(
+            visited.insert(entry.path.clone()),
+            "Remote deletion encountered a repeated path"
+        );
+        anyhow::ensure!(
+            current.is_dir == entry.is_dir,
+            "Remote deletion target type changed"
+        );
         if let Some(smb) = &session.smb {
-            smb.delete(entry, task)?;
-            continue;
+            smb.delete(&current, task)?;
+        } else {
+            // Recursive bulk deletion may issue RMD before descendants. FTP can
+            // silently treat its 550 'directory not empty' as 'already absent'.
+            // Visit children first and verify every reported deletion instead.
+            if current.is_dir && !current.is_symlink {
+                for child in list(id, &current.path)? {
+                    anyhow::ensure!(
+                        child.path.parent() == Some(current.path.as_path()),
+                        "Server returned a child outside the selected folder"
+                    );
+                    remove(id, session, &child, task, visited, depth + 1)?;
+                }
+            }
+            task.tick(&current.path, 0)?;
+            session
+                .operator()?
+                .delete(&key(&current.path, current.is_dir)?)
+                .map_err(|e| clean_error(e, &session.secrets))?;
         }
-        session
-            .operator()?
-            .remove_all(&key(&entry.path, entry.is_dir)?)
-            .map_err(|e| clean_error(e, &session.secrets))?;
+        anyhow::ensure!(
+            entry_at(&location, &current.path)?.is_none(),
+            "Server did not remove {}; completed deletions were kept",
+            current.path.display()
+        );
+        Ok(())
+    }
+    let session = session(id)?;
+    let mut visited = std::collections::BTreeSet::new();
+    for entry in entries {
+        remove(id, &session, entry, task, &mut visited, 0)?;
     }
     Ok(())
 }
@@ -627,7 +680,7 @@ pub fn transfer(
     Ok(())
 }
 
-fn snapshot(location: &Location, entries: &[Entry], task: &Task) -> Result<Vec<String>> {
+pub(crate) fn snapshot(location: &Location, entries: &[Entry], task: &Task) -> Result<Vec<String>> {
     let mut result = Vec::new();
     match location {
         Location::Local(_) => {
@@ -696,7 +749,7 @@ fn snapshot(location: &Location, entries: &[Entry], task: &Task) -> Result<Vec<S
     Ok(result)
 }
 
-fn ensure_absent(location: &Location, path: &Path) -> Result<()> {
+pub(crate) fn ensure_absent(location: &Location, path: &Path) -> Result<()> {
     match location {
         Location::Local(_) => {
             if operations::exists(path) {
@@ -722,7 +775,7 @@ fn ensure_absent(location: &Location, path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn copy_entry(
+pub(crate) fn copy_entry(
     from: &Location,
     entry: &Entry,
     to: &Location,
@@ -785,6 +838,16 @@ fn copy_entry(
                         .write_with_if_not_exists,
                     ..Default::default()
                 };
+                if !session.operator()?.info().full_capability().write_can_multi {
+                    let bytes = crate::remote_upload::buffer(&mut input, &entry.path, task)?;
+                    task.check()?;
+                    session
+                        .operator()?
+                        .write_options(&key(target, false)?, bytes, options)
+                        .map_err(|e| clean_error(e, &session.secrets))?;
+                    task.check()?;
+                    return Ok(());
+                }
                 let mut writer = session
                     .operator()?
                     .writer_options(&key(target, false)?, options)
@@ -801,7 +864,7 @@ fn copy_entry(
     Ok(())
 }
 
-fn entry_at(location: &Location, path: &Path) -> Result<Option<Entry>> {
+pub(crate) fn entry_at(location: &Location, path: &Path) -> Result<Option<Entry>> {
     match location {
         Location::Local(_) => {
             if operations::exists(path) {
@@ -842,26 +905,157 @@ pub fn conflicts(
     entries: &[Entry],
     to: &Location,
 ) -> Result<Vec<crate::transfer::Conflict>> {
-    let base = match to {
-        Location::Local(path) | Location::Remote { path, .. } => path,
-        _ => bail!("Archive destinations are read-only."),
-    };
-    let _ = from;
-    let mut result = Vec::new();
-    for entry in entries {
-        let target = base.join(&entry.name);
-        if let Some(existing) = entry_at(to, &target)? {
-            result.push(crate::transfer::Conflict {
-                source: entry.path.clone(),
-                target,
-                source_size: entry.size,
-                target_size: existing.size,
-            });
-        }
-    }
-    Ok(result)
+    conflicts_with_merge(from, entries, to, false)
 }
-
+pub fn conflicts_with_merge(
+    from: &Location,
+    entries: &[Entry],
+    to: &Location,
+    merge: bool,
+) -> Result<Vec<crate::transfer::Conflict>> {
+    fn visit(
+        from: &Location,
+        entry: &Entry,
+        to: &Location,
+        target: &Path,
+        merge: bool,
+        depth: usize,
+        out: &mut Vec<crate::transfer::Conflict>,
+    ) -> Result<()> {
+        anyhow::ensure!(
+            depth < 64 && out.len() < 5000,
+            "Too many nested conflicts; select fewer files"
+        );
+        if let Some(existing) = entry_at(to, target)? {
+            if merge && entry.is_dir && existing.is_dir && !entry.is_symlink && !existing.is_symlink
+            {
+                for child in filesystem::list(&crate::directory_tree::at(from, &entry.path))? {
+                    visit(
+                        from,
+                        &child,
+                        to,
+                        &target.join(&child.name),
+                        merge,
+                        depth + 1,
+                        out,
+                    )?;
+                }
+            } else {
+                out.push(crate::transfer::Conflict {
+                    source: entry.path.clone(),
+                    target: target.into(),
+                    source_size: entry.size,
+                    target_size: existing.size,
+                });
+            }
+        }
+        Ok(())
+    }
+    let base = crate::directory_tree::path(to);
+    let mut out = Vec::new();
+    for entry in entries {
+        visit(from, entry, to, &base.join(&entry.name), merge, 0, &mut out)?;
+    }
+    Ok(out)
+}
+struct RemotePlan {
+    entry: Entry,
+    target: PathBuf,
+    existing: Option<Entry>,
+}
+struct RemotePlanner<'a> {
+    from: &'a Location,
+    to: &'a Location,
+    options: crate::transfer::TransferOptions,
+    overrides: &'a std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
+    reserved: std::collections::BTreeSet<PathBuf>,
+    plans: Vec<RemotePlan>,
+    complete: Vec<bool>,
+    skipped: usize,
+    visited: usize,
+}
+impl RemotePlanner<'_> {
+    fn visit(
+        &mut self,
+        entry: &Entry,
+        mut target: PathBuf,
+        root: usize,
+        depth: usize,
+        task: &Task,
+    ) -> Result<()> {
+        use crate::transfer::ConflictPolicy;
+        task.check()?;
+        self.visited += 1;
+        anyhow::ensure!(
+            self.visited <= 100_000 && depth < 64,
+            "Remote transfer exceeds the tree limit"
+        );
+        anyhow::ensure!(!entry.is_symlink, "Remote transfers do not follow links");
+        let existing = entry_at(self.to, &target)?;
+        let policy = self
+            .overrides
+            .get(&target)
+            .copied()
+            .unwrap_or(self.options.conflicts);
+        if let Some(existing) = &existing
+            && self.options.merge_folders
+            && entry.is_dir
+            && existing.is_dir
+            && !existing.is_symlink
+        {
+            for child in filesystem::list(&crate::directory_tree::at(self.from, &entry.path))? {
+                self.visit(&child, target.join(&child.name), root, depth + 1, task)?;
+            }
+            return Ok(());
+        }
+        if existing.is_some() || self.reserved.contains(&target) {
+            match policy {
+                ConflictPolicy::Refuse => bail!("Destination already exists: {}", target.display()),
+                ConflictPolicy::Skip => {
+                    self.complete[root] = false;
+                    self.skipped += 1;
+                    return Ok(());
+                }
+                ConflictPolicy::Replace => anyhow::ensure!(
+                    !self.reserved.contains(&target),
+                    "Duplicate transfer target"
+                ),
+                ConflictPolicy::Rename => {
+                    let original = target.clone();
+                    let parent = target.parent().context("Missing target parent")?;
+                    let stem = original.file_stem().unwrap_or_default().to_string_lossy();
+                    let extension = original
+                        .extension()
+                        .map(|e| format!(".{}", e.to_string_lossy()))
+                        .unwrap_or_default();
+                    let mut found = false;
+                    for n in 1..=100_000 {
+                        let candidate = parent.join(format!("{stem} ({n}){extension}"));
+                        if !self.reserved.contains(&candidate)
+                            && entry_at(self.to, &candidate)?.is_none()
+                        {
+                            target = candidate;
+                            found = true;
+                            break;
+                        }
+                    }
+                    anyhow::ensure!(found, "Cannot find an unused target name");
+                }
+            }
+        }
+        self.reserved.insert(target.clone());
+        self.plans.push(RemotePlan {
+            entry: entry.clone(),
+            target,
+            existing: if policy == ConflictPolicy::Replace {
+                existing
+            } else {
+                None
+            },
+        });
+        Ok(())
+    }
+}
 pub fn transfer_resolved(
     from: &Location,
     entries: &[Entry],
@@ -871,13 +1065,9 @@ pub fn transfer_resolved(
     overrides: &std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
     task: &mut Task,
 ) -> Result<String> {
-    use crate::transfer::ConflictPolicy;
     if let (Location::Local(_), Location::Local(destination)) = (from, to) {
         return crate::transfer::transfer_resolved(
-            &entries
-                .iter()
-                .map(|entry| entry.path.clone())
-                .collect::<Vec<_>>(),
+            &entries.iter().map(|e| e.path.clone()).collect::<Vec<_>>(),
             destination,
             moving,
             options,
@@ -885,138 +1075,97 @@ pub fn transfer_resolved(
             task,
         );
     }
-    if entries.is_empty() {
-        bail!("Select files to transfer.");
-    }
-    let base = match to {
-        Location::Local(path) | Location::Remote { path, .. } => path,
-        _ => bail!("Archive destinations are read-only."),
+    anyhow::ensure!(!entries.is_empty(), "Select files to transfer");
+    anyhow::ensure!(
+        !matches!(from, Location::Archive { .. }) && !matches!(to, Location::Archive { .. }),
+        "Extract archive entries first"
+    );
+    let base = crate::directory_tree::path(to);
+    let mut planner = RemotePlanner {
+        from,
+        to,
+        options,
+        overrides,
+        reserved: Default::default(),
+        plans: Vec::new(),
+        complete: vec![true; entries.len()],
+        skipped: 0,
+        visited: 0,
     };
-    let mut plans = Vec::new();
-    let mut reserved = std::collections::BTreeSet::new();
-    for entry in entries {
-        let mut target = base.join(&entry.name);
-        let existing = entry_at(to, &target)?;
-        let policy = overrides.get(&target).copied().unwrap_or(options.conflicts);
-        let same_storage = matches!((from, to), (Location::Local(_), Location::Local(_)))
-            || matches!((from,to),(Location::Remote{connection:a,..},Location::Remote{connection:b,..})if a==b);
-        if same_storage
-            && (target == entry.path || (entry.is_dir && target.starts_with(&entry.path)))
-        {
-            bail!("Cannot transfer an item into itself.");
-        }
-        if existing.is_some() || reserved.contains(&target) {
-            match policy {
-                ConflictPolicy::Refuse => bail!("Destination already exists: {}", target.display()),
-                ConflictPolicy::Skip => {
-                    continue;
-                }
-                ConflictPolicy::Rename => {
-                    let original = target.clone();
-                    let mut found = false;
-                    for number in 1..=100_000 {
-                        let stem = original.file_stem().unwrap_or_default().to_string_lossy();
-                        let extension = original
-                            .extension()
-                            .map(|value| format!(".{}", value.to_string_lossy()))
-                            .unwrap_or_default();
-                        let candidate = base.join(format!("{stem} ({number}){extension}"));
-                        if !reserved.contains(&candidate) && entry_at(to, &candidate)?.is_none() {
-                            target = candidate;
-                            found = true;
-                            break;
-                        }
-                    }
-                    if !found {
-                        bail!("Could not find an unused destination name.");
-                    }
-                }
-                ConflictPolicy::Replace => {
-                    if reserved.contains(&target) {
-                        bail!("Multiple sources have the same destination.");
-                    }
-                }
-            }
-        }
-        reserved.insert(target.clone());
-        plans.push((
-            entry.clone(),
-            target,
-            if policy == ConflictPolicy::Replace {
-                existing
-            } else {
-                None
-            },
-        ));
+    for (root, entry) in entries.iter().enumerate() {
+        let target = base.join(&entry.name);
+        let same = matches!((from,to),(Location::Remote{connection:a,..},Location::Remote{connection:b,..}) if a==b);
+        anyhow::ensure!(
+            !(same && (target == entry.path || (entry.is_dir && target.starts_with(&entry.path)))),
+            "Cannot transfer an item into itself"
+        );
+        planner.visit(entry, target, root, 0, task)?;
     }
-    let before = snapshot(from, entries, task)?;
+    let before = if moving {
+        Some(snapshot(from, entries, task)?)
+    } else {
+        None
+    };
     let mut backups = Vec::new();
-    for (entry, target, existing) in &plans {
+    for plan in &planner.plans {
         task.check()?;
-        if let Some(existing) = existing {
-            let backup = base.join(format!(
-                ".rust-commander-replaced-{}-{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos(),
-                existing.name
-            ));
+        if let Some(existing) = &plan.existing {
+            let backup = plan
+                .target
+                .parent()
+                .context("Missing target parent")?
+                .join(format!(
+                    ".rust-commander-replaced-{:016x}-{}",
+                    rand::random::<u64>(),
+                    existing.name
+                ));
             let stamp = snapshot(to, std::slice::from_ref(existing), task)?;
             ensure_absent(to, &backup)?;
             copy_entry(to, existing, to, &backup, task)?;
             backups.push(backup.clone());
-            if snapshot(to, std::slice::from_ref(existing), task)? != stamp {
-                bail!(
-                    "Destination changed while preparing replacement. Backup retained at {}",
-                    backup.display()
-                );
-            }
-            match to {
-                Location::Local(_) => {
-                    task.capture(target)?;
-                    operations::remove(target)?;
-                }
-                Location::Remote { connection, .. } => {
-                    delete(connection, std::slice::from_ref(existing), task)?
-                }
-                _ => unreachable!(),
-            }
-        }
-        if let Location::Local(_) = to {
-            task.capture(target)?;
-        }
-        if let Err(error) = copy_entry(from, entry, to, target, task) {
-            bail!(
-                "Transfer failed: {error:#}. Original target backups retained at: {:?}",
-                backups
+            anyhow::ensure!(
+                snapshot(to, std::slice::from_ref(existing), task)? == stamp,
+                "Destination changed; recovery retained at {}",
+                backup.display()
             );
+            remove_entry(to, existing, task)?;
+        }
+        if matches!(to, Location::Local(_)) {
+            task.capture(&plan.target)?;
+        }
+        if let Err(e) = copy_entry(from, &plan.entry, to, &plan.target, task) {
+            bail!("Transfer failed: {e:#}. Recovery copies: {backups:?}");
         }
     }
     if moving {
-        if snapshot(from, entries, task)? != before {
-            bail!("Source changed during transfer. Originals and completed copies were kept.");
-        }
-        for (entry, _, _) in &plans {
-            task.check()?;
-            match from {
-                Location::Local(_) => {
-                    task.capture(&entry.path)?;
-                    operations::remove(&entry.path)?;
-                }
-                Location::Remote { connection, .. } => {
-                    delete(connection, std::slice::from_ref(entry), task)?
-                }
-                _ => bail!("Archive contents are read-only."),
+        anyhow::ensure!(
+            Some(snapshot(from, entries, task)?) == before,
+            "Sources changed. Originals and completed copies were kept"
+        );
+        for (entry, complete) in entries.iter().zip(&planner.complete) {
+            if *complete {
+                remove_entry(from, entry, task)?;
             }
         }
     }
     Ok(format!(
-        "Transferred {} item(s); skipped {}. Recovery backups: {:?}",
-        plans.len(),
-        entries.len() - plans.len(),
-        backups
+        "Transferred {} item(s); skipped {} conflict(s). Source folders with skipped items remain intact. Recovery copies: {backups:?}",
+        planner.plans.len(),
+        planner.skipped
     ))
+}
+pub(crate) fn remove_entry(location: &Location, entry: &Entry, task: &mut Task) -> Result<()> {
+    task.check()?;
+    match location {
+        Location::Local(_) => {
+            task.capture(&entry.path)?;
+            operations::remove(&entry.path)
+        }
+        Location::Remote { connection, .. } => {
+            delete(connection, std::slice::from_ref(entry), task)
+        }
+        _ => bail!("Archive entries are read-only"),
+    }
 }
 
 /// Guarded remote editor save. Keep a server-side recovery copy before uploading.
@@ -1178,6 +1327,104 @@ pub fn search(
         }
     }
     Ok(result)
+}
+
+/// Start a new ranged reader. Backends without native range support may emulate it.
+pub fn read_range(id: &str, path: &Path, start: u64) -> Result<Box<dyn Read>> {
+    let session = session(id)?;
+    if let Some(smb) = &session.smb {
+        return smb.reader_at(path, start);
+    }
+    let reader = session
+        .operator()?
+        .reader(&key(path, false)?)
+        .map_err(|e| clean_error(e, &session.secrets))?;
+    Ok(Box::new(
+        reader
+            .into_std_read(start..)
+            .map_err(|e| clean_error(e, &session.secrets))?,
+    ))
+}
+pub(crate) fn upload_checkpoint(
+    id: &str,
+    target: &Path,
+    source: &Path,
+    offset: u64,
+    task: &mut Task,
+) -> Result<()> {
+    use std::io::{Seek, SeekFrom};
+    let session = session(id)?;
+    let mut input = File::open(source)?;
+    if let Some(smb) = &session.smb {
+        if offset > 0
+            && let Some(entry) = smb.stat(target)?
+        {
+            smb.delete(&entry, task)?;
+        }
+        return smb.write(target, &mut input, task, true);
+    }
+    let op = session.operator()?;
+    let append = offset > 0 && op.info().full_capability().write_can_append;
+    if offset > 0 && !append {
+        op.delete(&key(target, false)?)
+            .map_err(|e| clean_error(e, &session.secrets))?;
+    }
+    if append {
+        input.seek(SeekFrom::Start(offset))?;
+    }
+    let options = opendal::options::WriteOptions {
+        append,
+        if_not_exists: !append && op.info().full_capability().write_with_if_not_exists,
+        ..Default::default()
+    };
+    if !op.info().full_capability().write_can_multi {
+        let bytes = crate::remote_upload::buffer(&mut input, source, task)?;
+        task.check()?;
+        op.write_options(&key(target, false)?, bytes, options)
+            .map_err(|e| clean_error(e, &session.secrets))?;
+        task.check()?;
+        return Ok(());
+    }
+    let mut writer = op
+        .writer_options(&key(target, false)?, options)
+        .map_err(|e| clean_error(e, &session.secrets))?
+        .into_std_write();
+    task.stream(&mut input, &mut writer, source)?;
+    writer
+        .close()
+        .map_err(|e| clean_error(e, &session.secrets))?;
+    Ok(())
+}
+pub(crate) fn publish_checkpoint(
+    id: &str,
+    stage: &Path,
+    target: &Path,
+    task: &mut Task,
+) -> Result<()> {
+    let location = Location::Remote {
+        connection: id.into(),
+        path: PathBuf::new(),
+    };
+    ensure_absent(&location, target)?;
+    task.check()?;
+    let session = session(id)?;
+    if let Some(smb) = &session.smb {
+        return smb.publish_checkpoint(stage, target);
+    }
+    if session.operator()?.info().scheme() == opendal::Scheme::Fs {
+        let info = session.operator()?.info();
+        let root = PathBuf::from(info.root());
+        crate::desktop::rename_exclusive(
+            &root.join(filesystem::safe_relative(stage)?),
+            &root.join(filesystem::safe_relative(target)?),
+        )?;
+        return Ok(());
+    }
+    // Publish through exclusive-create where the provider supports it. A plain
+    // provider rename can overwrite a destination created by another client.
+    let entry = entry_at(&location, stage)?.context("Transfer stage disappeared")?;
+    copy_entry(&location, &entry, &location, target, task)?;
+    remove_entry(&location, &entry, task)
 }
 
 #[cfg(test)]

@@ -41,6 +41,8 @@ pub struct Item {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Plan {
+    #[serde(default)]
+    pub remote_roots: Option<(crate::filesystem::Location, crate::filesystem::Location)>,
     pub left: PathBuf,
     pub right: PathBuf,
     pub items: Vec<Item>,
@@ -161,6 +163,7 @@ pub fn preview(left: &Path, right: &Path, direction: u8, task: &Task) -> Result<
         bail!("Directories changed during preview. Preview again.");
     }
     Ok(Plan {
+        remote_roots: None,
         left,
         right,
         items,
@@ -169,6 +172,9 @@ pub fn preview(left: &Path, right: &Path, direction: u8, task: &Task) -> Result<
     })
 }
 pub fn apply(plan: &Plan, task: &mut Task) -> Result<String> {
+    if plan.remote_roots.is_some() {
+        return remote::apply(plan, task);
+    }
     if fingerprint(&plan.left, task)? != plan.left_stamp
         || fingerprint(&plan.right, task)? != plan.right_stamp
     {
@@ -288,5 +294,21 @@ mod tests {
         apply(&p, &mut Task::default()).unwrap();
         assert_eq!(fs::read(r.join("nested/a")).unwrap(), b"a");
         assert!(r.join("extra").exists());
+    }
+}
+
+mod remote;
+pub fn preview_locations(
+    left: &crate::filesystem::Location,
+    right: &crate::filesystem::Location,
+    direction: u8,
+    task: &Task,
+) -> Result<Plan> {
+    if let (crate::filesystem::Location::Local(a), crate::filesystem::Location::Local(b)) =
+        (left, right)
+    {
+        preview(a, b, direction, task)
+    } else {
+        remote::preview(left, right, direction, task)
     }
 }

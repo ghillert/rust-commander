@@ -231,6 +231,11 @@ fn invalid_numeric_fields_block_apply_until_corrected() {
 fn viewer_close_and_exit_preserve_unsaved_text_until_confirmed() {
     let (_root, mut adapter, left, _right) = fixture();
     adapter.app.editor = Some(Editor {
+        navigation: viewer_tools::Navigation::new(
+            Location::Local(filesystem::home()),
+            PathBuf::new(),
+        ),
+        image_revision: 0,
         document: None,
         text_page: None,
         pdf: None,

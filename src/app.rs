@@ -21,6 +21,9 @@ fn tr(text: &str) -> std::borrow::Cow<'_, str> {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Action {
+    DirectoryTree,
+    ExternalEdit,
+    Associations,
     FocusAddress,
     FocusFilter,
     SelectNextRow,
@@ -146,6 +149,9 @@ pub(crate) enum Action {
 
 pub(crate) fn all_actions() -> Vec<Action> {
     vec![
+        Action::DirectoryTree,
+        Action::ExternalEdit,
+        Action::Associations,
         Action::FocusAddress,
         Action::FocusFilter,
         Action::SelectNextRow,
@@ -299,6 +305,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Move tab to other pane", Action::MoveTabOther),
                 ("Move tab left", Action::MoveTabLeft),
                 ("Move tab right", Action::MoveTabRight),
+                ("Directory tree", Action::DirectoryTree),
                 ("Side-by-side panes", Action::SideBySide),
                 ("Stacked panes", Action::Stacked),
                 ("Equal pane sizes", Action::EqualPanes),
@@ -340,6 +347,8 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Edit  F4", Action::Edit),
                 ("Open externally", Action::External),
                 ("Open With…", Action::OpenWith),
+                ("Edit externally…", Action::ExternalEdit),
+                ("Application associations…", Action::Associations),
                 ("Reveal in file manager", Action::Reveal),
                 ("Show package contents", Action::PackageContents),
                 ("Rename  F2", Action::Rename),
@@ -424,9 +433,11 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
             | Action::NextWindow
             | Action::PreviousWindow
             | Action::WindowsList => "Window",
-            Action::SideBySide | Action::Stacked | Action::EqualPanes | Action::AutoSizeColumns => {
-                "View"
-            }
+            Action::DirectoryTree
+            | Action::SideBySide
+            | Action::Stacked
+            | Action::EqualPanes
+            | Action::AutoSizeColumns => "View",
             Action::SelectPattern
             | Action::UnselectPattern
             | Action::SelectExtension
@@ -453,6 +464,7 @@ struct Prompt {
     value: String,
     kind: PromptKind,
     error: Option<String>,
+    resumable: bool,
     transfer_options: crate::transfer::TransferOptions,
     overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
     conflicts: Vec<crate::transfer::Conflict>,
@@ -512,6 +524,8 @@ enum PromptKind {
 }
 
 struct Editor {
+    navigation: slint_ui::viewer_tools::Navigation,
+    image_revision: u64,
     document: Option<crate::text_document::Document>,
     text_page: Option<crate::text_document::Page>,
     pdf: Option<PdfState>,
@@ -532,8 +546,25 @@ struct PdfState {
     bytes: Arc<Vec<u8>>,
     page: usize,
     pages: usize,
+    password: String,
+    rotation: usize,
+    locked: bool,
+    cache: Arc<std::sync::Mutex<crate::viewer::PdfCache>>,
 }
-type PdfResult = Result<(String, usize, crate::viewer::RasterImage), String>;
+impl PdfState {
+    fn new(bytes: Arc<Vec<u8>>, pages: usize) -> Self {
+        Self {
+            bytes,
+            page: 0,
+            pages,
+            password: String::new(),
+            rotation: 0,
+            locked: pages == 0,
+            cache: Arc::new(std::sync::Mutex::new(Default::default())),
+        }
+    }
+}
+type PdfResult = Result<(String, usize, usize, usize, crate::viewer::RasterImage), String>;
 impl Editor {
     fn dirty(&self) -> bool {
         self.editable
@@ -567,6 +598,7 @@ struct ConnectionForm {
 }
 
 pub struct Commander {
+    saved_windows: Vec<crate::settings::WindowSession>,
     window_id: usize,
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     native_window: Option<crate::native_files::Window>,
@@ -663,6 +695,7 @@ impl Commander {
         crate::i18n::set(settings.preferences.language);
 
         Self {
+            saved_windows: settings.window_sessions.clone(),
             window_id: 0,
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             native_window: None,
@@ -817,16 +850,25 @@ impl Commander {
         }
         if let Some(result) = crate::background::poll(&mut self.pending_pdf) {
             match result {
-                Ok((title, page, image)) => {
+                Ok((title, page, rotation, pages, image)) => {
                     if let Some(editor) = &mut self.editor
-                        && editor.title == title
+                        && format!("{}#{}", editor.title, editor.navigation.id) == title
                         && let Some(pdf) = &mut editor.pdf
                     {
                         pdf.page = page;
+                        pdf.rotation = rotation;
+                        pdf.pages = pages;
+                        pdf.locked = false;
+                        editor.image_revision += 1;
                         editor.image = Some(image);
+                        editor.error = None;
                     }
                 }
-                Err(error) => self.fail(error),
+                Err(error) => {
+                    if let Some(editor) = &mut self.editor {
+                        editor.error = Some(error);
+                    }
+                }
             }
         }
         if let Some(result) = crate::background::poll(&mut self.pending_connection) {
@@ -1012,6 +1054,17 @@ impl Commander {
         }
         if let Some(location) = self.tab().location.enter(&entry) {
             self.tab_mut().navigate(location, ctx);
+        } else if location_is_local_with_rule(
+            &self.tab().location,
+            &self.preferences.associations,
+            &entry.path,
+        ) {
+            let application =
+                crate::associations::application(&self.preferences.associations, &entry.path)
+                    .unwrap();
+            if let Err(e) = crate::native_actions::open_with(&entry.path, application) {
+                self.fail(e);
+            }
         } else {
             self.view(entry, false, ctx);
         }
@@ -1038,6 +1091,15 @@ impl Commander {
                 let mut document = None;
                 let mut text_page = None;
                 let (text, image, kind, pdf) = match crate::viewer::load(&location, &entry.path)? {
+                    crate::viewer::Content::LockedPdf { bytes } => (
+                        String::new(),
+                        Some(crate::viewer::RasterImage {
+                            size: [1, 1],
+                            pixels: vec![[255; 4]],
+                        }),
+                        "PDF viewer",
+                        Some(PdfState::new(bytes, 0)),
+                    ),
                     crate::viewer::Content::Text(text) => {
                         document =
                             crate::text_document::Document::detect(text.as_bytes().to_vec()).ok();
@@ -1074,11 +1136,7 @@ impl Commander {
                         String::new(),
                         Some(image),
                         "PDF viewer",
-                        Some(PdfState {
-                            bytes,
-                            page: 0,
-                            pages,
-                        }),
+                        Some(PdfState::new(bytes, pages)),
                     ),
                 };
                 let path = location.local().map(|_| entry.path.clone());
@@ -1088,6 +1146,11 @@ impl Commander {
                     None
                 };
                 Ok(Editor {
+                    navigation: slint_ui::viewer_tools::Navigation::new(
+                        location.clone(),
+                        entry.path.clone(),
+                    ),
+                    image_revision: 0,
                     document,
                     text_page,
                     pdf,
@@ -1160,6 +1223,12 @@ impl Commander {
             }
         }
         match action {
+            Action::ExternalEdit | Action::Associations => return,
+            Action::DirectoryTree => {
+                self.preferences.directory_tree = !self.preferences.directory_tree;
+                self.save_settings();
+                return;
+            }
             Action::Undo | Action::Redo => {
                 if self.job.is_some() || !self.queue.is_empty() {
                     self.fail("Finish or cancel queued operations before undoing.");
@@ -1200,13 +1269,10 @@ impl Commander {
                 return;
             }
             Action::Synchronize => {
-                if let (Some(left), Some(right)) = (
-                    self.panes[0].tab().location.local(),
-                    self.panes[1].tab().location.local(),
-                ) {
-                    self.features.sync(left.to_owned(), right.to_owned());
-                } else {
-                    self.fail("Choose two local folders to synchronize.");
+                self.features.sync(PathBuf::new(), PathBuf::new());
+                if let Some(form) = &mut self.features.sync {
+                    form.left = self.panes[0].tab().location.label();
+                    form.right = self.panes[1].tab().location.label();
                 }
                 return;
             }
@@ -1412,6 +1478,7 @@ impl Commander {
                                 base: base.clone(),
                             },
                             error: None,
+                            resumable: false,
                             transfer_options: Default::default(),
                             overrides: Default::default(),
                             conflicts: Vec::new(),
@@ -1721,6 +1788,7 @@ impl Commander {
                             source: chosen[0].path.clone(),
                         },
                         error: None,
+                        resumable: false,
                         transfer_options: Default::default(),
                         overrides: Default::default(),
                         conflicts: Vec::new(),
@@ -1893,6 +1961,7 @@ impl Commander {
                 value,
                 kind,
                 error: None,
+                resumable: false,
                 transfer_options: Default::default(),
                 overrides: Default::default(),
                 conflicts: Vec::new(),
@@ -1905,6 +1974,7 @@ impl Commander {
     }
     fn snapshot_settings(&self) -> Settings {
         Settings {
+            window_sessions: self.saved_windows.clone(),
             tab_states: std::array::from_fn(|i| {
                 self.panes[i]
                     .tabs
@@ -2008,6 +2078,27 @@ impl Commander {
                     entries,
                     to,
                     moving,
+                } if prompt.resumable => {
+                    anyhow::ensure!(
+                        !moving
+                            && prompt.transfer_options.conflicts
+                                == crate::transfer::ConflictPolicy::Refuse
+                            && !prompt.transfer_options.merge_folders
+                            && prompt.overrides.is_empty(),
+                        "Resumable copies require Stop on conflicts, new target folders, and no per-file overrides"
+                    );
+                    Operation::ResumeRemote {
+                        id: format!("batch-{:016x}", rand::random::<u64>()),
+                        from: from.clone(),
+                        entries: entries.clone(),
+                        to: filesystem::parse_location(&prompt.value, to)?,
+                    }
+                }
+                PromptKind::RemoteTransfer {
+                    from,
+                    entries,
+                    to,
+                    moving,
                 } => Operation::RemoteTransferResolved {
                     from: from.clone(),
                     entries: entries.clone(),
@@ -2070,7 +2161,9 @@ impl Commander {
                     selected,
                     prefix,
                     base,
-                } => Operation::Extract {
+                } => Operation::ExtractResolved {
+                    options: prompt.transfer_options,
+                    overrides: prompt.overrides.clone(),
                     archive: archive.clone(),
                     selected: selected.clone(),
                     prefix: prefix.clone(),
@@ -2135,14 +2228,50 @@ impl Commander {
                 ctx.request_repaint_after(Duration::from_millis(100));
             }
         }
+        if let PromptKind::Extract {
+            archive,
+            selected,
+            prefix,
+            base,
+        } = &prompt.kind
+        {
+            let destination = filesystem::resolve_path(&prompt.value, base);
+            let key = format!(
+                "{}:{}",
+                destination.display(),
+                prompt.transfer_options.merge_folders
+            );
+            if key != prompt.conflict_key && prompt.pending_conflicts.is_none() {
+                prompt.conflict_key = key;
+                let (archive, selected, prefix) =
+                    (archive.clone(), selected.clone(), prefix.clone());
+                let merge = prompt.transfer_options.merge_folders;
+                let (sender, receiver) = mpsc::channel();
+                prompt.pending_conflicts = Some(receiver);
+                let ctx = ctx.clone();
+                std::thread::spawn(move || {
+                    let result = crate::archive::extraction_conflicts(
+                        &archive,
+                        &selected,
+                        &prefix,
+                        &destination,
+                        merge,
+                    )
+                    .map_err(|e| format!("{e:#}"));
+                    let _ = sender.send(result);
+                    ctx.request_repaint();
+                });
+            }
+        }
         if let PromptKind::RemoteTransfer {
             from, entries, to, ..
         } = &prompt.kind
         {
-            let key = prompt.value.clone();
+            let key = format!("{}:{}", prompt.value, prompt.transfer_options.merge_folders);
             if key != prompt.conflict_key && prompt.pending_conflicts.is_none() {
                 prompt.conflict_key = key;
                 let from = from.clone();
+                let merge = prompt.transfer_options.merge_folders;
                 let entries = entries.clone();
                 let to = filesystem::parse_location(&prompt.value, to);
                 let (sender, receiver) = mpsc::channel();
@@ -2150,7 +2279,9 @@ impl Commander {
                 let ctx = ctx.clone();
                 std::thread::spawn(move || {
                     let result = to
-                        .and_then(|to| crate::remote::conflicts(&from, &entries, &to))
+                        .and_then(|to| {
+                            crate::remote::conflicts_with_merge(&from, &entries, &to, merge)
+                        })
                         .map_err(|error| format!("{error:#}"));
                     let _ = sender.send(result);
                     ctx.request_repaint();
@@ -2425,6 +2556,7 @@ impl Commander {
                                     moving: false,
                                 },
                                 error: None,
+                                resumable: false,
                                 transfer_options: Default::default(),
                                 overrides: Default::default(),
                                 conflicts: Vec::new(),
@@ -2449,6 +2581,7 @@ impl Commander {
                             base: destination,
                         },
                         error: None,
+                        resumable: false,
                         transfer_options: Default::default(),
                         overrides: Default::default(),
                         conflicts: Vec::new(),
@@ -2464,3 +2597,12 @@ impl Commander {
 }
 
 pub mod slint_ui;
+
+fn location_is_local_with_rule(
+    location: &Location,
+    rules: &[crate::associations::Rule],
+    path: &Path,
+) -> bool {
+    matches!(location, Location::Local(_))
+        && crate::associations::application(rules, path).is_some()
+}

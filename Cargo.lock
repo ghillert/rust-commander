@@ -1099,7 +1099,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1c988a897ea030e32f0668c90b0192800e0c561b3d941fc366f9ad5a1bf26ba"
 dependencies = [
  "clipboard-win",
- "image",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
@@ -6151,6 +6150,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "bytes",
  "bzip2",
  "chrono",
  "clipboard-rs",
@@ -6169,6 +6169,7 @@ dependencies = [
  "keyring",
  "libc",
  "md-5 0.10.6",
+ "memmap2",
  "muda 0.21.2",
  "notify",
  "objc2-app-kit 0.3.2",

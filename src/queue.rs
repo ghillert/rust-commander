@@ -83,6 +83,7 @@ impl Queue {
                     | Operation::RemoteSave { .. }
                     | Operation::SaveBytes { .. }
                     | Operation::RemoteSaveBytes { .. }
+                    | Operation::ArchiveSaveBytes { .. }
             )
     }
     pub fn prepare(op: Operation) -> Result<Operation> {
@@ -123,10 +124,6 @@ fn resumable(op: &Operation) -> Option<(&PathBuf, &PathBuf, bool)> {
         Operation::Copy {
             sources,
             destination,
-        }
-        | Operation::Move {
-            sources,
-            destination,
         } if sources.len() == 1 => Some((
             &sources[0],
             destination,
@@ -137,7 +134,10 @@ fn resumable(op: &Operation) -> Option<(&PathBuf, &PathBuf, bool)> {
             destination,
             moving,
             options,
-        } if sources.len() == 1 && options.conflicts == crate::transfer::ConflictPolicy::Refuse => {
+        } if !moving
+            && sources.len() == 1
+            && options.conflicts == crate::transfer::ConflictPolicy::Refuse =>
+        {
             Some((&sources[0], destination, *moving))
         }
         Operation::ResolvedTransfer {
@@ -146,7 +146,8 @@ fn resumable(op: &Operation) -> Option<(&PathBuf, &PathBuf, bool)> {
             moving,
             options,
             overrides,
-        } if sources.len() == 1
+        } if !moving
+            && sources.len() == 1
             && options.conflicts == crate::transfer::ConflictPolicy::Refuse
             && overrides.is_empty() =>
         {
@@ -273,6 +274,7 @@ fn resume_local_in(
         partial,
         filetime::FileTime::from_last_modification_time(&meta),
     )?;
+    crate::file_metadata::copy(source, partial)?;
     crate::operations::copy_item(partial, destination, task)?;
     if moving {
         if crate::history::fingerprint(source, task)?.as_deref() != Some(expected.as_str()) {
@@ -306,6 +308,9 @@ fn remove_checkpoint_file(path: &Path) -> Result<()> {
     Ok(())
 }
 pub fn discard_checkpoint(op: &Operation) -> Result<()> {
+    if let Operation::ResumeRemote { id, from, to, .. } = op {
+        return crate::resumable::discard(id, from, to);
+    }
     if let Operation::ResumeLocal { partial, .. } = op {
         let root = Queue::path()?.with_file_name("transfers");
         if partial.parent() != Some(root.as_path())
