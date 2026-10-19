@@ -54,3 +54,4 @@ runs:
       uses: Swatinem/rust-cache@v2
       with:
         key: native-${{ runner.os }}-${{ runner.arch }}
+        cache-on-failure: true
