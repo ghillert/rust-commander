@@ -1415,8 +1415,8 @@ pub(crate) fn publish_checkpoint(
         let info = session.operator()?.info();
         let root = PathBuf::from(info.root());
         crate::desktop::rename_exclusive(
-            &root.join(filesystem::safe_relative(stage)?),
-            &root.join(filesystem::safe_relative(target)?),
+            &root.join(filesystem::portable_relative(stage)?),
+            &root.join(filesystem::portable_relative(target)?),
         )?;
         return Ok(());
     }
