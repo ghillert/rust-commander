@@ -179,7 +179,8 @@ def linux_dependencies(binary):
             raise ValueError(f"Cannot map shared library to a Debian package: {path}")
         packages.add(owner)
     # SFTP uses the system OpenSSH client; desktop integration uses xdg-open.
-    packages.update(["openssh-client", "xdg-utils", "libegl1", "libgl1", "libgtk-4-1",
+    packages.update(["openssh-client", "xdg-utils", "libglib2.0-bin", "gvfs-backends",
+                     "libegl1", "libgl1", "libgtk-4-1",
                      "libxkbcommon0", "libxkbcommon-x11-0", "libwayland-client0",
                      "libx11-6", "libx11-xcb1", "libxcursor1", "libxi6", "libxrandr2"])
     return sorted(packages)

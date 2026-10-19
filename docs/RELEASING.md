@@ -171,7 +171,10 @@ chmod +x rust-commander-0.8.0-linux-x64.AppImage
 
 The system still supplies graphics drivers and desktop services. SFTP needs an
 OpenSSH client (`ssh`), and external-application opening needs `xdg-open`.
-The DEB declares these dependencies. Configure a desktop Secret Service if you
+Opening or emptying Trash needs `gio` and a GVfs Trash backend; on Ubuntu these
+are supplied by `libglib2.0-bin` and `gvfs-backends`. The DEB declares these
+dependencies; AppImage users should install them through their distribution.
+Configure a desktop Secret Service if you
 want to save credentials in a system keyring. Windows currently has no SFTP
 adapter; the other documented remote adapters remain available.
 
