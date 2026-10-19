@@ -138,11 +138,15 @@ def stage_macos(executable, binary, stage):
             prefix = "@executable_path/../Frameworks/" if dest == binary else "@loader_path/"
             edits.append((dest, dependency, prefix + originals[resolved].name))
     for dest in originals.values():
-        subprocess.run(["codesign", "--remove-signature", str(dest)], capture_output=True)
-        if dest != binary:
-            run("install_name_tool", "-id", "@rpath/" + dest.name, dest)
-    for dest, old, new in edits:
-        run("install_name_tool", "-change", old, new, dest)
+        # Keep the old signature's LINKEDIT allocation while editing. Removing
+        # it first leaves a layout that Xcode 16's install_name_tool rejects.
+        # cargo-packager replaces these now-invalid signatures after bundling.
+        changes = [] if dest == binary else ["-id", "@rpath/" + dest.name]
+        for owner, old, new in edits:
+            if owner == dest:
+                changes.extend(["-change", old, new])
+        if changes:
+            run("install_name_tool", *changes, dest)
     return sorted(frameworks.glob("*.dylib"))
 
 
