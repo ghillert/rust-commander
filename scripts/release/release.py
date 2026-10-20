@@ -330,6 +330,9 @@ def publish(api, version, commit, directory, jreleaser="jreleaser"):
         api.post("git/refs", {"ref": f"refs/tags/v{version}", "sha": commit})
     # Materialize the verified tag locally for JReleaser's changelog calculation.
     subprocess.run(["git", "fetch", "origin", f"refs/tags/v{version}:refs/tags/v{version}"], check=True)
+    # Actions checks out a commit SHA in detached-HEAD state. JReleaser needs
+    # the matching local branch in order to generate and upload a release.
+    subprocess.run(["git", "checkout", "-B", f"release/v{version}", commit], check=True)
     if pending or not release:
         # Only missing assets are offered to JReleaser. Existing files and edited
         # draft notes are preserved; partial-run checksums are never uploaded.
