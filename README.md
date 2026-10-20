@@ -39,6 +39,7 @@ Versioned installers and portable downloads are published on the
 [GitHub Releases page](https://github.com/ghillert/rust-commander/releases).
 Each completed release contains separate Apple Silicon/Intel DMGs, a Windows
 installer and ZIP, a Linux AppImage and DEB, and SHA-256 checksums.
+The Mac DMGs show first-launch instructions for the current unnotarized builds.
 
 **Maintainers:** follow [Releasing Rust Commander](docs/RELEASING.md) for the
 one-time setup, manual version input, draft review, publication, and retry

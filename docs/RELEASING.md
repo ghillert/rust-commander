@@ -1,8 +1,9 @@
 # Releasing Rust Commander
 
 Rust Commander uses GitHub Actions to build and test native applications,
-cargo-packager **0.11.8** to create desktop packages, and JReleaser **1.26.0** to
-assemble a **draft GitHub release**. Publishing is a separate, manual action.
+cargo-packager **0.11.8** to create app bundles and desktop packages,
+dmgbuild **1.6.7** to lay out the Mac DMG without Finder automation, and
+JReleaser **1.26.0** to assemble a **draft GitHub release**. Publishing is a separate, manual action.
 The entire release runs on GitHub-hosted runners; your Mac need not stay online.
 
 ## First-time repository setup
@@ -140,10 +141,17 @@ drag **Rust Commander.app** onto **Applications**, eject the DMG, and launch the
 installed application. Required non-system libraries are included in the app;
 Homebrew is not required.
 
+The DMG Finder window displays these installation and first-launch steps on
+its background. The editable source is `assets/dmg/install-background.svg`;
+pre-rendered 1× and 2× images are combined into a HiDPI background. The release
+smoke test checks the Finder layout and background in both Mac packages.
+
 Because these initial builds are unnotarized, macOS may block the first launch.
 After attempting to open it, use **System Settings → Privacy & Security → Open
-Anyway** for Rust Commander, then confirm. Only do this for a download you trust
-and whose checksum you verified. Do not disable Gatekeeper globally. See
+Anyway** for Rust Commander, then confirm. The option appears for about an hour
+after the blocked launch; try opening the app again if it has disappeared.
+Only do this for a download you trust and whose checksum you verified. Do not
+disable Gatekeeper globally. See
 [Apple's instructions for apps from unidentified developers](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac).
 
 ### Windows
@@ -236,8 +244,10 @@ Python 3.11+ is required by the release scripts. Install the pinned packager wit
 ./scripts/cargo-local.sh install cargo-packager --version 0.11.8 --locked --root .tools/packager
 python3 scripts/release/tests/test_release.py
 ./scripts/package-macos.sh
-python3 scripts/release/package.py --target macos-arm64
-python3 scripts/release/smoke.py --target macos-arm64
+python3 -m venv .tools/release-python
+.tools/release-python/bin/python -m pip install --require-hashes --only-binary=:all: -r scripts/release/requirements-macos.txt
+.tools/release-python/bin/python scripts/release/package.py --target macos-arm64
+.tools/release-python/bin/python scripts/release/smoke.py --target macos-arm64
 ```
 
 Use `macos-x64` on an Intel Mac. The app packaging script sets the macOS 15
@@ -245,6 +255,9 @@ deployment target and required linker padding. Package output is under
 `dist/release/`; intermediate bundles are under `target/release-packaging/`.
 These directories are ignored by Git. Icon sources and a standard-library-only
 regeneration script are included under `assets/icons/` and `scripts/release/`.
+To change DMG artwork, edit `assets/dmg/install-background.svg`, install
+`CairoSVG==2.8.2` in a temporary virtual environment, and run
+`scripts/release/render-dmg-background.py` with that environment's Python.
 
 The offline tests exercise preparation, version/lockfile consistency, conflicting
 tags, signature checks, asset tampering, and interrupted-upload recovery. They

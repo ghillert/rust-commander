@@ -60,6 +60,21 @@ def macos(directory, version, target, work):
     try:
         if not (volume / "Applications").is_symlink():
             raise ValueError("DMG lacks its Applications shortcut")
+        background = volume / ".background.tiff"
+        finder_data = volume / ".DS_Store"
+        if not background.is_file() or not finder_data.is_file():
+            raise ValueError("DMG lacks its Finder instructions background or layout")
+        details = run("tiffutil", "-info", background, capture_output=True, text=True).stdout
+        if ("Image Width: 680 Image Length: 398" not in details
+                or "Image Width: 1360 Image Length: 796" not in details):
+            raise ValueError("DMG lacks a crisp Retina instructions background")
+        from ds_store import DSStore
+        with DSStore.open(str(finder_data), "r") as store:
+            view = store["."]["icvp"]
+            if (view["backgroundType"] != 2
+                    or store["Rust Commander.app"]["Iloc"] != (170, 185)
+                    or store["Applications"]["Iloc"] != (490, 185)):
+                raise ValueError("DMG Finder view does not display the installation instructions")
         app = work / "Rust Commander.app"
         shutil.copytree(volume / "Rust Commander.app", app, symlinks=True)
     finally:

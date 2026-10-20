@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="398" viewBox="0 0 680 398">
+  <rect width="680" height="398" fill="#f7f9fc"/>
+  <path d="M0 100.5H680" stroke="#e0e6ef"/>
+
+  <g font-family="Helvetica Neue, Arial, sans-serif">
+    <text x="36" y="52" fill="#1b2740" font-size="25" font-weight="600">Install Rust Commander</text>
+    <text x="36" y="82" fill="#536177" font-size="15">Drag the app to Applications</text>
+  </g>
+
+  <!-- Finder places the app and Applications icons on either side. -->
+  <path d="M302 185H378M365 173L378 185L365 197" fill="none"
+        stroke="#4f82c6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="24.5" y="268.5" width="631" height="125" rx="13"
+        fill="#fff" stroke="#dce4ee"/>
+  <g font-family="Helvetica Neue, Arial, sans-serif">
+    <text x="43" y="294" fill="#1b2740" font-size="16" font-weight="600">First launch on macOS</text>
+    <g fill="#33435a" font-size="13">
+      <text x="44" y="323">1   Try opening Rust Commander from Applications.</text>
+      <text x="44" y="346">2   If blocked: open Privacy &amp; Security in System Settings.</text>
+      <text x="44" y="369">3   In Security, click Open Anyway, then confirm.</text>
+    </g>
+    <text x="44" y="389" fill="#66758c" font-size="11">Only open a download you trust; verify its SHA-256 checksum first.</text>
+  </g>
+</svg>

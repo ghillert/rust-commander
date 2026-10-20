@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from importlib import metadata
 import json
 import os
 from pathlib import Path
@@ -155,6 +156,34 @@ def windows_runtime(stage):
     return sorted(stage.glob("*.dll"))
 
 
+def create_macos_dmg(app, stage):
+    """Write Finder layout data without AppleScript or a logged-in desktop."""
+    try:
+        import dmgbuild
+        installed = metadata.version("dmgbuild")
+    except (ImportError, metadata.PackageNotFoundError) as error:
+        raise RuntimeError("Install scripts/release/requirements-macos.txt") from error
+    if installed != "1.6.7":
+        raise RuntimeError(f"Expected dmgbuild 1.6.7, got {installed}")
+    image = stage / "packages/Rust Commander.dmg"
+    settings = {
+        "format": "UDZO", "files": [str(app)],
+        "symlinks": {"Applications": "/Applications"},
+        "background": str(ROOT / "assets/dmg/install-background.png"),
+        "icon": str(ROOT / "assets/icons/rust-commander.icns"),
+        "icon_locations": {app.name: (170, 185), "Applications": (490, 185)},
+        "window_rect": ((200, 120), (680, 430)),
+        "default_view": "icon-view", "arrange_by": None,
+        "show_status_bar": False, "show_toolbar": False,
+        "show_pathbar": False, "show_sidebar": False,
+        "icon_size": 96, "text_size": 13,
+    }
+    # dmgbuild combines install-background.png and @2x.png into a HiDPI TIFF.
+    dmgbuild.build_dmg(str(image), "Rust Commander", settings=settings)
+    run("codesign", "--force", "--sign", "-", image)
+    run("codesign", "--verify", image)
+
+
 def debian_package_owners(text):
     # dpkg-query can print diversion notices before the actual ownership line,
     # notably for Ubuntu's merged-/usr dynamic loader. Only accept package names.
@@ -247,9 +276,7 @@ def package(target, app_only=False):
                            "NSHighResolutionCapable": True}, stream)
         config["macos"] = {"minimumSystemVersion": "15.0", "signingIdentity": "-",
                            "infoPlistPath": str(plist), "frameworks": [str(p) for p in libraries]}
-        config["formats"] = ["app"] if app_only else ["app", "dmg"]
-        config["dmg"] = {"windowSize": {"width": 560, "height": 340},
-                         "appPosition": {"x": 150, "y": 160}, "appFolderPosition": {"x": 410, "y": 160}}
+        config["formats"] = ["app"]
         licenses = stage / "third-party-licenses"
         if licenses.exists():
             config["resources"].append({"src": str(licenses), "target": "third-party-licenses"})
@@ -294,6 +321,7 @@ def package(target, app_only=False):
             shutil.copytree(app, dest, symlinks=True)
             print(f"Created {dest}")
             return
+        create_macos_dmg(app, stage)
     dist = ROOT / "dist/release"
     dist.mkdir(parents=True, exist_ok=True)
     names = asset_names(version, target)
