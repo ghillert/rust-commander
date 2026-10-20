@@ -22,6 +22,7 @@ fn tr(text: &str) -> std::borrow::Cow<'_, str> {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Action {
     DirectoryTree,
+    ToggleSidebar,
     ExternalEdit,
     Associations,
     FocusAddress,
@@ -150,6 +151,7 @@ pub(crate) enum Action {
 pub(crate) fn all_actions() -> Vec<Action> {
     vec![
         Action::DirectoryTree,
+        Action::ToggleSidebar,
         Action::ExternalEdit,
         Action::Associations,
         Action::FocusAddress,
@@ -422,6 +424,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
         "View",
         vec![
             ("Show hidden files", Action::ToggleHidden),
+            ("Toggle sidebar", Action::ToggleSidebar),
             ("Settings…", Action::Preferences),
         ],
     ));
@@ -1226,6 +1229,11 @@ impl Commander {
             Action::ExternalEdit | Action::Associations => return,
             Action::DirectoryTree => {
                 self.preferences.directory_tree = !self.preferences.directory_tree;
+                self.save_settings();
+                return;
+            }
+            Action::ToggleSidebar => {
+                self.preferences.sidebar = !self.preferences.sidebar;
                 self.save_settings();
                 return;
             }

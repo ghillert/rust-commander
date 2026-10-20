@@ -501,6 +501,7 @@ impl Adapter {
         ui.set_inactive_selection(palette.inactive_selection);
         ui.set_text_size(self.app.preferences.font_size);
         ui.set_toolbar_visible(self.app.preferences.toolbar);
+        ui.set_sidebar_visible(self.app.preferences.sidebar);
         #[cfg(target_os = "macos")]
         if let Some(window) = &self.app.native_window {
             crate::native_files::align_window_controls(

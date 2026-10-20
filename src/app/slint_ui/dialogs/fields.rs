@@ -80,6 +80,7 @@ impl Adapter {
                                 p.font_size = size;
                             }
                             "toolbar" => p.toolbar = checked(value),
+                            "sidebar" => p.sidebar = checked(value),
                             "commands" => p.command_bar = checked(value),
                             "status" => p.status_bar = checked(value),
                             "single" => p.single_pane = checked(value),

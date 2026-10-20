@@ -47,6 +47,12 @@ Dragging empty toolbar space moves the window. Hiding the toolbar keeps a
 minimal title-bar area for the controls.
 Other platforms retain their normal window caption above the toolbar.
 
+The sidebar button beside Refresh hides or restores both Places and the
+optional Folders tree, letting the file panes use the full width. The same
+toggle is in **View → Toggle sidebar**, and **Settings → Show sidebar** keeps
+the choice across launches. Places, Favorites, Devices and Connections can
+still be collapsed independently by clicking their headings.
+
 Use **Mod+L** or the pencil button to edit the full location. Enter navigates;
 Escape returns to the file list. Text fields retain selection, clipboard,
 Undo/Redo and context-menu editing. Toolbar controls have labels for assistive
@@ -151,6 +157,8 @@ The app captures a frame after loading and exits. Set
 can also open a command menu, for example with
 `RUST_COMMANDER_SCREENSHOT_ACTION=Menu:Operations`, or collapse a sidebar
 section with `RUST_COMMANDER_SCREENSHOT_ACTION=ToggleSection:places`.
+Use `RUST_COMMANDER_SCREENSHOT_ACTION=ToggleSidebar` to capture the file panes
+with the full navigation area hidden.
 They cover the client area; native title-bar controls require a desktop smoke
 check.
 For machines without working OpenGL, `SLINT_BACKEND=winit-software` selects the

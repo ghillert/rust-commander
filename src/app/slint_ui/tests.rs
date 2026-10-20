@@ -71,6 +71,43 @@ fn sidebar_sections_collapse_independently() {
 }
 
 #[test]
+fn sidebar_toggle_hides_places_and_preserves_the_tree_setting() {
+    use i_slint_backend_testing::ElementHandle;
+
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, adapter, _left, _right) = fixture();
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    ui.window().set_size(slint::LogicalSize::new(1240.0, 780.0));
+    ui.show().unwrap();
+
+    ui.invoke_action("DirectoryTree".into());
+    assert!(ui.get_sidebar_visible());
+    assert!(ui.get_tree_visible());
+    assert_eq!(ui.invoke_drop_side(50.0, 400.0), -1);
+
+    ui.invoke_action("ToggleSidebar".into());
+    assert!(!ui.get_sidebar_visible());
+    assert!(!state.borrow().app.preferences.sidebar);
+    assert!(
+        ui.get_tree_visible(),
+        "the tree setting should survive hiding the sidebar"
+    );
+    assert_eq!(
+        ElementHandle::find_by_accessible_label(&ui, "Places").count(),
+        0
+    );
+
+    ui.invoke_action("ToggleSidebar".into());
+    assert!(ui.get_sidebar_visible());
+    assert!(state.borrow().app.preferences.sidebar);
+    assert!(ElementHandle::find_by_accessible_label(&ui, "Places").count() > 0);
+    assert_eq!(ui.invoke_drop_side(50.0, 400.0), -1);
+}
+
+#[test]
 fn slint_callbacks_preserve_navigation_selection_and_confirmation() {
     i_slint_backend_testing::init_no_event_loop();
     let (_root, adapter, left, right) = fixture();

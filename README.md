@@ -242,6 +242,11 @@ and layout. Cosmic does not reproduce every Ubuntu/GNOME theme. See the
 integration details. Windows/Linux native interactions still need validation
 on those desktops.
 
+The sidebar button beside Refresh hides or restores the full navigation area,
+including the optional folder tree, so the file panes gain its width. The
+same command is available from **View → Toggle sidebar** and remains available
+when the toolbar is hidden.
+
 New macOS installations hide the function-key command bar by default. Enable
 it in Settings if desired; existing preferences are preserved.
 

@@ -300,6 +300,7 @@ export component CommanderWindow inherits Window {
     in property <color> inactive-selection: #dedfe3;
     in property <float> text-size: 14;
     in property <bool> toolbar-visible: true;
+    in property <bool> sidebar-visible: true;
     out property <length> native-header-height: root.toolbar-visible ? 44px : 40px;
     in property <bool> command-bar-visible: true;
     in property <bool> status-visible: true;
@@ -478,6 +479,7 @@ export component CommanderWindow inherits Window {
                     ChromeButton {label:Words.translate("Back",Words.version);icon:Glyphs.action("Back");clicked=>{root.action("Back");}}
                     ChromeButton {label:Words.translate("Forward",Words.version);icon:Glyphs.action("Forward");clicked=>{root.action("Forward");}}
                     ChromeButton {label:Words.translate("Refresh",Words.version);icon:Glyphs.action("Refresh");clicked=>{root.action("Refresh");}}
+                    ChromeButton {label:Words.translate(root.sidebar-visible ? "Hide sidebar" : "Show sidebar",Words.version);icon:Glyphs.action("ToggleSidebar");checkable:true;checked:root.sidebar-visible;clicked=>{root.action("ToggleSidebar");}}
                     Rectangle {width:9px;Rectangle {x:4px;width:1px;height:20px;y:(parent.height - self.height)/2;background:Chrome.separator;}}
                     for command in root.toolbar: ChromeButton {
                         label: Words.translate(command.title,Words.version); icon: Glyphs.action(command.id);
@@ -494,7 +496,7 @@ export component CommanderWindow inherits Window {
             }
             HorizontalLayout {
                 spacing: 1px;
-                Rectangle {
+                if root.sidebar-visible: Rectangle {
                     width: 186px; background: Chrome.sidebar;
                     ListView {
                         for place in root.places: place-focus := FocusScope {
@@ -539,11 +541,11 @@ export component CommanderWindow inherits Window {
                     }
                 }
                 Rectangle {
-                    visible:root.tree-visible;width:root.tree-visible?220px:0px;background:Chrome.sidebar;
+                    visible:root.sidebar-visible && root.tree-visible;width:root.sidebar-visible && root.tree-visible?220px:0px;background:Chrome.sidebar;
                     VerticalLayout {
                         Rectangle {height:32px;Text {x:16px;text:"Folders";height:parent.height;vertical-alignment:center;color:Chrome.secondary;font-weight:600;font-size:10px;}}
                         tree-focus := FocusScope {
-                            enabled: root.tree-visible;
+                            enabled: root.sidebar-visible && root.tree-visible;
                             focus-on-tab-navigation: true;
                             accessible-role: tree;
                             accessible-label: "Folders";

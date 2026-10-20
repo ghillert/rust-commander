@@ -355,6 +355,7 @@ impl Adapter {
                 ),
                 Field::text("font", "Font size", p.font_size),
                 Field::check("toolbar", "Show toolbar", p.toolbar),
+                Field::check("sidebar", "Show sidebar", p.sidebar),
                 Field::check("commands", "Show command bar", p.command_bar),
                 Field::check("status", "Show status bar", p.status_bar),
                 Field::check("single", "Single pane", p.single_pane),
