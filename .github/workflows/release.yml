@@ -109,6 +109,7 @@ jobs:
           path: |
             target/release-packaging/**/packager.json
             target/release-packaging/**/*.log
+            dist/release/*
           if-no-files-found: ignore
           retention-days: 7
 

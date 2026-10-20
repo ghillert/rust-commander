@@ -184,6 +184,8 @@ adapter; the other documented remote adapters remain available.
   ownership, a conflicting tag, or an unverified commit. Fix repository settings
   and rerun the original run if no source change is necessary.
 - **A build/package test fails:** download its logs and packaging diagnostics.
+  The diagnostics artifact includes any packages produced before the failure;
+  these have **not** passed installation tests and must not be published.
   A transient runner/network problem can be retried using **Re-run failed jobs**
   or `gh run rerun RUN_ID --failed`. A source fix requires a new release version
   from updated `main`; the old run deliberately keeps its original source.

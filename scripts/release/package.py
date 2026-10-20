@@ -265,10 +265,11 @@ def package(target, app_only=False):
         config["deb"] = {"depends": linux_dependencies(binary)}
         # Slint loads window-system/OpenGL libraries dynamically; ldd alone is
         # not enough for a self-contained AppImage. Drivers stay on the host.
-        # linuxdeploy's default exclusions omit the font stack even though
-        # the executable links Fontconfig. Seed it explicitly so the AppImage
-        # also launches on a minimal desktop runtime with fonts but no SDK.
+        # linuxdeploy's exclusions omit parts of the text-rendering stack,
+        # even though the executable links them. Seed that closure explicitly
+        # so the AppImage launches on a minimal desktop runtime.
         config["appimage"] = {"libs": ["libfontconfig.so.1", "libfreetype.so.6",
+                                        "libharfbuzz.so.0", "libfribidi.so.0",
                                         "libgtk-4.so.1", "libEGL.so.1", "libGL.so.1",
                                         "libxkbcommon.so.0", "libxkbcommon-x11.so.0", "libwayland-client.so.0",
                                         "libX11.so.6", "libX11-xcb.so.1", "libXcursor.so.1", "libXi.so.6", "libXrandr.so.2"]}
