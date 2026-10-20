@@ -230,6 +230,12 @@ shares the macOS title bar, keeping the native window controls. Breadcrumbs are
 the normal location display; **Mod+L** or the pencil button opens the full path
 for editing. Toolbar actions have hover hints and accessible labels.
 
+Local files show native system icons: macOS file and application icons, Windows
+Shell icons, and Linux desktop theme icons. Icons load in the background and
+are cached while you browse. Archive entries, remote files, and unavailable
+system icons use the embedded folder/file icons. File-list thumbnails are not
+generated; previews remain available in the preview pane and viewers.
+
 Open **Settings → Desktop appearance** to choose the colors and layout profile.
 **Automatic** detects the platform, including Ubuntu's orange accent.
 **Color scheme → Follow system** follows the desktop's light/dark preference;

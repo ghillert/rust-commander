@@ -7,6 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 slint::include_modules!();
 mod dialogs;
 mod enhancements;
+mod icons;
 mod keys;
 mod parity;
 pub(in crate::app) mod viewer_tools;
@@ -16,6 +17,7 @@ mod windows;
 struct RowData {
     id: String,
     path: PathBuf,
+    icon_key: Option<crate::native_icons::Key>,
     name: String,
     cells: Vec<String>,
     directory: bool,
@@ -31,6 +33,8 @@ pub(super) struct Adapter {
     ctx: UiSignal,
     rows: [Rc<VecModel<FileRow>>; 2],
     row_cache: [Vec<RowData>; 2],
+    icons: icons::Cache,
+    icon_rows: [std::ops::Range<usize>; 2],
     listing_stamp: [String; 2],
     breadcrumbs: [Vec<Location>; 2],
     breadcrumb_stamp: [String; 2],
@@ -133,6 +137,8 @@ impl Adapter {
             ctx,
             rows: std::array::from_fn(|_| Rc::new(VecModel::default())),
             row_cache: Default::default(),
+            icons: Default::default(),
+            icon_rows: [0..0, 0..0],
             listing_stamp: Default::default(),
             breadcrumbs: Default::default(),
             breadcrumb_stamp: Default::default(),
@@ -642,6 +648,11 @@ impl Adapter {
                         RowData {
                             id: path_id(&entry.path),
                             path: entry.path.clone(),
+                            icon_key: tab.location.local().map(|_| crate::native_icons::Key {
+                                path: entry.path.clone(),
+                                directory: entry.is_dir,
+                                modified: entry.modified,
+                            }),
                             name: entry.name.clone(),
                             cells: self
                                 .app
@@ -674,6 +685,8 @@ impl Adapter {
                         selected: row.selected,
                         cursor: row.cursor,
                         payload: row.payload.as_str().into(),
+                        icon: Default::default(),
+                        native_icon: false,
                     }
                 });
             } else if self.selection_stamp[side] != selection {
@@ -782,6 +795,7 @@ impl Adapter {
         if active_changed && !self.blocked() {
             ui.invoke_focus_files(self.app.active as i32);
         }
+        self.sync_icons(ui);
         self.sync_places(ui);
         self.sync_viewer(ui);
         self.sync_terminal(ui);

@@ -24,6 +24,7 @@ pub mod feature_ui;
 pub mod history;
 pub mod i18n;
 pub mod native_files;
+mod native_icons;
 pub mod oauth;
 
 pub mod native_actions;

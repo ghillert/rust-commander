@@ -40,6 +40,19 @@ uses a small accent marker; the selected file remains the main visual focus.
 Numeric size columns align to the right. Light and dark modes use the same
 spacing and hierarchy.
 
+File rows use system-provided icons for local paths: AppKit `NSWorkspace` on
+macOS, the Windows Shell, and GIO plus the GTK4 icon theme on Linux. A dedicated
+worker handles native lookups and converts images into transparent RGBA pixels;
+Slint images stay on the UI thread. Icons retain their colors when selected.
+The 64-pixel images support high-density displays without tinting the artwork.
+
+Only visible rows and a small scroll margin request icons. The request queue and
+per-window cache are bounded; obsolete requests are cancelled and off-screen
+model rows release their images. Cache entries expire after a minute to pick up
+association or theme changes, and changed file timestamps have separate cache
+keys. Remote and archive entries use embedded icons without requesting local
+filesystem metadata. This provides file icons, rather than content thumbnails.
+
 On macOS, the toolbar extends into the native title bar, with reserved space
 for the close/minimize/full-screen controls. The native controls are vertically
 centered in the header, including after resizing or changing toolbar visibility.

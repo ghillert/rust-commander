@@ -83,13 +83,15 @@ path = "src/main.rs"
 [target.'cfg(target_os = "macos")'.dependencies]
 # Disable Slint's default AppKit menu in favor of our localized command menus.
 i-slint-backend-winit = { version = "=1.18.1", default-features = false }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSView", "NSResponder", "NSButton", "NSControl"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSView", "NSResponder", "NSButton", "NSControl", "NSWorkspace", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "objc2-core-graphics"] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSDictionary", "NSGeometry"] }
 keyring = { version = "3", features = ["apple-native"] }
 muda = { version = "0.21", default-features = false }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
-windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_Foundation", "Win32_Security"] }
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_Foundation", "Win32_Security", "Win32_System_Com"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.13", default-features = false }

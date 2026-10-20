@@ -9,7 +9,7 @@ export struct Command { id: string, title: string, enabled: bool }
 export struct TreeRow { index:int, title:string, depth:int, expanded:bool, selected:bool, detail:string }
 export struct Place { id: string, title: string, detail: string, heading: bool, section: string, expanded: bool }
 export struct FileColumn { title: string, width: float }
-export struct FileRow { id: string, name: string, cells: [string], directory: bool, selected: bool, cursor: bool, payload: string }
+export struct FileRow { id: string, name: string, cells: [string], directory: bool, selected: bool, cursor: bool, payload: string, icon: image, native-icon: bool }
 export struct FormField { id: string, title: string, value: string, kind: int, choices: [string] }
 export struct FormRow { id: string, title: string, detail: string, selected: bool, actions: [Command] }
 export struct TerminalCell { text: string, foreground: color, background: color, bold: bool, cursor: bool }
@@ -28,6 +28,7 @@ export global Transfers {
 component FilePane inherits Rectangle {
     in property <int> side;
     out property <float> visible-rows:list.visible-height/max(24px,(root.text-size+10)*1px);
+    out property <float> first-row:max(0,floor(-list.content-y/max(24px,(root.text-size+10)*1px)));
     in property <bool> active;
     in property <bool> busy;
     in property <[FileRow]> rows;
@@ -219,7 +220,8 @@ component FilePane inherits Rectangle {
                             preferred-width: column.width * root.column-scale * 1px; min-width: col == 0 ? 80px : 40px;
                             horizontal-stretch: col == 0 ? 1 : 0;
                             if col == 0: Image {
-                                source: row.directory ? @image-url("icons/folder.svg") : @image-url("icons/file.svg");
+                                source: row.native-icon ? row.icon : (row.directory ? @image-url("icons/folder.svg") : @image-url("icons/file.svg"));
+                                image-fit: contain;
                                 x: 8px; y: (parent.height - 18px) / 2; width: 18px; height: 18px;
                             }
                             Text {
@@ -307,6 +309,8 @@ export component CommanderWindow inherits Window {
     in property <bool> single-pane;
     out property <float> left-page-rows:left.visible-rows;
     out property <float> right-page-rows:right.visible-rows;
+    out property <float> left-first-row:left.first-row;
+    out property <float> right-first-row:right.first-row;
     in property <bool> auto-size-columns;
     in property <float> column-total:1;
     in property <bool> stacked;
