@@ -148,6 +148,35 @@ fn interrupted_replacement_keeps_old_target_and_all_move_sources() {
 #[cfg(windows)]
 #[test]
 fn protected_windows_dacl_is_copied_without_enabling_inheritance() {
+    fn permissions(path: &Path) -> serde_json::Value {
+        let script = r#"
+$ErrorActionPreference = 'Stop'
+$acl = Get-Acl -LiteralPath $env:RUST_COMMANDER_ACL_TEST_PATH
+$rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object {
+    [pscustomobject]@{
+        Sid = $_.IdentityReference.Value
+        Rights = [int]$_.FileSystemRights
+        Type = [int]$_.AccessControlType
+        Inheritance = [int]$_.InheritanceFlags
+        Propagation = [int]$_.PropagationFlags
+        Inherited = $_.IsInherited
+    }
+})
+[pscustomobject]@{ Protected = $acl.AreAccessRulesProtected; Rules = $rules } | ConvertTo-Json -Compress -Depth 4
+"#;
+        let output = Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .env("RUST_COMMANDER_ACL_TEST_PATH", path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+
     let root = tempfile::tempdir().unwrap();
     let source = root.path().join("source");
     let target = root.path().join("target");
@@ -168,11 +197,31 @@ fn protected_windows_dacl_is_copied_without_enabling_inheritance() {
         String::from_utf8_lossy(&result.stderr)
     );
     rust_commander::file_metadata::copy(&source, &target).unwrap();
-    assert_eq!(
-        rust_commander::file_metadata::digest(&source).unwrap(),
-        rust_commander::file_metadata::digest(&target).unwrap()
-    );
+    // Windows can rewrite descriptor layout and auto-inheritance bookkeeping
+    // when applying a DACL. Compare permissions through an independent API,
+    // rather than requiring two different files' raw descriptors to match.
+    let expected = permissions(&source);
+    assert_eq!(expected["Protected"], true);
+    assert!(!expected["Rules"].as_array().unwrap().is_empty());
+    assert_eq!(permissions(&target), expected);
     assert_eq!(fs::read(&target).unwrap(), b"target");
+    let before = rust_commander::file_metadata::digest(&target).unwrap();
+    assert_eq!(
+        rust_commander::file_metadata::digest(&target).unwrap(),
+        before
+    );
+    let result = Command::new("icacls.exe")
+        .arg(&target)
+        .arg("/grant:r")
+        .arg(format!("{}:(R)", user.trim()))
+        .output()
+        .unwrap();
+    assert!(result.status.success());
+    assert_ne!(
+        rust_commander::file_metadata::digest(&target).unwrap(),
+        before
+    );
+    rust_commander::file_metadata::copy(&source, &target).unwrap();
 }
 
 #[test]
