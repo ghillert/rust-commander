@@ -21,6 +21,55 @@ pub(super) fn fixture() -> (tempfile::TempDir, Adapter, PathBuf, PathBuf) {
     (root, adapter, left, right)
 }
 
+#[cfg(debug_assertions)]
+#[test]
+fn sidebar_sections_collapse_independently() {
+    use i_slint_backend_testing::{AccessibleRole, ElementHandle};
+
+    fn heading(ui: &CommanderWindow, title: &str) -> ElementHandle {
+        ElementHandle::find_by_accessible_label(ui, title)
+            .find(|item| item.accessible_expandable() == Some(true))
+            .unwrap()
+    }
+
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, adapter, _left, _right) = fixture();
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    ui.window().set_size(slint::LogicalSize::new(1240.0, 780.0));
+    ui.show().unwrap();
+
+    assert_eq!(heading(&ui, "Places").accessible_expanded(), Some(true));
+    assert_eq!(heading(&ui, "Favorites").accessible_expanded(), Some(true));
+    let favorites_top = heading(&ui, "Favorites").absolute_position().y;
+
+    heading(&ui, "Places").invoke_accessible_default_action();
+    assert_eq!(heading(&ui, "Places").accessible_expanded(), Some(false));
+    assert_eq!(heading(&ui, "Favorites").accessible_expanded(), Some(true));
+    assert!(heading(&ui, "Favorites").absolute_position().y < favorites_top - 100.0);
+    state.borrow_mut().sync(&ui);
+    assert_eq!(heading(&ui, "Places").accessible_expanded(), Some(false));
+    assert_eq!(
+        ElementHandle::find_by_accessible_label(&ui, "Home")
+            .filter(|item| item.accessible_role() == Some(AccessibleRole::ListItem))
+            .count(),
+        0
+    );
+
+    heading(&ui, "Favorites").invoke_accessible_default_action();
+    assert_eq!(heading(&ui, "Favorites").accessible_expanded(), Some(false));
+    assert_eq!(heading(&ui, "Places").accessible_expanded(), Some(false));
+    heading(&ui, "Places").invoke_accessible_default_action();
+    assert_eq!(heading(&ui, "Places").accessible_expanded(), Some(true));
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "Home")
+            .filter(|item| item.accessible_role() == Some(AccessibleRole::ListItem))
+            .any(|item| item.size().height > 0.0)
+    );
+}
+
 #[test]
 fn slint_callbacks_preserve_navigation_selection_and_confirmation() {
     i_slint_backend_testing::init_no_event_loop();

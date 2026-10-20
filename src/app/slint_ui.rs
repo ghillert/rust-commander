@@ -46,7 +46,8 @@ pub(super) struct Adapter {
     dialog_buttons: Rc<VecModel<Command>>,
     dialog_button_cache: Vec<(String, String, bool)>,
     places: Vec<(String, Location)>,
-    place_cache: Vec<(String, String, bool)>,
+    place_cache: Vec<(String, String, bool, &'static str, bool)>,
+    place_sections_expanded: [bool; 4],
     toolbar_cache: Vec<(String, String, bool)>,
     columns_cache: Vec<(String, f32)>,
     columns: Rc<VecModel<FileColumn>>,
@@ -88,6 +89,16 @@ fn publish<T: Clone + 'static, S: PartialEq>(
 
 fn path_id(path: &Path) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(path.as_os_str().as_encoded_bytes())
+}
+
+fn place_section_index(section: &str) -> Option<usize> {
+    match section {
+        "places" => Some(0),
+        "favorites" => Some(1),
+        "devices" => Some(2),
+        "connections" => Some(3),
+        _ => None,
+    }
 }
 
 pub(crate) fn supported_commands() -> Vec<String> {
@@ -138,6 +149,7 @@ impl Adapter {
             dialog_button_cache: Vec::new(),
             places: Vec::new(),
             place_cache: Vec::new(),
+            place_sections_expanded: [true; 4],
             toolbar_cache: Vec::new(),
             columns_cache: Vec::new(),
             columns: Rc::new(VecModel::default()),
@@ -585,6 +597,8 @@ impl Adapter {
                             title: title.as_str().into(),
                             detail: Default::default(),
                             heading: false,
+                            section: Default::default(),
+                            expanded: false,
                         })
                         .collect::<Vec<_>>(),
                 ));
@@ -839,7 +853,7 @@ impl Adapter {
     }
 
     fn sync_places(&mut self, ui: &CommanderWindow) {
-        let mut entries = vec![("".into(), tr("Places").into_owned(), true)];
+        let mut entries = vec![("".into(), tr("Places").into_owned(), true, "places")];
         self.places.clear();
         for (name, path) in [
             ("Home", filesystem::home()),
@@ -852,25 +866,35 @@ impl Adapter {
             ),
         ] {
             let id = format!("place:{}", self.places.len());
-            entries.push((id.clone(), tr(name).into_owned(), false));
+            entries.push((id.clone(), tr(name).into_owned(), false, "places"));
             self.places.push((id, Location::Local(path)));
         }
-        entries.push((String::new(), tr("Favorites").into_owned(), true));
+        entries.push((
+            String::new(),
+            tr("Favorites").into_owned(),
+            true,
+            "favorites",
+        ));
         for (index, bookmark) in self.app.bookmarks.iter().enumerate() {
             let id = format!("bookmark:{index}");
-            entries.push((id.clone(), bookmark.name.clone(), false));
+            entries.push((id.clone(), bookmark.name.clone(), false, "favorites"));
             self.places.push((id, bookmark.location.clone()));
         }
-        entries.push((String::new(), tr("Devices").into_owned(), true));
+        entries.push((String::new(), tr("Devices").into_owned(), true, "devices"));
         for (name, path) in crate::native_files::mounted_drives() {
             let id = format!("place:{}", self.places.len());
-            entries.push((id.clone(), name, false));
+            entries.push((id.clone(), name, false, "devices"));
             self.places.push((id, Location::Local(path)));
         }
-        entries.push((String::new(), tr("Connections").into_owned(), true));
+        entries.push((
+            String::new(),
+            tr("Connections").into_owned(),
+            true,
+            "connections",
+        ));
         for (index, connection) in self.app.connections.iter().enumerate() {
             let id = format!("connection:{index}");
-            entries.push((id.clone(), connection.name.clone(), false));
+            entries.push((id.clone(), connection.name.clone(), false, "connections"));
             self.places.push((
                 id,
                 Location::Remote {
@@ -879,13 +903,25 @@ impl Adapter {
                 },
             ));
         }
-        entries.push(("Connections".into(), tr("Connections…").into_owned(), false));
+        entries.push((
+            "Connections".into(),
+            tr("Connections…").into_owned(),
+            false,
+            "connections",
+        ));
+        let entries = entries
+            .into_iter()
+            .filter_map(|(id, title, heading, section)| {
+                let expanded = self.place_sections_expanded[place_section_index(section)?];
+                (heading || expanded).then_some((id, title, heading, section, expanded))
+            })
+            .collect::<Vec<_>>();
         if entries != self.place_cache {
             ui.set_places(
                 Rc::new(VecModel::from(
                     entries
                         .iter()
-                        .map(|(id, title, heading)| Place {
+                        .map(|(id, title, heading, section, expanded)| Place {
                             id: id.into(),
                             title: title.into(),
                             detail: self
@@ -896,6 +932,8 @@ impl Adapter {
                                 .unwrap_or_default()
                                 .into(),
                             heading: *heading,
+                            section: (*section).into(),
+                            expanded: *expanded,
                         })
                         .collect::<Vec<_>>(),
                 ))
@@ -1197,6 +1235,8 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                 if let Some(ui) = action_ui.upgrade() {
                     if let Some(title) = action.strip_prefix("Menu:") {
                         ui.invoke_show_menu(title.into());
+                    } else if let Some(section) = action.strip_prefix("ToggleSection:") {
+                        ui.invoke_toggle_place_section(section.into());
                     } else if let Some(file) = action.strip_prefix("Open:") {
                         ui.invoke_opened(0, path_id(Path::new(file)).into());
                     } else {
@@ -1312,6 +1352,11 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
     });
     callback!(on_tree_action, |a, w, index, toggle| {
         a.tree_action(index, toggle);
+    });
+    callback!(on_toggle_place_section, |a, w, section| {
+        if let Some(index) = place_section_index(section.as_str()) {
+            a.place_sections_expanded[index] = !a.place_sections_expanded[index];
+        }
     });
     callback!(on_place, |a, w, id| {
         if !a.blocked() {

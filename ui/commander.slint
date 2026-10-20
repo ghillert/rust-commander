@@ -7,7 +7,7 @@ export { Chrome } from "chrome.slint";
 export struct CommandButton {id:string,title:string,key:string,enabled:bool}
 export struct Command { id: string, title: string, enabled: bool }
 export struct TreeRow { index:int, title:string, depth:int, expanded:bool, selected:bool, detail:string }
-export struct Place { id: string, title: string, detail: string, heading: bool }
+export struct Place { id: string, title: string, detail: string, heading: bool, section: string, expanded: bool }
 export struct FileColumn { title: string, width: float }
 export struct FileRow { id: string, name: string, cells: [string], directory: bool, selected: bool, cursor: bool, payload: string }
 export struct FormField { id: string, title: string, value: string, kind: int, choices: [string] }
@@ -323,6 +323,7 @@ export component CommanderWindow inherits Window {
     in property <bool> status-error;
     in property <[Command]> toolbar;
     in property <[Place]> places;
+    callback toggle-place-section(string);
     in property <bool> tree-visible;
     in property <[TreeRow]> tree-rows;
     callback tree-action(int,bool);
@@ -497,14 +498,19 @@ export component CommanderWindow inherits Window {
                     width: 186px; background: Chrome.sidebar;
                     ListView {
                         for place in root.places: place-focus := FocusScope {
-                            focus-on-tab-navigation: !place.heading;
+                            focus-on-tab-navigation: true;
                             accessible-role: list-item;
                             accessible-label: place.title;
+                            accessible-expandable: place.heading;
+                            accessible-expanded: place.heading && place.expanded;
                             accessible-item-selectable: !place.heading;
                             accessible-item-selected: !place.heading && place.detail != "" && place.detail == root.active-location;
-                            accessible-action-default => { if !place.heading {root.place(place.id);} }
+                            accessible-action-default => { if place.heading {root.toggle-place-section(place.section);} else {root.place(place.id);} }
                             key-pressed(event) => {
-                                if !place.heading && !event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta && (event.text == Key.Return || event.text == " ") {root.place(place.id);return EventResult.accept;}
+                                if !event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta && (event.text == Key.Return || event.text == " ") {
+                                    if place.heading {root.toggle-place-section(place.section);} else {root.place(place.id);}
+                                    return EventResult.accept;
+                                }
                                 return EventResult.reject;
                             }
                             height: place.heading ? 32px : 29px;
@@ -513,17 +519,17 @@ export component CommanderWindow inherits Window {
                                 background: !place.heading && place.detail != "" && place.detail == root.active-location ? Chrome.pressed : place-touch.has-hover ? Chrome.hover : transparent;
                                 border-width: place-focus.has-focus ? 1px : 0px; border-color:root.accent;
                             }
+                            if place.heading: Text {text:place.expanded?"▾":"▸";x:8px;width:18px;height:parent.height;horizontal-alignment:center;vertical-alignment:center;color:Chrome.secondary;font-size:13px;accessible-role:none;}
                             if !place.heading: Image {source:Glyphs.place(place.id);x:16px;y:(parent.height - 15px)/2;width:15px;height:15px;colorize:place.id == "place:0" || place.id == "place:1" || place.id == "place:2" || place.id == "place:3" || place.id.starts-with("bookmark:") ? root.accent : Chrome.secondary;accessible-role:none;}
                             Text {
-                                text:place.title;x:place.heading?16px:39px;width:parent.width - self.x - 12px;height:parent.height;
+                                text:place.title;x:place.heading?29px:39px;width:parent.width - self.x - 12px;height:parent.height;
                                 vertical-alignment:center;color:place.heading?Chrome.secondary:Chrome.foreground;
                                 font-weight:place.heading?600:400;font-size:place.heading?10px:12px;overflow:elide;
                             }
                             place-touch := TouchArea {
-                                enabled: !place.heading;
-                                clicked=>{place-focus.focus();root.place(place.id);}
+                                clicked=>{place-focus.focus();if place.heading {root.toggle-place-section(place.section);} else {root.place(place.id);}}
                                 pointer-event(event)=>{
-                                    if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                                    if !place.heading && event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
                                         if root.place-menu(place.id) {root.menu-x=(self.absolute-position.x+self.mouse-x)/1px;root.menu-y=(self.absolute-position.y+self.mouse-y)/1px;app-menu.show();}
                                     }
                                 }
