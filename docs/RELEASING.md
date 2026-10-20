@@ -19,7 +19,9 @@ The entire release runs on GitHub-hosted runners; your Mac need not stay online.
 4. Ensure enough Actions minutes/storage are available for four native build
    jobs. The platform jobs can take considerably longer than incremental local
    builds, especially on a cold cache.
-5. No Apple credentials, personal GPG key, Windows certificate, package-registry
+5. The publication job installs Temurin Java 17 and the SHA-256-verified
+   JReleaser **1.26.0 Java distribution**. No local Java installation is needed.
+6. No Apple credentials, personal GPG key, Windows certificate, package-registry
    token, or JReleaser secret is needed initially. The GitHub workflow token is
    passed to `gh` and JReleaser for this repository only.
 
@@ -193,6 +195,21 @@ adapter; the other documented remote adapters remain available.
   Existing uploads must match the local hashes and sizes. Completed assets and
   edited draft notes are preserved. An empty GitHub upload starter may be
   removed and retried. A different existing file is never overwritten.
+- **Publication tooling needs a source fix:** merge the fix into `main`, then
+  run **Actions → Resume release publication → Run workflow** on `main`. Enter
+  the original version and original **Release** workflow run ID. This verifies
+  that all four native package jobs succeeded, checks the original signed
+  release branch, downloads those exact artifacts, and resumes the draft and
+  version PR without rebuilding or moving the release commit. Equivalent CLI:
+
+  ```sh
+  gh workflow run release-resume.yml --ref main \
+    -f version=0.8.0-rc.1 -f original_run_id=RUN_ID
+  ```
+
+  Use this only while all four original artifacts are retained. The recovery
+  job has the same published-release and mismatched-asset protections as the
+  normal publisher.
 - **Do not rerun successful build jobs after a partial upload.** Packages such
   as DMGs contain generated metadata and need not be byte-identical after a
   rebuild. Reuse the original successful build artifacts, retained for 14 days.

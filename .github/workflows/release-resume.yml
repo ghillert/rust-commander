@@ -1,0 +1,107 @@
+name: Resume release publication
+run-name: Resume Rust Commander ${{ inputs.version }} from run ${{ inputs.original_run_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version of the tested release branch, without v'
+        type: string
+        required: true
+      original_run_id:
+        description: 'Original Release workflow run ID with four successful package jobs'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-commander-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish tested artifacts to a draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: tooling
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify original run and release branch
+        id: recover
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_ORIGINAL_RUN_ID: ${{ inputs.original_run_id }}
+        run: python tooling/scripts/release/release.py recover
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.recover.outputs.commit }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-macos-arm64
+          path: source/dist/release
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.original_run_id }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-macos-x64
+          path: source/dist/release
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.original_run_id }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-windows-x64
+          path: source/dist/release
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.original_run_id }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-linux-x64
+          path: source/dist/release
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.original_run_id }}
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install JReleaser
+        run: python tooling/scripts/release/install-jreleaser.py
+      - name: Create or resume draft release
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JRELEASER_GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_ROOT: ${{ github.workspace }}/source
+          RELEASE_VERSION: ${{ steps.recover.outputs.version }}
+          RELEASE_COMMIT: ${{ steps.recover.outputs.commit }}
+          RELEASE_BUILD_RUN_ID: ${{ inputs.original_run_id }}
+        run: python ../tooling/scripts/release/release.py publish
+      - name: Upload publishing diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-recovery-reports-${{ github.run_attempt }}
+          path: |
+            source/out/jreleaser/trace.log
+            source/out/jreleaser/output.properties
+            source/target/release-publish/jreleaser.json
+          if-no-files-found: ignore
+          retention-days: 14

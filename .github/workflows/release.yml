@@ -135,6 +135,10 @@ jobs:
           pattern: release-*
           path: dist/release
           merge-multiple: true
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
       - name: Install JReleaser
         run: python scripts/release/install-jreleaser.py
       - name: Create or resume draft release

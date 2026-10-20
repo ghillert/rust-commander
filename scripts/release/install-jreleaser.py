@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the pinned Linux JReleaser CLI on the publication runner."""
+"""Install the pinned Java JReleaser CLI on the publication runner."""
 import hashlib
 import io
 import os
@@ -8,7 +8,7 @@ import urllib.request
 import zipfile
 
 VERSION = "1.26.0"
-name = f"jreleaser-native-{VERSION}-linux-x86_64.zip"
+name = f"jreleaser-{VERSION}.zip"
 base = f"https://github.com/jreleaser/jreleaser/releases/download/v{VERSION}/"
 data = urllib.request.urlopen(base + name, timeout=120).read()
 checksums = urllib.request.urlopen(base + "checksums_sha256.txt", timeout=60).read().decode()

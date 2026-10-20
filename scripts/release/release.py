@@ -18,7 +18,7 @@ import subprocess
 import tomllib
 import urllib.parse
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(os.environ.get("RELEASE_ROOT", Path(__file__).resolve().parents[2])).resolve()
 TARGETS = {
     "macos-arm64": ["dmg"], "macos-x64": ["dmg"],
     "windows-x64": ["setup.exe", "zip"], "linux-x64": ["AppImage", "deb"],
@@ -187,6 +187,32 @@ def prepare(api, version, source, run_id):
     return head
 
 
+def recovery_commit(api, version, run_id):
+    """Reuse only complete native builds from the version's original release run."""
+    version_parts(version)
+    if not re.fullmatch(r"[1-9][0-9]*", str(run_id)):
+        raise ValueError("Provide the original numeric Actions run ID")
+    run = api.get(f"actions/runs/{run_id}")
+    if (run["path"] != ".github/workflows/release.yml" or run["event"] != "workflow_dispatch"
+            or run["head_branch"] != "main" or run["status"] != "completed"):
+        raise ValueError("The original run must be a completed manual Release run from main")
+    if not api.get(f"git/ref/heads/release/v{version}", missing=True):
+        raise ValueError("The original run did not prepare this release branch")
+    jobs = []
+    page = 1
+    while True:
+        batch = api.get(f"actions/runs/{run_id}/jobs?filter=latest&per_page=100&page={page}")["jobs"]
+        jobs.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    expected = {"Prepare verified release commit", *(f"Package {target}" for target in TARGETS)}
+    if any(sum(job["name"] == name and job["conclusion"] == "success" for job in jobs) != 1
+           for name in expected):
+        raise ValueError("All four original native package jobs must have passed exactly once")
+    return prepare(api, version, run["head_sha"], str(run_id))
+
+
 def validate_assets(directory, version, commit):
     directory = Path(directory)
     expected = set(asset_names(version))
@@ -324,7 +350,8 @@ def sync_pr(api, version, release_url):
     existing = api.get("pulls?state=all&base=main&head=" + urllib.parse.quote(f"{owner}:{branch}", safe=""))
     if existing:
         return existing[0]["html_url"]
-    run_url = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{api.repo}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+    build_run = os.environ.get("RELEASE_BUILD_RUN_ID", os.environ["GITHUB_RUN_ID"])
+    run_url = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{api.repo}/actions/runs/{build_run}"
     pr = api.post("pulls", {"title": f"Prepare Rust Commander {version}", "head": branch, "base": "main",
                             "body": f"Synchronize the tested release version with main.\n\nDraft: {release_url}\n\n"
                             f"Build and package validation: {run_url}\n\n"
@@ -335,7 +362,7 @@ def sync_pr(api, version, release_url):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["prepare", "publish", "verify-assets"])
+    parser.add_argument("command", choices=["prepare", "recover", "publish", "verify-assets"])
     parser.add_argument("--version", default=os.environ.get("RELEASE_VERSION"), required=False)
     parser.add_argument("--commit", default=os.environ.get("RELEASE_COMMIT"))
     parser.add_argument("--directory", type=Path, default=ROOT / "dist/release")
@@ -349,6 +376,12 @@ def main():
         if os.environ["GITHUB_REF"] != "refs/heads/main":
             raise ValueError("Start releases from main")
         head = prepare(api, args.version, os.environ["GITHUB_SHA"], os.environ["GITHUB_RUN_ID"])
+        with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+            out.write(f"commit={head}\nversion={args.version}\n")
+    elif args.command == "recover":
+        if os.environ["GITHUB_REF"] != "refs/heads/main":
+            raise ValueError("Start publication recovery from main")
+        head = recovery_commit(api, args.version, os.environ["RELEASE_ORIGINAL_RUN_ID"])
         with open(os.environ["GITHUB_OUTPUT"], "a") as out:
             out.write(f"commit={head}\nversion={args.version}\n")
     else:

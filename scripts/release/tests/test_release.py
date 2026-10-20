@@ -32,11 +32,19 @@ class FakeGitHub:
         self.commit = None
         self.release = None
         self.assets = []
+        self.run = {"path": ".github/workflows/release.yml", "event": "workflow_dispatch",
+                    "head_branch": "main", "head_sha": "source", "status": "completed"}
+        self.jobs = [{"name": name, "conclusion": "success"} for name in
+                     ["Prepare verified release commit", *(f"Package {target}" for target in release.TARGETS)]]
 
     def file(self, name, ref):
         return self.files[ref][name]
 
     def get(self, path, missing=False):
+        if path == "actions/runs/123":
+            return self.run
+        if path == "actions/runs/123/jobs?filter=latest&per_page=100&page=1":
+            return {"jobs": self.jobs}
         if path.startswith("releases/tags/"):
             return self.release if self.release and not self.release.get("draft") else None
         if path.startswith("releases?"):
@@ -76,6 +84,22 @@ class FakeGitHub:
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_recovery_reuses_only_the_original_verified_complete_run(self):
+        api = FakeGitHub()
+        release.prepare(api, "0.8.0", "source", "123")
+        self.assertEqual(release.recovery_commit(api, "0.8.0", "123"), "release")
+        api.jobs[-1]["conclusion"] = "failure"
+        with self.assertRaisesRegex(ValueError, "four original native package jobs"):
+            release.recovery_commit(api, "0.8.0", "123")
+        api.jobs[-1]["conclusion"] = "success"
+        api.run["path"] = ".github/workflows/ci.yml"
+        with self.assertRaisesRegex(ValueError, "original run"):
+            release.recovery_commit(api, "0.8.0", "123")
+        fresh = FakeGitHub()
+        with self.assertRaisesRegex(ValueError, "did not prepare"):
+            release.recovery_commit(fresh, "0.8.0", "123")
+        self.assertIsNone(fresh.branch)
+
     def test_debian_package_ownership_ignores_diversion_notices(self):
         import package
         text = ('diversion by libc6 from: /lib64/ld-linux-x86-64.so.2\n'
