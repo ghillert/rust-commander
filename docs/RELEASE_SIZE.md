@@ -145,3 +145,32 @@ The subsequent stabilization build measures **19,998,032 bytes** on the same Mac
 It retains the profile above; the file-backed upload fix reuses bytes/memmap2
 versions already in the lockfile. These later feature builds are separate from
 the unchanged-source profile comparison.
+
+## Configurable icon catalog
+
+Measured on Apple Silicon macOS on 2026-10-20, using `aarch64-apple-darwin`
+and the same toolchain, environment, and release profile for both builds:
+
+| Build | Executable bytes | MB |
+| --- | ---: | ---: |
+| Native icons before this migration (`9c5b6fb`) | 20,181,632 | 20.18 |
+| Configurable native/built-in icons and Fluent/Material catalog | 20,314,528 | 20.31 |
+| Increase | **132,896** | **0.13** |
+
+The increase is **0.66%**. Both binaries use `opt-level = "z"`, full LTO,
+one codegen unit, symbol stripping, panic unwinding, and the default feature set
+without the screenshot feature. These are unbundled executables, before package
+relocation or ad hoc signing; download and `.app` sizes are different measures.
+
+The baseline was rebuilt from an isolated `git archive` of `9c5b6fb`, followed by
+the working tree build, using `scripts/cargo-local.sh build --locked --offline
+--release` and the same target directory. The baseline source snapshot used
+`--manifest-path target/icon-size/baseline-source/Cargo.toml --target-dir target`.
+The migration adds the small `objc2-uniform-type-identifiers` framework binding
+at the existing objc2 framework version for native generic-icon references;
+existing dependencies were not upgraded. The catalog vendors 84 semantic icons
+with 85 selected SVGs, including one light-theme variant.
+
+The [icon guide](ICONS.md) describes the catalog, offline update/check procedure,
+and validation matrix. Measurements on Windows/Linux still require native
+release builds on those platforms.

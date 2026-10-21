@@ -1,6 +1,6 @@
 use rust_commander::{
     appearance::{self, ColorScheme, DesktopStyle},
-    preferences::Preferences,
+    preferences::{FileIconSource, Preferences},
     settings::Settings,
 };
 
@@ -12,8 +12,34 @@ fn legacy_settings_receive_automatic_desktop_and_system_appearance() {
     .unwrap();
     assert_eq!(settings.preferences.desktop_style, DesktopStyle::Automatic);
     assert_eq!(settings.preferences.color_scheme, ColorScheme::System);
+    assert_eq!(
+        settings.preferences.file_icon_source,
+        FileIconSource::SystemWithFallback
+    );
     assert!(settings.preferences.command_bar);
     assert_eq!(settings.preferences.font_size, 15.0);
+}
+
+#[test]
+fn file_icon_source_persists_in_settings_and_workspaces() {
+    for source in FileIconSource::ALL {
+        let mut settings = Settings::default();
+        settings.preferences.file_icon_source = source;
+        settings
+            .workspaces
+            .push(rust_commander::workspaces::Workspace {
+                name: "Icons".into(),
+                tabs: [vec![], vec![]],
+                tab_states: Default::default(),
+                active_tabs: [0, 0],
+                active_pane: 0,
+                preferences: settings.preferences.clone(),
+            });
+        let saved = serde_json::to_string(&settings).unwrap();
+        let restored: Settings = serde_json::from_str(&saved).unwrap();
+        assert_eq!(restored.preferences.file_icon_source, source);
+        assert_eq!(restored.workspaces[0].preferences.file_icon_source, source);
+    }
 }
 
 #[test]

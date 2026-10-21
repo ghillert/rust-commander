@@ -1,0 +1,47 @@
+// Test window, opened only through the screenshot feature's environment hook.
+import { Chrome, ChromeButton, IconView, Glyphs } from "chrome.slint";
+import { IconCatalog } from "icons/catalog.slint";
+
+export component IconGallery inherits Window {
+    title: "Rust Commander — icon rendering check";
+    preferred-width: 1200px; preferred-height: 780px;
+    in property <[string]> icons;
+    in property <bool> dark;
+    background: Chrome.pane;
+    changed dark => {Chrome.dark=root.dark;}
+    VerticalLayout {
+        padding:12px;spacing:8px;
+        Text {text:"Icon catalog · 16 / 18 / 20 / 24 logical pixels · disabled sample below";font-size:16px;color:Chrome.foreground;}
+        HorizontalLayout {
+            spacing:8px;
+            ChromeButton {label:"Selected color";show-label:true;icon:Glyphs.place("place:0");icon-monochrome:false;checked:true;}
+            ChromeButton {label:"Disabled color";show-label:true;icon:Glyphs.place("place:0");icon-monochrome:false;enabled:false;}
+            ChromeButton {label:"Selected monochrome";show-label:true;icon:Glyphs.action("Copy");checked:true;}
+            Rectangle {horizontal-stretch:1;}
+        }
+        for row in ceil(root.icons.length / 12): HorizontalLayout {
+            spacing:6px;
+            for col in 12: Rectangle {
+                width:92px;height:82px;
+                private property <int> index: row*12+col;
+                if index < root.icons.length: VerticalLayout {
+                    spacing:4px;
+                    Text {text:root.icons[index];font-size:9px;color:Chrome.foreground;overflow:elide;}
+                    HorizontalLayout {
+                        spacing:2px;height:24px;
+                        for size in [16,18,20,24]: Rectangle {
+                            width:size*1px;
+                            IconView {width:size*1px;height:size*1px;y:(parent.height - self.height)/2;
+                                source:IconCatalog.image(root.icons[index],root.dark);
+                                monochrome:IconCatalog.monochrome(root.icons[index]);tint:Chrome.foreground;}
+                        }
+                    }
+                    IconView {width:20px;height:20px;enabled:false;
+                        source:IconCatalog.image(root.icons[index],root.dark);
+                        monochrome:IconCatalog.monochrome(root.icons[index]);tint:Chrome.foreground;}
+                }
+            }
+        }
+        Rectangle {vertical-stretch:1;}
+    }
+}

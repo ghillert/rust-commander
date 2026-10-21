@@ -1,15 +1,17 @@
 import { Button, CheckBox, ComboBox, LineEdit, TextEdit, ScrollView, ListView, HorizontalBox, VerticalBox, Slider, ProgressIndicator, Palette } from "std-widgets.slint";
 
 export { Palette } from "std-widgets.slint";
-import { Chrome, Glyphs, ChromeButton, ChromeField, ShortcutButton } from "chrome.slint";
+import { Chrome, Glyphs, ChromeButton, ChromeField, ShortcutButton, IconView } from "chrome.slint";
 export { Chrome } from "chrome.slint";
+export { IconGallery } from "icon-gallery.slint";
+export { IconCatalog } from "icons/catalog.slint";
 
 export struct CommandButton {id:string,title:string,key:string,enabled:bool}
 export struct Command { id: string, title: string, enabled: bool }
 export struct TreeRow { index:int, title:string, depth:int, expanded:bool, selected:bool, detail:string }
 export struct Place { id: string, title: string, detail: string, heading: bool, section: string, expanded: bool }
 export struct FileColumn { title: string, width: float }
-export struct FileRow { id: string, name: string, cells: [string], directory: bool, selected: bool, cursor: bool, payload: string, icon: image, native-icon: bool }
+export struct FileRow { id: string, name: string, cells: [string], directory: bool, selected: bool, cursor: bool, payload: string, icon: image, native-icon: bool, fallback-icon: string, symlink: bool }
 export struct FormField { id: string, title: string, value: string, kind: int, choices: [string] }
 export struct FormRow { id: string, title: string, detail: string, selected: bool, actions: [Command] }
 export struct TerminalCell { text: string, foreground: color, background: color, bold: bool, cursor: bool }
@@ -220,9 +222,14 @@ component FilePane inherits Rectangle {
                             preferred-width: column.width * root.column-scale * 1px; min-width: col == 0 ? 80px : 40px;
                             horizontal-stretch: col == 0 ? 1 : 0;
                             if col == 0: Image {
-                                source: row.native-icon ? row.icon : (row.directory ? @image-url("icons/folder.svg") : @image-url("icons/file.svg"));
+                                source: row.native-icon ? row.icon : Glyphs.file(row.fallback-icon);
                                 image-fit: contain;
                                 x: 8px; y: (parent.height - 18px) / 2; width: 18px; height: 18px;
+                            }
+                            if col == 0 && row.symlink && !row.native-icon: Rectangle {
+                                x: 8px; y: (parent.height - 18px) / 2 + 10px;
+                                width: 9px; height: 9px; border-radius: 2px; background: Chrome.pane;
+                                IconView {source: Glyphs.action("Link"); x: 0px; y: 0px; width: 9px; height: 9px;}
                             }
                             Text {
                                 text: row.cells[col];
@@ -525,8 +532,8 @@ export component CommanderWindow inherits Window {
                                 background: !place.heading && place.detail != "" && place.detail == root.active-location ? Chrome.pressed : place-touch.has-hover ? Chrome.hover : transparent;
                                 border-width: place-focus.has-focus ? 1px : 0px; border-color:root.accent;
                             }
-                            if place.heading: Text {text:place.expanded?"▾":"▸";x:8px;width:18px;height:parent.height;horizontal-alignment:center;vertical-alignment:center;color:Chrome.secondary;font-size:13px;accessible-role:none;}
-                            if !place.heading: Image {source:Glyphs.place(place.id);x:16px;y:(parent.height - 15px)/2;width:15px;height:15px;colorize:place.id == "place:0" || place.id == "place:1" || place.id == "place:2" || place.id == "place:3" || place.id.starts-with("bookmark:") ? root.accent : Chrome.secondary;accessible-role:none;}
+                            if place.heading: IconView {source:Glyphs.action(place.expanded ? "Collapse" : "Expand");x:11px;y:(parent.height - 12px)/2;width:12px;height:12px;tint:Chrome.secondary;}
+                            if !place.heading: IconView {source:Glyphs.place(place.id);x:14px;y:(parent.height - 20px)/2;width:20px;height:20px;monochrome:Glyphs.place-monochrome(place.id);tint:root.accent;}
                             Text {
                                 text:place.title;x:place.heading?29px:39px;width:parent.width - self.x - 12px;height:parent.height;
                                 vertical-alignment:center;color:place.heading?Chrome.secondary:Chrome.foreground;
@@ -576,7 +583,7 @@ export component CommanderWindow inherits Window {
                                     accessible-action-expand => {tree-focus.focus();root.tree-focused-index=node.index;root.tree-action(node.index,true);}
                                     Rectangle {x:5px;y:2px;width:parent.width - 10px;height:24px;border-radius:4px;
                                         background:node.selected?Chrome.pressed:node-touch.has-hover || (tree-focus.has-focus && node.index==root.tree-focused-index)?Chrome.hover:transparent;}
-                                    Text {x:8px+min(node.depth,14)*12px;width:18px;height:parent.height;text:node.expanded?"▾":"▸";font-size:10px;color:Chrome.secondary;vertical-alignment:center;horizontal-alignment:center;}
+                                    IconView {x:11px+min(node.depth,14)*12px;y:(parent.height - 12px)/2;width:12px;height:12px;source:Glyphs.action(node.expanded ? "Collapse" : "Expand");tint:Chrome.secondary;}
                                     Text {x:28px+min(node.depth,14)*12px;width:max(0px,parent.width - self.x - 8px);height:parent.height;text:node.title;font-size:12px;color:Chrome.foreground;vertical-alignment:center;overflow:elide;}
                                     node-touch := TouchArea {x:26px+min(node.depth,14)*12px;width:parent.width - self.x;
                                         clicked=>{tree-focus.focus();root.tree-focused-index=node.index;root.tree-action(node.index,false);}}
@@ -669,7 +676,7 @@ export component CommanderWindow inherits Window {
                 Rectangle {
                     background: #101015;
                     VerticalLayout {
-                        HorizontalBox {height: 24px; padding: 0px; Text {text: root.terminal-status; color: #c6c6ce;} Button {text: "×"; max-width: 30px; clicked => {root.action("Terminal");}}}
+                        HorizontalBox {height: 24px; padding: 0px; Text {text: root.terminal-status; color: #c6c6ce;} ChromeButton {label:Words.translate("Close terminal",Words.version);icon:Glyphs.action("CloseTab");icon-color:#c6c6ce;width:30px;height:24px;clicked => {root.action("Terminal");}}}
                         spacing: 0px;
                         for line in root.terminal-rows: Rectangle {
                             height: 16px;
@@ -838,7 +845,20 @@ export component CommanderWindow inherits Window {
                                 HorizontalBox {
                                     padding: 0px;
                                     Button { text: item.title; clicked => { root.dialog-select(item.id); } }
-                                    for command in item.actions: Button { text: Words.translate(command.title,Words.version); enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
+                                    for command in item.actions: HorizontalLayout {
+                                        spacing:0px;
+                                        private property <bool> move-up: command.id.starts-with("column-up-") || command.id.starts-with("toolbar-up-") || command.id.starts-with("queue-up-");
+                                        private property <bool> move-down: command.id.starts-with("column-down-") || command.id.starts-with("toolbar-down-") || command.id.starts-with("queue-down-");
+                                        if move-up || move-down: ChromeButton {
+                                            label:Words.translate(command.title,Words.version);
+                                            icon:Glyphs.action(move-up ? "ReorderUp" : "ReorderDown");
+                                            enabled:command.enabled; clicked => {root.dialog-action(command.id);}
+                                        }
+                                        if !move-up && !move-down: Button {
+                                            text:Words.translate(command.title,Words.version); enabled:command.enabled;
+                                            clicked => {root.dialog-action(command.id);}
+                                        }
+                                    }
                                 }
                                 if item.detail != "": Text { text: item.detail; color: Palette.foreground; wrap: word-wrap; }
                             }

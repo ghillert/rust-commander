@@ -1,6 +1,7 @@
 //! Bounded icon cache and viewport updates. Slint images stay on the UI thread.
 use super::*;
-use crate::native_icons::{Key, Request, Response};
+use crate::native_icons::{IconKind, Key, Request, Response};
+use crate::preferences::FileIconSource;
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
@@ -17,6 +18,7 @@ const CACHE_LIFETIME: Duration = Duration::from_secs(60);
 
 struct Cached {
     image: slint::Image,
+    kind: IconKind,
     loaded: Instant,
     used: u64,
 }
@@ -68,8 +70,10 @@ impl Cache {
             if !active.load(Ordering::Relaxed) {
                 continue;
             }
+            let kind = raster.as_ref().map(|icon| icon.kind).unwrap_or_default();
             let image = raster
-                .map(|raster| {
+                .map(|icon| {
+                    let raster = icon.pixels;
                     slint::Image::from_rgba8(
                         slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
                             raster.as_raw(),
@@ -93,6 +97,7 @@ impl Cache {
                 key,
                 Cached {
                     image,
+                    kind,
                     loaded: Instant::now(),
                     used: self.clock,
                 },
@@ -100,13 +105,17 @@ impl Cache {
         }
     }
 
-    fn get(&mut self, key: &Key) -> slint::Image {
+    fn get(&mut self, key: &Key, specific_fallback: bool) -> slint::Image {
         if let Some(entry) = self.entries.get_mut(key)
             && entry.loaded.elapsed() < CACHE_LIFETIME
         {
             self.clock += 1;
             entry.used = self.clock;
-            return entry.image.clone();
+            return if entry.kind == IconKind::Generic && specific_fallback {
+                Default::default()
+            } else {
+                entry.image.clone()
+            };
         }
         self.entries.remove(key);
         if let Some(active) = self.pending.get(key) {
@@ -161,7 +170,9 @@ impl Adapter {
                 )
             }
         });
+        let system = self.app.preferences.file_icon_source == FileIconSource::SystemWithFallback;
         let wanted = (0..2)
+            .filter(|_| system)
             .flat_map(|side| {
                 self.row_cache[side][ranges[side].clone()]
                     .iter()
@@ -185,7 +196,13 @@ impl Adapter {
                 let icon = self.row_cache[side][index]
                     .icon_key
                     .as_ref()
-                    .map(|key| self.icons.get(key))
+                    .filter(|_| system)
+                    .map(|key| {
+                        self.icons.get(
+                            key,
+                            crate::icons::specific(self.row_cache[side][index].fallback_icon),
+                        )
+                    })
                     .unwrap_or_default();
                 if let Some(mut row) = self.rows[side].row_data(index)
                     && row.icon != icon
@@ -221,9 +238,9 @@ mod tests {
         let (mut cache, requests) = fixture();
         let a = key("/one/file.txt");
         let b = key("/two/file.txt");
-        assert_eq!(cache.get(&a).size().width, 0);
-        cache.get(&a);
-        cache.get(&b); // Full queue; retry on the next UI tick.
+        assert_eq!(cache.get(&a, false).size().width, 0);
+        cache.get(&a, false);
+        cache.get(&b, false); // Full queue; retry on the next UI tick.
         assert_eq!(cache.pending.len(), 1);
         let request = requests.try_recv().unwrap();
         assert_eq!(request.key, a);
@@ -232,16 +249,15 @@ mod tests {
             .reply
             .send(Response::Loaded(
                 a.clone(),
-                Some(image::RgbaImage::from_pixel(
-                    2,
-                    2,
-                    image::Rgba([1, 2, 3, 255]),
+                Some(crate::native_icons::NativeIcon::new(
+                    image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 255])),
+                    IconKind::Specific,
                 )),
             ))
             .unwrap();
         cache.prepare(&HashSet::from([a.clone(), b.clone()]));
-        assert_eq!(cache.get(&a).size().width, 2);
-        cache.get(&b);
+        assert_eq!(cache.get(&a, false).size().width, 64);
+        cache.get(&b, false);
         assert_eq!(
             requests.try_recv().unwrap().key,
             b,
@@ -253,7 +269,7 @@ mod tests {
     fn cancelled_requests_retry_and_missing_icons_are_cached() {
         let (mut cache, requests) = fixture();
         let a = key("/file.txt");
-        cache.get(&a);
+        cache.get(&a, false);
         let request = requests.try_recv().unwrap();
         cache.prepare(&HashSet::new());
         assert!(!request.wanted.load(Ordering::Relaxed));
@@ -262,7 +278,7 @@ mod tests {
         // rather than caching cancellation as a missing icon for a minute.
         cache.prepare(&HashSet::from([a.clone()]));
         assert!(!cache.entries.contains_key(&a));
-        cache.get(&a);
+        cache.get(&a, false);
         requests
             .try_recv()
             .unwrap()
@@ -270,10 +286,10 @@ mod tests {
             .send(Response::Loaded(a.clone(), None))
             .unwrap();
         cache.prepare(&HashSet::from([a.clone()]));
-        cache.get(&a);
+        cache.get(&a, false);
         assert!(requests.try_recv().is_err());
         cache.entries.get_mut(&a).unwrap().loaded = Instant::now() - CACHE_LIFETIME;
-        cache.get(&a);
+        cache.get(&a, false);
         assert_eq!(requests.try_recv().unwrap().key, a);
     }
 
@@ -282,7 +298,7 @@ mod tests {
         let (mut cache, requests) = fixture();
         for i in 0..=CACHE_LIMIT {
             let key = key(&format!("/{i}.txt"));
-            cache.get(&key);
+            cache.get(&key, false);
             requests
                 .try_recv()
                 .unwrap()
@@ -312,10 +328,9 @@ mod tests {
                 .reply
                 .send(Response::Loaded(
                     request.key,
-                    Some(image::RgbaImage::from_pixel(
-                        64,
-                        64,
-                        image::Rgba([20, 120, 220, 255]),
+                    Some(crate::native_icons::NativeIcon::new(
+                        image::RgbaImage::from_pixel(64, 64, image::Rgba([20, 120, 220, 255])),
+                        IconKind::Specific,
                     )),
                 ))
                 .unwrap();
@@ -372,5 +387,110 @@ mod tests {
         );
         assert!(requests.try_recv().is_err());
         assert!(adapter.icon_rows[0].is_empty());
+    }
+
+    #[test]
+    fn generic_native_icons_only_yield_to_specific_builtins() {
+        for kind in [IconKind::Specific, IconKind::Generic, IconKind::Unknown] {
+            let (mut cache, requests) = fixture();
+            let key = key("/file.xml");
+            cache.get(&key, true);
+            let request = requests.try_recv().unwrap();
+            request
+                .reply
+                .send(Response::Loaded(
+                    key.clone(),
+                    Some(crate::native_icons::NativeIcon::new(
+                        image::RgbaImage::from_pixel(64, 64, image::Rgba([200, 60, 20, 255])),
+                        kind,
+                    )),
+                ))
+                .unwrap();
+            cache.prepare(&HashSet::from([key.clone()]));
+            assert_eq!(
+                cache.get(&key, true).size().width > 0,
+                kind != IconKind::Generic
+            );
+            assert!(
+                cache.get(&key, false).size().width > 0,
+                "retain generic OS icons when no specific built-in matches"
+            );
+            assert!(requests.try_recv().is_err());
+        }
+    }
+
+    #[test]
+    fn builtin_only_never_queries_native_and_late_results_cannot_override_it() {
+        i_slint_backend_testing::init_no_event_loop();
+        let (_root, mut adapter, _left, _right) = super::super::tests::fixture();
+        let (sender, requests) = mpsc::sync_channel::<Request>(32);
+        adapter.icons = Cache::new(Some(sender));
+        adapter.app.preferences.file_icon_source = FileIconSource::BuiltIn;
+        let ui = CommanderWindow::new().unwrap();
+        adapter.sync(&ui);
+        assert!(requests.try_recv().is_err());
+        assert!(
+            ui.get_left_rows()
+                .iter()
+                .all(|r| !r.native_icon && !r.fallback_icon.is_empty())
+        );
+        adapter.app.preferences.file_icon_source = FileIconSource::SystemWithFallback;
+        adapter.sync(&ui);
+        let pending: Vec<_> = requests.try_iter().collect();
+        assert!(!pending.is_empty());
+        adapter.app.preferences.file_icon_source = FileIconSource::BuiltIn;
+        adapter.sync(&ui);
+        for request in pending {
+            assert!(!request.wanted.load(Ordering::Relaxed));
+            request
+                .reply
+                .send(Response::Loaded(
+                    request.key,
+                    Some(crate::native_icons::NativeIcon::new(
+                        image::RgbaImage::from_pixel(64, 64, image::Rgba([200, 60, 20, 255])),
+                        IconKind::Specific,
+                    )),
+                ))
+                .unwrap();
+        }
+        adapter.sync(&ui);
+        assert!(
+            ui.get_left_rows()
+                .iter()
+                .all(|r| !r.native_icon && r.icon.size().width == 0)
+        );
+        assert!(requests.try_recv().is_err());
+        adapter.app.preferences.file_icon_source = FileIconSource::SystemWithFallback;
+        adapter.sync(&ui);
+        assert!(
+            requests.try_recv().is_ok(),
+            "re-enabling system icons must retry discarded work"
+        );
+    }
+
+    #[test]
+    fn file_icon_settings_apply_and_cancel_preserve_the_existing_contract() {
+        i_slint_backend_testing::init_no_event_loop();
+        let (_root, mut adapter, _left, _right) = super::super::tests::fixture();
+        adapter.action("Preferences");
+        adapter.dialog_kind = "preferences".into();
+        adapter.edit_field("file-icons", "Built-in icons only");
+        assert_eq!(
+            adapter.app.preferences.file_icon_source,
+            FileIconSource::SystemWithFallback
+        );
+        adapter.dialog_action("cancel");
+        assert_eq!(
+            adapter.app.preferences.file_icon_source,
+            FileIconSource::SystemWithFallback
+        );
+        adapter.action("Preferences");
+        adapter.edit_field("file-icons", "Built-in icons only");
+        adapter.dialog_action("accept");
+        assert!(adapter.app.preferences_form.is_none());
+        assert_eq!(
+            adapter.app.preferences.file_icon_source,
+            FileIconSource::BuiltIn
+        );
     }
 }

@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::Context;
 
 fn number<T: std::str::FromStr>(value: &str) -> anyhow::Result<T> {
     value
@@ -78,6 +79,14 @@ impl Adapter {
                                     "Font size must be between 10 and 24."
                                 );
                                 p.font_size = size;
+                            }
+                            "file-icons" => {
+                                p.file_icon_source = crate::preferences::FileIconSource::ALL
+                                    .into_iter()
+                                    .find(|source| {
+                                        source.label() == value || tr(source.label()) == value
+                                    })
+                                    .context("Unknown file icon source")?;
                             }
                             "toolbar" => p.toolbar = checked(value),
                             "sidebar" => p.sidebar = checked(value),

@@ -38,8 +38,30 @@ pub(crate) struct Request {
 }
 
 pub(crate) enum Response {
-    Loaded(Key, Option<image::RgbaImage>),
+    Loaded(Key, Option<NativeIcon>),
     Cancelled(Key),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum IconKind {
+    Specific,
+    Generic,
+    #[default]
+    Unknown,
+}
+
+pub(crate) struct NativeIcon {
+    pub pixels: image::RgbaImage,
+    pub kind: IconKind,
+}
+
+impl NativeIcon {
+    pub fn new(pixels: image::RgbaImage, kind: IconKind) -> Self {
+        Self {
+            pixels: normalize(pixels),
+            kind,
+        }
+    }
 }
 
 pub(crate) fn worker() -> Option<SyncSender<Request>> {
@@ -54,7 +76,7 @@ pub(crate) fn worker() -> Option<SyncSender<Request>> {
                     for request in receiver {
                         let response = if request.wanted.load(Ordering::Relaxed) {
                             let icon = provider.as_ref().and_then(|p| p.load(&request.key));
-                            Response::Loaded(request.key, icon.map(normalize))
+                            Response::Loaded(request.key, icon)
                         } else {
                             Response::Cancelled(request.key)
                         };
@@ -128,7 +150,7 @@ mod tests {
                 panic!("request was unexpectedly cancelled");
             };
             assert_eq!(loaded, key);
-            let icon = icon.expect("system returned a file icon");
+            let icon = icon.expect("system returned a file icon").pixels;
             assert_eq!(icon.dimensions(), (ICON_SIZE, ICON_SIZE));
             assert!(icon.pixels().any(|p| p[3] > 0));
             icons.push(icon);

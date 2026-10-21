@@ -353,6 +353,13 @@ impl Adapter {
                     ]
                     .map(|v| v.label()),
                 ),
+                Field::choice(
+                    "file-icons",
+                    "File icons",
+                    tr(p.file_icon_source.label()),
+                    crate::preferences::FileIconSource::ALL
+                        .map(|source| tr(source.label()).into_owned()),
+                ),
                 Field::text("font", "Font size", p.font_size),
                 Field::check("toolbar", "Show toolbar", p.toolbar),
                 Field::check("sidebar", "Show sidebar", p.sidebar),
@@ -382,10 +389,10 @@ impl Adapter {
                 ));
                 d.rows.push(
                     Row::new(format!("column-{i}"), tr(column.kind.label()), "")
-                        .action(format!("column-up-{i}"), "↑", i > 1)
+                        .action(format!("column-up-{i}"), "Move up", i > 1)
                         .action(
                             format!("column-down-{i}"),
-                            "↓",
+                            "Move down",
                             i > 0 && i + 1 < p.columns.len(),
                         ),
                 );
@@ -400,10 +407,10 @@ impl Adapter {
             for (i, action) in p.toolbar_actions.iter().enumerate() {
                 d.rows.push(
                     Row::new(format!("toolbar-{i}"), tr(action.label()), "")
-                        .action(format!("toolbar-up-{i}"), "↑", i > 0)
+                        .action(format!("toolbar-up-{i}"), "Move up", i > 0)
                         .action(
                             format!("toolbar-down-{i}"),
-                            "↓",
+                            "Move down",
                             i + 1 < p.toolbar_actions.len(),
                         ),
                 );
@@ -876,8 +883,12 @@ impl Adapter {
                         format!("Queued: {}", tr(operation.label())),
                         "",
                     )
-                    .action(format!("queue-up-{i}"), "↑", i > 0)
-                    .action(format!("queue-down-{i}"), "↓", i + 1 < self.app.queue.len())
+                    .action(format!("queue-up-{i}"), "Move up", i > 0)
+                    .action(
+                        format!("queue-down-{i}"),
+                        "Move down",
+                        i + 1 < self.app.queue.len(),
+                    )
                     .action(format!("queue-remove-{i}"), "Remove", true),
                 );
             }

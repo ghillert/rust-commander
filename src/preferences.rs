@@ -9,6 +9,7 @@ pub struct Preferences {
     pub associations: Vec<crate::associations::Rule>,
     pub desktop_style: crate::appearance::DesktopStyle,
     pub color_scheme: crate::appearance::ColorScheme,
+    pub file_icon_source: FileIconSource,
     pub font_size: f32,
     pub toolbar: bool,
     pub sidebar: bool,
@@ -35,6 +36,7 @@ impl Default for Preferences {
             associations: Vec::new(),
             desktop_style: Default::default(),
             color_scheme: Default::default(),
+            file_icon_source: Default::default(),
             font_size: 14.0,
             toolbar: true,
             sidebar: true,
@@ -137,6 +139,25 @@ impl Default for Preferences {
             .into_iter()
             .map(|(a, key)| (a.into(), key.into()))
             .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileIconSource {
+    #[default]
+    SystemWithFallback,
+    BuiltIn,
+}
+
+impl FileIconSource {
+    pub const ALL: [Self; 2] = [Self::SystemWithFallback, Self::BuiltIn];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::SystemWithFallback => "System with built-in fallback",
+            Self::BuiltIn => "Built-in icons only",
         }
     }
 }

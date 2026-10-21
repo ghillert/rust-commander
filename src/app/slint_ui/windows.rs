@@ -407,12 +407,17 @@ mod tests {
         });
         with_state(&states[0].1, |a| {
             a.app.preferences.font_size = 19.0;
+            a.app.preferences.file_icon_source = crate::preferences::FileIconSource::BuiltIn;
             a.app
                 .queue
                 .push_back(Operation::Mkfile(root.path().join("never-run")));
         });
         with_state(&states[1].1, |a| {
             assert_eq!(a.app.preferences.font_size, 19.0);
+            assert_eq!(
+                a.app.preferences.file_icon_source,
+                crate::preferences::FileIconSource::BuiltIn
+            );
             assert_eq!(a.app.queue.len(), 1);
             assert_eq!(a.app.tab().location, Location::Local(right.clone()));
         });

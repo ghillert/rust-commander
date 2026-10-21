@@ -230,11 +230,15 @@ shares the macOS title bar, keeping the native window controls. Breadcrumbs are
 the normal location display; **Mod+L** or the pencil button opens the full path
 for editing. Toolbar actions have hover hints and accessible labels.
 
-Local files show native system icons: macOS file and application icons, Windows
-Shell icons, and Linux desktop theme icons. Icons load in the background and
-are cached while you browse. Archive entries, remote files, and unavailable
-system icons use the embedded folder/file icons. File-list thumbnails are not
-generated; previews remain available in the preview pane and viewers.
+**Settings → Desktop appearance → File icons** offers **System with built-in
+fallback** (default) or **Built-in icons only**. Native icons load in the
+background; confirmed generic document icons yield to a specific built-in match.
+This includes macOS's stock white document templates for PDFs, images, and other
+types; custom and application-provided artwork is preserved.
+Remote/archive entries and failed lookups use the curated Material Icon Theme
+catalog. Fluent regular controls and a colorful Fluent sidebar provide consistent
+application icons. See the [icon guide](docs/ICONS.md) for coverage, configuration,
+and asset provenance. File-list thumbnails remain separate from previews.
 
 Open **Settings → Desktop appearance** to choose the colors and layout profile.
 **Automatic** detects the platform, including Ubuntu's orange accent.

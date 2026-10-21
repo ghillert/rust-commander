@@ -1,0 +1,3 @@
+# Vendored asset checksums must be identical on every checkout platform.
+ui/icons/vendor/*.svg -text
+ui/icons/licenses/*.txt -text

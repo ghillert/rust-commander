@@ -1,3 +1,5 @@
+import { IconCatalog } from "icons/catalog.slint";
+
 // Compact desktop chrome shared by the three platform widget styles.
 export global Chrome {
     in property <bool> dark;
@@ -21,37 +23,35 @@ export global Chrome {
 
 export global Glyphs {
     public pure function action(id: string) -> image {
-        if id == "Back" { return @image-url("icons/back.svg"); }
-        if id == "Forward" { return @image-url("icons/forward.svg"); }
-        if id == "Refresh" { return @image-url("icons/refresh.svg"); }
-        if id == "Parent" { return @image-url("icons/up.svg"); }
-        if id == "Mkdir" { return @image-url("icons/new-folder.svg"); }
-        if id == "Copy" { return @image-url("icons/copy.svg"); }
-        if id == "Move" { return @image-url("icons/move.svg"); }
-        if id == "Rename" { return @image-url("icons/rename.svg"); }
-        if id == "Search" { return @image-url("icons/search.svg"); }
-        if id == "Terminal" { return @image-url("icons/terminal.svg"); }
-        if id == "ArchiveTools" { return @image-url("icons/archive.svg"); }
-        if id == "Undo" { return @image-url("icons/undo.svg"); }
-        if id == "Queue" { return @image-url("icons/history.svg"); }
-        if id == "Preview" { return @image-url("icons/preview.svg"); }
-        if id == "ToggleHidden" { return @image-url("icons/eye.svg"); }
-        if id == "ToggleSidebar" { return @image-url("icons/sidebar.svg"); }
-        if id == "Preferences" { return @image-url("icons/settings.svg"); }
-        if id == "NewTab" { return @image-url("icons/plus.svg"); }
-        if id == "CloseTab" { return @image-url("icons/close.svg"); }
-        return @image-url("icons/folder-outline.svg");
+        return IconCatalog.image(IconCatalog.action(id), Chrome.dark);
     }
     public pure function place(id: string) -> image {
-        if id == "place:0" { return @image-url("icons/home.svg"); }
-        if id == "place:1" { return @image-url("icons/desktop.svg"); }
-        if id == "place:2" { return @image-url("icons/document.svg"); }
-        if id == "place:3" { return @image-url("icons/download.svg"); }
-        if id == "place:4" { return @image-url("icons/computer.svg"); }
-        if id == "Connections" { return @image-url("icons/server.svg"); }
-        if id.starts-with("connection:") { return @image-url("icons/server.svg"); }
-        if id.starts-with("bookmark:") { return @image-url("icons/folder-outline.svg"); }
-        return @image-url("icons/drive.svg");
+        return IconCatalog.image(IconCatalog.place(id), Chrome.dark);
+    }
+    public pure function place-monochrome(id: string) -> bool {
+        return IconCatalog.monochrome(IconCatalog.place(id));
+    }
+    public pure function file(id: string) -> image {
+        return IconCatalog.image(id, Chrome.dark);
+    }
+}
+
+// Multicolor images must never pass through colorize: it is an alpha mask.
+export component IconView inherits Rectangle {
+    in property <image> source;
+    in property <bool> monochrome: true;
+    in property <color> tint: Chrome.foreground;
+    in property <bool> enabled: true;
+    accessible-role: none;
+    if root.monochrome: Image {
+        source: root.source; width: parent.width; height: parent.height;
+        image-fit: contain; colorize: root.tint; opacity: root.enabled ? 1.0 : 0.45;
+        accessible-role: none;
+    }
+    if !root.monochrome: Image {
+        source: root.source; width: parent.width; height: parent.height;
+        image-fit: contain; opacity: root.enabled ? 1.0 : 0.45;
+        accessible-role: none;
     }
 }
 
@@ -61,6 +61,8 @@ export component ChromeButton inherits Rectangle {
     forward-focus: keyboard;
     in property <string> label;
     in property <image> icon;
+    in property <bool> icon-monochrome: true;
+    in property <color> icon-color: !root.enabled ? Chrome.disabled : root.checked && !root.tab-style ? Chrome.accent : root.muted ? Chrome.secondary : Chrome.foreground;
     in property <bool> show-label;
     in property <bool> checked;
     in property <bool> checkable;
@@ -99,11 +101,11 @@ export component ChromeButton inherits Rectangle {
             padding-left: 7px; padding-right: 7px; spacing: root.icon.width > 0 ? 6px : 0px;
             Rectangle {
                 width: root.icon.width > 0 ? 17px : 0px;
-                Image {
+                IconView {
                     source: root.icon; width: 17px; height: 17px;
                     y: (parent.height - self.height) / 2;
-                    colorize: !root.enabled ? Chrome.disabled : root.checked && !root.tab-style ? Chrome.accent : root.muted ? Chrome.secondary : Chrome.foreground;
-                    accessible-role: none;
+                    monochrome: root.icon-monochrome; tint: root.icon-color;
+                    enabled: root.enabled;
                 }
             }
             if root.show-label: Text {

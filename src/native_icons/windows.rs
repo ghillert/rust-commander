@@ -1,4 +1,4 @@
-use super::{ICON_SIZE, Key};
+use super::{ICON_SIZE, IconKind, Key, NativeIcon};
 use std::{
     mem::{size_of, zeroed},
     os::windows::ffi::OsStrExt,
@@ -12,12 +12,17 @@ use windows_sys::Win32::{
         COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoUninitialize,
     },
     UI::{
-        Shell::{SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW},
+        Shell::{
+            SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES,
+            SHGetFileInfoW,
+        },
         WindowsAndMessaging::{DI_NORMAL, DestroyIcon, DrawIconEx, HICON},
     },
 };
 
-pub(super) struct Provider;
+pub(super) struct Provider {
+    generic: Option<i32>,
+}
 impl Provider {
     pub fn new() -> Option<Self> {
         // The dedicated worker has no previous apartment. Both S_OK and S_FALSE
@@ -28,10 +33,29 @@ impl Provider {
                 (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32,
             )
         } >= 0)
-            .then(|| Self)
+            .then(|| {
+                let name: Vec<u16> = "file.rust-commander-unregistered-6c9e42ba7d3f"
+                    .encode_utf16()
+                    .chain(Some(0))
+                    .collect();
+                let mut info: SHFILEINFOW = unsafe { zeroed() };
+                // USEFILEATTRIBUTES requests a type icon without touching disk.
+                let result = unsafe {
+                    SHGetFileInfoW(
+                        name.as_ptr(),
+                        windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL,
+                        &mut info,
+                        size_of::<SHFILEINFOW>() as u32,
+                        SHGFI_SYSICONINDEX | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES,
+                    )
+                };
+                Self {
+                    generic: (result != 0).then_some(info.iIcon),
+                }
+            })
     }
 
-    pub fn load(&self, key: &Key) -> Option<image::RgbaImage> {
+    pub fn load(&self, key: &Key) -> Option<NativeIcon> {
         let path: Vec<u16> = key.path.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut info: SHFILEINFOW = unsafe { zeroed() };
         // The NUL-terminated path and output structure remain valid for the
@@ -75,7 +99,12 @@ impl Provider {
             };
             *out = image::Rgba([straight(2), straight(1), straight(0), alpha]);
         }
-        Some(rgba)
+        let kind = match self.generic {
+            Some(index) if !key.directory && index == info.iIcon => IconKind::Generic,
+            Some(_) => IconKind::Specific,
+            None => IconKind::Unknown,
+        };
+        Some(NativeIcon::new(rgba, kind))
     }
 }
 
@@ -180,5 +209,38 @@ impl Drop for Bitmap {
                 Gdi::DeleteDC(self.dc);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_file_uses_generic_index_but_folders_remain_specific() {
+        std::thread::spawn(|| {
+            let root = tempfile::tempdir().unwrap();
+            let unknown = root
+                .path()
+                .join("file.rust-commander-unregistered-6c9e42ba7d3f");
+            std::fs::write(&unknown, "fixture").unwrap();
+            let provider = Provider::new().expect("COM initializes on a fresh thread");
+            assert!(provider.generic.is_some());
+            for (path, directory, expected) in [
+                (unknown, false, IconKind::Generic),
+                (root.path().to_path_buf(), true, IconKind::Specific),
+            ] {
+                let icon = provider
+                    .load(&Key {
+                        path,
+                        directory,
+                        modified: None,
+                    })
+                    .unwrap();
+                assert_eq!(icon.kind, expected);
+            }
+        })
+        .join()
+        .unwrap();
     }
 }

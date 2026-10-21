@@ -23,6 +23,7 @@ pub mod archive_tools;
 pub mod feature_ui;
 pub mod history;
 pub mod i18n;
+pub mod icons;
 pub mod native_files;
 mod native_icons;
 pub mod oauth;

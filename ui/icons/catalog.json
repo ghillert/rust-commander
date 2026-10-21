@@ -1,0 +1,2083 @@
+{
+  "schema": 1,
+  "sources": {
+    "fluent": {
+      "repository": "microsoft/fluentui-system-icons",
+      "revision": "83b26348c811f072429427ff48362238656524fe",
+      "license": {
+        "path": "LICENSE",
+        "sha256": "69bc45dc42b9acb96a69823adbc6ae538374e3c0bde169b855b32c48eaaef52f"
+      }
+    },
+    "material": {
+      "repository": "material-extensions/vscode-material-icon-theme",
+      "revision": "13025adc5ad10a5cc649528a2c1edec93069f1b9",
+      "license": {
+        "path": "LICENSE",
+        "sha256": "cdab3014d4f69b49dde2b85e81792208c72de613aa6aed7f7a9b5c6609b89670"
+      }
+    }
+  },
+  "assets": {
+    "ui-back": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Chevron Left/SVG/ic_fluent_chevron_left_20_regular.svg",
+          "sha256": "23926710858e2fcaf18178b613f28f35bce3ab8b9238836f7aace406a597d14a"
+        }
+      }
+    },
+    "ui-forward": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Chevron Right/SVG/ic_fluent_chevron_right_20_regular.svg",
+          "sha256": "212c611689abb60d2cd56d868e070e44a4c4fbe1d4392622040d1d10a46463e2"
+        }
+      }
+    },
+    "ui-refresh": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Arrow Clockwise/SVG/ic_fluent_arrow_clockwise_20_regular.svg",
+          "sha256": "ab803364462aa202e1d26eb8fec8ff988c108f742e62b1442a0db4e0d3304800"
+        }
+      }
+    },
+    "ui-up": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Arrow Up/SVG/ic_fluent_arrow_up_20_regular.svg",
+          "sha256": "56172b2b7f9c077f90f51f147c432fa20cb1bb168230eec33751c493d6824bb6"
+        }
+      }
+    },
+    "ui-new-folder": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Folder Add/SVG/ic_fluent_folder_add_20_regular.svg",
+          "sha256": "cd3f4b271eb744513906a76684d7a3993e6fba41d5a594c92fd88ae84b975436"
+        }
+      }
+    },
+    "ui-copy": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Copy/SVG/ic_fluent_copy_20_regular.svg",
+          "sha256": "28d4219225956b89a119beb82167b4ebb593707d4e61e42be28259ee6775e28b"
+        }
+      }
+    },
+    "ui-move": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Folder Arrow Right/SVG/ic_fluent_folder_arrow_right_20_regular.svg",
+          "sha256": "6fc571fd38a4084ec83171befe5f250d9684b9a8e92d0c433cacd65824e6b728"
+        }
+      }
+    },
+    "ui-rename": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Rename/SVG/ic_fluent_rename_20_regular.svg",
+          "sha256": "df0cff51d2aa82fdacb2a764d47a8b77cf2fd5ef5efa1e87ffc223832bd0dd8b"
+        }
+      }
+    },
+    "ui-search": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Search/SVG/ic_fluent_search_20_regular.svg",
+          "sha256": "5ac1eac82df532662cd1bad2c8e55763846e1b258740bcbb0612a48d22630d40"
+        }
+      }
+    },
+    "ui-terminal": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Window Console/SVG/ic_fluent_window_console_20_regular.svg",
+          "sha256": "f2b46d93f5b922c79ecd04c9cbad61c26f6bd0491b80763de4409f059c43a202"
+        }
+      }
+    },
+    "ui-archive": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Archive/SVG/ic_fluent_archive_20_regular.svg",
+          "sha256": "0796263c9ecd6addfaa49e6deb075499bb37951f74923a13bdc6bc8ba875c120"
+        }
+      }
+    },
+    "ui-undo": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Arrow Undo/SVG/ic_fluent_arrow_undo_20_regular.svg",
+          "sha256": "a6f6566eb86df531ce5332ab4153b056fb8ff8af37655058f30afaf127892a2f"
+        }
+      }
+    },
+    "ui-history": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/History/SVG/ic_fluent_history_20_regular.svg",
+          "sha256": "37c96212d4efc8c37b0b7d7181d00011153ec2375d387442d0f8c73e2541ed6a"
+        }
+      }
+    },
+    "ui-preview": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Panel Right/SVG/ic_fluent_panel_right_20_regular.svg",
+          "sha256": "7c5813f91f989c27ea676328acdc4d07e9f9dfa293f29a165acd27a35ef603fb"
+        }
+      }
+    },
+    "ui-eye": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Eye/SVG/ic_fluent_eye_20_regular.svg",
+          "sha256": "3fedb211bdbd5d47c9d1e2a820fe73ffd0067ebf555ed8fe435033a09d0d2d1d"
+        }
+      }
+    },
+    "ui-sidebar": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Panel Left/SVG/ic_fluent_panel_left_20_regular.svg",
+          "sha256": "be665db4761d910a85eddf2c55dbcaffb816bbc46d2c1c1e68377220c776009f"
+        }
+      }
+    },
+    "ui-settings": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Settings/SVG/ic_fluent_settings_20_regular.svg",
+          "sha256": "ac5bdb808bed91dc8c0b6f346e7a0a1ee1901fc4b50f5641987498a65e200685"
+        }
+      }
+    },
+    "ui-add": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Add/SVG/ic_fluent_add_20_regular.svg",
+          "sha256": "fdf9fefaf083ff2349ac94afd47aab8ecb554650781c5797176b9d6ad3caee05"
+        }
+      }
+    },
+    "ui-close": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Dismiss/SVG/ic_fluent_dismiss_20_regular.svg",
+          "sha256": "e84ad771fa8afba8e3ef52c98d9ab2d8ef4fc8e23c5954766a1c4e88fc13b355"
+        }
+      }
+    },
+    "ui-chevron-right": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Chevron Right/SVG/ic_fluent_chevron_right_12_regular.svg",
+          "sha256": "3a2b5a4d900ea90e03a87937d87c9a39db2a6490b5fd8cf8d2824ebf3f1b0b91"
+        }
+      }
+    },
+    "ui-chevron-down": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Chevron Down/SVG/ic_fluent_chevron_down_12_regular.svg",
+          "sha256": "91dfae66b43cb13d5e869a90b43a0f0a40a24f7fa1e7e79f996ac3709483ed60"
+        }
+      }
+    },
+    "ui-down": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Arrow Down/SVG/ic_fluent_arrow_down_20_regular.svg",
+          "sha256": "d5b5fb92e9ccc28c9de1b5c8f2eb74b8cd1311b434e8125d215e8e12f8fc25c2"
+        }
+      }
+    },
+    "ui-link": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Arrow Up Right/SVG/ic_fluent_arrow_up_right_20_regular.svg",
+          "sha256": "4c082a4fd079f763a7e34d6b2edb7a0219d06768f2b12aabc643ee4383f1b508"
+        }
+      }
+    },
+    "ui-document": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Document/SVG/ic_fluent_document_20_regular.svg",
+          "sha256": "9a4df1411feac56af539710455c0da05ed81c72b65f8c66c9775ca2f63552980"
+        }
+      }
+    },
+    "nav-home": {
+      "source": "fluent",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "assets/Home/SVG/ic_fluent_home_20_color.svg",
+          "sha256": "f7243a474002d4327fb5cacf74142e9e6af82649fc0354fd9b4ee1c64254c2ce"
+        }
+      }
+    },
+    "nav-documents": {
+      "source": "fluent",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "assets/Document Folder/SVG/ic_fluent_document_folder_20_color.svg",
+          "sha256": "449823b8654028927c6368dad15a7e4723af4b71b2b5b15f17b38c47c3b5ae04"
+        }
+      }
+    },
+    "nav-downloads": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Arrow Download/SVG/ic_fluent_arrow_download_20_regular.svg",
+          "sha256": "28e752ccfd95feb1850de1da3d170f34fd31765417d3431a7dbf3da89840ea33",
+          "output_sha256": "28e752ccfd95feb1850de1da3d170f34fd31765417d3431a7dbf3da89840ea33"
+        }
+      }
+    },
+    "nav-desktop": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Desktop/SVG/ic_fluent_desktop_20_regular.svg",
+          "sha256": "07c553f0bc7c79deec787f4c8eda5276873f80241a7970e38cba88620ba9f046"
+        }
+      }
+    },
+    "nav-server": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Server/SVG/ic_fluent_server_20_regular.svg",
+          "sha256": "0bf62933f4d4d0cf4100fd70925de9c89c33500badbcf0e98db3dfe0e559243d"
+        }
+      }
+    },
+    "ui-drive": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Storage/SVG/ic_fluent_storage_20_regular.svg",
+          "sha256": "5d958bd1f0fd1c656fe4d1f6f7c82c889ccaa6a9ca68f31de790bfc171c3ffe5"
+        }
+      }
+    },
+    "file": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/document.svg",
+          "sha256": "64f5da56de591d5f429d2c7f5f5733388b3ce704762631ba0b487a08475f9452",
+          "output_sha256": "64f5da56de591d5f429d2c7f5f5733388b3ce704762631ba0b487a08475f9452"
+        }
+      }
+    },
+    "folder": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/folder-base.svg",
+          "sha256": "2d1637960109ca9f9d4666b6b22704b411744cdcf4b77b663fc2a4053739e53d",
+          "transforms": [
+            "remove-folder-motive"
+          ],
+          "output_sha256": "95ad2b0445dd664ecd348d200ab344ea25e9e13d8c74af3409c57f3a9518db96"
+        }
+      }
+    },
+    "pdf": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/pdf.svg",
+          "sha256": "c14c66a3914b894da40778a6dcd00f0daa134426521aaddbd8ccea86ba4f5ffc"
+        }
+      }
+    },
+    "word": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/word.svg",
+          "sha256": "9f12a8d98f292c34f73181c49ce79dd378decfb82f760cd9c4aa9900e2d7b2d6"
+        }
+      }
+    },
+    "table": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/table.svg",
+          "sha256": "1714898c0d538648edb0f8dd041d97435aa8cbac078c5897f9fa8103b36f029a"
+        }
+      }
+    },
+    "powerpoint": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/powerpoint.svg",
+          "sha256": "40468deea73e07067459c0c3b0bbef0697e93afbc4533e961d1b441f5294871e"
+        }
+      }
+    },
+    "document": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/document.svg",
+          "sha256": "64f5da56de591d5f429d2c7f5f5733388b3ce704762631ba0b487a08475f9452"
+        }
+      }
+    },
+    "markdown": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/markdown.svg",
+          "sha256": "42f95867350ed1f349ab29b3f254405f84ae65e6d42972d74b01442027eddfcd"
+        }
+      }
+    },
+    "readme": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/readme.svg",
+          "sha256": "ed41dbf841368745ed1c9e333c451f45224f53491b4cac4fda0b487df98cfa71"
+        }
+      }
+    },
+    "license": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/license.svg",
+          "sha256": "4b0a147a39eade32f9164fcd6b8465fd543cda315b71bbc9e28c236a6abf5d09"
+        }
+      }
+    },
+    "xml": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/xml.svg",
+          "sha256": "51bfeb938c24772c0dfeb12ab3e6bab446fbea0410dadf1ec18106d60d52914a"
+        }
+      }
+    },
+    "json": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/json.svg",
+          "sha256": "649ad4f4d01cec788959017710bb0c63281a645db8cef389c50008fbd059da03"
+        }
+      }
+    },
+    "yaml": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/yaml.svg",
+          "sha256": "666b724d61cfa091cd085a465faa3727989ba5286c8ac99a6fbf5229cb6c8f9e"
+        }
+      }
+    },
+    "toml": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/toml.svg",
+          "sha256": "eaeb55ba45f14a504d8f162282ec8f87c930426220ca88035bf340dc8b1e7008"
+        },
+        "light": {
+          "path": "icons/toml_light.svg",
+          "sha256": "e094a52dd142e87def49ea6e26891b8ddd7c0114b7e6ffc0f7d442b5e0461a16"
+        }
+      }
+    },
+    "settings": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/settings.svg",
+          "sha256": "8fbcaf6c132a8eef0b23ca597ae35ec362a35510f3e3961950a0f5b2527b75e9"
+        }
+      }
+    },
+    "database": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/database.svg",
+          "sha256": "e0679294defea90793f4107d6783fe7b25978d43c57035ae6c21e5c1ae8d7367"
+        }
+      }
+    },
+    "zip": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/zip.svg",
+          "sha256": "dad79a45f756542d37abd422502ecfbea15720b92ea1c9d80ef0439ab6b9448a"
+        }
+      }
+    },
+    "disc": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/disc.svg",
+          "sha256": "6c4af1e943afe4945ba0218be5d1ab7f85b16fe6dde63531ebe0130e3fb6a195"
+        }
+      }
+    },
+    "image": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/image.svg",
+          "sha256": "838e1953a3a2ebf5c6a06b662892ba17e1c605c4379a77c61737639e51fb4f0a"
+        }
+      }
+    },
+    "svg": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/svg.svg",
+          "sha256": "120ceffcaa97658ae665caab7f0cbd4aed9aa9d069447f7b908548c755934ec0"
+        }
+      }
+    },
+    "audio": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/audio.svg",
+          "sha256": "d4dc1adb8cb99055cb8ad0c2428d6d73ebd94435b575084af1b2e0d1f82f6cf2"
+        }
+      }
+    },
+    "video": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/video.svg",
+          "sha256": "4d5d50b0f1fe5cb7aaa4892356fabffb54f8629c9f600069dd0aadd251b3c83e"
+        }
+      }
+    },
+    "font": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/font.svg",
+          "sha256": "092850724e8e29ff1ad8afc53a87185d6fb8c7b8287174dd7783f8531d2acccd"
+        }
+      }
+    },
+    "epub": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/epub.svg",
+          "sha256": "7998ebe48f8455061d7345a1c1dadf9ff47e530f7102e581daf5b2bfca6c3875"
+        }
+      }
+    },
+    "exe": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/exe.svg",
+          "sha256": "423e33947323264bcfccb2574a222c816589bf2a02cda0f731fa7167162cb9c8"
+        }
+      }
+    },
+    "console": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/console.svg",
+          "sha256": "c5f33efa92ce94d240e3dca2041f44c30dcad53e9b1cc937be0e757719a619ce"
+        }
+      }
+    },
+    "powershell": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/powershell.svg",
+          "sha256": "b8ad2264d8f1fe82e7e0a2af062ce85a49083f7d9a8c51a16e77de2a7aec158f"
+        }
+      }
+    },
+    "rust": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/rust.svg",
+          "sha256": "a58c24641e82c1ba47c74781da039e2a8e372202cfaaaeff39559138a11bcc39"
+        }
+      }
+    },
+    "c": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/c.svg",
+          "sha256": "4adba54251e85851f3bcc78f10bfb055f17b24aad8a53d0efbd00085dd202bae"
+        }
+      }
+    },
+    "cpp": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/cpp.svg",
+          "sha256": "336346afba3afb620b3edb5f08e0a2bcf14cb85a495113deffb3bbcc87b8aeab"
+        }
+      }
+    },
+    "csharp": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/csharp.svg",
+          "sha256": "5446afdcd43ba9f36691f510d411e412d63f127d91806ebbab468732ea1945e9"
+        }
+      }
+    },
+    "java": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/java.svg",
+          "sha256": "755c5b6f3fe0fb1e61e76c1a10eb96f65f59fac1b5a5a181945182639935854e"
+        }
+      }
+    },
+    "kotlin": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/kotlin.svg",
+          "sha256": "94583b191f9a789872fa733c70d9ad3e0a8ad81fdafd4c2cda02063b0efe2500"
+        }
+      }
+    },
+    "go": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/go.svg",
+          "sha256": "eb3b74fcad124042c463505961ee93dd335165275a2b84828083fb8dcb5064c9"
+        }
+      }
+    },
+    "python": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/python.svg",
+          "sha256": "798fcd59653af34e5b8124d3fe45412eef79f9c1925e286dadd94f923486fd1f"
+        }
+      }
+    },
+    "javascript": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/javascript.svg",
+          "sha256": "00eb9422f451901565f2eb8cbaf07718b2da03f9a866fae7f68cdc3807290d6b"
+        }
+      }
+    },
+    "typescript": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/typescript.svg",
+          "sha256": "1822f88268b452ced242ed06a770302c15dff46bb8a2e077e95e19597f737397"
+        }
+      }
+    },
+    "react": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/react.svg",
+          "sha256": "6a7fb2e8b5e168c0d0f605147138f0bb437eea6618008b82b708ce42e56bafae"
+        }
+      }
+    },
+    "react-ts": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/react_ts.svg",
+          "sha256": "f5caa02786d9ce9650fa25442b6605630a60e40156083679036be101b145ad37"
+        }
+      }
+    },
+    "swift": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/swift.svg",
+          "sha256": "2cf5377f88aa8cb477b773d30aae2518af9ce4af9eec8b044cb163e94f597dcd"
+        }
+      }
+    },
+    "ruby": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/ruby.svg",
+          "sha256": "a7f0628476482b9f3bdb586b455eb48d85f7e92244f90c1c80829e74d093bbb6"
+        }
+      }
+    },
+    "php": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/php.svg",
+          "sha256": "5163a63d5a8d81921ae0a24c853cc7342d498bdf11e7b5d3c353842fddf1004e"
+        }
+      }
+    },
+    "dart": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/dart.svg",
+          "sha256": "858daa7ed5bfc02734254390d26c4a209ecf9a433c97beabdcbe75d5525225ce"
+        }
+      }
+    },
+    "lua": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/lua.svg",
+          "sha256": "d69816f1ae2002f284f72ba38c019e8faeda0f03d293dc351ed4995813d4932f"
+        }
+      }
+    },
+    "r": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/r.svg",
+          "sha256": "7b12397719a62f72cebcfe9bf96e9e559e99ef8a0061d734d2fa0864bd70f929"
+        }
+      }
+    },
+    "html": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/html.svg",
+          "sha256": "23e04ad5f1ae9cd16dc79fe52c4290e5bd80f2f7bfe4c0769e7485832b3eb146"
+        }
+      }
+    },
+    "css": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/css.svg",
+          "sha256": "afe20f8da21f1f2de59b11e0bd0b6bc63866a43e42238af5daca6c5669493cd5"
+        }
+      }
+    },
+    "sass": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/sass.svg",
+          "sha256": "e613bd47d598c54c9bda64db765039b54b3db4a6b45de0b1976b45956ebc1023"
+        }
+      }
+    },
+    "graphql": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/graphql.svg",
+          "sha256": "731ab2528182fa351d9d9bea512c09392ef3dcb20684ed90a62cd2a13df9eede"
+        }
+      }
+    },
+    "git": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/git.svg",
+          "sha256": "b0caee7c9cb4e602536e2f5a384740e7c8bc5ab94d98bfdde529f1eb97938213"
+        }
+      }
+    },
+    "docker": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/docker.svg",
+          "sha256": "3d032b712bbedea1dd8a1103c40cf5f27ce5b1af83ae0c9312fd15eb3c341c66"
+        }
+      }
+    },
+    "makefile": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/makefile.svg",
+          "sha256": "a6d8260757abc4928a488455272a9b486b8aa317cd7c198150ad1a885d9da748"
+        }
+      }
+    },
+    "cmake": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/cmake.svg",
+          "sha256": "a7b782fe42372a21b32c22e8dc6e6728b146d7fbfd961e10273bdd2978f5213c"
+        }
+      }
+    },
+    "lock": {
+      "source": "material",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "icons/lock.svg",
+          "sha256": "f28fe89b018236f9de2abd1c10abf278bf3f2ec9b757bb6746a44704ebedc084"
+        }
+      }
+    }
+  },
+  "actions": {
+    "Back": "ui-back",
+    "Forward": "ui-forward",
+    "Refresh": "ui-refresh",
+    "Parent": "ui-up",
+    "Mkdir": "ui-new-folder",
+    "Copy": "ui-copy",
+    "Move": "ui-move",
+    "Rename": "ui-rename",
+    "Search": "ui-search",
+    "Terminal": "ui-terminal",
+    "ArchiveTools": "ui-archive",
+    "Undo": "ui-undo",
+    "Queue": "ui-history",
+    "Preview": "ui-preview",
+    "ToggleHidden": "ui-eye",
+    "ToggleSidebar": "ui-sidebar",
+    "Preferences": "ui-settings",
+    "NewTab": "ui-add",
+    "CloseTab": "ui-close",
+    "Expand": "ui-chevron-right",
+    "Collapse": "ui-chevron-down",
+    "ReorderUp": "ui-up",
+    "ReorderDown": "ui-down",
+    "Link": "ui-link"
+  },
+  "places": [
+    {
+      "key": "place:0",
+      "icon": "nav-home"
+    },
+    {
+      "key": "place:1",
+      "icon": "nav-desktop"
+    },
+    {
+      "key": "place:2",
+      "icon": "nav-documents"
+    },
+    {
+      "key": "place:3",
+      "icon": "nav-downloads"
+    },
+    {
+      "key": "place:4",
+      "icon": "nav-desktop"
+    },
+    {
+      "key": "Connections",
+      "icon": "nav-server"
+    },
+    {
+      "prefix": "connection:",
+      "icon": "nav-server"
+    },
+    {
+      "prefix": "bookmark:",
+      "icon": "nav-documents"
+    }
+  ],
+  "file_rules": [
+    {
+      "icon": "pdf",
+      "names": [],
+      "extensions": [
+        "pdf"
+      ]
+    },
+    {
+      "icon": "word",
+      "names": [],
+      "extensions": [
+        "doc",
+        "docx",
+        "odt",
+        "rtf"
+      ]
+    },
+    {
+      "icon": "table",
+      "names": [],
+      "extensions": [
+        "csv",
+        "ods",
+        "psv",
+        "tsv",
+        "xls",
+        "xlsm",
+        "xlsx"
+      ]
+    },
+    {
+      "icon": "powerpoint",
+      "names": [],
+      "extensions": [
+        "odp",
+        "potm",
+        "potx",
+        "ppa",
+        "ppam",
+        "pps",
+        "ppsm",
+        "ppsx",
+        "ppt",
+        "pptm",
+        "pptx"
+      ]
+    },
+    {
+      "icon": "document",
+      "names": [],
+      "extensions": [
+        "txt"
+      ]
+    },
+    {
+      "icon": "markdown",
+      "names": [],
+      "extensions": [
+        "copilotmd",
+        "litcoffee",
+        "markdn",
+        "markdown",
+        "md",
+        "mdown",
+        "mdtext",
+        "mdtxt",
+        "mdwn",
+        "mkd",
+        "mkdn",
+        "ronn",
+        "rst",
+        "workbook"
+      ]
+    },
+    {
+      "icon": "readme",
+      "names": [
+        "readme",
+        "readme.md",
+        "readme.rst",
+        "readme.txt"
+      ],
+      "extensions": []
+    },
+    {
+      "icon": "license",
+      "names": [
+        "copying",
+        "copying.md",
+        "copying.rst",
+        "copying.txt",
+        "copyright",
+        "copyright.md",
+        "copyright.rst",
+        "copyright.txt",
+        "licence",
+        "licence-agpl",
+        "licence-apache",
+        "licence-bsd",
+        "licence-gpl",
+        "licence-lgpl",
+        "licence-mit",
+        "licence.md",
+        "licence.rst",
+        "licence.txt",
+        "license",
+        "license-agpl",
+        "license-apache",
+        "license-bsd",
+        "license-gpl",
+        "license-lgpl",
+        "license-mit",
+        "license.md",
+        "license.rst",
+        "license.txt"
+      ],
+      "extensions": []
+    },
+    {
+      "icon": "xml",
+      "names": [
+        ".htaccess"
+      ],
+      "extensions": [
+        "ascx",
+        "atom",
+        "axaml",
+        "axml",
+        "bpmn",
+        "csl",
+        "csproj.user",
+        "dita",
+        "ditamap",
+        "dmn",
+        "dtd",
+        "dtml",
+        "ent",
+        "fxml",
+        "iml",
+        "isml",
+        "jmx",
+        "jrxml",
+        "launch",
+        "manifest",
+        "menu",
+        "opml",
+        "owl",
+        "plist",
+        "proj",
+        "project",
+        "publishsettings",
+        "pubxml",
+        "pubxml.user",
+        "rdf",
+        "resx",
+        "rng",
+        "rss",
+        "shproj",
+        "storyboard",
+        "targets",
+        "tld",
+        "tmlanguage",
+        "tmx",
+        "vbproj",
+        "vbproj.user",
+        "wsdl",
+        "wxi",
+        "wxl",
+        "wxs",
+        "xbl",
+        "xib",
+        "xliff",
+        "xml",
+        "xml.dist",
+        "xml.dist.sample",
+        "xmp",
+        "xoml",
+        "xpdl",
+        "xquery",
+        "xsd",
+        "xsl",
+        "xslt",
+        "xul"
+      ]
+    },
+    {
+      "icon": "json",
+      "names": [
+        ".esformatter",
+        ".jsbeautifyrc",
+        ".jscsrc",
+        ".jshintrc",
+        ".whitesource",
+        "cdp.pid",
+        "composer.lock"
+      ],
+      "extensions": [
+        "geojson",
+        "har",
+        "json",
+        "json5",
+        "jsonc",
+        "jsonl",
+        "jsonld",
+        "ndjson",
+        "ts.map",
+        "tsbuildinfo",
+        "webmanifest"
+      ]
+    },
+    {
+      "icon": "yaml",
+      "names": [],
+      "extensions": [
+        "cff",
+        "eyaml",
+        "eyml",
+        "winget",
+        "yaml",
+        "yaml-tmlanguage",
+        "yaml-tmpreferences",
+        "yaml-tmtheme",
+        "yaml.dist",
+        "yml",
+        "yml.dist"
+      ]
+    },
+    {
+      "icon": "toml",
+      "names": [],
+      "extensions": [
+        "toml",
+        "tosd"
+      ]
+    },
+    {
+      "icon": "settings",
+      "names": [
+        ".buildignore",
+        ".clang-format",
+        ".clang-format-ignore",
+        ".clang-tidy",
+        ".conf",
+        ".jshintignore",
+        ".mrconfig",
+        ".yardopts",
+        "compile_flags.txt",
+        "manifest.mf",
+        ".env"
+      ],
+      "extensions": [
+        "cfg",
+        "cnf",
+        "conf",
+        "config",
+        "directory",
+        "dlc",
+        "ini",
+        "mak",
+        "npmrc",
+        "option",
+        "prefs",
+        "prop",
+        "properties",
+        "props",
+        "repo",
+        "settings",
+        "sln.dotsettings",
+        "sln.dotsettings.user",
+        "tool-versions"
+      ],
+      "prefixes": [
+        ".env."
+      ]
+    },
+    {
+      "icon": "database",
+      "names": [],
+      "extensions": [
+        "accdb",
+        "accde",
+        "adp",
+        "bak",
+        "bdb",
+        "db",
+        "db3",
+        "dbf",
+        "dblite",
+        "dblite3",
+        "debugsymbols",
+        "dsql",
+        "fdb",
+        "feather",
+        "frm",
+        "gdb",
+        "ibd",
+        "kdbx",
+        "ldf",
+        "mdb",
+        "mde",
+        "mdf",
+        "myd",
+        "myi",
+        "ndf",
+        "odb",
+        "orc",
+        "parquet",
+        "pdb",
+        "pgsql",
+        "pkb",
+        "pks",
+        "plpgsql",
+        "postgres",
+        "psql",
+        "sdf",
+        "sql",
+        "sqlite",
+        "sqlite3"
+      ]
+    },
+    {
+      "icon": "zip",
+      "names": [],
+      "extensions": [
+        "001",
+        "7z",
+        "apfs",
+        "arj",
+        "br",
+        "brotli",
+        "bz2",
+        "bzip2",
+        "cab",
+        "cpio",
+        "deb",
+        "esd",
+        "far",
+        "fat",
+        "gz",
+        "gzip",
+        "hfs",
+        "lha",
+        "liz",
+        "lz",
+        "lz4",
+        "lz5",
+        "lzh",
+        "lzma",
+        "lzma2",
+        "ntfs",
+        "rar",
+        "rpm",
+        "squashfs",
+        "swm",
+        "tar",
+        "taz",
+        "tbz",
+        "tbz2",
+        "tgz",
+        "tlz",
+        "tpz",
+        "txz",
+        "tz",
+        "tzst",
+        "tzstd",
+        "wim",
+        "xar",
+        "xz",
+        "z",
+        "zip",
+        "zst",
+        "zstd",
+        "tar.gz",
+        "tar.bz2",
+        "tar.xz",
+        "ar",
+        "a"
+      ]
+    },
+    {
+      "icon": "disc",
+      "names": [],
+      "extensions": [
+        "dmg",
+        "hdd",
+        "iso",
+        "qcow",
+        "qcow2",
+        "qed",
+        "vmdk"
+      ]
+    },
+    {
+      "icon": "image",
+      "names": [],
+      "extensions": [
+        "3fr",
+        "afphoto",
+        "ami",
+        "apx",
+        "ari",
+        "arw",
+        "ase",
+        "aseprite",
+        "avif",
+        "bay",
+        "bmp",
+        "bpg",
+        "braw",
+        "brk",
+        "cap",
+        "clip",
+        "cpt",
+        "cr2",
+        "cr3",
+        "crw",
+        "cur",
+        "data",
+        "dcr",
+        "dcs",
+        "dds",
+        "dng",
+        "drf",
+        "eip",
+        "eps",
+        "erf",
+        "exr",
+        "fff",
+        "fpx",
+        "gbr",
+        "gif",
+        "gpr",
+        "heic",
+        "heif",
+        "icns",
+        "ico",
+        "iiq",
+        "img",
+        "jb2",
+        "jbig2",
+        "jfif",
+        "jng",
+        "jpeg",
+        "jpg",
+        "jxl",
+        "jxr",
+        "k25",
+        "kdc",
+        "kra",
+        "ktx",
+        "ktx2",
+        "mdc",
+        "mdp",
+        "mef",
+        "mos",
+        "mrw",
+        "nef",
+        "nrw",
+        "obm",
+        "ora",
+        "orf",
+        "pbm",
+        "pdn",
+        "pef",
+        "pgf",
+        "pgm",
+        "pic",
+        "png",
+        "pnm",
+        "ppm",
+        "ptx",
+        "pxn",
+        "r3d",
+        "raf",
+        "raw",
+        "reb",
+        "rw2",
+        "rwl",
+        "rwz",
+        "sai",
+        "sr2",
+        "srf",
+        "srw",
+        "tga",
+        "tif",
+        "tiff",
+        "webp",
+        "x3f",
+        "xcf"
+      ]
+    },
+    {
+      "icon": "svg",
+      "names": [],
+      "extensions": [
+        "svg"
+      ]
+    },
+    {
+      "icon": "audio",
+      "names": [],
+      "extensions": [
+        "8svx",
+        "aa",
+        "aac",
+        "aax",
+        "ac3",
+        "aif",
+        "aiff",
+        "alac",
+        "amr",
+        "ape",
+        "caf",
+        "cda",
+        "cdr",
+        "dss",
+        "ec3",
+        "efs",
+        "enc",
+        "flac",
+        "flp",
+        "gp",
+        "gsm",
+        "it",
+        "m3u",
+        "m3u8",
+        "m4a",
+        "m4b",
+        "m4p",
+        "m4r",
+        "mid",
+        "mka",
+        "mmf",
+        "mod",
+        "mp3",
+        "mpc",
+        "mscz",
+        "mtm",
+        "mui",
+        "musx",
+        "mxl",
+        "nsa",
+        "opus",
+        "pkf",
+        "qcp",
+        "ra",
+        "rf64",
+        "rip",
+        "sdt",
+        "sesx",
+        "sf2",
+        "stap",
+        "tg",
+        "voc",
+        "vqf",
+        "wav",
+        "weba",
+        "wfp",
+        "wma",
+        "wpl",
+        "wproj",
+        "wv"
+      ]
+    },
+    {
+      "icon": "video",
+      "names": [],
+      "extensions": [
+        "avi",
+        "flv",
+        "gifv",
+        "m2v",
+        "m4v",
+        "mkv",
+        "mov",
+        "mp2",
+        "mp4",
+        "mpe",
+        "mpeg",
+        "mpg",
+        "mpv",
+        "ogg",
+        "ogv",
+        "qt",
+        "rm",
+        "rmvb",
+        "vob",
+        "webm",
+        "wmv",
+        "yuv"
+      ]
+    },
+    {
+      "icon": "font",
+      "names": [],
+      "extensions": [
+        "bmap",
+        "eot",
+        "fnt",
+        "font",
+        "fonts",
+        "mrf",
+        "ntf",
+        "odttf",
+        "otf",
+        "sui",
+        "suit",
+        "ttc",
+        "ttf",
+        "woff",
+        "woff2"
+      ]
+    },
+    {
+      "icon": "epub",
+      "names": [],
+      "extensions": [
+        "epub"
+      ]
+    },
+    {
+      "icon": "exe",
+      "names": [],
+      "extensions": [
+        "exe",
+        "msi"
+      ]
+    },
+    {
+      "icon": "console",
+      "names": [
+        ".envrc",
+        ".hushlogin",
+        "apkbuild",
+        "bashrc_apple_terminal",
+        "commit-msg",
+        "pkgbuild",
+        "post-merge",
+        "pre-commit",
+        "pre-push",
+        "zlogin",
+        "zlogout",
+        "zprofile",
+        "zshenv",
+        "zshrc",
+        "zshrc_apple_terminal"
+      ],
+      "extensions": [
+        "awk",
+        "bash",
+        "bash_aliases",
+        "bash_login",
+        "bash_logout",
+        "bash_profile",
+        "bashrc",
+        "bat",
+        "cmd",
+        "csh",
+        "cshrc",
+        "ebuild",
+        "eclass",
+        "exp",
+        "fish",
+        "ksh",
+        "nu",
+        "profile",
+        "sh",
+        "tcsh",
+        "tcshrc",
+        "xprofile",
+        "xsession",
+        "xsessionrc",
+        "xsh",
+        "yash_profile",
+        "yashrc",
+        "zlogin",
+        "zlogout",
+        "zprofile",
+        "zsh",
+        "zsh-theme",
+        "zshenv",
+        "zshrc"
+      ]
+    },
+    {
+      "icon": "powershell",
+      "names": [],
+      "extensions": [
+        "ps1",
+        "ps1xml",
+        "psc1",
+        "psd1",
+        "psm1",
+        "psrc",
+        "pssc"
+      ]
+    },
+    {
+      "icon": "rust",
+      "names": [
+        "cargo.toml",
+        "cargo.lock",
+        "rust-toolchain",
+        "rust-toolchain.toml"
+      ],
+      "extensions": [
+        "ron",
+        "rs"
+      ]
+    },
+    {
+      "icon": "c",
+      "names": [],
+      "extensions": [
+        "c",
+        "i",
+        "mi"
+      ]
+    },
+    {
+      "icon": "cpp",
+      "names": [],
+      "extensions": [
+        "c++",
+        "c++m",
+        "cc",
+        "ccm",
+        "cp",
+        "cpp",
+        "cppm",
+        "cxx",
+        "cxxm",
+        "h.in",
+        "hpp.in",
+        "ii",
+        "ipp",
+        "ixx",
+        "mii",
+        "tpp",
+        "txx"
+      ]
+    },
+    {
+      "icon": "csharp",
+      "names": [],
+      "extensions": [
+        "cs",
+        "csharp",
+        "csx"
+      ]
+    },
+    {
+      "icon": "java",
+      "names": [],
+      "extensions": [
+        "jav",
+        "java",
+        "jsp"
+      ]
+    },
+    {
+      "icon": "kotlin",
+      "names": [],
+      "extensions": [
+        "kt",
+        "kts"
+      ]
+    },
+    {
+      "icon": "go",
+      "names": [],
+      "extensions": [
+        "go"
+      ]
+    },
+    {
+      "icon": "python",
+      "names": [],
+      "extensions": [
+        "cpy",
+        "gyp",
+        "gypi",
+        "ipy",
+        "py",
+        "pyi",
+        "pyt",
+        "pyw",
+        "rpy"
+      ]
+    },
+    {
+      "icon": "javascript",
+      "names": [
+        "jakefile"
+      ],
+      "extensions": [
+        "cjs",
+        "es6",
+        "esx",
+        "js",
+        "mjs",
+        "pac"
+      ]
+    },
+    {
+      "icon": "typescript",
+      "names": [],
+      "extensions": [
+        "cts",
+        "mts",
+        "ts",
+        "d.ts",
+        "d.cts",
+        "d.mts"
+      ]
+    },
+    {
+      "icon": "react",
+      "names": [],
+      "extensions": [
+        "jsx"
+      ]
+    },
+    {
+      "icon": "react-ts",
+      "names": [],
+      "extensions": [
+        "tsx"
+      ]
+    },
+    {
+      "icon": "swift",
+      "names": [
+        ".swift-format",
+        ".swift-version",
+        ".swiftformat",
+        ".xcode-version"
+      ],
+      "extensions": [
+        "swift",
+        "swiftdeps",
+        "swiftdoc",
+        "swiftmodule",
+        "swiftsourceinfo",
+        "xcplayground"
+      ]
+    },
+    {
+      "icon": "ruby",
+      "names": [
+        ".ruby-version",
+        "appraisals",
+        "berksfile",
+        "berksfile.lock",
+        "brewfile",
+        "capfile",
+        "cheffile",
+        "dangerfile",
+        "deliverfile",
+        "guardfile",
+        "gymfile",
+        "hobofile",
+        "matchfile",
+        "podfile",
+        "puppetfile",
+        "rakefile",
+        "rantfile",
+        "scanfile",
+        "snapfile",
+        "thorfile"
+      ],
+      "extensions": [
+        "erb",
+        "gemspec",
+        "podspec",
+        "rake",
+        "rb",
+        "rbi",
+        "rbs",
+        "rbx",
+        "rjs",
+        "ru"
+      ]
+    },
+    {
+      "icon": "php",
+      "names": [],
+      "extensions": [
+        "ctp",
+        "php",
+        "php4",
+        "php5",
+        "phtml"
+      ]
+    },
+    {
+      "icon": "dart",
+      "names": [
+        ".pubignore"
+      ],
+      "extensions": [
+        "dart"
+      ]
+    },
+    {
+      "icon": "lua",
+      "names": [
+        ".luacheckrc"
+      ],
+      "extensions": [
+        "lua"
+      ]
+    },
+    {
+      "icon": "r",
+      "names": [
+        ".rhistory"
+      ],
+      "extensions": [
+        "r",
+        "rhistory",
+        "rmd",
+        "rprofile",
+        "rt"
+      ]
+    },
+    {
+      "icon": "html",
+      "names": [],
+      "extensions": [
+        "asp",
+        "aspx",
+        "htm",
+        "html",
+        "html_vm",
+        "jshtm",
+        "rhtml",
+        "shtml",
+        "volt",
+        "xht",
+        "xhtml"
+      ]
+    },
+    {
+      "icon": "css",
+      "names": [],
+      "extensions": [
+        "css"
+      ]
+    },
+    {
+      "icon": "sass",
+      "names": [],
+      "extensions": [
+        "sass",
+        "scss"
+      ]
+    },
+    {
+      "icon": "graphql",
+      "names": [
+        ".graphqlconfig"
+      ],
+      "extensions": [
+        "gql",
+        "graphql"
+      ]
+    },
+    {
+      "icon": "git",
+      "names": [
+        ".git",
+        ".git-blame-ignore",
+        ".git-blame-ignore-revs",
+        ".git-for-windows-updater",
+        ".gitattributes",
+        ".gitattributes-global",
+        ".gitattributes_global",
+        ".gitconfig",
+        ".gitignore",
+        ".gitignore-global",
+        ".gitignore_global",
+        ".gitinclude",
+        ".gitkeep",
+        ".gitmessage",
+        ".gitmodules",
+        ".gitpreserve",
+        ".keep",
+        "commit_editmsg",
+        "git-history",
+        "git-rebase-todo",
+        "merge_msg"
+      ],
+      "extensions": [
+        "patch"
+      ]
+    },
+    {
+      "icon": "docker",
+      "names": [
+        "compose.alpha.yaml",
+        "compose.alpha.yml",
+        "compose.beta.yaml",
+        "compose.beta.yml",
+        "compose.ci.yaml",
+        "compose.ci.yml",
+        "compose.dev.yaml",
+        "compose.dev.yml",
+        "compose.development.yaml",
+        "compose.development.yml",
+        "compose.local.yaml",
+        "compose.local.yml",
+        "compose.override.yaml",
+        "compose.override.yml",
+        "compose.prod.yaml",
+        "compose.prod.yml",
+        "compose.production.yaml",
+        "compose.production.yml",
+        "compose.stage.yaml",
+        "compose.stage.yml",
+        "compose.staging.yaml",
+        "compose.staging.yml",
+        "compose.test.yaml",
+        "compose.test.yml",
+        "compose.testing.yaml",
+        "compose.testing.yml",
+        "compose.web.yaml",
+        "compose.web.yml",
+        "compose.worker.yaml",
+        "compose.worker.yml",
+        "compose.yaml",
+        "compose.yml",
+        "containerfile",
+        "containerfile.alpha",
+        "containerfile.beta",
+        "containerfile.ci",
+        "containerfile.dev",
+        "containerfile.development",
+        "containerfile.local",
+        "containerfile.prod",
+        "containerfile.production",
+        "containerfile.stage",
+        "containerfile.staging",
+        "containerfile.test",
+        "containerfile.testing",
+        "containerfile.web",
+        "containerfile.worker",
+        "docker-compose.alpha.yaml",
+        "docker-compose.alpha.yml",
+        "docker-compose.beta.yaml",
+        "docker-compose.beta.yml",
+        "docker-compose.ci.yaml",
+        "docker-compose.ci.yml",
+        "docker-compose.dev.yaml",
+        "docker-compose.dev.yml",
+        "docker-compose.development.yaml",
+        "docker-compose.development.yml",
+        "docker-compose.local.yaml",
+        "docker-compose.local.yml",
+        "docker-compose.override.yaml",
+        "docker-compose.override.yml",
+        "docker-compose.prod.yaml",
+        "docker-compose.prod.yml",
+        "docker-compose.production.yaml",
+        "docker-compose.production.yml",
+        "docker-compose.stage.yaml",
+        "docker-compose.stage.yml",
+        "docker-compose.staging.yaml",
+        "docker-compose.staging.yml",
+        "docker-compose.test.yaml",
+        "docker-compose.test.yml",
+        "docker-compose.testing.yaml",
+        "docker-compose.testing.yml",
+        "docker-compose.web.yaml",
+        "docker-compose.web.yml",
+        "docker-compose.worker.yaml",
+        "docker-compose.worker.yml",
+        "docker-compose.yaml",
+        "docker-compose.yml",
+        "dockerfile",
+        "dockerfile.alpha",
+        "dockerfile.beta",
+        "dockerfile.ci",
+        "dockerfile.dev",
+        "dockerfile.development",
+        "dockerfile.local",
+        "dockerfile.prod",
+        "dockerfile.production",
+        "dockerfile.stage",
+        "dockerfile.staging",
+        "dockerfile.test",
+        "dockerfile.testing",
+        "dockerfile.web",
+        "dockerfile.windows",
+        "dockerfile.worker"
+      ],
+      "extensions": [
+        "compose.yaml",
+        "compose.yml",
+        "containerfile",
+        "containerignore",
+        "docker-compose.yaml",
+        "docker-compose.yml",
+        "dockerfile",
+        "dockerignore"
+      ],
+      "prefixes": [
+        "dockerfile.",
+        "containerfile."
+      ]
+    },
+    {
+      "icon": "makefile",
+      "names": [
+        "gnumakefile",
+        "kbuild",
+        "makefile"
+      ],
+      "extensions": [
+        "mk"
+      ]
+    },
+    {
+      "icon": "cmake",
+      "names": [
+        "cmakecache.txt",
+        "cmakelists.txt",
+        "cmakepresets.json"
+      ],
+      "extensions": [
+        "cmake"
+      ]
+    },
+    {
+      "icon": "lock",
+      "names": [
+        "security",
+        "security.md",
+        "security.txt"
+      ],
+      "extensions": [
+        "lock"
+      ]
+    }
+  ],
+  "default_action": "ui-document",
+  "default_place": "ui-drive",
+  "file_default": "file",
+  "folder_default": "folder"
+}

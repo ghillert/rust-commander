@@ -40,7 +40,7 @@ uses a small accent marker; the selected file remains the main visual focus.
 Numeric size columns align to the right. Light and dark modes use the same
 spacing and hierarchy.
 
-File rows use system-provided icons for local paths: AppKit `NSWorkspace` on
+By default, file rows use system-provided icons for local paths: AppKit `NSWorkspace` on
 macOS, the Windows Shell, and GIO plus the GTK4 icon theme on Linux. A dedicated
 worker handles native lookups and converts images into transparent RGBA pixels;
 Slint images stay on the UI thread. Icons retain their colors when selected.
@@ -51,7 +51,16 @@ per-window cache are bounded; obsolete requests are cancelled and off-screen
 model rows release their images. Cache entries expire after a minute to pick up
 association or theme changes, and changed file timestamps have separate cache
 keys. Remote and archive entries use embedded icons without requesting local
-filesystem metadata. This provides file icons, rather than content thumbnails.
+filesystem metadata. **Settings → Desktop appearance → File icons** also offers
+built-in-only mode, which performs no native icon queries. The curated Material
+catalog provides specific file-type fallbacks, including replacements for
+confirmed generic native documents. See [the icon guide](ICONS.md) for matching,
+custom-icon preservation, provenance, and visual checks.
+
+Application icons use a shared generated catalog: Fluent regular controls,
+Fluent Color sidebar icons where available, and accent-tinted regular variants
+for the remaining sidebar roles. Multicolor icons bypass the alpha-mask tint
+path. Sidebar icons are 20 logical pixels and file-list icons remain 18 pixels.
 
 On macOS, the toolbar extends into the native title bar, with reserved space
 for the close/minimize/full-screen controls. The native controls are vertically
@@ -115,7 +124,8 @@ Native drag invocation is deferred until the controller is no longer borrowed.
 
 - `ui/commander.slint`: widgets, layouts, focus scopes and input callbacks.
 - `ui/chrome.slint`: toolbar controls, text fields, shortcuts, colors and glyph mapping.
-- `ui/icons/`: embedded SVG assets, authored for this project.
+- `ui/icons/`: pinned SVG artwork, licenses, source manifest and generated Slint catalog.
+- `src/icons/`: generated filename tables; `scripts/icons.py` validates and updates both catalogs.
 - `build.rs`: target style selection and resource embedding.
 - `src/app.rs`: operation/controller state and shared validation/workers.
 - `src/app/slint_ui/`: dialog models, commands, settings binding and keyboard input.

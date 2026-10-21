@@ -7,6 +7,8 @@ use std::{cell::RefCell, rc::Rc};
 slint::include_modules!();
 mod dialogs;
 mod enhancements;
+#[cfg(feature = "screenshot")]
+mod icon_smoke;
 mod icons;
 mod keys;
 mod parity;
@@ -19,6 +21,8 @@ struct RowData {
     path: PathBuf,
     icon_key: Option<crate::native_icons::Key>,
     name: String,
+    fallback_icon: &'static str,
+    symlink: bool,
     cells: Vec<String>,
     directory: bool,
     selected: bool,
@@ -654,6 +658,8 @@ impl Adapter {
                                 modified: entry.modified,
                             }),
                             name: entry.name.clone(),
+                            fallback_icon: crate::icons::file_icon(&entry.name, entry.is_dir),
+                            symlink: entry.is_symlink,
                             cells: self
                                 .app
                                 .preferences
@@ -687,6 +693,8 @@ impl Adapter {
                         payload: row.payload.as_str().into(),
                         icon: Default::default(),
                         native_icon: false,
+                        fallback_icon: row.fallback_icon.into(),
+                        symlink: row.symlink,
                     }
                 });
             } else if self.selection_stamp[side] != selection {
@@ -1230,6 +1238,10 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
     slint::BackendSelector::new()
         .backend_name("winit".into())
         .select()?;
+    #[cfg(feature = "screenshot")]
+    if let Some(path) = std::env::var_os("RUST_COMMANDER_ICON_GALLERY_TO") {
+        return icon_smoke::run(path.into());
+    }
     let smoke_ui = windows::restore(paths, settings::load())?;
     #[cfg(not(feature = "screenshot"))]
     let _ = &smoke_ui;
