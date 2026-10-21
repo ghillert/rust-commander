@@ -214,6 +214,9 @@ Pass them after `--` when launching through Cargo. For example, on macOS/Linux:
 Double-click folders and supported archives to browse them. Double-click a file
 to open its built-in viewer, or choose **Open externally** for other formats.
 Use **F5** to copy marked files to the other pane and **F6** to move them.
+During transfers, the progress area shows the byte count and a live recent speed
+in B/s, KiB/s, or MiB/s. Resuming a transfer excludes previously copied bytes
+from the speed measurement.
 **F5** extracts archive entries into new or existing folders with conflict choices. **Operations → Archive tools**
 edits local ZIP/TAR/7z containers or creates/unlocks encrypted ZIP and 7z archives. Nested and
 remote archives open read-only. **Mod+Z / Mod+Shift+Z** undo/redo eligible local operations and

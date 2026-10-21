@@ -711,3 +711,20 @@ dark/FemtoVG screenshots were visually inspected and show populated columns;
 outputs are in `target/uri-smoke/kew-metadata-*.png`. Windows/Linux checks were
 not run locally for this fix. Index timestamps without explicit zones use UTC
 and are rendered in the user's local timezone.
+
+
+## Transfer speed — 2026-10-21
+
+Active operations show a recent byte rate in a separate status-bar label, which
+stays visible when a long file path is elided. Rates use a bounded two-second
+window, fall to zero during stalls, and exclude restored checkpoint byte counts.
+Transient timing samples are not serialized.
+
+On the Apple Silicon Mac, 247 tests passed (15 environment-dependent cases
+ignored), and Clippy with warnings denied, formatting, and diff checks passed.
+Deterministic checks cover steady throughput, idle decay, restarting after a
+stall, rapid chunk updates/cache bounds, setup time, restored offsets and
+serialization. A Slint testing-backend test verifies that progress shows both
+byte count and speed, then clears the speed when the job ends. These checks are
+automated; no native Windows/Linux runtime check or network benchmark was run
+for this change.

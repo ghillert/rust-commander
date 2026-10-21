@@ -557,6 +557,16 @@ impl Adapter {
         ui.set_busy(self.app.job.is_some());
         ui.set_show_hidden(self.app.show_hidden);
         ui.set_progress(0.0);
+        ui.set_transfer_speed(
+            self.app
+                .job
+                .as_ref()
+                .filter(|_| !self.app.status_error)
+                .and_then(|job| job.progress.bytes_per_second())
+                .map(|rate| format!("{}/s", filesystem::human_size(rate)))
+                .unwrap_or_default()
+                .into(),
+        );
         let status = if let Some(job) = &self.app.job
             && !self.app.status_error
         {
@@ -565,7 +575,7 @@ impl Adapter {
                 tr(&job.label),
                 job.progress.current,
                 job.progress.files,
-                filesystem::human_size(job.progress.bytes)
+                filesystem::human_size(job.progress.bytes),
             )
         } else {
             tr(

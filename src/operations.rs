@@ -11,6 +11,8 @@ use std::{
     time::{Instant, SystemTime},
 };
 
+mod rate;
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Operation {
     EmptyTrash,
@@ -296,6 +298,16 @@ pub struct Progress {
     pub current: String,
     pub bytes: u64,
     pub files: usize,
+    #[serde(skip)]
+    rate: rate::TransferRate,
+}
+
+impl Progress {
+    /// Recent bytes processed per second, excluding restored checkpoint bytes.
+    /// Idle time is included even when the worker has not sent another report.
+    pub fn bytes_per_second(&self) -> Option<u64> {
+        self.rate.per_second(Instant::now())
+    }
 }
 
 pub struct Task {
@@ -355,6 +367,7 @@ impl Task {
         self.check()?;
         self.progress.current = path.display().to_string();
         self.progress.bytes += bytes;
+        self.progress.rate.record(bytes, Instant::now());
         if self.last_report.elapsed() >= self.report_interval {
             (self.report)(self.progress.clone());
             self.last_report = Instant::now();
@@ -368,6 +381,7 @@ impl Task {
         output: &mut dyn Write,
         path: &Path,
     ) -> Result<u64> {
+        self.progress.rate.record(0, Instant::now());
         let mut buffer = [0u8; 64 * 1024];
         let mut total = 0;
         loop {

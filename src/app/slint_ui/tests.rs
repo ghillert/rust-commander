@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn running_progress_shows_speed_beside_the_transferred_byte_count() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, _left, _right) = fixture();
+    let ui = CommanderWindow::new().unwrap();
+    let (_sender, receiver) = mpsc::channel();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let mut task = Task::default();
+    task.tick(Path::new("fixture.zip"), 4 * 1024 * 1024)
+        .unwrap();
+    adapter.app.job = Some(Job {
+        owner: adapter.app.window_id,
+        label: "Remote transfer".into(),
+        receiver,
+        cancel,
+        progress: task.progress,
+    });
+    adapter.sync(&ui);
+    let status = ui.get_status().to_string();
+    assert!(status.contains("fixture.zip"), "{status}");
+    assert!(status.ends_with("4.0 MiB"), "{status}");
+    assert!(ui.get_transfer_speed().ends_with("/s"));
+    adapter.app.job = None;
+    adapter.sync(&ui);
+    assert!(!ui.get_busy());
+    assert!(ui.get_transfer_speed().is_empty());
+}
+
+#[test]
 fn location_bar_toggle_apply_cancel_and_escape_preserve_the_address() {
     use crate::preferences::LocationBar;
     i_slint_backend_testing::init_no_event_loop();
