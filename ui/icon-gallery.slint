@@ -10,7 +10,7 @@ export component IconGallery inherits Window {
     background: Chrome.pane;
     changed dark => {Chrome.dark=root.dark;}
     VerticalLayout {
-        padding:12px;spacing:8px;
+        padding:12px;spacing:6px;
         Text {text:"Icon catalog · 16 / 18 / 20 / 24 logical pixels · disabled sample below";font-size:16px;color:Chrome.foreground;}
         HorizontalLayout {
             spacing:8px;
@@ -22,7 +22,7 @@ export component IconGallery inherits Window {
         for row in ceil(root.icons.length / 12): HorizontalLayout {
             spacing:6px;
             for col in 12: Rectangle {
-                width:92px;height:82px;
+                width:92px;height:68px;
                 private property <int> index: row*12+col;
                 if index < root.icons.length: VerticalLayout {
                     spacing:4px;

@@ -49,14 +49,33 @@ def validate_svg(data):
 
 def transform(data, asset):
     for operation in asset.get("transforms", []):
-        if operation != "remove-folder-motive":
-            raise ValueError(f"Unknown SVG transformation: {operation}")
         ET.register_namespace("", "http://www.w3.org/2000/svg")
         root = ET.fromstring(data)
-        for parent in root.iter():
-            for child in list(parent):
-                if child.get("id") == "motive":
-                    parent.remove(child)
+        if operation == "remove-folder-motive":
+            for parent in root.iter():
+                for child in list(parent):
+                    if child.get("id") == "motive":
+                        parent.remove(child)
+        elif operation == "tint-gradient":
+            colors = asset.get("palette", [])
+            if len(colors) != 2 or not all(re.fullmatch(r"#[0-9A-Fa-f]{6}", c) for c in colors):
+                raise ValueError("tint-gradient requires two RGB palette colors")
+            painted = False
+            for node in root.iter():
+                if node.get("fill") == "#212121":
+                    node.set("fill", "url(#rc-palette)")
+                    painted = True
+            if not painted:
+                raise ValueError("tint-gradient expected Fluent filled artwork")
+            tag = "{http://www.w3.org/2000/svg}"
+            defs = ET.SubElement(root, tag + "defs")
+            gradient = ET.SubElement(defs, tag + "linearGradient", {
+                "id": "rc-palette", "x1": "0%", "y1": "0%", "x2": "100%", "y2": "100%",
+            })
+            for offset, color in zip(["0", "1"], colors):
+                ET.SubElement(gradient, tag + "stop", {"offset": offset, "stop-color": color})
+        else:
+            raise ValueError(f"Unknown SVG transformation: {operation}")
         data = ET.tostring(root, encoding="utf-8") + b"\n"
     return data
 

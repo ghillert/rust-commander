@@ -42,6 +42,12 @@ class IconCatalogTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             icons.validate_catalog(broken)
 
+    def test_sidebar_entries_preserve_color_artwork(self):
+        sidebar = {self.catalog["default_place"]}
+        sidebar.update(place["icon"] for place in self.catalog["places"])
+        for icon_id in sidebar:
+            self.assertEqual(self.catalog["assets"][icon_id]["treatment"], "color", icon_id)
+
     def test_svg_is_self_contained_and_gradients_are_allowed(self):
         icons.validate_svg(b'<svg viewBox="0 0 20 20"><defs><linearGradient id="a"/></defs><path fill="url(#a)"/></svg>')
         for body in [b'<script/>', b'<text>Font dependency</text>', b'<image href="https://example.org/a.png"/>', b'<use href="file:///tmp/icon.svg"/>']:
@@ -55,6 +61,21 @@ class IconCatalogTests(unittest.TestCase):
         self.assertEqual(output, icons.transform(source, asset))
         self.assertNotIn(b'motive', output)
         self.assertIn(b'folder', output)
+
+    def test_sidebar_palette_preserves_geometry_and_is_reproducible(self):
+        source = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none"><path d="M2 2h16v12H2Z" fill="#212121"/></svg>'
+        asset = {"transforms": ["tint-gradient"], "palette": ["#55B8FF", "#2864E7"]}
+        output = icons.transform(source, asset)
+        self.assertEqual(output, icons.transform(source, asset))
+        self.assertIn(b'M2 2h16v12H2Z', output)
+        self.assertIn(b'fill="none"', output)
+        self.assertIn(b'url(#rc-palette)', output)
+        self.assertIn(b'#55B8FF', output)
+        self.assertIn(b'#2864E7', output)
+        icons.validate_svg(output)
+        for palette in [[], ["#fff", "blue"], ["url(external)", "#2864E7"]]:
+            with self.assertRaises(ValueError):
+                icons.transform(source, dict(asset, palette=palette))
 
     def test_interrupted_fetch_reuses_verified_assets_and_repairs_corruption(self):
         with tempfile.TemporaryDirectory() as directory:

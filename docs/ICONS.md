@@ -45,10 +45,15 @@ associations and desktop themes to be picked up.
 
 ## Artwork and coverage
 
-Application controls use Fluent regular icons. The sidebar uses Fluent Color
-where available, and accent-tinted Fluent regular icons for concepts without a
-color variant, including downloads, computers, drives, and connections. Sidebar
-icons are 20 logical pixels; file-list icons remain 18 logical pixels. Native
+Application controls use Fluent regular icons. Sidebar entries use colorful
+Fluent artwork: Home, Document Folder, Arrow Square Down, Laptop, and Globe.
+Desktop and hard drives use Fluent filled geometry with recorded blue/teal
+gradient palettes where an upstream color variant is unavailable. These
+adaptations retain the upstream shapes and are reproduced by the importer.
+Computer has its own laptop icon, and mounted volumes use the hard-drive shape.
+Sidebar artwork is bundled UI artwork and is independent of the file-icon source
+setting. Sidebar icons are 20 logical pixels; file-list icons remain 18 logical
+pixels. Native
 window controls, toolkit widget decorations, and Rust Commander's logo retain
 their existing artwork.
 
@@ -90,8 +95,10 @@ The importer generates the Slint asset mapping, Rust filename tables, and the
 marked icon-license section of `NOTICE`. It validates SVGs, pinned checksums,
 references, and unused assets. The generic Material folder derives from the
 upstream folder template by removing its optional motive, a recorded deterministic
-transformation. Generic file artwork uses Material's document icon. Other SVGs
-retain their upstream bytes. `.gitattributes` preserves vendored bytes across
+transformation. The desktop and drive variants use the recorded `tint-gradient`
+transformation and two RGB palette colors; their shapes remain unchanged.
+Generic file artwork uses Material's document icon. Other SVGs retain their
+upstream bytes. `.gitattributes` preserves vendored bytes across
 Windows and Unix checkouts. Full upstream MIT texts are retained in
 `ui/icons/licenses/` and `NOTICE`, which is included in release packages.
 
@@ -133,6 +140,11 @@ malformed metadata, and artwork mismatches. Clippy and formatting passed, and
 the 12-render quick matrix was repeated with the default system/fallback mode
 and built-in-only mode. Light and selected-dark file lists were inspected with
 the corrected fallbacks and retained application icons.
+
+The colorful sidebar follow-up contains 85 semantic icons and 86 selected SVGs.
+Nine offline tests validate the catalog, palette transformations, and preservation
+of sidebar color artwork. Its full 24-render matrix passed with both renderers;
+the sidebar and 3x gallery were visually inspected in dark mode.
 
 Measure release binary size using the same target, locked dependencies, feature
 flags, environment, and release profile before and after importing new assets.

@@ -32,9 +32,11 @@ export global IconCatalog {
         if id == "lua" { return @image-url("vendor/lua-default.svg"); }
         if id == "makefile" { return @image-url("vendor/makefile-default.svg"); }
         if id == "markdown" { return @image-url("vendor/markdown-default.svg"); }
+        if id == "nav-computer" { return @image-url("vendor/nav-computer-default.svg"); }
         if id == "nav-desktop" { return @image-url("vendor/nav-desktop-default.svg"); }
         if id == "nav-documents" { return @image-url("vendor/nav-documents-default.svg"); }
         if id == "nav-downloads" { return @image-url("vendor/nav-downloads-default.svg"); }
+        if id == "nav-drive" { return @image-url("vendor/nav-drive-default.svg"); }
         if id == "nav-home" { return @image-url("vendor/nav-home-default.svg"); }
         if id == "nav-server" { return @image-url("vendor/nav-server-default.svg"); }
         if id == "pdf" { return @image-url("vendor/pdf-default.svg"); }
@@ -65,7 +67,6 @@ export global IconCatalog {
         if id == "ui-copy" { return @image-url("vendor/ui-copy-default.svg"); }
         if id == "ui-document" { return @image-url("vendor/ui-document-default.svg"); }
         if id == "ui-down" { return @image-url("vendor/ui-down-default.svg"); }
-        if id == "ui-drive" { return @image-url("vendor/ui-drive-default.svg"); }
         if id == "ui-eye" { return @image-url("vendor/ui-eye-default.svg"); }
         if id == "ui-forward" { return @image-url("vendor/ui-forward-default.svg"); }
         if id == "ui-history" { return @image-url("vendor/ui-history-default.svg"); }
@@ -89,9 +90,6 @@ export global IconCatalog {
         return @image-url("vendor/file-default.svg");
     }
     public pure function monochrome(id: string) -> bool {
-        if id == "nav-desktop" { return true; }
-        if id == "nav-downloads" { return true; }
-        if id == "nav-server" { return true; }
         if id == "ui-add" { return true; }
         if id == "ui-archive" { return true; }
         if id == "ui-back" { return true; }
@@ -101,7 +99,6 @@ export global IconCatalog {
         if id == "ui-copy" { return true; }
         if id == "ui-document" { return true; }
         if id == "ui-down" { return true; }
-        if id == "ui-drive" { return true; }
         if id == "ui-eye" { return true; }
         if id == "ui-forward" { return true; }
         if id == "ui-history" { return true; }
@@ -151,10 +148,10 @@ export global IconCatalog {
         if id == "place:1" { return "nav-desktop"; }
         if id == "place:2" { return "nav-documents"; }
         if id == "place:3" { return "nav-downloads"; }
-        if id == "place:4" { return "nav-desktop"; }
+        if id == "place:4" { return "nav-computer"; }
         if id == "Connections" { return "nav-server"; }
         if id.starts-with("connection:") { return "nav-server"; }
         if id.starts-with("bookmark:") { return "nav-documents"; }
-        return "ui-drive";
+        return "nav-drive";
     }
 }

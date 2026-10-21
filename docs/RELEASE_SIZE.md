@@ -174,3 +174,9 @@ with 85 selected SVGs, including one light-theme variant.
 The [icon guide](ICONS.md) describes the catalog, offline update/check procedure,
 and validation matrix. Measurements on Windows/Linux still require native
 release builds on those platforms.
+
+The colorful-sidebar follow-up was measured against `224a02b` with the same
+Apple Silicon target and release profile. Both executables are **20,314,528
+bytes**; their contents differ, but the final file length is unchanged in this
+build. The updated catalog contains 85 semantic icons and 86 selected SVGs,
+including recorded palette adaptations for desktop and hard-drive artwork.

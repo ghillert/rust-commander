@@ -281,42 +281,59 @@
     },
     "nav-downloads": {
       "source": "fluent",
-      "treatment": "monochrome",
+      "treatment": "color",
       "variants": {
         "default": {
-          "path": "assets/Arrow Download/SVG/ic_fluent_arrow_download_20_regular.svg",
-          "sha256": "28e752ccfd95feb1850de1da3d170f34fd31765417d3431a7dbf3da89840ea33",
-          "output_sha256": "28e752ccfd95feb1850de1da3d170f34fd31765417d3431a7dbf3da89840ea33"
+          "path": "assets/Arrow Square Down/SVG/ic_fluent_arrow_square_down_20_color.svg",
+          "sha256": "28f0ca8684b22dfcaba9e78151f5921cfec9d6aac801d666aa9a45af50581dd2",
+          "output_sha256": "28f0ca8684b22dfcaba9e78151f5921cfec9d6aac801d666aa9a45af50581dd2"
         }
       }
     },
     "nav-desktop": {
       "source": "fluent",
-      "treatment": "monochrome",
+      "treatment": "color",
       "variants": {
         "default": {
-          "path": "assets/Desktop/SVG/ic_fluent_desktop_20_regular.svg",
-          "sha256": "07c553f0bc7c79deec787f4c8eda5276873f80241a7970e38cba88620ba9f046"
+          "path": "assets/Desktop/SVG/ic_fluent_desktop_20_filled.svg",
+          "sha256": "1d4810dbebdf1a1a8b7641d076d7e4ebdd5de868397778a4b5dc80f10dba2ddc",
+          "transforms": [
+            "tint-gradient"
+          ],
+          "palette": [
+            "#55B8FF",
+            "#2864E7"
+          ],
+          "output_sha256": "a9bdba1cd7373ddf817f23acb65ba839715539c04083ba8b3878867688dae028"
         }
       }
     },
     "nav-server": {
       "source": "fluent",
-      "treatment": "monochrome",
+      "treatment": "color",
       "variants": {
         "default": {
-          "path": "assets/Server/SVG/ic_fluent_server_20_regular.svg",
-          "sha256": "0bf62933f4d4d0cf4100fd70925de9c89c33500badbcf0e98db3dfe0e559243d"
+          "path": "assets/Globe/SVG/ic_fluent_globe_20_color.svg",
+          "sha256": "cd6a1c51f9fcc898d7e4a0a7a1ee53a266e6b5a973ada96b65eed7310cdd5934",
+          "output_sha256": "cd6a1c51f9fcc898d7e4a0a7a1ee53a266e6b5a973ada96b65eed7310cdd5934"
         }
       }
     },
-    "ui-drive": {
+    "nav-drive": {
       "source": "fluent",
-      "treatment": "monochrome",
+      "treatment": "color",
       "variants": {
         "default": {
-          "path": "assets/Storage/SVG/ic_fluent_storage_20_regular.svg",
-          "sha256": "5d958bd1f0fd1c656fe4d1f6f7c82c889ccaa6a9ca68f31de790bfc171c3ffe5"
+          "path": "assets/Hard Drive/SVG/ic_fluent_hard_drive_20_filled.svg",
+          "sha256": "78f404ff253d9075385c1c36fb1cc4de44e0a95002a202e087ba97a589e7350a",
+          "transforms": [
+            "tint-gradient"
+          ],
+          "palette": [
+            "#60DFCE",
+            "#169AB8"
+          ],
+          "output_sha256": "e45095353b8713979e355037ac005f3a88df423c11d4fc71ea831fe35f770a6e"
         }
       }
     },
@@ -868,6 +885,17 @@
           "sha256": "f28fe89b018236f9de2abd1c10abf278bf3f2ec9b757bb6746a44704ebedc084"
         }
       }
+    },
+    "nav-computer": {
+      "source": "fluent",
+      "treatment": "color",
+      "variants": {
+        "default": {
+          "path": "assets/Laptop/SVG/ic_fluent_laptop_20_color.svg",
+          "sha256": "792288eef5f09289da24c34f08df6cf09a48d75d4a06732c15f7231c24b9aa44",
+          "output_sha256": "792288eef5f09289da24c34f08df6cf09a48d75d4a06732c15f7231c24b9aa44"
+        }
+      }
     }
   },
   "actions": {
@@ -915,7 +943,7 @@
     },
     {
       "key": "place:4",
-      "icon": "nav-desktop"
+      "icon": "nav-computer"
     },
     {
       "key": "Connections",
@@ -2077,7 +2105,7 @@
     }
   ],
   "default_action": "ui-document",
-  "default_place": "ui-drive",
+  "default_place": "nav-drive",
   "file_default": "file",
   "folder_default": "folder"
 }
