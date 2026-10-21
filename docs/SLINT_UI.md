@@ -187,6 +187,22 @@ check.
 For machines without working OpenGL, `SLINT_BACKEND=winit-software` selects the
 compiled software renderer. Linux desktop checks require a display or Xvfb.
 
+To check a real transfer progress bar with a throttled loopback HTTP server:
+
+```sh
+./scripts/cargo-local.sh build --locked --features screenshot
+python3 scripts/progress-smoke.py
+```
+
+On Linux, run the Python command under `xvfb-run -a dbus-run-session --`.
+The fixture downloads into disposable folders and verifies a nonzero percentage
+and speed with both software/light and FemtoVG/dark rendering. Images and logs
+are written under `target/progress-smoke/`. Linux CI runs the same check.
+Screenshot builds also accept `RUST_COMMANDER_SCREENSHOT_SEQUENCE`, a JSON array
+of `[delay_ms, callback, value]` steps; supported callbacks are `navigate`,
+`action`, and `dialog`. This drives the existing UI callbacks for reproducible
+multi-step checks; it is compiled out of normal development and release builds.
+
 See [the validation record](../parity/VALIDATION.md) for checks performed and
 remaining platform/runtime limits. Headless tests and a cross-target compile
 do not establish full Windows or Linux desktop behavior.

@@ -214,6 +214,9 @@ Pass them after `--` when launching through Cargo. For example, on macOS/Linux:
 Double-click folders and supported archives to browse them. Double-click a file
 to open its built-in viewer, or choose **Open externally** for other formats.
 Use **F5** to copy marked files to the other pane and **F6** to move them.
+The transfer progress bar shows a byte-based percentage for the complete selection,
+including folders and resumed copies. Unknown sizes use an animated bar. Progress
+stays below 100% while the operation is still flushing, publishing or verifying.
 During transfers, the progress area shows the byte count and a live recent speed
 in B/s, KiB/s, or MiB/s. Resuming a transfer excludes previously copied bytes
 from the speed measurement.

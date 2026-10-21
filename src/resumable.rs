@@ -204,6 +204,15 @@ pub fn run_in(
         manifest.items.len() <= 100_000,
         "Invalid checkpoint entry count"
     );
+    let passes = remote::checkpoint_passes(to)?;
+    let total = manifest
+        .items
+        .iter()
+        .filter(|item| !item.directory)
+        .try_fold(0u64, |sum, item| {
+            sum.checked_add(item.size.checked_mul(passes)?)
+        });
+    task.plan_total(total);
     task.undo_blocked = true; // A resumed batch can span processes and remote stores.
     let mut resumed = 0;
     for i in 0..manifest.items.len() {
@@ -263,6 +272,7 @@ pub fn run_in(
             );
             manifest.items[i].done = true;
             save(&path, &manifest)?;
+            task.advance_progress(current.size.saturating_mul(passes));
             resumed += 1;
             continue;
         }
@@ -291,6 +301,7 @@ pub fn run_in(
             equal_prefix(from, &source, &partial, offset, task)?;
             resumed += 1;
         }
+        task.advance_progress(offset);
         output.seek(SeekFrom::End(0))?;
         let mut input = ranged(from, &source, offset)?;
         let copied = task.stream(&mut input, &mut output, &source);

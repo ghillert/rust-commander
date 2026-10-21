@@ -113,6 +113,7 @@ pub const SERVICES: &[&str] = &[
 
 struct Session {
     operator: Option<opendal::blocking::Operator>,
+    http_streaming: Option<opendal::Operator>,
     smb: Option<crate::smb::Share>,
     secrets: Secrets,
     remember: std::sync::atomic::AtomicBool,
@@ -272,6 +273,7 @@ pub(crate) fn clean_error(error: impl std::fmt::Display, secrets: &Secrets) -> a
 
 pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Result<()> {
     validate(connection)?;
+    let mut http_streaming = None;
     let (operator, smb) = if connection.service == "smb" {
         let share = crate::smb::Share::new(connection, &secrets)?;
         share.list(Path::new(""))?;
@@ -291,6 +293,9 @@ pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Res
                 .with_timeout(std::time::Duration::from_secs(30))
                 .with_io_timeout(std::time::Duration::from_secs(30)),
         );
+        if connection.service == "http" {
+            http_streaming = Some(operator.clone());
+        }
         let operator = opendal::blocking::Operator::new(operator)?;
         // Validate the credentials against the service, before storing them.
         if connection.service == "http" {
@@ -316,6 +321,7 @@ pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Res
             connection.id.clone(),
             Arc::new(Session {
                 operator,
+                http_streaming,
                 smb,
                 secrets,
                 remember: std::sync::atomic::AtomicBool::new(remember),
@@ -587,8 +593,49 @@ pub fn list(id: &str, path: &Path) -> Result<Vec<Entry>> {
         .collect()
 }
 
+// OpenDAL's seekable std reader stats the object to get an end offset.
+// HTTP can omit Content-Length, so consume its raw, timeout-layered stream to
+// EOF instead. The shared accessor retains authenticated/query-bearing links.
+struct HttpStream {
+    reader: opendal::raw::oio::Reader,
+    chunk: std::io::Cursor<Vec<u8>>,
+}
+impl Read for HttpStream {
+    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+        if output.is_empty() {
+            return Ok(0);
+        }
+        if self.chunk.position() == self.chunk.get_ref().len() as u64 {
+            let bytes = runtime()
+                .block_on(self.reader.read_dyn())
+                .map_err(std::io::Error::other)?;
+            self.chunk = std::io::Cursor::new(bytes.to_vec());
+        }
+        self.chunk.read(output)
+    }
+}
+fn http_stream(session: &Session, path: &Path, offset: u64) -> Result<Option<Box<dyn Read>>> {
+    use opendal::raw::Access;
+    let Some(operator) = &session.http_streaming else {
+        return Ok(None);
+    };
+    let (_, reader) = runtime()
+        .block_on(operator.inner().read(
+            &key(path, false)?,
+            opendal::raw::OpRead::new().with_range(opendal::raw::BytesRange::new(offset, None)),
+        ))
+        .map_err(|e| clean_error(e, &session.secrets))?;
+    Ok(Some(Box::new(HttpStream {
+        reader,
+        chunk: Default::default(),
+    })))
+}
+
 pub fn read(id: &str, path: &Path) -> Result<Box<dyn Read>> {
     let session = session(id)?;
+    if let Some(reader) = http_stream(&session, path, 0)? {
+        return Ok(reader);
+    }
     if let Some(smb) = &session.smb {
         return smb.reader(path);
     }
@@ -721,6 +768,9 @@ pub fn transfer(
     }
     if matches!(from, Location::Archive { .. }) || matches!(to, Location::Archive { .. }) {
         bail!("Extract archive entries to a local folder first.");
+    }
+    if task.needs_total() {
+        task.plan_total(operations::totals::entries_total(from, entries, task)?);
     }
     let before = if moving {
         Some(snapshot(from, entries, task)?)
@@ -1233,6 +1283,22 @@ pub fn transfer_resolved(
         );
         planner.visit(entry, target, root, 0, task)?;
     }
+    if task.needs_total() {
+        let mut total = Some(0u64);
+        for plan in &planner.plans {
+            total = operations::totals::add(
+                total,
+                operations::totals::entries_total(from, std::slice::from_ref(&plan.entry), task)?,
+            );
+            if let Some(existing) = &plan.existing {
+                total = operations::totals::add(
+                    total,
+                    operations::totals::entries_total(to, std::slice::from_ref(existing), task)?,
+                );
+            }
+        }
+        task.plan_total(total);
+    }
     let before = if moving {
         Some(snapshot(from, entries, task)?)
     } else {
@@ -1464,6 +1530,9 @@ pub fn search(
 /// Start a new ranged reader. Backends without native range support may emulate it.
 pub fn read_range(id: &str, path: &Path, start: u64) -> Result<Box<dyn Read>> {
     let session = session(id)?;
+    if let Some(reader) = http_stream(&session, path, start)? {
+        return Ok(reader);
+    }
     if let Some(smb) = &session.smb {
         return smb.reader_at(path, start);
     }
@@ -1503,6 +1572,7 @@ pub(crate) fn upload_checkpoint(
     }
     if append {
         input.seek(SeekFrom::Start(offset))?;
+        task.advance_progress(offset);
     }
     let options = opendal::options::WriteOptions {
         append,
@@ -1527,6 +1597,16 @@ pub(crate) fn upload_checkpoint(
         .map_err(|e| clean_error(e, &session.secrets))?;
     Ok(())
 }
+pub(crate) fn checkpoint_passes(location: &Location) -> Result<u64> {
+    if let Location::Remote { connection, .. } = location {
+        let session = session(connection)?;
+        if session.smb.is_none() && session.operator()?.info().scheme() != opendal::Scheme::Fs {
+            return Ok(3);
+        }
+    }
+    Ok(2)
+}
+
 pub(crate) fn publish_checkpoint(
     id: &str,
     stage: &Path,

@@ -298,6 +298,30 @@ pub fn transfer_resolved(
             task,
         )?);
     }
+    fn planned_bytes(plan: &PlannedItem, task: &Task) -> Result<Option<u64>> {
+        match &plan.action {
+            Action::Skip => Ok(Some(0)),
+            Action::Merge(children) => {
+                let mut total = Some(0);
+                for child in children {
+                    total = operations::totals::add(total, planned_bytes(child, task)?);
+                }
+                Ok(total)
+            }
+            _ => operations::totals::local(std::slice::from_ref(&plan.source), task),
+        }
+    }
+    let sizes = if task.needs_total() {
+        let sizes = plans
+            .iter()
+            .map(|plan| planned_bytes(plan, task))
+            .collect::<Result<Vec<_>>>()?;
+        let total = sizes.iter().copied().fold(Some(0), operations::totals::add);
+        task.plan_total(total);
+        sizes
+    } else {
+        vec![None; plans.len()]
+    };
     let before = if moving {
         sources
             .iter()
@@ -315,7 +339,7 @@ pub fn transfer_resolved(
     let result: Result<String> = (|| {
         let mut completed = Vec::new();
         let mut renamed = BTreeSet::new();
-        for plan in &plans {
+        for (plan, size) in plans.iter().zip(&sizes) {
             // Preserve the inode, links and native metadata when rename is possible.
             // The journal still captures both paths before either is changed.
             if moving && matches!(plan.action, Action::Copy) {
@@ -323,6 +347,7 @@ pub fn transfer_resolved(
                 task.capture(&plan.target)?;
                 match rename_exclusive(&plan.source, &plan.target) {
                     Ok(()) => {
+                        task.advance_progress(size.unwrap_or(0));
                         task.tick(&plan.target, 0)?;
                         if operations::exists(&plan.source) {
                             task.undo_blocked = true;

@@ -86,15 +86,18 @@ fn checkpoint_survives_process_termination() {
     assert!(!root.path().join("target/file.bin").exists());
     let from = mount(&root.path().join("source"), "process-crash");
     let entries = filesystem::list(&from).unwrap();
+    let mut task = Task::default();
     let message = resumable::run_in(
         &root.path().join("checkpoints"),
         "batch-process",
         &from,
         &entries,
         &Location::Local(root.path().join("target")),
-        &mut Task::default(),
+        &mut task,
     )
     .unwrap();
+    assert_eq!(task.progress.total_bytes, Some(2 * bytes.len() as u64));
+    assert_eq!(task.progress.completed_bytes, 2 * bytes.len() as u64);
     assert!(message.contains("recovered 1"));
     assert_eq!(
         fs::read(root.path().join("target/file.bin")).unwrap(),

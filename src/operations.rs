@@ -12,6 +12,7 @@ use std::{
 };
 
 mod rate;
+pub(crate) mod totals;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Operation {
@@ -298,11 +299,25 @@ pub struct Progress {
     pub current: String,
     pub bytes: u64,
     pub files: usize,
+    #[serde(default)]
+    pub total_bytes: Option<u64>,
+    #[serde(default)]
+    pub completed_bytes: u64,
     #[serde(skip)]
     rate: rate::TransferRate,
 }
 
 impl Progress {
+    pub fn fraction(&self) -> Option<f32> {
+        self.total_bytes.map(|total| {
+            if total == 0 {
+                0.0
+            } else {
+                (self.completed_bytes as f64 / total as f64).clamp(0.0, 1.0) as f32
+            }
+        })
+    }
+
     /// Recent bytes processed per second, excluding restored checkpoint bytes.
     /// Idle time is included even when the worker has not sent another report.
     pub fn bytes_per_second(&self) -> Option<u64> {
@@ -316,6 +331,7 @@ pub struct Task {
     pub cancel: Arc<AtomicBool>,
     pub progress: Progress,
     report: Box<dyn FnMut(Progress) + Send>,
+    total_planned: bool,
     last_report: Instant,
     report_interval: std::time::Duration,
 }
@@ -334,6 +350,7 @@ impl Task {
             cancel,
             progress: Progress::default(),
             report: Box::new(report),
+            total_planned: false,
             last_report: Instant::now(),
             report_interval: std::time::Duration::from_millis(40),
         }
@@ -344,6 +361,34 @@ impl Task {
     pub fn report_every(mut self, interval: std::time::Duration) -> Self {
         self.report_interval = interval;
         self
+    }
+
+    pub(crate) fn needs_total(&self) -> bool {
+        !self.total_planned
+    }
+
+    /// Only the outer operation owns the total; nested copies share its budget.
+    pub(crate) fn plan_total(&mut self, total: Option<u64>) {
+        if !self.total_planned {
+            self.total_planned = true;
+            self.progress.total_bytes = total;
+            self.progress.completed_bytes = 0;
+            // Publish with the next ordinary tick so existing cancellation and
+            // race-detection callbacks still observe actual execution points.
+        }
+    }
+
+    /// Credit work already present in a verified checkpoint or a native rename,
+    /// without counting it as newly transferred bytes or inflating the speed.
+    pub(crate) fn advance_progress(&mut self, bytes: u64) {
+        self.progress.completed_bytes = self.progress.completed_bytes.saturating_add(bytes);
+        if self
+            .progress
+            .total_bytes
+            .is_some_and(|total| self.progress.completed_bytes > total)
+        {
+            self.progress.total_bytes = None;
+        }
     }
 
     pub fn capture(&mut self, path: &Path) -> Result<()> {
@@ -367,6 +412,7 @@ impl Task {
         self.check()?;
         self.progress.current = path.display().to_string();
         self.progress.bytes += bytes;
+        self.advance_progress(bytes);
         self.progress.rate.record(bytes, Instant::now());
         if self.last_report.elapsed() >= self.report_interval {
             (self.report)(self.progress.clone());
@@ -863,6 +909,21 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
 }
 
 pub fn run(operation: Operation, task: &mut Task) -> Result<String> {
+    // Other operations may make nested copies without having a whole-job byte
+    // budget. Keep those indeterminate rather than reporting one sub-copy as all.
+    if !matches!(
+        operation,
+        Operation::Copy { .. }
+            | Operation::Move { .. }
+            | Operation::Transfer { .. }
+            | Operation::ResolvedTransfer { .. }
+            | Operation::RemoteTransfer { .. }
+            | Operation::RemoteTransferResolved { .. }
+            | Operation::ResumeLocal { .. }
+            | Operation::ResumeRemote { .. }
+    ) {
+        task.plan_total(None);
+    }
     execute(operation, task)
 }
 
@@ -873,6 +934,9 @@ fn transfer(
     task: &mut Task,
 ) -> Result<String> {
     let targets = preflight(sources, destination)?;
+    if task.needs_total() {
+        task.plan_total(totals::local(sources, task)?);
+    }
     let before = if moving {
         sources
             .iter()

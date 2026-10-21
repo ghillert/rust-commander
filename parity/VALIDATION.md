@@ -728,3 +728,28 @@ serialization. A Slint testing-backend test verifies that progress shows both
 byte count and speed, then clears the speed when the job ends. These checks are
 automated; no native Windows/Linux runtime check or network benchmark was run
 for this change.
+
+
+## Determinate transfer progress — 2026-10-21
+
+The progress bar now uses a whole-operation byte budget for local and remote
+copies/moves, conflict-resolved transfers and checkpoint recovery. Totals use
+fresh metadata, exclude skipped files, and include recovery/staging copy work.
+Verified checkpoint offsets and native renames advance progress without
+inflating transfer speed. Unknown or changing lengths use an indeterminate bar;
+active jobs reserve 100% until flushing, publishing and verification finish.
+Other operations without a byte budget remain indeterminate.
+
+On the available Apple Silicon Mac, 251 tests passed (15 environment-dependent
+cases ignored), plus six real disposable FTP, explicit/implicit FTPS and Rust
+SFTP workflows. Clippy with warnings denied, formatting and diff checks passed.
+Tests cover rounded HTTP listing sizes versus exact HEAD metadata, streaming
+without Content-Length, local folders/native moves, skipped/replaced files,
+cancellation and verified partial-file recovery. HTTP reads without a known
+length now consume the existing timeout-layered accessor stream through EOF.
+
+A real throttled 32 MiB loopback download rendered a 31% filled bar and live speed
+in light/software and dark/FemtoVG native windows. Both captures were visually
+inspected (`target/progress-smoke/`); the fixture and automated checks are in
+`scripts/progress-smoke.py`. Linux CI is configured to run this under Xvfb.
+Native Windows/Linux desktop validation was not performed on this Mac.

@@ -52,6 +52,7 @@ runs:
         xvfb-run -a dbus-run-session -- python3 scripts/desktop-smoke.py
         xvfb-run -a dbus-run-session -- python3 scripts/icon-smoke.py --quick
         xvfb-run -a dbus-run-session -- python3 scripts/uri-smoke.py
+        xvfb-run -a dbus-run-session -- python3 scripts/progress-smoke.py
 
     - name: Test optimized transfer recovery
       shell: bash
@@ -71,5 +72,7 @@ runs:
           target/icon-smoke/*.log
           target/uri-smoke/*.png
           target/uri-smoke/*.log
+          target/progress-smoke/*.png
+          target/progress-smoke/*.log
         if-no-files-found: ignore
         retention-days: 7

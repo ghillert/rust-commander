@@ -335,6 +335,8 @@ export component CommanderWindow inherits Window {
     in property <bool> busy;
     in property <bool> show-hidden;
     in property <float> progress;
+    in property <bool> progress-indeterminate: true;
+    in property <string> progress-text;
     in property <string> status;
     in property <string> transfer-speed;
     in property <string> active-location;
@@ -712,7 +714,8 @@ export component CommanderWindow inherits Window {
             }
             if root.busy: HorizontalBox {
                 height: 32px;
-                ProgressIndicator { indeterminate: true; }
+                ProgressIndicator { progress: root.progress; indeterminate: root.progress-indeterminate; }
+                if root.progress-text != "": Text { text: root.progress-text; vertical-alignment: center; color: Chrome.secondary; font-size: 11px; }
                 Button { text: Words.translate("Cancel", Words.version); clicked => { root.action("CancelJob"); } }
             }
             if root.status-visible: Rectangle {

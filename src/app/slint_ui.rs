@@ -556,7 +556,22 @@ impl Adapter {
         ui.set_active_pane(self.app.active as i32);
         ui.set_busy(self.app.job.is_some());
         ui.set_show_hidden(self.app.show_hidden);
-        ui.set_progress(0.0);
+        let fraction = self
+            .app
+            .job
+            .as_ref()
+            .and_then(|job| job.progress.fraction());
+        // Reserve completion for the finished job: flushes, guarded publishing
+        // and verification can still be running after the last byte is copied.
+        let fraction = fraction.map(|value| value.min(0.99));
+        ui.set_progress(fraction.unwrap_or(0.0));
+        ui.set_progress_indeterminate(fraction.is_none());
+        ui.set_progress_text(
+            fraction
+                .map(|value| format!("{:.0}%", (value * 100.0).floor()))
+                .unwrap_or_default()
+                .into(),
+        );
         ui.set_transfer_speed(
             self.app
                 .job
@@ -1320,6 +1335,23 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                 }
             });
         }
+        if let Ok(sequence) = std::env::var("RUST_COMMANDER_SCREENSHOT_SEQUENCE") {
+            let steps: Vec<(u64, String, String)> = serde_json::from_str(&sequence)
+                .expect("Screenshot sequence must contain delay, callback, value tuples");
+            for (delay, callback, value) in steps {
+                let step_ui = smoke_ui.as_weak();
+                slint::Timer::single_shot(Duration::from_millis(delay.min(30_000)), move || {
+                    if let Some(ui) = step_ui.upgrade() {
+                        match callback.as_str() {
+                            "navigate" => ui.invoke_navigate(0, value.into()),
+                            "action" => ui.invoke_action(value.into()),
+                            "dialog" => ui.invoke_dialog_action(value.into()),
+                            _ => panic!("Unsupported screenshot callback"),
+                        }
+                    }
+                });
+            }
+        }
         if let Ok(action) = std::env::var("RUST_COMMANDER_SCREENSHOT_VIEWER_ACTION") {
             let viewer_ui = smoke_ui.as_weak();
             slint::Timer::single_shot(Duration::from_millis(1250), move || {
@@ -1348,6 +1380,13 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                         } else {
                             "address"
                         }
+                    );
+                    eprintln!(
+                        "Progress snapshot: indeterminate={} value={} text={} speed={}",
+                        ui.get_progress_indeterminate(),
+                        ui.get_progress(),
+                        ui.get_progress_text(),
+                        ui.get_transfer_speed()
                     );
                     if ui.get_tree_visible() {
                         let rows = ui.get_tree_rows();

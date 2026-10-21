@@ -8,6 +8,7 @@ fn running_progress_shows_speed_beside_the_transferred_byte_count() {
     let (_sender, receiver) = mpsc::channel();
     let cancel = Arc::new(AtomicBool::new(false));
     let mut task = Task::default();
+    task.plan_total(Some(8 * 1024 * 1024));
     task.tick(Path::new("fixture.zip"), 4 * 1024 * 1024)
         .unwrap();
     adapter.app.job = Some(Job {
@@ -22,10 +23,22 @@ fn running_progress_shows_speed_beside_the_transferred_byte_count() {
     assert!(status.contains("fixture.zip"), "{status}");
     assert!(status.ends_with("4.0 MiB"), "{status}");
     assert!(ui.get_transfer_speed().ends_with("/s"));
+    assert!(!ui.get_progress_indeterminate());
+    assert_eq!(ui.get_progress(), 0.5);
+    assert_eq!(ui.get_progress_text(), "50%");
+    adapter.app.job.as_mut().unwrap().progress.total_bytes = None;
+    adapter.sync(&ui);
+    assert!(ui.get_progress_indeterminate());
+    assert!(ui.get_progress_text().is_empty());
+    adapter.app.job.as_mut().unwrap().progress.total_bytes = Some(4 * 1024 * 1024);
+    adapter.sync(&ui);
+    assert_eq!(ui.get_progress_text(), "99%");
     adapter.app.job = None;
     adapter.sync(&ui);
     assert!(!ui.get_busy());
     assert!(ui.get_transfer_speed().is_empty());
+    assert!(ui.get_progress_text().is_empty());
+    assert_eq!(ui.get_progress(), 0.0);
 }
 
 #[test]

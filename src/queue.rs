@@ -240,7 +240,9 @@ fn resume_local_in(
     }
     let mut output = options.open(partial)?;
     let offset = output.metadata()?.len();
-    if offset > input.metadata()?.len() {
+    let source_size = input.metadata()?.len();
+    task.plan_total(source_size.checked_mul(2));
+    if offset > source_size {
         bail!("Checkpoint exceeds source size");
     }
     let mut a = [0; 65536];
@@ -261,6 +263,7 @@ fn resume_local_in(
     input.seek(SeekFrom::Start(offset))?;
     output.seek(SeekFrom::Start(offset))?;
     task.progress.bytes = offset;
+    task.advance_progress(offset);
     task.stream(&mut input, &mut output, source)?;
     output.sync_all()?;
     drop(output);

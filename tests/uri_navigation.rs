@@ -247,13 +247,13 @@ impl Server {
                 "/dir"=>("301 Moved Permanently","text/plain",String::new(),"Location: /dir/\r\n"),
                 "/dir/"=>("200 OK","text/html","<title>Index of /dir/</title><a href='../'>Parent</a><pre><a href='a%20b.pdf?sig=private'>PDF</a> 2026-06-04 15:30 1K\n<a href='sub/'>Folder</a> 2026-06-04 15:31 -\n</pre>".into(),""),
                 "/dir/sub"|"/dir/sub/"=>("200 OK","text/html","<h1>Directory listing for /dir/sub/</h1>".into(),""),
-                "/dir/a%20b.pdf?sig=private"|"/direct.bin"=>("200 OK","application/octet-stream","0123456789".into(),""),
+                "/dir/a%20b.pdf?sig=private"|"/direct.bin"|"/unknown.bin"=>("200 OK","application/octet-stream","0123456789".into(),""),
                 "/plain"=>("200 OK","text/html","<title>Welcome</title><a href='login'>login</a>".into(),""),
                 "/large"=>("200 OK","text/html",String::new(),"Content-Length: 9000000\r\n"),
                 "/auth"=>("401 Unauthorized","text/plain",String::new(),""),
                 _=>("404 Not Found","text/plain",String::new(),""),
             };
-                let length = if path == "/large" {
+                let length = if path == "/large" || path == "/unknown.bin" {
                     String::new()
                 } else {
                     format!("Content-Length: {}\r\n", body.len())
@@ -326,6 +326,7 @@ fn http_index_download_direct_file_range_and_errors() {
         1
     );
     let directory = tempfile::tempdir().unwrap();
+    let mut progress = rust_commander::operations::Task::default();
     remote::transfer(
         &Location::Remote {
             connection: c.id.clone(),
@@ -334,9 +335,12 @@ fn http_index_download_direct_file_range_and_errors() {
         std::slice::from_ref(pdf),
         &Location::Local(directory.path().into()),
         false,
-        &mut rust_commander::operations::Task::default(),
+        &mut progress,
     )
     .unwrap();
+    assert_eq!(progress.progress.total_bytes, Some(10));
+    assert_eq!(progress.progress.completed_bytes, 10);
+    assert_eq!(progress.progress.fraction(), Some(1.0));
     // The rounded index size must never truncate or pad the actual download.
     assert_eq!(
         std::fs::read(directory.path().join("a b.pdf")).unwrap(),
@@ -357,6 +361,63 @@ fn http_index_download_direct_file_range_and_errors() {
         std::fs::read(directory.path().join("direct.bin")).unwrap(),
         b"0123456789"
     );
+    let unknown = remote::list(&c.id, Path::new("unknown.bin")).unwrap();
+    let mut progress = rust_commander::operations::Task::default();
+    remote::transfer(
+        &Location::Remote {
+            connection: c.id.clone(),
+            path: "unknown.bin".into(),
+        },
+        &unknown,
+        &Location::Local(directory.path().into()),
+        false,
+        &mut progress,
+    )
+    .unwrap();
+    assert_eq!(progress.progress.total_bytes, None);
+    assert_eq!(
+        std::fs::read(directory.path().join("unknown.bin")).unwrap(),
+        b"0123456789"
+    );
+    // A replacement's recovery copy is actual work; skipped files contribute no bytes.
+    let mut progress = rust_commander::operations::Task::default();
+    remote::transfer_resolved(
+        &Location::Remote {
+            connection: c.id.clone(),
+            path: "dir".into(),
+        },
+        std::slice::from_ref(pdf),
+        &Location::Local(directory.path().into()),
+        false,
+        rust_commander::transfer::TransferOptions {
+            conflicts: rust_commander::transfer::ConflictPolicy::Replace,
+            merge_folders: false,
+        },
+        &Default::default(),
+        &mut progress,
+    )
+    .unwrap();
+    assert_eq!(progress.progress.total_bytes, Some(20));
+    assert_eq!(progress.progress.completed_bytes, 20);
+    let mut progress = rust_commander::operations::Task::default();
+    remote::transfer_resolved(
+        &Location::Remote {
+            connection: c.id.clone(),
+            path: "dir".into(),
+        },
+        std::slice::from_ref(pdf),
+        &Location::Local(directory.path().into()),
+        false,
+        rust_commander::transfer::TransferOptions {
+            conflicts: rust_commander::transfer::ConflictPolicy::Skip,
+            merge_folders: false,
+        },
+        &Default::default(),
+        &mut progress,
+    )
+    .unwrap();
+    assert_eq!(progress.progress.total_bytes, Some(0));
+    assert_eq!(progress.progress.completed_bytes, 0);
     assert!(
         remote::list(&c.id, Path::new("plain"))
             .unwrap_err()
