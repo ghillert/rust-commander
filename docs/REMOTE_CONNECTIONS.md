@@ -107,8 +107,12 @@ validation on the supported platforms.
   the resulting connection dialog. HTML and JavaScript are never executed.
   Only immediate same-origin child links are listed; parent navigation uses the
   location bar and breadcrumbs. Directory indexes are limited to 8 MiB and
-  20,000 cached links. Transfers remain streamed. Listing sizes/dates that are
-  unavailable display as `—`; file operations fetch authoritative metadata and
+  20,000 cached links. Transfers remain streamed. Sizes and modification times
+  are read from Apache/nginx preformatted indexes and Apache/Caddy table rows,
+  including Caddy's exact byte counts and timestamp attributes. Human-readable
+  listing sizes may be rounded. Index timestamps without a timezone are
+  interpreted as UTC and displayed in your local timezone. Sizes/dates that the
+  server omits display as `—`. File operations fetch authoritative metadata and
   fingerprint content when HTTP offers no usable version information.
 
 ## Transfer behavior and limits

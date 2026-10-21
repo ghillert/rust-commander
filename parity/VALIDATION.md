@@ -692,3 +692,22 @@ same optimized Cargo release profile, with no screenshot feature. Baseline befor
 this change: 20,314,528 bytes (19.37 MiB). Final size: 22,007,008 bytes (20.99 MiB), an increase of
 1,692,480 bytes (8.33%). The superseded OpenDAL FTP feature was removed; FTP/FTPS
 use the direct SuppaFTP adapter without its unused asynchronous OpenDAL transport.
+
+
+## HTTP directory metadata — 2026-10-21
+
+HTTP indexes now map server-provided sizes and modification times into the
+shared entry metadata used by the file-list columns. Coverage includes Apache
+preformatted/table indexes, nginx exact/human sizes, Caddy exact byte counts and
+ISO timestamps, zero-byte files, missing/invalid values, and row boundaries.
+Rounded index sizes remain display metadata; transfers still use the real stream
+and authoritative resource metadata.
+
+On the Apple Silicon Mac, 242 tests passed (15 environment-dependent cases
+ignored), Clippy with warnings denied passed, and formatting/diff checks passed.
+The live read-only Kew test confirmed sizes for both ZIPs and modification times
+for all four entries without downloading ZIP files. Light/software and
+dark/FemtoVG screenshots were visually inspected and show populated columns;
+outputs are in `target/uri-smoke/kew-metadata-*.png`. Windows/Linux checks were
+not run locally for this fix. Index timestamps without explicit zones use UTC
+and are rendered in the user's local timezone.

@@ -7,14 +7,10 @@ use reqwest::{
     blocking::{Client, Response},
     header,
 };
-use scraper::{Html, Selector};
-use std::{
-    collections::{BTreeMap, HashMap},
-    io::Read,
-    sync::Mutex,
-    time::Duration,
-};
+use std::{collections::HashMap, io::Read, sync::Mutex, time::Duration};
 use url::Url;
+mod index;
+
 const INDEX_LIMIT: u64 = 8 * 1024 * 1024;
 
 pub(super) struct Http {
@@ -217,7 +213,7 @@ impl Transport for Http {
             "HTTP directory index exceeds the 8 MiB limit."
         );
         let mut batch = HashMap::new();
-        let entries = parse_index(&bytes, &effective, path, &mut batch)?;
+        let entries = index::parse(&bytes, &effective, path, &mut batch)?;
         ensure!(
             batch.len() < 20_000,
             "HTTP directory index exceeds the 20,000-link limit."
@@ -255,117 +251,5 @@ impl Transport for Http {
             );
         }
         Ok(Box::new(response))
-    }
-}
-fn parse_index(
-    bytes: &[u8],
-    base: &Url,
-    path: &str,
-    links: &mut HashMap<String, Url>,
-) -> Result<Vec<oio::Entry>> {
-    let doc = Html::parse_document(&String::from_utf8_lossy(bytes));
-    let headings = Selector::parse("title,h1").unwrap();
-    let heading = doc
-        .select(&headings)
-        .flat_map(|e| e.text())
-        .collect::<String>()
-        .to_ascii_lowercase();
-    let caddy = Selector::parse("table.entries, table#files, .file-listing, .listing").unwrap();
-    ensure!(
-        heading.contains("index of")
-            || heading.contains("directory listing")
-            || heading.contains("directory of")
-            || doc.select(&caddy).next().is_some(),
-        "This website is not a directory listing. Open it in your browser, or paste a direct download URI."
-    );
-    let selector = Selector::parse("a[href]").unwrap();
-    let parent = base.path().trim_end_matches('/').to_owned() + "/";
-    let prefix = path.trim_matches('/');
-    let mut entries = BTreeMap::new();
-    for anchor in doc.select(&selector) {
-        let href = anchor.value().attr("href").unwrap_or_default();
-        if href.starts_with(['?', '#']) {
-            continue;
-        }
-        let Ok(url) = base.join(href) else {
-            continue;
-        };
-        if url.origin() != base.origin() || !url.username().is_empty() || url.password().is_some() {
-            continue;
-        }
-        let Some(child) = url.path().strip_prefix(&parent) else {
-            continue;
-        };
-        let directory = child.ends_with('/');
-        let child = child.trim_end_matches('/');
-        if child.is_empty() || child.contains('/') {
-            continue;
-        }
-        let Ok(name) = percent_encoding::percent_decode_str(child).decode_utf8() else {
-            continue;
-        };
-        if crate::filesystem::validate_name(&name).is_err() || name.contains(':') {
-            continue;
-        }
-        let key = if prefix.is_empty() {
-            name.into_owned()
-        } else {
-            format!("{prefix}/{name}")
-        };
-        let mut meta = Metadata::new(if directory {
-            EntryMode::DIR
-        } else {
-            EntryMode::FILE
-        });
-        meta = meta.with_user_metadata(HashMap::from([(
-            "rust-commander-size-known".into(),
-            "false".into(),
-        )]));
-        links.insert(key.clone(), url);
-        entries.insert(
-            key.clone(),
-            oio::Entry::new(&(key + if directory { "/" } else { "" }), meta),
-        );
-    }
-    Ok(entries.into_values().collect())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn indexes_filter_and_decode_children() {
-        let html=br#"<title>Index of /dir/</title><a href='../'>Parent</a><a href='?C=N'>sort</a><a href='a%20b.pdf?token=secret'>a</a><a href='folder/'>f</a><a href='https://elsewhere.test/dir/evil'>x</a><a href='deep/nested.txt'>n</a><a href='%2e%2e/'>bad</a><a href='javascript:alert(1)'>bad</a>"#;
-        let mut links = HashMap::new();
-        let entries = parse_index(
-            html,
-            &Url::parse("https://example.test/dir/").unwrap(),
-            "dir",
-            &mut links,
-        )
-        .unwrap();
-        assert_eq!(
-            entries.iter().map(|e| e.path()).collect::<Vec<_>>(),
-            ["dir/a b.pdf", "dir/folder/"]
-        );
-        assert_eq!(links["dir/a b.pdf"].query(), Some("token=secret"));
-    }
-    #[test]
-    fn empty_index_and_ordinary_website() {
-        let base = Url::parse("https://example.test/").unwrap();
-        assert!(
-            parse_index(b"<h1>Index of /</h1>", &base, "", &mut HashMap::new())
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            parse_index(
-                b"<h1>Welcome</h1><a href='login'>Login</a>",
-                &base,
-                "",
-                &mut HashMap::new()
-            )
-            .is_err()
-        );
     }
 }

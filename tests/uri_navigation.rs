@@ -245,7 +245,7 @@ impl Server {
                 let head = request.starts_with("HEAD ");
                 let (status,kind,body,extra)=match path {
                 "/dir"=>("301 Moved Permanently","text/plain",String::new(),"Location: /dir/\r\n"),
-                "/dir/"=>("200 OK","text/html","<title>Index of /dir/</title><a href='../'>Parent</a><a href='a%20b.pdf?sig=private'>PDF</a><a href='sub/'>Folder</a>".into(),""),
+                "/dir/"=>("200 OK","text/html","<title>Index of /dir/</title><a href='../'>Parent</a><pre><a href='a%20b.pdf?sig=private'>PDF</a> 2026-06-04 15:30 1K\n<a href='sub/'>Folder</a> 2026-06-04 15:31 -\n</pre>".into(),""),
                 "/dir/sub"|"/dir/sub/"=>("200 OK","text/html","<h1>Directory listing for /dir/sub/</h1>".into(),""),
                 "/dir/a%20b.pdf?sig=private"|"/direct.bin"=>("200 OK","application/octet-stream","0123456789".into(),""),
                 "/plain"=>("200 OK","text/html","<title>Welcome</title><a href='login'>login</a>".into(),""),
@@ -295,7 +295,23 @@ fn http_index_download_direct_file_range_and_errors() {
     let entries = remote::list(&c.id, Path::new("dir")).unwrap();
     assert_eq!(entries.len(), 2);
     let pdf = entries.iter().find(|e| e.name == "a b.pdf").unwrap();
-    assert!(!pdf.size_known);
+    assert!(pdf.size_known);
+    assert_eq!(pdf.size, 1024); // Rounded listing value, not the download length.
+    assert_eq!(
+        pdf.modified
+            .map(chrono::DateTime::<chrono::Utc>::from)
+            .unwrap()
+            .to_rfc3339(),
+        "2026-06-04T15:30:00+00:00"
+    );
+    assert_ne!(
+        rust_commander::preferences::Column::Size.value(pdf, false),
+        "—"
+    );
+    assert_ne!(
+        rust_commander::preferences::Column::Modified.value(pdf, false),
+        "—"
+    );
     assert!(!pdf.is_dir);
     assert_eq!(
         remote::read_bytes(&c.id, &pdf.path, 100).unwrap(),
@@ -310,6 +326,22 @@ fn http_index_download_direct_file_range_and_errors() {
         1
     );
     let directory = tempfile::tempdir().unwrap();
+    remote::transfer(
+        &Location::Remote {
+            connection: c.id.clone(),
+            path: "dir".into(),
+        },
+        std::slice::from_ref(pdf),
+        &Location::Local(directory.path().into()),
+        false,
+        &mut rust_commander::operations::Task::default(),
+    )
+    .unwrap();
+    // The rounded index size must never truncate or pad the actual download.
+    assert_eq!(
+        std::fs::read(directory.path().join("a b.pdf")).unwrap(),
+        b"0123456789"
+    );
     remote::transfer(
         &Location::Remote {
             connection: c.id.clone(),
@@ -366,9 +398,9 @@ fn kew_https_directory_smoke() {
     remote::connect(&t.connection, t.secrets, false).unwrap();
     let entries = remote::list(&t.connection.id, &t.path).unwrap();
     assert!(entries.iter().any(|e| e.name == "Archive" && e.is_dir));
-    assert!(
-        entries
-            .iter()
-            .any(|e| e.name == "wcvp_dwca.zip" && !e.is_dir)
-    );
+    let zip = entries.iter().find(|e| e.name == "wcvp_dwca.zip").unwrap();
+    assert!(!zip.is_dir);
+    assert!(zip.size_known && zip.size > 0);
+    assert!(zip.modified.is_some());
+    assert!(entries.iter().all(|e| e.modified.is_some()));
 }
