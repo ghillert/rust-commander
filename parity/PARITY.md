@@ -2,61 +2,155 @@
 
 Baseline: `3504a51e9af9f69a67dc616db821a320ec780f79`
 
+Generated from [upstream.json](upstream.json), [status.json](status.json) and
+the reviewed workflow summary in [OVERVIEW.md](OVERVIEW.md). Edit those source
+files and run `python3 scripts/audit-upstream.py --render-only` from the repository
+root to regenerate this page without changing the pinned baseline.
+
 Completion requires implemented behavior and validation evidence. A menu entry,
 adapter dependency, or untested backend does not establish parity. Runtime-only
 Java actions require an explicit rationale if they are inapplicable to Rust.
+
+| Status | Meaning |
+| --- | --- |
+| implemented | Recorded behavior and validation evidence cover the audited item. |
+| partial | Behavior exists, but implementation details, upstream compatibility or validation remain open; the note identifies which. |
+| missing | The audited behavior has no implementation; evidence may explain a related feature or why it differs. |
+| inapplicable | The item does not apply to this Rust application, with an explicit rationale. |
+
+Inventory: **200 entries — 4 implemented, 165 partial, 30 missing, 1 inapplicable**.
+These are action/module counts, not a percentage of product functionality.
+Cross-cutting workflows such as drag and drop are reviewed separately below.
+The completion gate checks the enumerated inventory; the workflow review
+remains necessary when assessing product-wide parity.
+
+## Current review — 2026-10-21
+
+This overview reflects the current source and the recorded checks in
+[VALIDATION.md](VALIDATION.md). It separates absent behavior from behavior that
+exists but still needs compatibility or native acceptance testing. This source
+review did not perform new desktop or live-account tests. Historical validation
+sections describe their original snapshots; later sections supersede older limits.
+
+### Main implementation gaps
+
+| Area | Existing behavior | Missing or limited behavior |
+| --- | --- | --- |
+| Drag and drop | Local-file copy payloads, pane drop confirmations, incoming OS handlers and explicit native drag-out | Move gestures; remote/archive sources; folder-row, tree and tab drop targets; hover navigation; seamless native drag-out. See the detailed matrix below. |
+| Network services | HTTP/HTTPS, FTP/both FTPS modes, SFTP on all three desktop platforms, SMB2/3 and cloud adapters | NFS, Android/ADB, Windows Registry, oVirt/vSphere and Bonjour discovery. WebHDFS does not establish full Hadoop parity. |
+| Archives | Create/extract common formats; edit local ZIP/TAR/7z; encrypted ZIP/7z; nested/remote browsing | Nested/remote editing, LST and libguestfs; archive links and special files. NRG/CPIO/RPM lack dedicated format fixtures. See [format support](../docs/FILE_OPERATIONS.md#archives). |
+| Search and comparison | Local/remote search and separate local/remote synchronization | Local content search skips files over 16 MiB and matches literal text; Compare folders is local-only and skips symlinks. Full upstream search options remain open. |
+| Viewers and editing | Encoded text editing, large local read-only pages, streaming local text/hex search, image/PDF rendering | PDF text selection/search, additional encodings and animated images; large-file editing and large remote/archive viewing. Editing is bounded to 2 MiB, image/PDF input to 32 MiB. |
+| Metadata | Native local moves; copying macOS ACLs/xattrs/resource forks, Linux user attributes/POSIX ACLs and Windows DACLs | Native ownership names/editing and full ACL presentation; Windows alternate data streams/ownership and privileged Linux namespaces are outside current copy preservation. Remote metadata depends on the provider. |
+| Commands | Open With, desktop reveal, searchable windows, configurable shortcuts and native window controls | Forced-format Open As, copy base names, email, numbered window shortcuts, parent-entry visibility toggle, update checking and remaining help/diagnostic actions. |
+| Localization and migration | English/German/Spanish and reviewed XML import with backup | Additional languages, complete translated coverage and full upstream preference/keymap/command/bookmark import. See [import limits](../docs/FEATURES_0.7.md#12-mucommander-import). |
+
+Upstream [Open As](https://github.com/mucommander/mucommander/blob/3504a51e9af9f69a67dc616db821a320ec780f79/mucommander-core/src/main/java/com/mucommander/ui/action/impl/OpenAsAction.java)
+forces a format/extension interpretation without renaming the file. It is distinct
+from Rust Commander's existing Open With application chooser.
+
+### Drag-and-drop parity: partial
+
+Drag and drop is a cross-cutting workflow, not a separate named action in the
+pinned upstream action inventory. It must remain visible here even though the
+inventory counts do not include an additional DragDrop entry.
+
+| Workflow | Current implementation | Missing behavior / acceptance still required |
+| --- | --- | --- |
+| Local selection between panes | Slint file payloads and pane-wide copy drop targets; confirmation before transfer | Move negotiation/modifier semantics; real gesture-to-transfer completion across supported desktops |
+| Finder/Explorer/Linux file manager into a pane | Incoming file events are grouped; destination pane is detected or explicitly confirmed through the active-pane fallback | End-to-end OS interoperability and correct targeting on native desktops, especially Wayland |
+| Local files into a remote pane or open local archive | Upload confirmation or archive-add form; routing has callback coverage | Physical-drop completion with real destinations; folder/tab/tree targeting |
+| Local files out to another application | Alt + drag or Selection → Native drag-out on macOS/Windows; separate GTK4 helper on Linux | Ordinary seamless drag-out, native source/destination completion and platform copy/move negotiation |
+| Remote/archive entries as drag sources | No payload is provided for these sources | Downloads/extraction or virtual-entry payloads, plus source lifetime and cleanup |
+| Folder rows, directory tree and tabs | Drops currently target the pane's open location | Dedicated targets, hover-to-open/tab switching and drag-specific scrolling |
+
+Implementation evidence: [Slint drag/drop widgets](../ui/commander.slint),
+[payload/native-event routing](../src/app/slint_ui.rs),
+[transfer confirmation](../src/app.rs), [native adapters](../src/native_files.rs)
+and [Linux helper](../src/linux_drag.rs).
+Callback tests in [slint_ui/tests.rs](../src/app/slint_ui/tests.rs) cover confirmation,
+modal guards and local-file drops into remote/archive destinations; pane-layout
+hit testing is covered in [parity_tests.rs](../src/app/slint_ui/parity_tests.rs).
+The GTK fixture checks the file-list payload and helper window. These checks do
+**not** establish physical/native cross-application drop completion. Remote/archive
+destinations accepting local files do **not** mean remote/archive drag sources work.
+
+### Validation gaps for existing implementations
+
+- **Cloud accounts:** Dropbox/Google Drive/OneDrive OAuth, live S3/GCS and Hadoop
+  still need real-account/service acceptance. Loopback token tests and a generic
+  filesystem adapter are not provider certification.
+- **Native desktop behavior:** Windows/Linux clipboard and drag interoperability,
+  credential-store prompts, multi-monitor window behavior, full terminal
+  compatibility and VoiceOver/NVDA/Orca still need broader interactive testing.
+  CI builds/tests, Linux Xvfb checks and Mac smoke tests cover parts of this work.
+- **Servers and failure modes:** recorded disposable SFTP/FTP/FTPS/WebDAV/SMB
+  workflows do not cover every server, Windows OpenSSH-agent configuration,
+  cross-volume failure or provider concurrency/publish behavior. Resumable remote
+  copies currently require new targets without merge/replace choices.
+- **Archives and viewers:** broader format, metadata, corruption/encryption and
+  PDF compatibility fixtures remain necessary. Input/size bounds are deliberate
+  current limits, not evidence of complete upstream parity.
+
+[Remote connections](../docs/REMOTE_CONNECTIONS.md),
+[current feature limits](../docs/FEATURES_NEXT.md) and
+[stabilization coverage](../docs/STABILIZATION.md) provide the detailed behavior.
+A missing Java module name can represent an internal architecture contract rather
+than a missing user-facing protocol; the detailed entries below state that distinction.
+
+## Detailed action and module inventory
 
 | Upstream action or module | Status | Evidence |
 | --- | --- | --- |
 | AddBookmark | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | BatchRename | implemented | src/desktop.rs, tests/desktop_tools.rs::batch_rename_supports_cycles_without_overwriting_contents, tests/desktop_tools.rs::batch_rename_previews_numbering_and_regex |
-| BringAllToFront | missing |  |
+| BringAllToFront | missing | — |
 | CalculateChecksum | implemented | src/operations.rs, tests/desktop_tools.rs::all_checksum_algorithms_match_known_values |
 | ChangeDate | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
-| ChangeLocation | partial | src/app.rs, parity/VALIDATION.md — Core local navigation/open workflow exists; full upstream action semantics and cross-platform behavior remain incomplete. |
+| ChangeLocation | partial | src/uri.rs, src/app/uri_navigation.rs, src/app/slint_ui.rs, tests/uri_navigation.rs, src/app/slint_ui/tests.rs::location_bar_toggle_apply_cancel_and_escape_preserve_the_address, src/app/slint_ui/tests.rs::unnamed_uri_profiles_restore_tabs_and_save_explicitly, docs/REMOTE_CONNECTIONS.md, parity/VALIDATION.md — Editable addresses are the default, with a persisted breadcrumb toggle. Direct HTTP/HTTPS, SFTP, FTP/FTPS/FTPES, file, SMB, S3 and GS URIs, legacy remote locations, credential/profile selection, explicit connection saving and scoped asynchronous navigation are implemented. URI/controller tests and the live Kew listing pass on Mac; Windows UNC/agent behavior and broader native desktop/provider acceptance remain open. |
 | ChangePermissions | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
-| CheckForUpdates | missing |  |
+| CheckForUpdates | missing | — |
 | CloneTabToOtherPanel | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | CloseDuplicateTabs | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | CloseOtherTabs | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | CloseTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | CloseWindow | partial | src/app/slint_ui/windows.rs, src/settings.rs, parity/VALIDATION.md — Independent windows share the queue/history/preferences runtime. Up to sixteen window sessions restore pane/tab/layout/geometry state with guarded close/quit. Headless callback tests pass; native Windows/Linux interactions and complete lifecycle validation remain open. |
 | CombineFiles | implemented | src/desktop.rs, tests/desktop_tools.rs::split_and_combine_round_trip_every_chunk_boundary |
-| CompareFolders | partial | src/desktop.rs, tests/desktop_tools.rs — Local-only; search content has a size limit and comparison skips symlinks. |
-| ConnectToServer | partial | src/remote.rs, tests/webdav_backend.rs, tests/remote_services.rs, docs/STABILIZATION.md — Saved profiles and keychain integration exist. Real disposable SFTP/FTP/WebDAV/SMB workflows pass from macOS; cloud OAuth, broader servers and native keychain/platform validation remain open. |
-| Copy | partial | src/transfer.rs, src/file_metadata.rs, src/resumable.rs, src/remote.rs, tests/features_08.rs, src/remote_upload.rs, tests/stabilization.rs, tests/remote_services.rs — Local conflict/recovery/native move and metadata workflows exist. Real SFTP/FTP/WebDAV/SMB tests cover recursive merges, range/checkpoint copies and sync; subprocess termination recovery passes. Single-request uploads use private file-backed buffers. Native Windows/Linux and cloud-provider behavior remain open. |
-| CopyFileBaseNames | missing |  |
+| CompareFolders | partial | src/desktop.rs::pub fn compare, tests/desktop_tools.rs::folder_comparison_uses_file_contents, docs/FEATURES_NEXT.md — Recursive content-based comparison is implemented for local folders and skips symlinks. Remote synchronization has a separate implementation; this comparison command remains local-only. Broader upstream comparison options and native desktop acceptance remain open. |
+| ConnectToServer | partial | src/remote.rs, src/app/uri_navigation.rs, src/uri_backend.rs, src/uri_backend/ftp.rs, src/uri_backend/sftp.rs, tests/uri_navigation.rs, tests/remote_services.rs, scripts/test-uri-transports.py, docs/REMOTE_CONNECTIONS.md, parity/VALIDATION.md — Saved and unnamed URI profiles, explicit saving, credential-store opt-in, both FTPS modes and strict TLS/SSH trust checks exist. HTTP query credentials remain session-only. Disposable SFTP/password/key, FTP/anonymous/FTPS, WebDAV and SMB workflows have Mac evidence. Live cloud accounts, Windows OpenSSH agent and native credential-store prompts remain unvalidated; the Rust SSH transport does not interpret OpenSSH aliases or host certificates. |
+| Copy | partial | src/transfer.rs, src/file_metadata.rs, src/resumable.rs, src/remote.rs, src/remote_upload.rs, src/operations/totals.rs, src/operations/rate.rs, tests/progress.rs, tests/stabilization.rs, tests/remote_services.rs, tests/uri_navigation.rs, docs/FEATURES_NEXT.md, parity/VALIDATION.md — Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed remote copies require new targets without merges; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review. |
+| CopyFileBaseNames | missing | — |
 | CopyFileNames | partial | src/app.rs — UI implemented; native smoke validation pending. |
 | CopyFilePaths | partial | src/app.rs — UI implemented; native smoke validation pending. |
 | CopyFilesToClipboard | partial | src/native_files.rs, src/app.rs, tests/features.rs — Native local file clipboard plus remote pane selections. Mac copy/cut, Unicode paths and external clipboard changes pass a real desktop round-trip. Windows/Linux interoperability requires validation. |
 | CustomizeCommandBar | partial | src/preferences.rs, src/app/slint_ui/dialogs.rs, src/app/slint_ui/keys.rs, src/app/slint_ui/parity_tests.rs::command_bar_and_shortcut_labels_follow_custom_bindings — Named command-bar slots and searchable primary/alternate bindings cover the supported command registry, with validation and current labels. Modal editing retains control-specific keys; upstream and platform edge cases remain. |
 | Delete | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
-| Donate | missing |  |
+| Donate | missing | — |
 | DuplicateTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | Edit | partial | src/external_edit.rs, src/text_document.rs, src/app/slint_ui/enhancements.rs, tests/features_08.rs — Built-in encoded text editing and guarded local/remote saves are available. External working copies support reviewed save-back to local/remote files and writable local archive entries. Broader editor, provider and desktop compatibility remains open. |
 | EditBookmarks | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| EditCredentials | partial | src/remote.rs, tests/webdav_backend.rs, tests/remote_services.rs, docs/STABILIZATION.md — Saved profiles and keychain integration exist. Real disposable SFTP/FTP/WebDAV/SMB workflows pass from macOS; cloud OAuth, broader servers and native keychain/platform validation remain open. |
-| Email | missing |  |
+| EditCredentials | partial | src/remote.rs, src/app/uri_navigation.rs, src/uri_backend.rs, src/uri_backend/ftp.rs, src/uri_backend/sftp.rs, tests/uri_navigation.rs, tests/remote_services.rs, scripts/test-uri-transports.py, docs/REMOTE_CONNECTIONS.md, parity/VALIDATION.md — Saved and unnamed URI profiles, explicit saving, credential-store opt-in, both FTPS modes and strict TLS/SSH trust checks exist. HTTP query credentials remain session-only. Disposable SFTP/password/key, FTP/anonymous/FTPS, WebDAV and SMB workflows have Mac evidence. Live cloud accounts, Windows OpenSSH agent and native credential-store prompts remain unvalidated; the Rust SSH transport does not interpret OpenSSH aliases or host certificates. |
+| Email | missing | — |
 | EmptyTrash | partial | src/native_actions.rs, src/operations.rs, src/queue.rs, src/app/slint_ui/parity_tests.rs::trash_emptying_requires_confirmation_and_cannot_resume_unattended — Native platform adapters exist with literal EMPTY confirmation and no unattended replay. Windows adapter cross-Clippy passes; real system Trash emptying has deliberately not been executed and native integration remains unvalidated. |
-| ExploreBookmarks | missing |  |
-| Find | partial | src/desktop.rs, src/remote.rs, tests/features_05.rs::remote_search_and_guarded_save_use_actual_storage_operations, tests/features_05.rs::smb_live_list_stream_upload_download_rename_edit_search_delete — Local and cancellable remote filename/content search; filesystem and live disposable Samba coverage. Full upstream search options remain open. |
+| ExploreBookmarks | missing | — |
+| Find | partial | src/desktop.rs::pub fn search, src/remote.rs, tests/features_05.rs::remote_search_and_guarded_save_use_actual_storage_operations, tests/features_05.rs::smb_live_list_stream_upload_download_rename_edit_search_delete — Local and cancellable remote filename/content search exist, with filesystem and disposable Samba coverage. Local filename patterns are case-insensitive globs; content matching is literal and skips files over 16 MiB. Full upstream search filters, larger-file content search and broad provider/desktop acceptance remain open. |
 | FocusNext | partial | src/app/slint_ui/parity.rs, ui/commander.slint, ui/chrome.slint, src/app/slint_ui/enhancements.rs::accessibility_actions_select_files_and_expose_tree_expansion, src/app/slint_ui/enhancements.rs::tab_switches_file_panes_but_fields_keep_natural_focus_traversal — Pane focus commands use the actual focused control; Tab/Shift-Tab preserve pane switching in lists and normal traversal elsewhere. Toolbar/Places entries are keyboard reachable and file/tree accessibility actions and states have real Slint tree tests. Native screen-reader and complete platform validation remain open. |
 | FocusPrevious | partial | src/app/slint_ui/parity.rs, ui/commander.slint, ui/chrome.slint, src/app/slint_ui/enhancements.rs::accessibility_actions_select_files_and_expose_tree_expansion, src/app/slint_ui/enhancements.rs::tab_switches_file_panes_but_fields_keep_natural_focus_traversal — Pane focus commands use the actual focused control; Tab/Shift-Tab preserve pane switching in lists and normal traversal elsewhere. Toolbar/Places entries are keyboard reachable and file/tree accessibility actions and states have real Slint tree tests. Native screen-reader and complete platform validation remain open. |
 | GarbageCollect | inapplicable | src/main.rs — This upstream action explicitly triggers the JVM garbage collector; the Rust application does not run a JVM. |
 | GoBack | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | GoForward | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| GoToDocumentation | missing |  |
-| GoToForums | missing |  |
+| GoToDocumentation | missing | — |
+| GoToForums | missing | — |
 | GoToHome | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | GoToParent | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | GoToParentInBothPanels | partial | src/app/slint_ui/parity.rs, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Cross-pane folder/archive open and independent parent commands are implemented with tab locks honored; broader remote/archive and platform behavior remains unvalidated. |
 | GoToParentInOtherPanel | partial | src/app/slint_ui/parity.rs, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Cross-pane folder/archive open and independent parent commands are implemented with tab locks honored; broader remote/archive and platform behavior remains unvalidated. |
 | GoToRoot | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| GoToWebsite | missing |  |
-| InternalEdit | partial | src/app.rs, tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content — Local UTF-8 text editing only. |
+| GoToWebsite | missing | — |
+| InternalEdit | partial | src/text_document.rs, src/app/slint_ui/viewer_tools.rs, src/remote.rs, tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content, src/app/slint_ui/parity_tests.rs::legacy_text_can_be_decoded_edited_and_converted_without_losing_original_bytes, docs/FILE_OPERATIONS.md — Built-in editing supports UTF-8, UTF-16 LE/BE, Windows-1252 and ISO-8859-1 through 2 MiB, preserving BOM/line endings and refusing changed originals. Local saves are journaled; guarded remote saves retain recovery copies. Larger local text is paged read-only, and built-in archive/symlink editing remains unsupported. Additional encodings, large-file editing and native/provider acceptance remain open. |
 | InternalView | partial | src/viewer.rs, src/viewer_search.rs, src/app/slint_ui/viewer_tools.rs, tests/features_08.rs — Encoded text viewing, streaming literal/hex search, local byte navigation, images and Hayro PDF password/page/rotation/fit controls are implemented with bounded rendering/cache. Full format compatibility and desktop integration remain unvalidated. |
 | InvertSelection | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| LocalCopy | partial | src/transfer.rs, src/file_metadata.rs, src/resumable.rs, src/remote.rs, tests/features_08.rs, src/remote_upload.rs, tests/stabilization.rs, tests/remote_services.rs — Local conflict/recovery/native move and metadata workflows exist. Real SFTP/FTP/WebDAV/SMB tests cover recursive merges, range/checkpoint copies and sync; subprocess termination recovery passes. Single-request uploads use private file-backed buffers. Native Windows/Linux and cloud-provider behavior remain open. |
+| LocalCopy | partial | src/transfer.rs, src/file_metadata.rs, src/resumable.rs, src/remote.rs, src/remote_upload.rs, src/operations/totals.rs, src/operations/rate.rs, tests/progress.rs, tests/stabilization.rs, tests/remote_services.rs, tests/uri_navigation.rs, docs/FEATURES_NEXT.md, parity/VALIDATION.md — Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed remote copies require new targets without merges; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review. |
 | MarkAll | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | MarkExtension | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
 | MarkGroup | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
@@ -69,25 +163,25 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | MarkSelectedFile | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | MarkToFirstRow | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
 | MarkToLastRow | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
-| MaximizeWindow | missing |  |
-| MinimizeWindow | missing |  |
+| MaximizeWindow | partial | src/native_menu.rs, ui/commander.slint, src/app.rs, docs/SLINT_UI.md — macOS provides native AppKit Window-menu commands and window controls; Windows/Linux retain their platform decorations. These are existing capabilities, but dedicated shared shortcut actions and complete native cross-platform validation are absent. |
+| MinimizeWindow | partial | src/native_menu.rs, ui/commander.slint, src/app.rs, docs/SLINT_UI.md — macOS provides native AppKit Window-menu commands and window controls; Windows/Linux retain their platform decorations. These are existing capabilities, but dedicated shared shortcut actions and complete native cross-platform validation are absent. |
 | Mkdir | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
 | Mkfile | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
-| Move | partial | src/transfer.rs, src/file_metadata.rs, src/resumable.rs, src/remote.rs, tests/features_08.rs, src/remote_upload.rs, tests/stabilization.rs, tests/remote_services.rs — Local conflict/recovery/native move and metadata workflows exist. Real SFTP/FTP/WebDAV/SMB tests cover recursive merges, range/checkpoint copies and sync; subprocess termination recovery passes. Single-request uploads use private file-backed buffers. Native Windows/Linux and cloud-provider behavior remain open. |
+| Move | partial | src/transfer.rs, src/file_metadata.rs, src/resumable.rs, src/remote.rs, src/remote_upload.rs, src/operations/totals.rs, src/operations/rate.rs, tests/progress.rs, tests/stabilization.rs, tests/remote_services.rs, tests/uri_navigation.rs, docs/FEATURES_NEXT.md, parity/VALIDATION.md — Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed remote copies require new targets without merges; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review. |
 | MoveTabToOtherPanel | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, src/workspaces.rs, src/app/slint_ui/parity_tests.rs::locked_named_tabs_move_between_panes_and_defer_navigation_to_a_new_tab — Named/locked tabs persist across sessions/workspaces and move between panes. Locked navigation opens an unlocked tab, verified on Mac; broader platform and upstream edge cases remain. |
 | NewTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | NewWindow | partial | src/app/slint_ui/windows.rs, src/settings.rs, parity/VALIDATION.md — Independent windows share the queue/history/preferences runtime. Up to sixteen window sessions restore pane/tab/layout/geometry state with guarded close/quit. Headless callback tests pass; native Windows/Linux interactions and complete lifecycle validation remain open. |
 | NextTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | Open | partial | src/app.rs, parity/VALIDATION.md — Core local navigation/open workflow exists; full upstream action semantics and cross-platform behavior remain incomplete. |
-| OpenAs | missing |  |
+| OpenAs | missing | src/app.rs, src/associations.rs, docs/FEATURES_NEXT.md — No forced-extension/type action is implemented. Upstream opens a file as a specified format (including archive wrapping) without renaming it. The existing Open With application chooser and filename associations are a different feature. |
 | OpenCommandPrompt | partial | src/terminal.rs, src/app.rs — PTY/VT100 screen ran a shell command in the packaged macOS app; full terminal compatibility and other platforms remain unverified. |
 | OpenInBothPanels | partial | src/app/slint_ui/parity.rs, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Cross-pane folder/archive open and independent parent commands are implemented with tab locks honored; broader remote/archive and platform behavior remains unvalidated. |
 | OpenInNewTab | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | OpenInOtherPanel | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | OpenNatively | partial | src/app.rs, parity/VALIDATION.md — Core local navigation/open workflow exists; full upstream action semantics and cross-platform behavior remain incomplete. |
 | OpenTrash | partial | src/native_actions.rs, src/operations.rs, src/queue.rs, src/app/slint_ui/parity_tests.rs::trash_emptying_requires_confirmation_and_cannot_resume_unattended — Native platform adapters exist with literal EMPTY confirmation and no unattended replay. Windows adapter cross-Clippy passes; real system Trash emptying has deliberately not been executed and native integration remains unvalidated. |
-| OpenURLInBrowser | missing |  |
-| Pack | partial | src/archive.rs, src/archive_tools.rs, src/app.rs, tests/features.rs, tests/file_manager.rs, tests/extended_archives.rs — ZIP and 7z AES encryption, local ZIP editing and nested/remote archive browsing. Extract to new folders; archive links, non-ZIP mutation and broad format fixtures remain open. |
+| OpenURLInBrowser | partial | src/app/slint_ui/dialogs.rs, src/app/slint_ui/dialogs/commands.rs, docs/REMOTE_CONNECTIONS.md — The URI connection/error dialog has Open in browser for the current address. A general selected-URL command equivalent to upstream is not present; native browser handoff and full action semantics remain unvalidated. |
+| Pack | partial | src/archive.rs, src/archive_tools.rs, src/app.rs, tests/features.rs, tests/features_05.rs, tests/extended_archives.rs, tests/features_08.rs::external_editor_refuses_changed_original_and_can_update_archive_member, docs/FILE_OPERATIONS.md — Creates ZIP, TAR variants, 7z and single-file compressed streams; ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers exist. Encrypted ZIP edits retain encryption. Nested/remote archives are read-only; archive links/special files are rejected and broader format/metadata fixtures remain incomplete. |
 | PasteClipboardFiles | partial | src/native_files.rs, src/app.rs, tests/features.rs — Native local file clipboard plus remote pane selections. Mac copy/cut, Unicode paths and external clipboard changes pass a real desktop round-trip. Windows/Linux interoperability requires validation. |
 | PermanentDelete | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
 | PopupLeftDriveButton | partial | src/native_files.rs, src/app.rs — Mounted-drive sidebar and clickable local breadcrumbs provide navigation. Exact upstream quick-list behavior and cross-platform interactions remain open. |
@@ -97,23 +191,23 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | Quit | partial | src/app.rs — Implemented UI and close protection; full lifecycle validation pending. |
 | RecallNextWindow | partial | src/app/slint_ui/windows.rs, src/settings.rs, parity/VALIDATION.md — Independent windows share the queue/history/preferences runtime. Up to sixteen window sessions restore pane/tab/layout/geometry state with guarded close/quit. Headless callback tests pass; native Windows/Linux interactions and complete lifecycle validation remain open. |
 | RecallPreviousWindow | partial | src/app/slint_ui/windows.rs, src/settings.rs, parity/VALIDATION.md — Independent windows share the queue/history/preferences runtime. Up to sixteen window sessions restore pane/tab/layout/geometry state with guarded close/quit. Headless callback tests pass; native Windows/Linux interactions and complete lifecycle validation remain open. |
-| RecallWindow10 | missing |  |
-| RecallWindow1 | missing |  |
-| RecallWindow2 | missing |  |
-| RecallWindow3 | missing |  |
-| RecallWindow4 | missing |  |
-| RecallWindow5 | missing |  |
-| RecallWindow6 | missing |  |
-| RecallWindow7 | missing |  |
-| RecallWindow8 | missing |  |
-| RecallWindow9 | missing |  |
+| RecallWindow10 | missing | — |
+| RecallWindow1 | missing | — |
+| RecallWindow2 | missing | — |
+| RecallWindow3 | missing | — |
+| RecallWindow4 | missing | — |
+| RecallWindow5 | missing | — |
+| RecallWindow6 | missing | — |
+| RecallWindow7 | missing | — |
+| RecallWindow8 | missing | — |
+| RecallWindow9 | missing | — |
 | Redo | partial | src/history.rs, tests/features_05.rs::text_save_undo_redo_survives_history_reload, tests/features_05.rs::redo_refuses_external_edits — Guarded Redo for journaled local operations; macOS native menu smoke check. Remote/universal Redo and Windows interaction remain open. |
 | Refresh | partial | src/app.rs, src/model.rs — Manual refresh and automatic macOS file-change notifications smoke tested; other platforms and remote refresh behavior remain unverified. |
 | Rename | partial | src/operations.rs, src/remote.rs, src/archive_tools.rs, src/app.rs, tests/features.rs — Local, ZIP and remote rename implemented. Remote copy/check/delete validated through filesystem adapter; live services and full platform behavior pending. |
-| ReportBug | missing |  |
-| RevealInDesktop | missing |  |
+| ReportBug | missing | — |
+| RevealInDesktop | partial | src/app.rs, src/native_actions.rs::pub fn reveal — File > Reveal in file manager exists for local selections. macOS asks Finder to reveal the item and Windows uses Explorer selection; Linux opens the enclosing folder. Remote/archive reveal, Linux item selection and complete native acceptance remain open. |
 | ReverseSortOrder | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
-| Save | partial | src/app.rs, tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content — Local UTF-8 text editing only. |
+| Save | partial | src/text_document.rs, src/app/slint_ui/viewer_tools.rs, src/remote.rs, tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content, src/app/slint_ui/parity_tests.rs::legacy_text_can_be_decoded_edited_and_converted_without_losing_original_bytes, docs/FILE_OPERATIONS.md — Built-in editing supports UTF-8, UTF-16 LE/BE, Windows-1252 and ISO-8859-1 through 2 MiB, preserving BOM/line endings and refusing changed originals. Local saves are journaled; guarded remote saves retain recovery copies. Larger local text is paged read-only, and built-in archive/symlink editing remains unsupported. Additional encodings, large-file editing and native/provider acceptance remain open. |
 | SelectFirstRow | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | SelectLastRow | partial | src/app.rs, src/model.rs — Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. |
 | SelectNextBlock | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, tests/features_07.rs::keyboard_range_selection_marks_every_intermediate_row, src/app/slint_ui/parity_tests.rs::five_row_block_commands_match_upstream_increments — Visible wildcard/extension selection, five-row blocks and full keyboard ranges are implemented. Native Mac wildcard selection passes; Windows/Linux keyboard behavior remains unvalidated. |
@@ -126,13 +220,13 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | SetTabTitle | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, src/workspaces.rs, src/app/slint_ui/parity_tests.rs::locked_named_tabs_move_between_panes_and_defer_navigation_to_a_new_tab — Named/locked tabs persist across sessions/workspaces and move between panes. Locked navigation opens an unlocked tab, verified on Mac; broader platform and upstream edge cases remain. |
 | ShowAbout | partial | src/app.rs — Implemented UI and close protection; full lifecycle validation pending. |
 | ShowBookmarksQL | partial | src/app/slint_ui/parity.rs, src/navigation.rs, tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete. |
-| ShowDebugConsole | missing |  |
+| ShowDebugConsole | missing | — |
 | ShowFilePopupMenu | partial | src/app/slint_ui/parity.rs, ui/commander.slint, ui/chrome.slint, src/app/slint_ui/enhancements.rs::accessibility_actions_select_files_and_expose_tree_expansion, src/app/slint_ui/enhancements.rs::tab_switches_file_panes_but_fields_keep_natural_focus_traversal — Pane focus commands use the actual focused control; Tab/Shift-Tab preserve pane switching in lists and normal traversal elsewhere. Toolbar/Places entries are keyboard reachable and file/tree accessibility actions and states have real Slint tree tests. Native screen-reader and complete platform validation remain open. |
 | ShowFileProperties | partial | src/operations.rs, src/app.rs — Core and UI exist; full platform behavior is not validated. |
 | ShowInEnclosingFolder | partial | src/native_actions.rs, src/app.rs — Native Reveal actions are wired for local files; platform-specific launch behavior needs broader interactive validation. |
 | ShowKeyboardShortcuts | partial | src/preferences.rs, src/app/slint_ui/dialogs.rs, src/app/slint_ui/keys.rs, src/app/slint_ui/parity_tests.rs::command_bar_and_shortcut_labels_follow_custom_bindings — Named command-bar slots and searchable primary/alternate bindings cover the supported command registry, with validation and current labels. Modal editing retains control-specific keys; upstream and platform edge cases remain. |
 | ShowParentFoldersQL | partial | src/native_files.rs, src/app.rs — Mounted-drive sidebar and clickable local breadcrumbs provide navigation. Exact upstream quick-list behavior and cross-platform interactions remain open. |
-| ShowPreferences | partial | src/preferences.rs, src/feature_ui.rs, src/app.rs, tests/features.rs — Desktop preferences now include language, persistent column customization and toolbar action order. Full upstream preferences and cross-platform behavior remain incomplete. |
+| ShowPreferences | partial | src/preferences.rs, src/app/slint_ui/dialogs.rs, src/app/slint_ui/tests.rs, tests/appearance.rs, src/app/slint_ui/icons.rs, docs/ICONS.md, docs/SLINT_UI.md — Settings include persistent language, desktop style/light-dark appearance, file-icon source, address/breadcrumb mode, columns, toolbar/command bar, shortcuts, recovery and layout choices. File icons support system icons with specific built-in fallback or built-in-only mode. Apply/Cancel and shared-window/workspace behavior have tests; full upstream settings/theme coverage, additional languages and native acceptance remain open. |
 | ShowRecentExecutedFilesQL | partial | src/app/slint_ui/parity.rs, src/navigation.rs, tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete. |
 | ShowRecentLocationsQL | partial | src/app/slint_ui/parity.rs, src/navigation.rs, tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete. |
 | ShowRootFoldersQL | partial | src/app/slint_ui/parity.rs, src/navigation.rs, tests/features_07.rs::recent_locations_are_bounded_deduplicated_and_newest_first, src/app/slint_ui/parity_tests.rs::searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes — Searchable keyboard lists are implemented, with persistent bounded recents. Recent files cover locally opened/viewed files; exact upstream executed-file semantics and other platforms remain incomplete. |
@@ -160,7 +254,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | ToggleHiddenFiles | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
 | ToggleLockTab | partial | src/navigation.rs, src/model.rs, src/app/slint_ui/parity.rs, src/workspaces.rs, src/app/slint_ui/parity_tests.rs::locked_named_tabs_move_between_panes_and_defer_navigation_to_a_new_tab — Named/locked tabs persist across sessions/workspaces and move between panes. Locked navigation opens an unlocked tab, verified on Mac; broader platform and upstream edge cases remain. |
 | ToggleOwnerColumn | partial | src/filesystem.rs, src/preferences.rs, src/app/slint_ui/parity.rs, ui/commander.slint, tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata — Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete. |
-| ToggleShowParentFolder | missing |  |
+| ToggleShowParentFolder | missing | — |
 | TogglePermissionsColumn | partial | src/filesystem.rs, src/preferences.rs, src/app/slint_ui/parity.rs, ui/commander.slint, tests/features_07.rs::ownership_columns_and_permission_sort_use_local_metadata — Unix numeric owner/group/mode metadata, sorting and automatic proportional widths are implemented. Windows/remote unavailable metadata uses a placeholder; native ACL/name parity remains incomplete. |
 | ToggleShowFoldersFirst | partial | src/preferences.rs, src/app.rs, tests/desktop_tools.rs::preferences_validate_custom_shortcuts_and_detect_collisions — Common preferences only; all upstream settings and shortcut actions are not ported. |
 | ToggleSizeColumn | partial | src/preferences.rs, src/app.rs, tests/features.rs — Configurable persistent columns and sorting through headers/settings; exact upstream actions and platform interaction validation remain open. |
@@ -174,36 +268,36 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | Unpack | partial | src/archive.rs, src/app.rs, tests/features_08.rs, tests/file_manager.rs — Extraction into new/existing folders offers per-file conflicts and merging through staged local transfers and Undo. Traversal/link/size guards remain; broader format metadata fixtures and provider behavior remain open. |
 | Undo | partial | src/history.rs, tests/features_05.rs, tests/features.rs — Guarded local Undo/Redo includes text saves, permissions, timestamps and synchronization. Remote Undo, permanent deletion and universal upstream coverage remain open. |
 | View | partial | src/viewer.rs, src/viewer_search.rs, src/app/slint_ui/viewer_tools.rs, tests/features_08.rs — Encoded text viewing, streaming literal/hex search, local byte navigation, images and Hayro PDF password/page/rotation/fit controls are implemented with bounded rendering/cache. Full format compatibility and desktop integration remain unvalidated. |
-| mucommander-protocol-api | missing |  |
-| mucommander-viewer-api | missing |  |
-| mucommander-format-ar | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
-| mucommander-format-bzip2 | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
-| mucommander-format-cpio | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
-| mucommander-format-gzip | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
-| mucommander-format-iso | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
-| mucommander-format-libguestfs | missing |  |
-| mucommander-format-lst | missing |  |
-| mucommander-format-rar | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
-| mucommander-format-sevenzip | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
-| mucommander-format-tar | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
-| mucommander-format-xz | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
-| mucommander-format-zip | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
-| mucommander-format-rpm | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/extended_archives.rs, tests/features.rs — Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures. |
-| mucommander-protocol-adb | missing |  |
-| mucommander-protocol-ftp | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/remote_services.rs::ftp_protocol_workflows, scripts/test-remote.py, docs/STABILIZATION.md — FTP listing, Unicode transfers, ranged reads, merge, cancelled download/retry, checkpoint uploads, sync and child-first verified deletion pass against disposable pyftpdlib from macOS. Other servers, TLS and native Windows/Linux client runs remain open. |
+| mucommander-protocol-api | partial | src/filesystem.rs, src/remote.rs, src/uri_backend.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Shared Location/Entry abstractions, transfer routing and OpenDAL-compatible transport interfaces exist in Rust. Their complete behavioral contract has not been compared with the upstream internal protocol API. This entry is an architecture audit, not another missing network service or a promise of a Java-compatible plugin API. |
+| mucommander-viewer-api | partial | src/viewer.rs, src/app/slint_ui/viewer_tools.rs, src/app/slint_ui.rs — Shared Rust viewer content types, loading and Slint presentation exist. Complete behavior/lifecycle parity with the upstream internal viewer API has not been established; no Java-compatible extension API is claimed. |
+| mucommander-format-ar | partial | src/archive.rs, tests/extended_archives.rs::ar_and_deb_members_are_streamed, docs/FILE_OPERATIONS.md — AR/DEB reading and streaming extraction use libarchive and have dedicated fixtures. Creation/mutation is unavailable; broader format/metadata fixtures remain open. |
+| mucommander-format-bzip2 | partial | src/archive.rs, tests/desktop_tools.rs::stream_compression_round_trips, docs/FILE_OPERATIONS.md — Compressed single-file streams support creation, browsing and extraction; creation accepts one regular file. Corresponding compressed TAR containers are also supported. Broad variant, corruption and metadata compatibility remains open. |
+| mucommander-format-cpio | partial | src/archive.rs, docs/FILE_OPERATIONS.md — CPIO reading is routed through libarchive, but there is no dedicated CPIO fixture. Creation/mutation and format-specific compatibility are not established. |
+| mucommander-format-gzip | partial | src/archive.rs, tests/desktop_tools.rs::stream_compression_round_trips, docs/FILE_OPERATIONS.md — Compressed single-file streams support creation, browsing and extraction; creation accepts one regular file. Corresponding compressed TAR containers are also supported. Broad variant, corruption and metadata compatibility remains open. |
+| mucommander-format-iso | partial | src/archive.rs, tests/extended_archives.rs::rar_and_iso_can_be_browsed_and_extracted, docs/FILE_OPERATIONS.md — ISO/NRG reading uses libarchive. ISO browsing/extraction has a dedicated fixture; NRG still needs one. Creation/mutation and broad image/metadata compatibility are not established. |
+| mucommander-format-libguestfs | missing | — — The upstream libguestfs disk/guest-filesystem integration has no Rust implementation. |
+| mucommander-format-lst | missing | — — The upstream LST virtual archive/list format has no Rust implementation. |
+| mucommander-format-rar | partial | src/archive.rs, tests/extended_archives.rs::rar_and_iso_can_be_browsed_and_extracted, docs/FILE_OPERATIONS.md — RAR browsing/extraction use libarchive with a dedicated fixture; creation/mutation is unavailable. Broader variants, encryption and metadata compatibility have not been established. |
+| mucommander-format-sevenzip | partial | src/archive.rs, src/archive_tools.rs, tests/desktop_tools.rs, tests/features.rs, tests/features_05.rs, docs/FILE_OPERATIONS.md — 7z creation/extraction/browsing, AES encryption/unlock and guarded local repacking edits exist. Nested/remote containers are read-only; link/special-file extraction is rejected. Broader variants/metadata and desktop acceptance remain open. |
+| mucommander-format-tar | partial | src/archive.rs, src/archive_tools.rs, tests/file_manager.rs, tests/features_05.rs, docs/FILE_OPERATIONS.md — TAR and compressed TAR variants can be created, browsed, extracted and edited locally through guarded extraction/repacking. Nested/remote containers remain read-only. Links/special files are rejected; broader metadata/variant fixtures remain open. |
+| mucommander-format-xz | partial | src/archive.rs, tests/desktop_tools.rs::stream_compression_round_trips, docs/FILE_OPERATIONS.md — Compressed single-file streams support creation, browsing and extraction; creation accepts one regular file. Corresponding compressed TAR containers are also supported. Broad variant, corruption and metadata compatibility remains open. |
+| mucommander-format-zip | partial | src/archive.rs, src/archive_tools.rs, tests/features.rs, tests/features_05.rs, tests/archive_paths.rs, docs/FILE_OPERATIONS.md — ZIP creation, extraction, browsing, AES encryption/unlock and local mutation exist; encrypted edits retain encryption. Nested/remote ZIPs are read-only. Link/special-file extraction is rejected; broad metadata, format-variant and desktop acceptance remain open. |
+| mucommander-format-rpm | partial | src/archive.rs, docs/FILE_OPERATIONS.md — RPM reading is routed through libarchive, but there is no dedicated RPM fixture. Creation/mutation and format-specific compatibility are not established. |
+| mucommander-protocol-adb | missing | — |
+| mucommander-protocol-ftp | partial | src/uri_backend/ftp.rs, src/remote.rs, src/uri.rs, tests/remote_services.rs, scripts/test-uri-transports.py, docs/REMOTE_CONNECTIONS.md, parity/VALIDATION.md — Plain and anonymous FTP plus explicit AUTH TLS and implicit FTPS are implemented with selectable ports, certificate/hostname verification and no directory creation on connect. Legacy FTPS profiles retain explicit TLS. Six portable URI workflows include FTP/FTPS/security and writable transfer/recovery cases; Mac results are recorded and native-runner CI is configured. Broader servers and native desktop acceptance remain open. |
 | mucommander-protocol-dropbox | partial | src/oauth.rs, src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/features.rs — Browser OAuth with PKCE, refresh/reconnect and remote file workflows implemented. Protocol tests use loopback fixtures; live provider registration/account validation pending. |
-| mucommander-protocol-gcs | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
+| mucommander-protocol-gcs | partial | src/remote.rs, src/uri.rs, docs/REMOTE_CONNECTIONS.md — Google Cloud Storage bucket/prefix navigation and transfers use the existing service-account configuration; direct gs URIs reuse compatible profiles. No live GCS account has been validated; credential and provider-specific behavior remain open. |
 | mucommander-protocol-gdrive | partial | src/oauth.rs, src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/features.rs — Browser OAuth with PKCE, refresh/reconnect and remote file workflows implemented. Protocol tests use loopback fixtures; live provider registration/account validation pending. |
 | mucommander-protocol-onedrive | partial | src/oauth.rs, src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/features.rs — Browser OAuth with PKCE, refresh/reconnect and remote file workflows implemented. Protocol tests use loopback fixtures; live provider registration/account validation pending. |
-| mucommander-protocol-hadoop | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
-| mucommander-protocol-nfs | missing |  |
-| mucommander-protocol-http | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
-| mucommander-protocol-ovirt | missing |  |
-| mucommander-protocol-registry | missing |  |
-| mucommander-protocol-s3 | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts — Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication. |
-| mucommander-protocol-sftp | partial | src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/desktop_tools.rs::remote_service_choices_match_platform_support, tests/remote_services.rs::sftp_protocol_workflows, scripts/test-remote.py — OpenSSH key/agent transport remains Unix-only. Strict host-key checking and transfer/merge/range/checkpoint/sync/delete workflows pass against disposable OpenSSH from macOS. Windows support, other servers and native Linux client execution remain open. |
+| mucommander-protocol-hadoop | partial | src/remote.rs, src/uri.rs, docs/REMOTE_CONNECTIONS.md — The adapter uses WebHDFS rather than the complete upstream Hadoop filesystem implementation. No live Hadoop cluster has been validated; authentication and full upstream/provider compatibility remain open. |
+| mucommander-protocol-nfs | missing | — |
+| mucommander-protocol-http | partial | src/uri_backend/http.rs, src/uri_backend/http/index.rs, src/remote.rs, tests/uri_navigation.rs::http_index_download_direct_file_range_and_errors, tests/uri_navigation.rs::kew_https_directory_smoke, docs/REMOTE_CONNECTIONS.md, parity/VALIDATION.md — Read-only HTTP/HTTPS directory-index browsing recognizes Apache, nginx and Caddy listings, including available size/date metadata. Direct files, redirects, range fallback and unknown-length streaming are implemented; signed queries remain session-only. Fixture tests and the live Kew listing pass on Mac. Arbitrary websites are rejected, not rendered; same-origin child links, 8 MiB index/20,000-link bounds and missing server metadata remain documented limits. Broader index/server compatibility remains open. |
+| mucommander-protocol-ovirt | missing | — |
+| mucommander-protocol-registry | missing | — |
+| mucommander-protocol-s3 | partial | src/remote.rs, src/uri.rs, docs/REMOTE_CONNECTIONS.md — S3/S3-compatible bucket/prefix navigation and transfers use configured endpoint, region and credentials. Direct s3 URIs reuse compatible profiles. No live S3 account/service has been validated; provider-specific conditional writes, metadata and recovery remain open. |
+| mucommander-protocol-sftp | partial | src/remote.rs, src/uri_backend.rs, src/uri_backend/sftp.rs, tests/desktop_tools.rs::remote_service_choices_include_cross_platform_sftp, tests/remote_services.rs::uri_native_sftp_password_workflows, tests/remote_services.rs::uri_native_sftp_key_workflows, scripts/test-uri-transports.py, docs/REMOTE_CONNECTIONS.md, parity/VALIDATION.md — SFTP is available on Windows, macOS and Linux. Unix key/agent profiles retain OpenSSH; Windows/password profiles use the Rust transport with password/private-key/OpenSSH-agent support and strict known-host verification. Disposable password/key and transfer/recovery workflows pass on Mac; portable fixtures are configured in CI. Windows agent/native desktop acceptance and other server implementations remain open; Rust transport aliases/host certificates are unsupported. |
 | mucommander-protocol-smb | partial | src/smb.rs, tests/features_05.rs::smb_live_list_stream_upload_download_rename_edit_search_delete, tests/remote_services.rs::smb_protocol_workflows — Direct Rust SMB2/3 workflows have disposable Samba coverage, including range reads, recursive merges, cancellation/retry, checkpoint publish and sync from macOS. Broader server/platform interoperability remains open. |
-| mucommander-protocol-vsphere | missing |  |
+| mucommander-protocol-vsphere | missing | — |
 | mucommander-viewer-text | partial | src/text_document.rs, src/viewer_search.rs, src/app/slint_ui/viewer_tools.rs, tests/features_08.rs — Encoded text editing/paging and bounded streaming text/hex search with local byte navigation are implemented. Broader encodings, large remote/archive inputs and upstream interaction parity remain open. |
 | mucommander-viewer-image | partial | src/viewer.rs, tests/desktop_tools.rs — Bounded renderer/viewer implemented; complete format and interaction compatibility remains unverified. |
 | mucommander-viewer-pdf | partial | src/viewer.rs, src/app/slint_ui/viewer_tools.rs, tests/features_08.rs — Hayro renders encrypted PDFs after password entry, supports page jumps/rotation/fit-width and a bounded image cache. Software/GPU snapshots and callback tests cover the controls; PDF text selection/search, forms and full document compatibility remain open. |

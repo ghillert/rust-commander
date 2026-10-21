@@ -428,11 +428,17 @@ Outstanding work includes:
 - Additional languages, remaining detailed diagnostics, broader upstream XML
   compatibility, additional text encodings, and viewer/terminal compatibility.
 
-To refresh the upstream inventory while preserving recorded statuses:
+The tracker separates implementation gaps from validation work and includes a
+[drag-and-drop workflow review](parity/PARITY.md#drag-and-drop-parity-partial).
+Update `parity/status.json` and `parity/OVERVIEW.md`, then regenerate the page
+without changing its pinned upstream baseline:
 
 ```sh
-python3 scripts/audit-upstream.py /path/to/upstream
+python3 scripts/audit-upstream.py --render-only
 ```
+
+To refresh the upstream inventory from another checkout while preserving recorded
+statuses, run `python3 scripts/audit-upstream.py /path/to/upstream`.
 
 Check the completion gate with `python3 scripts/check-parity.py`. It currently
 returns a nonzero exit status because full parity has not been achieved.

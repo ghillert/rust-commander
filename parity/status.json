@@ -38,10 +38,16 @@
   },
   "ChangeLocation": {
     "evidence": [
-      "src/app.rs",
+      "src/uri.rs",
+      "src/app/uri_navigation.rs",
+      "src/app/slint_ui.rs",
+      "tests/uri_navigation.rs",
+      "src/app/slint_ui/tests.rs::location_bar_toggle_apply_cancel_and_escape_preserve_the_address",
+      "src/app/slint_ui/tests.rs::unnamed_uri_profiles_restore_tabs_and_save_explicitly",
+      "docs/REMOTE_CONNECTIONS.md",
       "parity/VALIDATION.md"
     ],
-    "note": "Core local navigation/open workflow exists; full upstream action semantics and cross-platform behavior remain incomplete.",
+    "note": "Editable addresses are the default, with a persisted breadcrumb toggle. Direct HTTP/HTTPS, SFTP, FTP/FTPS/FTPES, file, SMB, S3 and GS URIs, legacy remote locations, credential/profile selection, explicit connection saving and scoped asynchronous navigation are implemented. URI/controller tests and the live Kew listing pass on Mac; Windows UNC/agent behavior and broader native desktop/provider acceptance remain open.",
     "status": "partial"
   },
   "ChangePermissions": {
@@ -107,20 +113,27 @@
   },
   "CompareFolders": {
     "evidence": [
-      "src/desktop.rs",
-      "tests/desktop_tools.rs"
+      "src/desktop.rs::pub fn compare",
+      "tests/desktop_tools.rs::folder_comparison_uses_file_contents",
+      "docs/FEATURES_NEXT.md"
     ],
-    "note": "Local-only; search content has a size limit and comparison skips symlinks.",
+    "note": "Recursive content-based comparison is implemented for local folders and skips symlinks. Remote synchronization has a separate implementation; this comparison command remains local-only. Broader upstream comparison options and native desktop acceptance remain open.",
     "status": "partial"
   },
   "ConnectToServer": {
     "evidence": [
       "src/remote.rs",
-      "tests/webdav_backend.rs",
+      "src/app/uri_navigation.rs",
+      "src/uri_backend.rs",
+      "src/uri_backend/ftp.rs",
+      "src/uri_backend/sftp.rs",
+      "tests/uri_navigation.rs",
       "tests/remote_services.rs",
-      "docs/STABILIZATION.md"
+      "scripts/test-uri-transports.py",
+      "docs/REMOTE_CONNECTIONS.md",
+      "parity/VALIDATION.md"
     ],
-    "note": "Saved profiles and keychain integration exist. Real disposable SFTP/FTP/WebDAV/SMB workflows pass from macOS; cloud OAuth, broader servers and native keychain/platform validation remain open.",
+    "note": "Saved and unnamed URI profiles, explicit saving, credential-store opt-in, both FTPS modes and strict TLS/SSH trust checks exist. HTTP query credentials remain session-only. Disposable SFTP/password/key, FTP/anonymous/FTPS, WebDAV and SMB workflows have Mac evidence. Live cloud accounts, Windows OpenSSH agent and native credential-store prompts remain unvalidated; the Rust SSH transport does not interpret OpenSSH aliases or host certificates.",
     "status": "partial"
   },
   "Copy": {
@@ -129,12 +142,17 @@
       "src/file_metadata.rs",
       "src/resumable.rs",
       "src/remote.rs",
-      "tests/features_08.rs",
       "src/remote_upload.rs",
+      "src/operations/totals.rs",
+      "src/operations/rate.rs",
+      "tests/progress.rs",
       "tests/stabilization.rs",
-      "tests/remote_services.rs"
+      "tests/remote_services.rs",
+      "tests/uri_navigation.rs",
+      "docs/FEATURES_NEXT.md",
+      "parity/VALIDATION.md"
     ],
-    "note": "Local conflict/recovery/native move and metadata workflows exist. Real SFTP/FTP/WebDAV/SMB tests cover recursive merges, range/checkpoint copies and sync; subprocess termination recovery passes. Single-request uploads use private file-backed buffers. Native Windows/Linux and cloud-provider behavior remain open.",
+    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed remote copies require new targets without merges; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review.",
     "status": "partial"
   },
   "CopyFileBaseNames": {
@@ -215,11 +233,17 @@
   "EditCredentials": {
     "evidence": [
       "src/remote.rs",
-      "tests/webdav_backend.rs",
+      "src/app/uri_navigation.rs",
+      "src/uri_backend.rs",
+      "src/uri_backend/ftp.rs",
+      "src/uri_backend/sftp.rs",
+      "tests/uri_navigation.rs",
       "tests/remote_services.rs",
-      "docs/STABILIZATION.md"
+      "scripts/test-uri-transports.py",
+      "docs/REMOTE_CONNECTIONS.md",
+      "parity/VALIDATION.md"
     ],
-    "note": "Saved profiles and keychain integration exist. Real disposable SFTP/FTP/WebDAV/SMB workflows pass from macOS; cloud OAuth, broader servers and native keychain/platform validation remain open.",
+    "note": "Saved and unnamed URI profiles, explicit saving, credential-store opt-in, both FTPS modes and strict TLS/SSH trust checks exist. HTTP query credentials remain session-only. Disposable SFTP/password/key, FTP/anonymous/FTPS, WebDAV and SMB workflows have Mac evidence. Live cloud accounts, Windows OpenSSH agent and native credential-store prompts remain unvalidated; the Rust SSH transport does not interpret OpenSSH aliases or host certificates.",
     "status": "partial"
   },
   "Email": {
@@ -242,12 +266,12 @@
   },
   "Find": {
     "evidence": [
-      "src/desktop.rs",
+      "src/desktop.rs::pub fn search",
       "src/remote.rs",
       "tests/features_05.rs::remote_search_and_guarded_save_use_actual_storage_operations",
       "tests/features_05.rs::smb_live_list_stream_upload_download_rename_edit_search_delete"
     ],
-    "note": "Local and cancellable remote filename/content search; filesystem and live disposable Samba coverage. Full upstream search options remain open.",
+    "note": "Local and cancellable remote filename/content search exist, with filesystem and disposable Samba coverage. Local filename patterns are case-insensitive globs; content matching is literal and skips files over 16 MiB. Full upstream search filters, larger-file content search and broad provider/desktop acceptance remain open.",
     "status": "partial"
   },
   "FocusNext": {
@@ -349,10 +373,14 @@
   },
   "InternalEdit": {
     "evidence": [
-      "src/app.rs",
-      "tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content"
+      "src/text_document.rs",
+      "src/app/slint_ui/viewer_tools.rs",
+      "src/remote.rs",
+      "tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content",
+      "src/app/slint_ui/parity_tests.rs::legacy_text_can_be_decoded_edited_and_converted_without_losing_original_bytes",
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Local UTF-8 text editing only.",
+    "note": "Built-in editing supports UTF-8, UTF-16 LE/BE, Windows-1252 and ISO-8859-1 through 2 MiB, preserving BOM/line endings and refusing changed originals. Local saves are journaled; guarded remote saves retain recovery copies. Larger local text is paged read-only, and built-in archive/symlink editing remains unsupported. Additional encodings, large-file editing and native/provider acceptance remain open.",
     "status": "partial"
   },
   "InternalView": {
@@ -379,12 +407,17 @@
       "src/file_metadata.rs",
       "src/resumable.rs",
       "src/remote.rs",
-      "tests/features_08.rs",
       "src/remote_upload.rs",
+      "src/operations/totals.rs",
+      "src/operations/rate.rs",
+      "tests/progress.rs",
       "tests/stabilization.rs",
-      "tests/remote_services.rs"
+      "tests/remote_services.rs",
+      "tests/uri_navigation.rs",
+      "docs/FEATURES_NEXT.md",
+      "parity/VALIDATION.md"
     ],
-    "note": "Local conflict/recovery/native move and metadata workflows exist. Real SFTP/FTP/WebDAV/SMB tests cover recursive merges, range/checkpoint copies and sync; subprocess termination recovery passes. Single-request uploads use private file-backed buffers. Native Windows/Linux and cloud-provider behavior remain open.",
+    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed remote copies require new targets without merges; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review.",
     "status": "partial"
   },
   "MarkAll": {
@@ -508,12 +541,24 @@
     "status": "partial"
   },
   "MaximizeWindow": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/native_menu.rs",
+      "ui/commander.slint",
+      "src/app.rs",
+      "docs/SLINT_UI.md"
+    ],
+    "note": "macOS provides native AppKit Window-menu commands and window controls; Windows/Linux retain their platform decorations. These are existing capabilities, but dedicated shared shortcut actions and complete native cross-platform validation are absent.",
+    "status": "partial"
   },
   "MinimizeWindow": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/native_menu.rs",
+      "ui/commander.slint",
+      "src/app.rs",
+      "docs/SLINT_UI.md"
+    ],
+    "note": "macOS provides native AppKit Window-menu commands and window controls; Windows/Linux retain their platform decorations. These are existing capabilities, but dedicated shared shortcut actions and complete native cross-platform validation are absent.",
+    "status": "partial"
   },
   "Mkdir": {
     "evidence": [
@@ -537,12 +582,17 @@
       "src/file_metadata.rs",
       "src/resumable.rs",
       "src/remote.rs",
-      "tests/features_08.rs",
       "src/remote_upload.rs",
+      "src/operations/totals.rs",
+      "src/operations/rate.rs",
+      "tests/progress.rs",
       "tests/stabilization.rs",
-      "tests/remote_services.rs"
+      "tests/remote_services.rs",
+      "tests/uri_navigation.rs",
+      "docs/FEATURES_NEXT.md",
+      "parity/VALIDATION.md"
     ],
-    "note": "Local conflict/recovery/native move and metadata workflows exist. Real SFTP/FTP/WebDAV/SMB tests cover recursive merges, range/checkpoint copies and sync; subprocess termination recovery passes. Single-request uploads use private file-backed buffers. Native Windows/Linux and cloud-provider behavior remain open.",
+    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed remote copies require new targets without merges; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review.",
     "status": "partial"
   },
   "MoveTabToOtherPanel": {
@@ -590,7 +640,12 @@
     "status": "partial"
   },
   "OpenAs": {
-    "evidence": [],
+    "evidence": [
+      "src/app.rs",
+      "src/associations.rs",
+      "docs/FEATURES_NEXT.md"
+    ],
+    "note": "No forced-extension/type action is implemented. Upstream opens a file as a specified format (including archive wrapping) without renaming it. The existing Open With application chooser and filename associations are a different feature.",
     "status": "missing"
   },
   "OpenCommandPrompt": {
@@ -644,8 +699,13 @@
     "status": "partial"
   },
   "OpenURLInBrowser": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app/slint_ui/dialogs.rs",
+      "src/app/slint_ui/dialogs/commands.rs",
+      "docs/REMOTE_CONNECTIONS.md"
+    ],
+    "note": "The URI connection/error dialog has Open in browser for the current address. A general selected-URL command equivalent to upstream is not present; native browser handoff and full action semantics remain unvalidated.",
+    "status": "partial"
   },
   "Pack": {
     "evidence": [
@@ -653,10 +713,12 @@
       "src/archive_tools.rs",
       "src/app.rs",
       "tests/features.rs",
-      "tests/file_manager.rs",
-      "tests/extended_archives.rs"
+      "tests/features_05.rs",
+      "tests/extended_archives.rs",
+      "tests/features_08.rs::external_editor_refuses_changed_original_and_can_update_archive_member",
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "ZIP and 7z AES encryption, local ZIP editing and nested/remote archive browsing. Extract to new folders; archive links, non-ZIP mutation and broad format fixtures remain open.",
+    "note": "Creates ZIP, TAR variants, 7z and single-file compressed streams; ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers exist. Encrypted ZIP edits retain encryption. Nested/remote archives are read-only; archive links/special files are rejected and broader format/metadata fixtures remain incomplete.",
     "status": "partial"
   },
   "PasteClipboardFiles": {
@@ -808,8 +870,12 @@
     "status": "missing"
   },
   "RevealInDesktop": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app.rs",
+      "src/native_actions.rs::pub fn reveal"
+    ],
+    "note": "File > Reveal in file manager exists for local selections. macOS asks Finder to reveal the item and Windows uses Explorer selection; Linux opens the enclosing folder. Remote/archive reveal, Linux item selection and complete native acceptance remain open.",
+    "status": "partial"
   },
   "ReverseSortOrder": {
     "evidence": [
@@ -821,10 +887,14 @@
   },
   "Save": {
     "evidence": [
-      "src/app.rs",
-      "tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content"
+      "src/text_document.rs",
+      "src/app/slint_ui/viewer_tools.rs",
+      "src/remote.rs",
+      "tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content",
+      "src/app/slint_ui/parity_tests.rs::legacy_text_can_be_decoded_edited_and_converted_without_losing_original_bytes",
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Local UTF-8 text editing only.",
+    "note": "Built-in editing supports UTF-8, UTF-16 LE/BE, Windows-1252 and ISO-8859-1 through 2 MiB, preserving BOM/line endings and refusing changed originals. Local saves are journaled; guarded remote saves retain recovery copies. Larger local text is paged read-only, and built-in archive/symlink editing remains unsupported. Additional encodings, large-file editing and native/provider acceptance remain open.",
     "status": "partial"
   },
   "SelectFirstRow": {
@@ -985,11 +1055,14 @@
   "ShowPreferences": {
     "evidence": [
       "src/preferences.rs",
-      "src/feature_ui.rs",
-      "src/app.rs",
-      "tests/features.rs"
+      "src/app/slint_ui/dialogs.rs",
+      "src/app/slint_ui/tests.rs",
+      "tests/appearance.rs",
+      "src/app/slint_ui/icons.rs",
+      "docs/ICONS.md",
+      "docs/SLINT_UI.md"
     ],
-    "note": "Desktop preferences now include language, persistent column customization and toolbar action order. Full upstream preferences and cross-platform behavior remain incomplete.",
+    "note": "Settings include persistent language, desktop style/light-dark appearance, file-icon source, address/breadcrumb mode, columns, toolbar/command bar, shortcuts, recovery and layout choices. File icons support system icons with specific built-in fallback or built-in-only mode. Apply/Cancel and shared-window/workspace behavior have tests; full upstream settings/theme coverage, additional languages and native acceptance remain open.",
     "status": "partial"
   },
   "ShowRecentExecutedFilesQL": {
@@ -1379,86 +1452,72 @@
   "mucommander-format-ar": {
     "evidence": [
       "src/archive.rs",
-      "src/archive_tools.rs",
-      "tests/desktop_tools.rs",
-      "tests/extended_archives.rs",
-      "tests/features.rs"
+      "tests/extended_archives.rs::ar_and_deb_members_are_streamed",
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
+    "note": "AR/DEB reading and streaming extraction use libarchive and have dedicated fixtures. Creation/mutation is unavailable; broader format/metadata fixtures remain open.",
     "status": "partial"
   },
   "mucommander-format-bzip2": {
     "evidence": [
       "src/archive.rs",
-      "src/archive_tools.rs",
-      "tests/desktop_tools.rs",
-      "tests/extended_archives.rs",
-      "tests/features.rs"
+      "tests/desktop_tools.rs::stream_compression_round_trips",
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
+    "note": "Compressed single-file streams support creation, browsing and extraction; creation accepts one regular file. Corresponding compressed TAR containers are also supported. Broad variant, corruption and metadata compatibility remains open.",
     "status": "partial"
   },
   "mucommander-format-cpio": {
     "evidence": [
       "src/archive.rs",
-      "src/archive_tools.rs",
-      "tests/desktop_tools.rs",
-      "tests/extended_archives.rs",
-      "tests/features.rs"
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
+    "note": "CPIO reading is routed through libarchive, but there is no dedicated CPIO fixture. Creation/mutation and format-specific compatibility are not established.",
     "status": "partial"
   },
   "mucommander-format-gzip": {
     "evidence": [
       "src/archive.rs",
-      "src/archive_tools.rs",
-      "tests/desktop_tools.rs",
-      "tests/extended_archives.rs",
-      "tests/features.rs"
+      "tests/desktop_tools.rs::stream_compression_round_trips",
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
+    "note": "Compressed single-file streams support creation, browsing and extraction; creation accepts one regular file. Corresponding compressed TAR containers are also supported. Broad variant, corruption and metadata compatibility remains open.",
     "status": "partial"
   },
   "mucommander-format-iso": {
     "evidence": [
       "src/archive.rs",
-      "src/archive_tools.rs",
-      "tests/desktop_tools.rs",
-      "tests/extended_archives.rs",
-      "tests/features.rs"
+      "tests/extended_archives.rs::rar_and_iso_can_be_browsed_and_extracted",
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
+    "note": "ISO/NRG reading uses libarchive. ISO browsing/extraction has a dedicated fixture; NRG still needs one. Creation/mutation and broad image/metadata compatibility are not established.",
     "status": "partial"
   },
   "mucommander-format-libguestfs": {
     "evidence": [],
+    "note": "The upstream libguestfs disk/guest-filesystem integration has no Rust implementation.",
     "status": "missing"
   },
   "mucommander-format-lst": {
     "evidence": [],
+    "note": "The upstream LST virtual archive/list format has no Rust implementation.",
     "status": "missing"
   },
   "mucommander-format-rar": {
     "evidence": [
       "src/archive.rs",
-      "src/archive_tools.rs",
-      "tests/desktop_tools.rs",
-      "tests/extended_archives.rs",
-      "tests/features.rs"
+      "tests/extended_archives.rs::rar_and_iso_can_be_browsed_and_extracted",
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
+    "note": "RAR browsing/extraction use libarchive with a dedicated fixture; creation/mutation is unavailable. Broader variants, encryption and metadata compatibility have not been established.",
     "status": "partial"
   },
   "mucommander-format-rpm": {
     "evidence": [
       "src/archive.rs",
-      "src/archive_tools.rs",
-      "tests/desktop_tools.rs",
-      "tests/extended_archives.rs",
-      "tests/features.rs"
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
+    "note": "RPM reading is routed through libarchive, but there is no dedicated RPM fixture. Creation/mutation and format-specific compatibility are not established.",
     "status": "partial"
   },
   "mucommander-format-sevenzip": {
@@ -1466,43 +1525,43 @@
       "src/archive.rs",
       "src/archive_tools.rs",
       "tests/desktop_tools.rs",
-      "tests/extended_archives.rs",
-      "tests/features.rs"
+      "tests/features.rs",
+      "tests/features_05.rs",
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
+    "note": "7z creation/extraction/browsing, AES encryption/unlock and guarded local repacking edits exist. Nested/remote containers are read-only; link/special-file extraction is rejected. Broader variants/metadata and desktop acceptance remain open.",
     "status": "partial"
   },
   "mucommander-format-tar": {
     "evidence": [
       "src/archive.rs",
       "src/archive_tools.rs",
-      "tests/desktop_tools.rs",
-      "tests/extended_archives.rs",
-      "tests/features.rs"
+      "tests/file_manager.rs",
+      "tests/features_05.rs",
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
+    "note": "TAR and compressed TAR variants can be created, browsed, extracted and edited locally through guarded extraction/repacking. Nested/remote containers remain read-only. Links/special files are rejected; broader metadata/variant fixtures remain open.",
     "status": "partial"
   },
   "mucommander-format-xz": {
     "evidence": [
       "src/archive.rs",
-      "src/archive_tools.rs",
-      "tests/desktop_tools.rs",
-      "tests/extended_archives.rs",
-      "tests/features.rs"
+      "tests/desktop_tools.rs::stream_compression_round_trips",
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
+    "note": "Compressed single-file streams support creation, browsing and extraction; creation accepts one regular file. Corresponding compressed TAR containers are also supported. Broad variant, corruption and metadata compatibility remains open.",
     "status": "partial"
   },
   "mucommander-format-zip": {
     "evidence": [
       "src/archive.rs",
       "src/archive_tools.rs",
-      "tests/desktop_tools.rs",
-      "tests/extended_archives.rs",
-      "tests/features.rs"
+      "tests/features.rs",
+      "tests/features_05.rs",
+      "tests/archive_paths.rs",
+      "docs/FILE_OPERATIONS.md"
     ],
-    "note": "Format-dependent read/write support; encrypted ZIP/7z, nested browsing and local ZIP mutation implemented. NRG/CPIO/RPM and additional format edge cases still need fixtures.",
+    "note": "ZIP creation, extraction, browsing, AES encryption/unlock and local mutation exist; encrypted edits retain encryption. Nested/remote ZIPs are read-only. Link/special-file extraction is rejected; broad metadata, format-variant and desktop acceptance remain open.",
     "status": "partial"
   },
   "mucommander-protocol-adb": {
@@ -1510,8 +1569,14 @@
     "status": "missing"
   },
   "mucommander-protocol-api": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/filesystem.rs",
+      "src/remote.rs",
+      "src/uri_backend.rs",
+      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+    ],
+    "note": "Shared Location/Entry abstractions, transfer routing and OpenDAL-compatible transport interfaces exist in Rust. Their complete behavioral contract has not been compared with the upstream internal protocol API. This entry is an architecture audit, not another missing network service or a promise of a Java-compatible plugin API.",
+    "status": "partial"
   },
   "mucommander-protocol-dropbox": {
     "evidence": [
@@ -1525,21 +1590,24 @@
   },
   "mucommander-protocol-ftp": {
     "evidence": [
+      "src/uri_backend/ftp.rs",
       "src/remote.rs",
-      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts",
-      "tests/remote_services.rs::ftp_protocol_workflows",
-      "scripts/test-remote.py",
-      "docs/STABILIZATION.md"
+      "src/uri.rs",
+      "tests/remote_services.rs",
+      "scripts/test-uri-transports.py",
+      "docs/REMOTE_CONNECTIONS.md",
+      "parity/VALIDATION.md"
     ],
-    "note": "FTP listing, Unicode transfers, ranged reads, merge, cancelled download/retry, checkpoint uploads, sync and child-first verified deletion pass against disposable pyftpdlib from macOS. Other servers, TLS and native Windows/Linux client runs remain open.",
+    "note": "Plain and anonymous FTP plus explicit AUTH TLS and implicit FTPS are implemented with selectable ports, certificate/hostname verification and no directory creation on connect. Legacy FTPS profiles retain explicit TLS. Six portable URI workflows include FTP/FTPS/security and writable transfer/recovery cases; Mac results are recorded and native-runner CI is configured. Broader servers and native desktop acceptance remain open.",
     "status": "partial"
   },
   "mucommander-protocol-gcs": {
     "evidence": [
       "src/remote.rs",
-      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+      "src/uri.rs",
+      "docs/REMOTE_CONNECTIONS.md"
     ],
-    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "note": "Google Cloud Storage bucket/prefix navigation and transfers use the existing service-account configuration; direct gs URIs reuse compatible profiles. No live GCS account has been validated; credential and provider-specific behavior remain open.",
     "status": "partial"
   },
   "mucommander-protocol-gdrive": {
@@ -1555,17 +1623,23 @@
   "mucommander-protocol-hadoop": {
     "evidence": [
       "src/remote.rs",
-      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+      "src/uri.rs",
+      "docs/REMOTE_CONNECTIONS.md"
     ],
-    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "note": "The adapter uses WebHDFS rather than the complete upstream Hadoop filesystem implementation. No live Hadoop cluster has been validated; authentication and full upstream/provider compatibility remain open.",
     "status": "partial"
   },
   "mucommander-protocol-http": {
     "evidence": [
+      "src/uri_backend/http.rs",
+      "src/uri_backend/http/index.rs",
       "src/remote.rs",
-      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+      "tests/uri_navigation.rs::http_index_download_direct_file_range_and_errors",
+      "tests/uri_navigation.rs::kew_https_directory_smoke",
+      "docs/REMOTE_CONNECTIONS.md",
+      "parity/VALIDATION.md"
     ],
-    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "note": "Read-only HTTP/HTTPS directory-index browsing recognizes Apache, nginx and Caddy listings, including available size/date metadata. Direct files, redirects, range fallback and unknown-length streaming are implemented; signed queries remain session-only. Fixture tests and the live Kew listing pass on Mac. Arbitrary websites are rejected, not rendered; same-origin child links, 8 MiB index/20,000-link bounds and missing server metadata remain documented limits. Broader index/server compatibility remains open.",
     "status": "partial"
   },
   "mucommander-protocol-nfs": {
@@ -1593,20 +1667,25 @@
   "mucommander-protocol-s3": {
     "evidence": [
       "src/remote.rs",
-      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts"
+      "src/uri.rs",
+      "docs/REMOTE_CONNECTIONS.md"
     ],
-    "note": "Adapter implemented; not validated against a live instance of this service. HDFS uses WebHDFS; SFTP uses key/agent authentication.",
+    "note": "S3/S3-compatible bucket/prefix navigation and transfers use configured endpoint, region and credentials. Direct s3 URIs reuse compatible profiles. No live S3 account/service has been validated; provider-specific conditional writes, metadata and recovery remain open.",
     "status": "partial"
   },
   "mucommander-protocol-sftp": {
     "evidence": [
       "src/remote.rs",
-      "tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts",
-      "tests/desktop_tools.rs::remote_service_choices_match_platform_support",
-      "tests/remote_services.rs::sftp_protocol_workflows",
-      "scripts/test-remote.py"
+      "src/uri_backend.rs",
+      "src/uri_backend/sftp.rs",
+      "tests/desktop_tools.rs::remote_service_choices_include_cross_platform_sftp",
+      "tests/remote_services.rs::uri_native_sftp_password_workflows",
+      "tests/remote_services.rs::uri_native_sftp_key_workflows",
+      "scripts/test-uri-transports.py",
+      "docs/REMOTE_CONNECTIONS.md",
+      "parity/VALIDATION.md"
     ],
-    "note": "OpenSSH key/agent transport remains Unix-only. Strict host-key checking and transfer/merge/range/checkpoint/sync/delete workflows pass against disposable OpenSSH from macOS. Windows support, other servers and native Linux client execution remain open.",
+    "note": "SFTP is available on Windows, macOS and Linux. Unix key/agent profiles retain OpenSSH; Windows/password profiles use the Rust transport with password/private-key/OpenSSH-agent support and strict known-host verification. Disposable password/key and transfer/recovery workflows pass on Mac; portable fixtures are configured in CI. Windows agent/native desktop acceptance and other server implementations remain open; Rust transport aliases/host certificates are unsupported.",
     "status": "partial"
   },
   "mucommander-protocol-smb": {
@@ -1623,8 +1702,13 @@
     "status": "missing"
   },
   "mucommander-viewer-api": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/viewer.rs",
+      "src/app/slint_ui/viewer_tools.rs",
+      "src/app/slint_ui.rs"
+    ],
+    "note": "Shared Rust viewer content types, loading and Slint presentation exist. Complete behavior/lifecycle parity with the upstream internal viewer API has not been established; no Java-compatible extension API is claimed.",
+    "status": "partial"
   },
   "mucommander-viewer-binary": {
     "evidence": [
