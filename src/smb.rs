@@ -96,6 +96,7 @@ impl Share {
                         name: e.name,
                         is_dir: e.is_directory,
                         is_symlink: false,
+                        size_known: true,
                         size: e.size,
                         modified: e.modified.to_system_time(),
                     })
@@ -120,6 +121,7 @@ impl Share {
                     .into_owned(),
                 is_dir: info.is_directory,
                 is_symlink: false,
+                size_known: true,
                 size: info.size,
                 modified: info.modified.to_system_time(),
             }))

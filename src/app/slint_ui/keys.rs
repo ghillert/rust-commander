@@ -76,6 +76,9 @@ impl Adapter {
     ) -> bool {
         // Slint maps macOS Command to `control` and physical Control to `meta`.
         let text = event.text.as_str();
+        if !self.blocked() && key_is(text, slint::platform::Key::Escape) {
+            self.app.cancel_uri_navigation(self.app.active);
+        }
         if self.parity_list_key(&event) {
             return true;
         }

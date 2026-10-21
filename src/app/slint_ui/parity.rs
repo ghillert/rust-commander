@@ -502,7 +502,7 @@ impl Adapter {
                                 .map(String::as_str)
                                 .unwrap_or(""),
                         ),
-                        !self.blocked(),
+                        !self.blocked() && self.action_available(id),
                     )
                 })
             })

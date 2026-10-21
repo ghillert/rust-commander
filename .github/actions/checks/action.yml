@@ -25,6 +25,12 @@ runs:
       shell: bash
       run: python3 scripts/test-remote.py
 
+    - name: Test native URI transports (FTP, both FTPS modes, Rust SFTP)
+      shell: bash
+      run: |
+        python -m pip install --disable-pip-version-check -r scripts/uri-fixtures/requirements.txt
+        python scripts/test-uri-transports.py
+
     - name: Test native Linux clipboard and drag source
       if: runner.os == 'Linux'
       shell: bash
@@ -45,6 +51,7 @@ runs:
         cargo build --locked --features screenshot
         xvfb-run -a dbus-run-session -- python3 scripts/desktop-smoke.py
         xvfb-run -a dbus-run-session -- python3 scripts/icon-smoke.py --quick
+        xvfb-run -a dbus-run-session -- python3 scripts/uri-smoke.py
 
     - name: Test optimized transfer recovery
       shell: bash
@@ -57,9 +64,12 @@ runs:
         name: stabilization-reports-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ github.run_attempt }}
         path: |
           target/remote-service-logs/*.log
+          target/uri-transport-logs/*.log
           target/desktop-smoke/*.png
           target/desktop-smoke/*.log
           target/icon-smoke/*.png
           target/icon-smoke/*.log
+          target/uri-smoke/*.png
+          target/uri-smoke/*.log
         if-no-files-found: ignore
         retention-days: 7

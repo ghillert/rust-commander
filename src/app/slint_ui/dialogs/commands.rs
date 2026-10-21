@@ -136,8 +136,65 @@ impl Adapter {
                     }
                 }
                 "connections" => {
-                    if matches!(id, "accept" | "authorize") && self.app.pending_connection.is_none()
+                    if id == "accept"
+                        && self
+                            .app
+                            .connection_form
+                            .as_ref()
+                            .is_some_and(|f| f.save_only)
                     {
+                        let mut connection = self
+                            .app
+                            .connection_form
+                            .as_ref()
+                            .unwrap()
+                            .connection
+                            .clone();
+                        crate::remote::validate(&connection)?;
+                        connection.listed = true;
+                        self.app.connections.retain(|c| c.id != connection.id);
+                        self.app.connections.push(connection.clone());
+                        crate::remote::register_profiles(&[connection]);
+                        self.app.save_settings();
+                        self.app.connection_form = None;
+                    } else if let Some(index) = id
+                        .strip_prefix("uri-profile-")
+                        .and_then(|s| s.parse::<usize>().ok())
+                    {
+                        if let Some(mut form) = self.app.connection_form.take() {
+                            if let Some(mut c) = form.choices.get(index).cloned() {
+                                if let Some(ticket) = &mut form.navigation {
+                                    ticket.path =
+                                        crate::uri::relative_to_profile(&ticket.path, &c)?;
+                                }
+                                if !form.secrets.request_query.is_empty()
+                                    || (!form.secrets.password.is_empty() && c.service == "sftp")
+                                {
+                                    c.credentials_from = c.id.clone();
+                                    c.id = form.connection.id.clone();
+                                    c.listed = false;
+                                    c.query_required = !form.secrets.request_query.is_empty();
+                                    if !form.secrets.password.is_empty() && c.service == "sftp" {
+                                        c.native_sftp = true;
+                                        c.key_file.clear();
+                                    }
+                                }
+                                form.connection = c;
+                                form.choices.clear();
+                                self.app.connect_form(&mut form, false, &self.ctx);
+                            }
+                            self.app.connection_form = Some(form);
+                        }
+                    } else if id == "open-browser" {
+                        if let Some(form) = &self.app.connection_form {
+                            let path = form
+                                .navigation
+                                .as_ref()
+                                .map(|t| t.path.as_path())
+                                .unwrap_or(Path::new(""));
+                            open::that(crate::uri::address(&form.connection.id, path))?;
+                        }
+                    } else if matches!(id, "accept" | "authorize") && !self.app.uri_connecting() {
                         if let Some(mut form) = self.app.connection_form.take() {
                             self.app
                                 .connect_form(&mut form, id == "authorize", &self.ctx);
@@ -150,7 +207,7 @@ impl Adapter {
                     {
                         let location = Location::Remote {
                             connection: connection.id.clone(),
-                            path: PathBuf::new(),
+                            path: connection.initial_path.clone(),
                         };
                         self.app.tab_mut().navigate(location, &self.ctx);
                         self.app.connection_form = None;
@@ -420,6 +477,7 @@ impl Adapter {
                 self.app.preferences_error = None;
             }
             "connections" => {
+                self.app.cancel_uri_form();
                 self.app.connection_form = None;
                 if let Some(cancel) = self.app.oauth_cancel.take() {
                     cancel.store(true, Ordering::Relaxed);

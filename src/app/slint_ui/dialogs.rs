@@ -361,6 +361,12 @@ impl Adapter {
                         .map(|source| tr(source.label()).into_owned()),
                 ),
                 Field::text("font", "Font size", p.font_size),
+                Field::choice(
+                    "location-bar",
+                    "Location bar",
+                    tr(p.location_bar.label()),
+                    crate::preferences::LocationBar::ALL.map(|m| tr(m.label()).into_owned()),
+                ),
                 Field::check("toolbar", "Show toolbar", p.toolbar),
                 Field::check("sidebar", "Show sidebar", p.sidebar),
                 Field::check("commands", "Show command bar", p.command_bar),
@@ -465,8 +471,33 @@ impl Adapter {
         if let Some(form) = &self.app.connection_form {
             let mut d = Dialog::new("connections", "Connections");
             d.error = form.error.clone().unwrap_or_default();
-            d.busy = self.app.pending_connection.is_some();
+            d.busy = self.app.uri_connecting();
+            if form.save_only {
+                d.title = tr("Save connection…").into_owned();
+                d.description =
+                    crate::uri::address(&form.connection.id, &form.connection.initial_path);
+                d.fields
+                    .push(Field::text("name", "Name", &form.connection.name));
+                d.button("accept", "Save", true);
+                return d;
+            }
+            if !form.choices.is_empty() {
+                d.description = tr("Choose a connection for this address").into_owned();
+                for (i, c) in form.choices.iter().enumerate() {
+                    d.rows.push(
+                        Row::new(format!("uri-profile-{i}"), &c.name, &c.username).action(
+                            format!("uri-profile-{i}"),
+                            "Open",
+                            true,
+                        ),
+                    );
+                }
+                return d;
+            }
             for (i, c) in self.app.connections.iter().enumerate() {
+                if !c.listed || form.navigation.is_some() {
+                    continue;
+                }
                 d.rows.push(
                     Row::new(format!("connection-{i}"), &c.name, &c.service)
                         .action(format!("connection-open-{i}"), "Open", !d.busy)
@@ -534,12 +565,45 @@ impl Adapter {
                 d.button("authorize", "Sign in with browser", !d.busy);
             }
             if c.service == "sftp" {
-                d.fields.push(Field::label("OpenSSH","SFTP uses your SSH agent or private key and strict known-host verification. Add a trusted server to known_hosts first."));
+                d.fields.push(Field::label("SFTP","SFTP supports passwords, private keys and SSH agents, with strict known-host verification. Trust the server in known_hosts first."));
+                d.fields.push(Field::text(
+                    "known-hosts",
+                    "Known hosts file (optional)",
+                    &c.known_hosts_file,
+                ));
+            }
+            if c.service == "ftp" {
+                d.fields.push(Field::choice(
+                    "ftp-tls",
+                    "FTP security",
+                    tr(match c.tls_mode() {
+                        crate::remote::FtpTls::Plain => "Plain FTP",
+                        crate::remote::FtpTls::Implicit => "Implicit TLS",
+                        _ => "Explicit TLS",
+                    }),
+                    ["Plain FTP", "Explicit TLS", "Implicit TLS"].map(|s| tr(s).into_owned()),
+                ));
+                d.fields.push(Field::text(
+                    "tls-ca",
+                    "TLS CA certificate (DER, optional)",
+                    &c.tls_ca_file,
+                ));
             }
             if c.service == "smb" {
                 d.fields.push(Field::label("SMB","Endpoint smb://nas.local[:445], Share = share name, Root folder = path within share. Domain accounts may use DOMAIN\\user."));
             }
-            d.button("accept", "Connect", !d.busy);
+            if c.service == "http" {
+                d.button("open-browser", "Open in browser", !d.busy);
+            }
+            d.button(
+                "accept",
+                if form.save_only {
+                    "Save connection…"
+                } else {
+                    "Connect"
+                },
+                !d.busy,
+            );
             return d;
         }
         if let Some(form) = &self.app.archive_form {

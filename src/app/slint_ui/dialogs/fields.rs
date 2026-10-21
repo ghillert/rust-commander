@@ -88,6 +88,12 @@ impl Adapter {
                                     })
                                     .context("Unknown file icon source")?;
                             }
+                            "location-bar" => {
+                                p.location_bar = crate::preferences::LocationBar::ALL
+                                    .into_iter()
+                                    .find(|m| m.label() == value || tr(m.label()) == value)
+                                    .context("Unknown location bar mode")?
+                            }
                             "toolbar" => p.toolbar = checked(value),
                             "sidebar" => p.sidebar = checked(value),
                             "commands" => p.command_bar = checked(value),
@@ -165,6 +171,19 @@ impl Adapter {
                             "region" => c.region = value.into(),
                             "username" => c.username = value.into(),
                             "key-file" => c.key_file = value.into(),
+                            "known-hosts" => c.known_hosts_file = value.into(),
+                            "tls-ca" => c.tls_ca_file = value.into(),
+                            "ftp-tls" => {
+                                c.ftp_tls = match value {
+                                    s if s == "Implicit TLS" || s == tr("Implicit TLS") => {
+                                        crate::remote::FtpTls::Implicit
+                                    }
+                                    s if s == "Plain FTP" || s == tr("Plain FTP") => {
+                                        crate::remote::FtpTls::Plain
+                                    }
+                                    _ => crate::remote::FtpTls::Explicit,
+                                }
+                            }
                             "password" => s.password = value.into(),
                             "access-key" => s.access_key_id = value.into(),
                             "secret-key" => s.secret_access_key = value.into(),

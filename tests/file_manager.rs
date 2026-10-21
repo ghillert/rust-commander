@@ -526,6 +526,7 @@ fn entry(name: &str, is_dir: bool, size: u64) -> Entry {
         name: name.into(),
         is_dir,
         size,
+        size_known: true,
         is_symlink: false,
         modified: Some(SystemTime::UNIX_EPOCH),
     }

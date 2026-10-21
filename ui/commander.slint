@@ -38,6 +38,10 @@ component FilePane inherits Rectangle {
     in property <string> selection-payload;
     private property <bool> native-drag;
     private property <bool> editing-address;
+    in property <bool> breadcrumbs-mode;
+    in property <string> committed-address;
+    in property <string> protocol;
+    changed committed-address => {root.editing-address=false;}
     in property <[FileColumn]> columns;
     in property <bool> auto-size-columns;
     in property <float> column-total:1;
@@ -115,24 +119,24 @@ component FilePane inherits Rectangle {
             HorizontalLayout {
                 padding-left: 6px; padding-right: 6px; spacing: 3px;
                 ChromeButton { label: Words.translate("Parent folder",Words.version); icon: Glyphs.action("Parent"); clicked => {root.action("Parent");} }
+                Text {text:root.protocol;color:Chrome.secondary;font-size:10px;font-weight:600;vertical-alignment:center;preferred-width:root.protocol=="ARCHIVE"?52px:40px;}
                 Rectangle {
                     horizontal-stretch: 1;
                     location := ChromeField {
-                        visible: root.editing-address;
+                        visible: !root.breadcrumbs-mode || root.editing-address;
                         text <=> root.address;
                         label: Words.translate(root.side == 0 ? "Left location" : "Right location",Words.version);
                         placeholder: Words.translate("Location",Words.version);
                         height: 28px; y: (parent.height - self.height) / 2;
-                        changed has-focus => { if !self.has-focus {root.editing-address=false;} }
                         edited(text) => {root.address-edited(text);}
-                        accepted(text) => {root.navigate(text); root.editing-address=false; files-focus.focus();}
+                        accepted(text) => {root.navigate(text); files-focus.focus();}
                         key-event(event) => {
-                            if event.text == Key.Escape {root.editing-address=false;files-focus.focus();return true;}
+                            if event.text == Key.Escape {root.action("CancelNavigation");root.address=root.committed-address;root.address-edited(root.address);root.editing-address=false;files-focus.focus();return true;}
                             return false;
                         }
                     }
                     ScrollView {
-                        visible: !root.editing-address;
+                        visible: root.breadcrumbs-mode && !root.editing-address;
                         y: (parent.height - self.height) / 2;
                         height: 28px;
                         horizontal-scrollbar-policy: always-off; vertical-scrollbar-policy: always-off;
@@ -153,7 +157,8 @@ component FilePane inherits Rectangle {
                         }
                     }
                 }
-                ChromeButton {label: Words.translate("Edit location",Words.version);icon: Glyphs.action("Rename");width:28px;clicked=>{root.focus-address();}}
+                ChromeButton {label: Words.translate(root.breadcrumbs-mode?"Show editable address":"Show breadcrumbs",Words.version);icon: Glyphs.action(root.breadcrumbs-mode?"Rename":"Forward");width:28px;clicked=>{root.action("ToggleLocationBar");}}
+                if root.protocol!="FILE" && root.protocol!="ARCHIVE": ChromeButton {label:Words.translate("Save connection…",Words.version);icon:Glyphs.action("Link");width:28px;clicked=>{root.action("SaveConnection");}}
             }
         }
         Rectangle {
@@ -361,6 +366,11 @@ export component CommanderWindow inherits Window {
     in property <int> left-tab;
     in property <int> right-tab;
     in-out property <string> left-address;
+    in property <bool> breadcrumbs-mode;
+    in property <string> left-committed-address;
+    in property <string> right-committed-address;
+    in property <string> left-protocol;
+    in property <string> right-protocol;
     in-out property <string> right-address;
     in-out property <string> left-filter;
     in-out property <string> right-filter;
@@ -608,6 +618,7 @@ export component CommanderWindow inherits Window {
                     cursor-index: root.left-cursor;
                     side: 0; active: root.active-pane == 0; rows: root.left-rows; columns: root.columns; auto-size-columns:root.auto-size-columns;column-total:root.column-total; tabs: root.left-tabs; active-tab: root.left-tab;
                     address <=> root.left-address; filter <=> root.left-filter; error: root.left-error; busy: root.left-busy; summary: root.left-summary;
+                    breadcrumbs-mode:root.breadcrumbs-mode;committed-address:root.left-committed-address;protocol:root.left-protocol;
                     accent: root.accent; selection-color: root.selection-color; selection-text: root.selection-text; inactive-selection: root.inactive-selection; dark: root.dark; text-size: root.text-size;
                     action(id) => { root.action(id + ":0"); } tab(index) => { root.tab(0, index); }
                     address-edited(text) => { root.address-edited(0,text); }
@@ -632,6 +643,7 @@ export component CommanderWindow inherits Window {
                     cursor-index: root.right-cursor;
                     side: 1; active: root.active-pane == 1; rows: root.right-rows; columns: root.columns; auto-size-columns:root.auto-size-columns;column-total:root.column-total; tabs: root.right-tabs; active-tab: root.right-tab;
                     address <=> root.right-address; filter <=> root.right-filter; error: root.right-error; busy: root.right-busy; summary: root.right-summary;
+                    breadcrumbs-mode:root.breadcrumbs-mode;committed-address:root.right-committed-address;protocol:root.right-protocol;
                     accent: root.accent; selection-color: root.selection-color; selection-text: root.selection-text; inactive-selection: root.inactive-selection; dark: root.dark; text-size: root.text-size;
                     action(id) => { root.action(id + ":1"); } tab(index) => { root.tab(1, index); }
                     address-edited(text) => { root.address-edited(1,text); }

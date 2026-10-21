@@ -185,8 +185,8 @@ Opening or emptying Trash needs `gio` and a GVfs Trash backend; on Ubuntu these
 are supplied by `libglib2.0-bin` and `gvfs-backends`. The DEB declares these
 dependencies; AppImage users should install them through their distribution.
 Configure a desktop Secret Service if you
-want to save credentials in a system keyring. Windows currently has no SFTP
-adapter; the other documented remote adapters remain available.
+want to save credentials in a system keyring. Windows includes a native Rust SFTP
+adapter with password, private-key and Windows OpenSSH-agent authentication.
 
 ## Failed builds, retries, and duplicate versions
 

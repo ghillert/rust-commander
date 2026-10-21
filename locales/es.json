@@ -404,5 +404,20 @@
   "selected": "seleccionados",
   "unreadable entries": "entradas ilegibles",
   "used": "usado",
-  "{name} = filename without extension · {ext} = extension including dot · {n} = number": "{name} = nombre sin extensión · {ext} = extensión con punto · {n} = número"
+  "{name} = filename without extension · {ext} = extension including dot · {n} = number": "{name} = nombre sin extensión · {ext} = extensión con punto · {n} = número",
+  "Location bar": "Barra de ubicación",
+  "Editable address": "Dirección editable",
+  "Clickable breadcrumbs": "Ruta de navegación",
+  "Show editable address": "Mostrar dirección editable",
+  "Show breadcrumbs": "Mostrar ruta de navegación",
+  "Save connection…": "Guardar conexión…",
+  "Choose a connection for this address": "Elige una conexión para esta dirección",
+  "FTP security": "Seguridad FTP",
+  "Plain FTP": "FTP sin cifrar",
+  "Explicit TLS": "TLS explícito",
+  "Implicit TLS": "TLS implícito",
+  "Known hosts file (optional)": "Archivo de hosts conocidos (opcional)",
+  "TLS CA certificate (DER, optional)": "Certificado CA TLS (DER, opcional)",
+  "Open in browser": "Abrir en el navegador",
+  "SFTP supports passwords, private keys and SSH agents, with strict known-host verification. Trust the server in known_hosts first.": "SFTP admite contraseñas, claves privadas y agentes SSH con verificación estricta del servidor. Añade primero el servidor de confianza a known_hosts."
 }

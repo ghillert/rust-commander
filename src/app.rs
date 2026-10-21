@@ -1,4 +1,5 @@
 use crate::ui_signal::UiSignal;
+mod uri_navigation;
 use crate::{
     filesystem::{self, Entry, Location},
     model::{Pane, Tab},
@@ -598,6 +599,9 @@ struct ConnectionForm {
     secrets: crate::remote::Secrets,
     remember: bool,
     error: Option<String>,
+    navigation: Option<uri_navigation::Ticket>,
+    choices: Vec<crate::remote::Connection>,
+    save_only: bool,
 }
 
 pub struct Commander {
@@ -632,7 +636,7 @@ pub struct Commander {
     clipboard: Option<(Location, Vec<Entry>, bool)>,
     connections: Vec<crate::remote::Connection>,
     connection_form: Option<ConnectionForm>,
-    pending_connection: Option<Receiver<Result<crate::remote::Connection, String>>>,
+    pending_uris: Vec<uri_navigation::Pending>,
     panes: [Pane; 2],
     active: usize,
     bookmarks: Vec<Bookmark>,
@@ -651,6 +655,25 @@ pub struct Commander {
 }
 
 impl Commander {
+    fn action_available(&self, id: &str) -> bool {
+        let writable = |location: &Location| match location {
+            Location::Remote { connection, .. } => {
+                crate::remote::profile(connection).is_none_or(|c| c.service != "http")
+            }
+            _ => true,
+        };
+        match id {
+            "Move" => {
+                writable(&self.tab().location)
+                    && writable(&self.panes[1 - self.active].tab().location)
+            }
+            "Copy" => writable(&self.panes[1 - self.active].tab().location),
+            "Mkdir" | "Rename" | "Trash" | "CutClipboard" | "PasteClipboard" | "ExternalEdit" => {
+                writable(&self.tab().location)
+            }
+            _ => true,
+        }
+    }
     fn with_settings(ctx: &UiSignal, paths: &[PathBuf], loaded: anyhow::Result<Settings>) -> Self {
         let settings_valid = loaded.is_ok();
         let error = loaded.as_ref().err().map(|e| format!("{e:#}"));
@@ -729,7 +752,7 @@ impl Commander {
             clipboard: None,
             connections: settings.connections,
             connection_form: None,
-            pending_connection: None,
+            pending_uris: Vec::new(),
             panes,
             active: settings.active_pane.min(1),
             bookmarks: settings.bookmarks,
@@ -874,30 +897,7 @@ impl Commander {
                 }
             }
         }
-        if let Some(result) = crate::background::poll(&mut self.pending_connection) {
-            match result {
-                Ok(connection) => {
-                    self.connections.retain(|c| c.id != connection.id);
-                    self.connections.push(connection.clone());
-                    self.save_settings();
-                    self.connection_form = None;
-                    self.tab_mut().navigate(
-                        Location::Remote {
-                            connection: connection.id,
-                            path: PathBuf::new(),
-                        },
-                        ctx,
-                    );
-                }
-                Err(error) => {
-                    if let Some(form) = &mut self.connection_form {
-                        form.error = Some(error);
-                    } else {
-                        self.fail(error);
-                    }
-                }
-            }
-        }
+        self.poll_uris(ctx);
         for pane in &mut self.panes {
             let requested = pane
                 .tabs
@@ -1014,7 +1014,7 @@ impl Commander {
         if self.job.is_some()
             || self.pending_view.is_some()
             || self.pending_pdf.is_some()
-            || self.pending_connection.is_some()
+            || !self.pending_uris.is_empty()
             || self.pending_archive.is_some()
             || self.panes.iter().any(|p| p.tabs.iter().any(|t| t.loading))
         {
@@ -1078,6 +1078,8 @@ impl Commander {
         self.recent_files.truncate(50);
     }
     fn view(&mut self, entry: Entry, editable: bool, ctx: &UiSignal) {
+        let editable = editable
+            && !matches!(&self.tab().location,Location::Remote{connection,..} if crate::remote::profile(connection).is_some_and(|c|c.service=="http"));
         if entry.is_dir {
             self.fail("Select a text file to view or edit.");
             return;
@@ -1180,6 +1182,10 @@ impl Commander {
         });
     }
     fn act(&mut self, action: Action, ctx: &UiSignal) {
+        if !self.action_available(&format!("{action:?}")) {
+            self.fail("This operation is unavailable for a read-only location.");
+            return;
+        }
         let chosen = self.tab().chosen(self.show_hidden);
         let location = self.tab().location.clone();
         let sources: Vec<_> = chosen.iter().map(|e| e.path.clone()).collect();
@@ -2444,29 +2450,23 @@ impl Commander {
         }
     }
     fn connect_form(&mut self, form: &mut ConnectionForm, authorize: bool, ctx: &UiSignal) {
-        let cancel = Arc::new(AtomicBool::new(false));
-        self.oauth_cancel = Some(cancel.clone());
-        let connection = form.connection.clone();
-        let secrets = form.secrets.clone();
-        let remember = form.remember;
-        let (sender, receiver) = mpsc::channel();
-        let ctx = ctx.clone();
-        self.pending_connection = Some(receiver);
+        if form.connection.service == "sftp" && !form.secrets.password.is_empty() {
+            form.connection.native_sftp = true;
+        }
+        let ticket = form
+            .navigation
+            .clone()
+            .unwrap_or_else(|| self.uri_ticket(form.connection.initial_path.clone()));
+        form.navigation = Some(ticket.clone());
         form.error = None;
-        std::thread::spawn(move || {
-            let result = (|| -> anyhow::Result<_> {
-                let secrets = if authorize {
-                    crate::oauth::authorize(&connection, secrets, cancel)?
-                } else {
-                    secrets
-                };
-                crate::remote::connect(&connection, secrets, remember)?;
-                Ok(connection)
-            })()
-            .map_err(|e| format!("{e:#}"));
-            let _ = sender.send(result);
-            ctx.request_repaint();
-        });
+        self.start_uri(
+            ticket,
+            form.connection.clone(),
+            form.secrets.clone(),
+            form.remember,
+            authorize,
+            ctx,
+        );
     }
     fn save_editor(&mut self, editor: &Editor, ctx: &UiSignal) {
         if !editor.editable || !editor.dirty() || self.job.is_some() || !self.queue.is_empty() {

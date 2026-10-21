@@ -22,6 +22,7 @@ pub struct Tab {
     pub state: crate::navigation::TabState,
     pub(crate) requested_location: Option<Location>,
     pub(crate) revision: u64,
+    pub(crate) navigation_epoch: u64,
     pub location: Location,
     pub address: String,
     pub filter: String,
@@ -52,6 +53,7 @@ impl Tab {
             state: Default::default(),
             requested_location: None,
             revision: 0,
+            navigation_epoch: 0,
             address: location.label(),
             history: vec![location.clone()],
             history_index: 0,
@@ -166,32 +168,72 @@ impl Tab {
         self.requested_location.as_ref()
     }
 
+    pub(crate) fn navigate_loaded(
+        &mut self,
+        location: Location,
+        mut entries: Vec<Entry>,
+        cursor: Option<PathBuf>,
+        ctx: &crate::ui_signal::UiSignal,
+    ) {
+        if !self.prepare_navigation(&location) {
+            ctx.request_repaint();
+            return;
+        }
+        self.assign_location(location);
+        self.watcher = None;
+        self.watch_path = None;
+        self.changed.store(false, Ordering::Relaxed);
+        self.pending = None;
+        self.loading = false;
+        self.error = None;
+        filesystem::sort_entries_with_options(
+            &mut entries,
+            self.sort,
+            self.descending,
+            self.folders_first,
+        );
+        self.cursor = cursor.or_else(|| entries.first().map(|e| e.path.clone()));
+        self.entries = entries;
+        self.revision = self.revision.wrapping_add(1);
+    }
+
     pub fn navigate(&mut self, location: Location, ctx: &crate::ui_signal::UiSignal) {
+        if self.prepare_navigation(&location) {
+            self.set_location(location, ctx);
+        }
+    }
+
+    fn prepare_navigation(&mut self, location: &Location) -> bool {
+        self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
         if self
             .state
             .locked
             .as_ref()
-            .is_some_and(|locked| locked != &location)
+            .is_some_and(|locked| locked != location)
         {
-            self.requested_location = Some(location);
-            return;
+            self.requested_location = Some(location.clone());
+            return false;
         }
-        if self.location != location {
+        if &self.location != location {
             self.history.truncate(self.history_index + 1);
             self.history.push(location.clone());
             self.history_index = self.history.len() - 1;
         }
-        self.set_location(location, ctx);
+        true
     }
 
     fn set_location(&mut self, location: Location, ctx: &crate::ui_signal::UiSignal) {
+        self.assign_location(location);
+        self.refresh(ctx);
+    }
+    fn assign_location(&mut self, location: Location) {
+        self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
         self.address = location.label();
         self.location = location;
         self.entries.clear();
         self.selected.clear();
         self.cursor = None;
         self.filter.clear();
-        self.refresh(ctx);
     }
 
     pub fn history(&mut self, forward: bool, ctx: &crate::ui_signal::UiSignal) {

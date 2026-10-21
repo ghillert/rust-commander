@@ -19,10 +19,7 @@ impl Location {
         match self {
             Self::Local(path) => path.display().to_string(),
             Self::Archive { file, prefix } => format!("{}!/{}", file.display(), prefix.display()),
-            Self::Remote { connection, path } => format!(
-                "remote://{connection}/{}",
-                crate::remote::display_path(path)
-            ),
+            Self::Remote { connection, path } => crate::uri::address(connection, path),
         }
     }
 
@@ -109,7 +106,12 @@ pub struct Entry {
     pub is_dir: bool,
     pub is_symlink: bool,
     pub size: u64,
+    #[serde(default = "known_size")]
+    pub size_known: bool,
     pub modified: Option<SystemTime>,
+}
+fn known_size() -> bool {
+    true
 }
 
 impl Entry {
@@ -158,6 +160,7 @@ pub fn list(location: &Location) -> Result<Vec<Entry>> {
                         metadata.is_dir()
                     },
                     is_symlink,
+                    size_known: true,
                     size: metadata.len(),
                     modified: metadata.modified().ok(),
                     path,
@@ -352,6 +355,7 @@ pub fn entry_from_path(path: &Path) -> Result<Entry> {
             .into_owned(),
         is_dir: metadata.is_dir(),
         is_symlink: metadata.file_type().is_symlink(),
+        size_known: true,
         size: metadata.len(),
         modified: metadata.modified().ok(),
     })

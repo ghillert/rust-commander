@@ -1,5 +1,103 @@
 use super::*;
 
+#[test]
+fn location_bar_toggle_apply_cancel_and_escape_preserve_the_address() {
+    use crate::preferences::LocationBar;
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, adapter, left, _right) = fixture();
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    assert!(!ui.get_breadcrumbs_mode());
+    ui.invoke_action("ToggleLocationBar".into());
+    assert!(ui.get_breadcrumbs_mode());
+    ui.invoke_action("Preferences".into());
+    ui.invoke_dialog_field("location-bar".into(), "Editable address".into());
+    ui.invoke_dialog_action("cancel".into());
+    assert!(ui.get_breadcrumbs_mode());
+    ui.invoke_action("Preferences".into());
+    ui.invoke_dialog_field("location-bar".into(), "Editable address".into());
+    ui.invoke_dialog_action("accept".into());
+    assert!(!ui.get_breadcrumbs_mode());
+    let snapshot = state.borrow().app.snapshot_settings();
+    assert_eq!(snapshot.preferences.location_bar, LocationBar::Address);
+    ui.invoke_address_edited(0, "data:text/plain,example".into());
+    ui.invoke_navigate(0, "data:text/plain,example".into());
+    assert_eq!(
+        state.borrow().app.tab().location,
+        Location::Local(left.clone())
+    );
+    assert_eq!(ui.get_left_address(), "data:text/plain,example");
+    assert!(ui.get_left_error().contains("data:"));
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: slint::platform::Key::Escape.into(),
+        });
+    assert_eq!(state.borrow().app.tab().address, left.display().to_string());
+}
+
+#[test]
+fn unnamed_uri_profiles_restore_tabs_and_save_explicitly() {
+    use crate::remote::Connection;
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, _left, _right) = fixture();
+    let c = Connection {
+        service: "http".into(),
+        endpoint: "https://example.test".into(),
+        listed: false,
+        ..Default::default()
+    };
+    crate::remote::register_profiles(std::slice::from_ref(&c));
+    adapter.app.connections.push(c.clone());
+    adapter.app.panes[0].tab_mut().location = Location::Remote {
+        connection: c.id.clone(),
+        path: "dir".into(),
+    };
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    assert_eq!(ui.get_left_protocol(), "HTTPS");
+    assert!(
+        !state
+            .borrow()
+            .places
+            .iter()
+            .any(|(id, _)| id.starts_with("connection:"))
+    );
+    let saved = state.borrow().app.snapshot_settings();
+    let restored: Settings = serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
+    assert!(
+        restored
+            .connections
+            .iter()
+            .any(|p| p.id == c.id && !p.listed)
+    );
+    assert_eq!(restored.tabs[0][0], saved.tabs[0][0]);
+    assert!(!state.borrow().action_available("Mkdir"));
+    assert!(!state.borrow().action_available("Move"));
+    assert!(state.borrow().action_available("Copy"));
+    ui.invoke_action("SaveConnection:0".into());
+    ui.invoke_dialog_field("name".into(), "My downloads".into());
+    ui.invoke_dialog_action("accept".into());
+    assert!(
+        state
+            .borrow()
+            .app
+            .connections
+            .iter()
+            .any(|p| p.id == c.id && p.listed && p.name == "My downloads")
+    );
+    assert!(
+        state
+            .borrow()
+            .places
+            .iter()
+            .any(|(id, _)| id.starts_with("connection:"))
+    );
+}
+
 pub(super) fn fixture() -> (tempfile::TempDir, Adapter, PathBuf, PathBuf) {
     let root = tempfile::tempdir().unwrap();
     let left = root.path().join("left");

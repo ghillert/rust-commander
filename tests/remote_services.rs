@@ -51,7 +51,7 @@ fn exercise(service: &str) {
     };
     remote::connect(&connection, secret, false).unwrap();
     println!("{service}: authentication refusal");
-    if service != "sftp" {
+    if service != "sftp" && connection.key_file.is_empty() {
         let mut bad = connection.clone();
         bad.id.push_str("-invalid-auth");
         let rejected = remote::connect(
@@ -90,7 +90,8 @@ fn exercise(service: &str) {
     let mut range = remote::read_range(&connection.id, &base.join("large.bin"), 65_531).unwrap();
     let mut tail = Vec::new();
     range.read_to_end(&mut tail).unwrap();
-    assert_eq!(tail, large[65_531..]);
+    assert_eq!(tail.len(), large.len() - 65_531);
+    assert!(tail == large[65_531..], "Range data differs");
     drop(range);
 
     println!("{service}: initial upload and range read passed");
@@ -271,11 +272,103 @@ fn exercise(service: &str) {
     );
 }
 
+#[test]
+#[ignore = "Run scripts/test-uri-transports.py"]
+fn uri_native_sftp_password_workflows() {
+    exercise("native_sftp");
+}
+#[test]
+#[ignore = "Run scripts/test-uri-transports.py"]
+fn uri_native_sftp_key_workflows() {
+    exercise("native_sftp_key");
+}
+#[test]
+#[ignore = "Run scripts/test-uri-transports.py"]
+fn uri_ftp_workflows() {
+    exercise("ftp");
+}
+#[test]
+#[ignore = "Run scripts/test-uri-transports.py"]
+fn uri_ftps_explicit_workflows() {
+    exercise("ftps_explicit");
+}
+#[test]
+#[ignore = "Run scripts/test-uri-transports.py"]
+fn uri_ftps_implicit_workflows() {
+    exercise("ftps_implicit");
+}
+#[test]
+#[ignore = "Run scripts/test-uri-transports.py"]
+fn uri_anonymous_ftp_and_transport_security() {
+    let c = profile("anonymous_ftp");
+    remote::connect(&c, Secrets::default(), false).unwrap();
+    assert!(
+        remote::list(&c.id, Path::new(""))
+            .unwrap()
+            .iter()
+            .any(|e| e.name == "seed.txt")
+    );
+    assert_eq!(contents(&c, Path::new("seed.txt")), b"fixture");
+    for service in ["ftp", "ftps_explicit", "ftps_implicit", "native_sftp"] {
+        let mut c = profile(service);
+        c.id.push_str("-bad-root");
+        c.root = "/must-not-be-created".into();
+        let error = remote::connect(
+            &c,
+            Secrets {
+                password: "commander-test-only".into(),
+                ..Default::default()
+            },
+            false,
+        )
+        .expect_err("Connecting must reject missing root");
+        assert!(!error.to_string().contains("commander-test-only"));
+    }
+    for service in ["ftps_explicit", "ftps_implicit"] {
+        let mut c = profile(service);
+        c.id.push_str("-untrusted-tls");
+        c.tls_ca_file.clear();
+        assert!(
+            remote::connect(
+                &c,
+                Secrets {
+                    password: "commander-test-only".into(),
+                    ..Default::default()
+                },
+                false
+            )
+            .is_err()
+        );
+    }
+    let mut c = profile("native_sftp");
+    c.id.push_str("-untrusted-host");
+    c.known_hosts_file = std::env::temp_dir()
+        .join("rust-commander-no-such-known-hosts-file")
+        .display()
+        .to_string();
+    assert!(
+        remote::connect(
+            &c,
+            Secrets {
+                password: "commander-test-only".into(),
+                ..Default::default()
+            },
+            false
+        )
+        .is_err()
+    );
+}
+
 #[cfg(unix)]
 #[test]
 #[ignore = "requires disposable OpenSSH; run scripts/test-remote.py"]
 fn sftp_protocol_workflows() {
     exercise("sftp");
+}
+#[test]
+#[ignore = "requires disposable OpenSSH; run scripts/test-remote.py"]
+fn native_sftp_protocol_workflows() {
+    exercise("native_sftp");
 }
 #[test]
 #[ignore = "requires disposable FTP server; run scripts/test-remote.py"]

@@ -131,6 +131,9 @@ fn image(image: &crate::viewer::RasterImage) -> slint::Image {
 }
 
 impl Adapter {
+    fn action_available(&self, id: &str) -> bool {
+        self.app.action_available(id)
+    }
     fn new(paths: &[PathBuf], loaded: anyhow::Result<Settings>) -> Self {
         let ctx = UiSignal::default();
         let app = Commander::with_settings(&ctx, paths, loaded);
@@ -272,6 +275,28 @@ impl Adapter {
             return;
         }
         match name {
+            "CancelNavigation" => {
+                self.app
+                    .cancel_uri_navigation(side.filter(|s| *s < 2).unwrap_or(self.app.active));
+                return;
+            }
+            "ToggleLocationBar" => {
+                self.app.preferences.location_bar = match self.app.preferences.location_bar {
+                    crate::preferences::LocationBar::Address => {
+                        crate::preferences::LocationBar::Breadcrumbs
+                    }
+                    _ => crate::preferences::LocationBar::Address,
+                };
+                self.app.save_settings();
+                return;
+            }
+            "SaveConnection" => {
+                if let Some(side) = side.filter(|s| *s < 2) {
+                    self.app.active = side;
+                }
+                self.app.save_current_connection();
+                return;
+            }
             "RemoveBookmark" => {
                 if let Some(index) = side
                     && index < self.app.bookmarks.len()
@@ -306,6 +331,11 @@ impl Adapter {
         if let Some(side) = side.filter(|&side| side < 2) {
             self.app.active = side;
         }
+        if !self.action_available(name) {
+            self.app
+                .fail("This operation is unavailable for a read-only location.");
+            return;
+        }
         if self.enhancements_action(name) {
             return;
         }
@@ -336,11 +366,7 @@ impl Adapter {
         if self.blocked() || side > 1 {
             return;
         }
-        self.app.active = side;
-        match filesystem::parse_location(text, &self.app.tab().location) {
-            Ok(location) => self.app.tab_mut().navigate(location, &self.ctx),
-            Err(error) => self.app.fail(error),
-        }
+        self.app.navigate_input(side, text, &self.ctx);
     }
 
     fn drop_files(&mut self, side: usize, data: slint::DataTransfer) -> bool {
@@ -512,6 +538,9 @@ impl Adapter {
         ui.set_text_size(self.app.preferences.font_size);
         ui.set_toolbar_visible(self.app.preferences.toolbar);
         ui.set_sidebar_visible(self.app.preferences.sidebar);
+        ui.set_breadcrumbs_mode(
+            self.app.preferences.location_bar == crate::preferences::LocationBar::Breadcrumbs,
+        );
         #[cfg(target_os = "macos")]
         if let Some(window) = &self.app.native_window {
             crate::native_files::align_window_controls(
@@ -559,7 +588,7 @@ impl Adapter {
                 (
                     format!("{:?}", action.action()),
                     tr(action.label()).into_owned(),
-                    !self.blocked(),
+                    !self.blocked() && self.action_available(&format!("{:?}", action.action())),
                 )
             })
             .collect::<Vec<_>>();
@@ -771,6 +800,8 @@ impl Adapter {
             };
             if side == 0 {
                 ui.set_left_rows(self.rows[side].clone().into());
+                ui.set_left_committed_address(tab.location.label().into());
+                ui.set_left_protocol(crate::uri::protocol(&tab.location).into());
                 ui.set_left_tab(self.app.panes[side].active as i32);
                 if !tab.focus_address {
                     ui.set_left_address(tab.address.as_str().into());
@@ -781,6 +812,8 @@ impl Adapter {
                 ui.set_left_summary(summary.into());
             } else {
                 ui.set_right_rows(self.rows[side].clone().into());
+                ui.set_right_committed_address(tab.location.label().into());
+                ui.set_right_protocol(crate::uri::protocol(&tab.location).into());
                 ui.set_right_tab(self.app.panes[side].active as i32);
                 if !tab.focus_address {
                     ui.set_right_address(tab.address.as_str().into());
@@ -916,13 +949,16 @@ impl Adapter {
             "connections",
         ));
         for (index, connection) in self.app.connections.iter().enumerate() {
+            if !connection.listed {
+                continue;
+            }
             let id = format!("connection:{index}");
             entries.push((id.clone(), connection.name.clone(), false, "connections"));
             self.places.push((
                 id,
                 Location::Remote {
                     connection: connection.id.clone(),
-                    path: PathBuf::new(),
+                    path: connection.initial_path.clone(),
                 },
             ));
         }
@@ -1266,6 +1302,8 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                         ui.invoke_toggle_place_section(section.into());
                     } else if let Some(file) = action.strip_prefix("Open:") {
                         ui.invoke_opened(0, path_id(Path::new(file)).into());
+                    } else if let Some(uri) = action.strip_prefix("Navigate:") {
+                        ui.invoke_navigate(0, uri.into());
                     } else {
                         ui.invoke_action(action.into());
                     }
@@ -1282,9 +1320,25 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
         }
         screenshot_timer.start(
             slint::TimerMode::SingleShot,
-            Duration::from_secs(2),
+            Duration::from_millis(
+                std::env::var("RUST_COMMANDER_SCREENSHOT_DELAY_MS")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(2000)
+                    .clamp(500, 30_000),
+            ),
             move || {
                 if let Some(ui) = weak.upgrade() {
+                    eprintln!(
+                        "Location snapshot: {} · {} rows · {}",
+                        ui.get_left_protocol(),
+                        ui.get_left_rows().row_count(),
+                        if ui.get_breadcrumbs_mode() {
+                            "breadcrumbs"
+                        } else {
+                            "address"
+                        }
+                    );
                     if ui.get_tree_visible() {
                         let rows = ui.get_tree_rows();
                         let selected = rows
@@ -1448,7 +1502,7 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
                         id: format!("{action:?}").into(),
                         title: parity::caption(&format!("{action:?}"), title, &a.app.preferences)
                             .into(),
-                        enabled: !a.blocked(),
+                        enabled: !a.blocked() && a.action_available(&format!("{action:?}")),
                     })
                     .collect::<Vec<_>>(),
             ))
@@ -1740,7 +1794,7 @@ fn location_breadcrumbs(location: &Location) -> Vec<(String, Location)> {
         }
         Location::Remote { connection, path } => {
             let mut crumbs = vec![(
-                connection.clone(),
+                crate::remote::connection_name(connection),
                 Location::Remote {
                     connection: connection.clone(),
                     path: PathBuf::new(),

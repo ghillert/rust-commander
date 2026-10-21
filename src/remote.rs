@@ -27,6 +27,17 @@ pub struct Connection {
     pub oauth_client_id: String,
     pub oauth_tenant: String,
     pub oauth_port: u16,
+    /// Named connections are shown in the sidebar; URI descriptors restore tabs only.
+    pub listed: bool,
+    pub initial_path: PathBuf,
+    pub ftp_tls: FtpTls,
+    pub query_required: bool,
+    pub native_sftp: bool,
+    pub known_hosts_file: String,
+    pub tls_ca_file: String,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub credentials_from: String,
 }
 impl Default for Connection {
     fn default() -> Self {
@@ -49,6 +60,32 @@ impl Default for Connection {
             oauth_client_id: String::new(),
             oauth_tenant: "common".into(),
             oauth_port: 53682,
+            listed: true,
+            initial_path: PathBuf::new(),
+            ftp_tls: FtpTls::Automatic,
+            query_required: false,
+            native_sftp: false,
+            known_hosts_file: String::new(),
+            tls_ca_file: String::new(),
+            credentials_from: String::new(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FtpTls {
+    #[default]
+    Automatic,
+    Plain,
+    Explicit,
+    Implicit,
+}
+impl Connection {
+    pub fn tls_mode(&self) -> FtpTls {
+        match self.ftp_tls {
+            FtpTls::Automatic if self.endpoint.starts_with("ftp://") => FtpTls::Plain,
+            FtpTls::Automatic => FtpTls::Explicit,
+            mode => mode,
         }
     }
 }
@@ -64,27 +101,21 @@ pub struct Secrets {
     pub refresh_token: String,
     pub oauth_client_secret: String,
     pub expires_at: u64,
+    /// URL queries may contain signed credentials. Never serialize them, even to keyring.
+    #[serde(skip)]
+    pub request_query: String,
+    #[serde(skip)]
+    pub request_path: String,
 }
 pub const SERVICES: &[&str] = &[
-    #[cfg(unix)]
-    "sftp",
-    "smb",
-    "ftp",
-    "webdav",
-    "s3",
-    "http",
-    "dropbox",
-    "gdrive",
-    "onedrive",
-    "gcs",
-    "webhdfs",
+    "sftp", "smb", "ftp", "webdav", "s3", "http", "dropbox", "gdrive", "onedrive", "gcs", "webhdfs",
 ];
 
 struct Session {
     operator: Option<opendal::blocking::Operator>,
     smb: Option<crate::smb::Share>,
     secrets: Secrets,
-    remember: bool,
+    remember: std::sync::atomic::AtomicBool,
 }
 impl Session {
     fn operator(&self) -> Result<&opendal::blocking::Operator> {
@@ -122,15 +153,56 @@ pub fn connection_name(id: &str) -> String {
         .unwrap_or_else(|| id.to_owned())
 }
 
+pub fn profile(id: &str) -> Option<Connection> {
+    profiles().read().ok()?.get(id).cloned()
+}
+
+pub(crate) fn navigation_credentials(
+    id: &str,
+    mut provided: Secrets,
+    stored: bool,
+) -> Result<Secrets> {
+    let saved = sessions()
+        .read()
+        .ok()
+        .and_then(|m| m.get(id).map(|s| s.secrets.clone()))
+        .or_else(|| {
+            if stored {
+                load_credentials(id).ok()
+            } else {
+                None
+            }
+        });
+    if let Some(saved) = saved {
+        if provided.request_query.is_empty() && provided.request_path == saved.request_path {
+            provided.request_query = saved.request_query;
+        }
+        if provided.password.is_empty() {
+            provided.password = saved.password;
+        }
+        if provided.access_key_id.is_empty() {
+            provided.access_key_id = saved.access_key_id;
+        }
+        if provided.secret_access_key.is_empty() {
+            provided.secret_access_key = saved.secret_access_key;
+        }
+        if provided.access_token.is_empty() {
+            provided.access_token = saved.access_token;
+        }
+        if provided.refresh_token.is_empty() {
+            provided.refresh_token = saved.refresh_token;
+        }
+        if provided.oauth_client_secret.is_empty() {
+            provided.oauth_client_secret = saved.oauth_client_secret;
+        }
+        provided.expires_at = saved.expires_at;
+    }
+    Ok(provided)
+}
+
 pub fn validate(connection: &Connection) -> Result<()> {
     if connection.name.trim().is_empty() || connection.id.is_empty() {
         bail!("Enter a connection name.");
-    }
-    #[cfg(not(unix))]
-    if connection.service == "sftp" {
-        bail!(
-            "SFTP is currently supported only on macOS and Linux. Choose another service or mount the server as a local folder."
-        );
     }
     if !SERVICES.contains(&connection.service.as_str()) && connection.service != "fs" {
         bail!("Unsupported storage service.");
@@ -189,6 +261,7 @@ pub(crate) fn clean_error(error: impl std::fmt::Display, secrets: &Secrets) -> a
         &secrets.access_token,
         &secrets.refresh_token,
         &secrets.oauth_client_secret,
+        &secrets.request_query,
     ] {
         if !secret.is_empty() {
             text = text.replace(secret, "[redacted]");
@@ -206,8 +279,13 @@ pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Res
     } else {
         let _guard = runtime().enter();
         let scheme = connection.service.parse::<opendal::Scheme>()?;
-        let operator = opendal::Operator::via_iter(scheme, options(connection, &secrets))
-            .map_err(|e| clean_error(e, &secrets))?;
+        let operator = match crate::uri_backend::operator(connection, &secrets)
+            .map_err(|e| clean_error(e, &secrets))?
+        {
+            Some(operator) => operator,
+            None => opendal::Operator::via_iter(scheme, options(connection, &secrets))
+                .map_err(|e| clean_error(e, &secrets))?,
+        };
         let operator = operator.layer(
             opendal::layers::TimeoutLayer::new()
                 .with_timeout(std::time::Duration::from_secs(30))
@@ -215,7 +293,9 @@ pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Res
         );
         let operator = opendal::blocking::Operator::new(operator)?;
         // Validate the credentials against the service, before storing them.
-        if operator.info().full_capability().list {
+        if connection.service == "http" {
+            // HTTP validates the requested resource, rather than an unrelated server root.
+        } else if operator.info().full_capability().list {
             operator.list("").map_err(|e| clean_error(e, &secrets))?;
         } else if operator.info().full_capability().stat {
             operator.stat("").map_err(|e| clean_error(e, &secrets))?;
@@ -238,7 +318,7 @@ pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Res
                 operator,
                 smb,
                 secrets,
-                remember,
+                remember: std::sync::atomic::AtomicBool::new(remember),
             }),
         );
     Ok(())
@@ -281,7 +361,7 @@ fn session_locked(id: &str) -> Result<Arc<Session>> {
                 .cloned()
                 .context("Connection profile missing")?;
             let secrets = crate::oauth::refresh(&connection, &session.secrets)?;
-            let remember = session.remember;
+            let remember = session.remember.load(std::sync::atomic::Ordering::Relaxed);
             // Release the read guard before reconnecting and replacing the session.
             drop(session);
             // Refresh outside the session map lock.
@@ -296,13 +376,17 @@ fn session_locked(id: &str) -> Result<Arc<Session>> {
         .cloned()
         .context("Connection profile is missing. Open Connections to reconnect.")?;
     validate(&connection)?;
-    let mut secrets = load_credentials(id).context(
+    let stored = load_credentials(id);
+    let remember = stored.is_ok();
+    let mut secrets = stored.or_else(|error| {
+        if matches!(error.downcast_ref::<keyring::Error>(),Some(keyring::Error::NoEntry)) {Ok(Secrets::default())} else {Err(error)}
+    }).context(
         "Reconnect to this service in Connections; credentials are not available for this session",
     )?;
     if secrets.expires_at > 0 && secrets.expires_at <= crate::oauth::now() + 60 {
         secrets = crate::oauth::refresh(&connection, &secrets)?;
     }
-    connect(&connection, secrets, true)?;
+    connect(&connection, secrets, remember)?;
     sessions()
         .read()
         .map_err(|_| anyhow::anyhow!("Session lock failed"))?
@@ -366,6 +450,15 @@ pub fn load_credentials(id: &str) -> Result<Secrets> {
         &keyring::Entry::new(CREDENTIAL_SERVICE, id)?,
         &keyring::Entry::new(LEGACY_CREDENTIAL_SERVICE, id)?,
     )
+}
+
+pub(crate) fn remember_session(id: &str) -> Result<()> {
+    let session = session(id)?;
+    save_credentials(id, &session.secrets)?;
+    session
+        .remember
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
 }
 
 fn read_stored_credentials(current: &keyring::Entry, legacy: &keyring::Entry) -> Result<Secrets> {
@@ -456,6 +549,7 @@ pub fn list(id: &str, path: &Path) -> Result<Vec<Entry>> {
                 .into_owned(),
             is_dir: metadata.is_dir(),
             is_symlink: false,
+            size_known: true,
             size: metadata.content_length(),
             modified: metadata.last_modified().map(std::time::SystemTime::from),
         }]);
@@ -466,7 +560,10 @@ pub fn list(id: &str, path: &Path) -> Result<Vec<Entry>> {
         .map_err(|e| clean_error(e, &session.secrets))?;
     entries
         .into_iter()
-        .filter(|e| e.path().trim_end_matches('/') != directory.trim_end_matches('/'))
+        .filter(|e| {
+            !e.metadata().is_dir()
+                || e.path().trim_end_matches('/') != directory.trim_end_matches('/')
+        })
         .map(|entry| {
             let path = filesystem::safe_relative(Path::new(entry.path().trim_end_matches('/')))?;
             let metadata = entry.metadata();
@@ -479,6 +576,10 @@ pub fn list(id: &str, path: &Path) -> Result<Vec<Entry>> {
                 path,
                 is_dir: metadata.is_dir(),
                 is_symlink: false,
+                size_known: metadata.user_metadata().is_none_or(|m| {
+                    m.get("rust-commander-size-known")
+                        .is_none_or(|v| v != "false")
+                }),
                 size: metadata.content_length(),
                 modified: metadata.last_modified().map(std::time::SystemTime::from),
             })
@@ -738,6 +839,33 @@ pub(crate) fn snapshot(location: &Location, entries: &[Entry], task: &Task) -> R
                     metadata.last_modified(),
                     metadata.etag()
                 ));
+                if !entry.is_dir
+                    && profile(connection).is_some_and(|c| c.service == "http")
+                    && (metadata.user_metadata().is_some_and(|m| {
+                        m.get("rust-commander-size-known")
+                            .is_some_and(|v| v == "false")
+                    }) || (metadata.etag().is_none() && metadata.last_modified().is_none()))
+                {
+                    use sha2::{Digest, Sha256};
+                    let mut input = read(connection, &entry.path)?;
+                    let mut hash = Sha256::new();
+                    let mut length = 0u64;
+                    let mut buffer = [0; 65536];
+                    loop {
+                        task.check()?;
+                        let n = input.read(&mut buffer)?;
+                        if n == 0 {
+                            break;
+                        }
+                        length += n as u64;
+                        hash.update(&buffer[..n]);
+                    }
+                    result.push(format!(
+                        "{}|{length}|{:x}",
+                        display_path(&entry.path),
+                        hash.finalize()
+                    ));
+                }
                 if entry.is_dir {
                     stack.extend(list(connection, &entry.path)?);
                 }
@@ -892,6 +1020,10 @@ pub(crate) fn entry_at(location: &Location, path: &Path) -> Result<Option<Entry>
                     .into_owned(),
                 is_dir: metadata.is_dir(),
                 is_symlink: false,
+                size_known: metadata.user_metadata().is_none_or(|m| {
+                    m.get("rust-commander-size-known")
+                        .is_none_or(|v| v != "false")
+                }),
                 size: metadata.content_length(),
                 modified: metadata.last_modified().map(Into::into),
             }))

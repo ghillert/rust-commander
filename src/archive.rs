@@ -211,6 +211,7 @@ pub fn list(file: &Path, prefix: &Path) -> Result<Vec<Entry>> {
                 path: path.clone(),
                 is_dir: directory,
                 is_symlink: member.link,
+                size_known: true,
                 size: if directory { 0 } else { member.size },
                 modified: if member.path == path {
                     member.modified

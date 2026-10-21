@@ -28,7 +28,7 @@ md-5 = "0.10"
 libc = "0.2"
 notify = "8"
 # Select storage services explicitly; the reqwest dependency below retains Rustls TLS.
-opendal = { version = "0.54", default-features = false, features = ["executors-tokio", "blocking", "services-fs", "services-ftp", "services-webdav", "services-s3", "services-http", "services-dropbox", "services-gdrive", "services-onedrive", "services-gcs", "services-webhdfs"] }
+opendal = { version = "0.54", default-features = false, features = ["executors-tokio", "blocking", "services-fs", "services-webdav", "services-s3", "services-http", "services-dropbox", "services-gdrive", "services-onedrive", "services-gcs", "services-webhdfs"] }
 percent-encoding = "2"
 portable-pty = "0.9"
 regex = "1"
@@ -43,6 +43,12 @@ tar = "0.4"
 tempfile = "3"
 trash = "5"
 tokio = { version = "1", features = ["rt-multi-thread"] }
+russh = { version = "=0.63.2", default-features = false, features = ["ring", "rsa"] }
+russh-sftp = "=3.0.1"
+scraper = { version = "0.24", default-features = false }
+suppaftp = { version = "=6.3.0", default-features = false, features = ["rustls", "deprecated"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "0.26"
 url = "2"
 vt100 = "0.15"
 zip = { version = "2.4", default-features = false, features = ["deflate", "bzip2", "aes-crypto"] }

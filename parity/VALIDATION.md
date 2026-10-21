@@ -644,3 +644,51 @@ Cloud OAuth/accounts, S3/GCS and other server implementations, full screen-reade
 interaction and cross-volume failure scenarios still need dedicated validation.
 The parity gate remains **4 implemented, 1 inapplicable, 159 partial, 36 missing**
 and correctly returns nonzero.
+
+
+## Direct URI navigation (2026-10-21)
+
+Implemented editable addresses by default, a persistent breadcrumb toggle,
+canonical protocol labels, explicit saving of named connections, HTTP directory
+indexes/downloads, both FTPS styles, and Windows/password SFTP through a Rust
+transport. Existing Unix OpenSSH key/agent connections remain available.
+
+Checks actually performed on the available Apple Silicon Mac:
+
+- `cargo test --locked --all-targets --all-features`: 236 passed, no failures;
+  15 environment-dependent tests were ignored in that invocation.
+- `cargo clippy --locked --all-targets --all-features -- -D warnings` and
+  `cargo fmt --all -- --check` pass.
+- `scripts/test-uri-transports.py`: six real loopback workflows pass, covering
+  plain/anonymous FTP, explicit and implicit FTPS, Rust SFTP passwords and keys,
+  certificate/host trust rejection, and missing-root rejection without creation.
+  The writable protocols additionally exercise Unicode names, range reads,
+  streaming, guarded saves, conflicts, cancellation/resume, checkpoint publishing,
+  synchronization/stale plans, rename and deletion.
+- HTTP fixtures cover directory redirects, encoded and query-bearing child
+  links, unknown metadata, direct-file copying, range fallback, ordinary-webpage
+  rejection, response limits, authentication errors and missing resources.
+- UI/controller checks cover Apply/Cancel, default/legacy preferences, unnamed
+  descriptors and explicit saving, restoring tab references, read-only actions,
+  and stale results after navigation or pane/tab switching.
+- Eight disposable native app windows rendered URI listings successfully:
+  software and FemtoVG, address and breadcrumb modes, light at 1× and dark at 2×.
+  Representative screenshots were visually inspected. Outputs are under
+  `target/uri-smoke/` and are not committed.
+- The supplied Kew HTTPS directory passed the live read-only integration check
+  and a desktop check showing its two folders and two ZIP files. No ZIP was
+  downloaded for this acceptance check.
+- Icon catalog: nine tests pass, 85 icons and 88 pinned assets/notices verified.
+  Release automation: 18 tests ran successfully, with two Linux-only cases skipped.
+
+The portable transport harness is wired into Windows, macOS and Linux CI. Linux's
+existing disposable OpenSSH harness also exercises the new Rust SFTP transport.
+Windows OpenSSH-agent integration, native Windows/Linux desktop interaction,
+private cloud accounts and their credentials have not been exercised on this Mac.
+These are configured checks or remaining environment limits, not claimed results.
+
+The release size comparison uses the unchanged ARM64 macOS architecture and the
+same optimized Cargo release profile, with no screenshot feature. Baseline before
+this change: 20,314,528 bytes (19.37 MiB). Final size: 22,007,008 bytes (20.99 MiB), an increase of
+1,692,480 bytes (8.33%). The superseded OpenDAL FTP feature was removed; FTP/FTPS
+use the direct SuppaFTP adapter without its unused asynchronous OpenDAL transport.

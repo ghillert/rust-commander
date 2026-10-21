@@ -2,6 +2,22 @@ use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LocationBar {
+    #[default]
+    Address,
+    Breadcrumbs,
+}
+impl LocationBar {
+    pub const ALL: [Self; 2] = [Self::Address, Self::Breadcrumbs];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Address => "Editable address",
+            Self::Breadcrumbs => "Clickable breadcrumbs",
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
@@ -10,6 +26,7 @@ pub struct Preferences {
     pub desktop_style: crate::appearance::DesktopStyle,
     pub color_scheme: crate::appearance::ColorScheme,
     pub file_icon_source: FileIconSource,
+    pub location_bar: LocationBar,
     pub font_size: f32,
     pub toolbar: bool,
     pub sidebar: bool,
@@ -37,6 +54,7 @@ impl Default for Preferences {
             desktop_style: Default::default(),
             color_scheme: Default::default(),
             file_icon_source: Default::default(),
+            location_bar: Default::default(),
             font_size: 14.0,
             toolbar: true,
             sidebar: true,
@@ -351,7 +369,7 @@ impl Column {
         match self {
             Self::Name => entry.name.clone(),
             Self::Size => {
-                if entry.is_dir {
+                if entry.is_dir || !entry.size_known {
                     "—".into()
                 } else {
                     crate::filesystem::human_size(entry.size)

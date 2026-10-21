@@ -298,14 +298,17 @@ in Settings. Search by command name to find a binding.
 ## Remote connections
 
 Open **File → Connections** to configure SMB2/3, SFTP, FTP, WebDAV, S3, HTTP, Dropbox,
-Google Drive, OneDrive, GCS, or WebHDFS. SFTP currently requires macOS or Linux;
-Windows offers the other adapters. Secrets can be kept in memory or stored
+Google Drive, OneDrive, GCS, or WebHDFS. You can also paste HTTP(S), SFTP, FTP,
+FTPS, file, SMB, S3 and GCS URIs directly into the location bar. HTTP directory
+indexes are browsable, SFTP works on all desktop platforms, and FTPS supports
+both TLS styles. Use **Save connection…** to add a named sidebar connection.
+Secrets can be kept in memory or stored
 in the operating system's credential store. Google Drive, Dropbox and OneDrive support browser OAuth
 login with PKCE and automatic token refresh, using your own registered client.
 See [OAuth setup](docs/OAUTH.md); live account validation is still pending.
 
-Remote testing covers a filesystem adapter and a loopback WebDAV server. Live
-remote services have not been validated. Read the
+Remote tests use disposable HTTP, FTP/FTPS, SFTP, WebDAV and SMB servers, including
+portable native transport fixtures in CI. Private cloud accounts remain untested. Read the
 [connection guide](docs/REMOTE_CONNECTIONS.md) for authentication requirements,
 service-specific behavior, and transfer limits.
 

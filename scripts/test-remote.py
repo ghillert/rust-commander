@@ -35,7 +35,7 @@ def port(container, internal):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--logs", type=Path, default=PROJECT / "target/remote-service-logs")
-    parser.add_argument("--service", choices=["sftp", "ftp", "webdav", "smb"])
+    parser.add_argument("--service", choices=["sftp", "native_sftp", "ftp", "webdav", "smb"])
     options = parser.parse_args()
     options.logs.mkdir(parents=True, exist_ok=True)
     name = "rust-commander-test-" + uuid.uuid4().hex[:12]
@@ -92,6 +92,7 @@ def main():
                     "root": "/srv/test/sftp" if service == "sftp" else "/", "key_file": str(key),
                 }
             recipes = work / "profiles.json"
+            profiles["native_sftp"] = dict(profiles["sftp"], id=name + "-native-sftp", native_sftp=True, known_hosts_file=str(known))
             recipes.write_text(json.dumps(profiles))
             recipes.chmod(0o600)
             env = os.environ.copy()
@@ -101,6 +102,8 @@ def main():
                      "remote_services"]
             if options.service:
                 cargo.append(options.service + "_protocol_workflows")
+            else:
+                cargo.append("protocol_workflows")
             cargo += ["--", "--ignored", "--test-threads=1", "--nocapture"]
             print("Testing real loopback services: " + ", ".join(ports), flush=True)
             # Tee the test result without placing private SSH key material in logs.
