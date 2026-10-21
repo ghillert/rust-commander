@@ -346,17 +346,37 @@ legacy credential-store entries; new credentials use the `rust-commander` servic
 
 ## Development
 
-On macOS/Linux, launch a debug build with `./scripts/run.sh`. Run the checks
-used by CI with:
+Use debug builds for everyday editing and testing:
 
 ```sh
-./scripts/cargo-local.sh fmt --all -- --check
-./scripts/cargo-local.sh clippy --locked --all-targets -- -D warnings
-./scripts/cargo-local.sh test --locked --all-targets
-./scripts/cargo-local.sh build --locked --release
+./scripts/run.sh
+# Optional starting directories:
+./scripts/run.sh /path/to/left /path/to/right
 ```
 
-On Windows, replace `./scripts/cargo-local.sh` with `cargo`.
+On macOS this creates and runs `target/debug/Rust Commander Dev.app`, with the
+app icon, native menus, and an ad hoc signature. Terminal logs and environment
+overrides are retained. To build the bundle without opening a window, use
+`./scripts/run.sh --build-only`. It uses local development libraries; use the
+release packaging workflow for an app you intend to distribute.
+
+During iteration, run the tests relevant to the change. Run the full tests,
+Clippy and formatting checks when the feature is ready:
+
+```sh
+./scripts/cargo-local.sh test --locked --lib test_name
+./scripts/cargo-local.sh fmt --all -- --check
+./scripts/cargo-local.sh clippy --locked --all-targets --all-features -- -D warnings
+./scripts/cargo-local.sh test --locked --all-targets --all-features
+```
+
+Run `./scripts/cargo-local.sh build --locked --release` for releases, executable
+size measurements, and optimization/packaging checks. The release profile keeps
+its size optimizations. Keep feature flags and build environment overrides
+consistent while iterating so Cargo can reuse cached artifacts.
+
+On Windows, use `cargo run --locked` for development and replace
+`./scripts/cargo-local.sh` with `cargo` in the checks above.
 
 Release size measurements, compiler settings, and the dependency feature audit
 are documented in the [release size guide](docs/RELEASE_SIZE.md).
