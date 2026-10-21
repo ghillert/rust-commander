@@ -228,6 +228,8 @@ impl Server {
                     thread::sleep(std::time::Duration::from_millis(2));
                     continue;
                 };
+                // macOS inherits the listener's nonblocking flag on accepted sockets.
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(std::time::Duration::from_secs(3)))
                     .unwrap();
