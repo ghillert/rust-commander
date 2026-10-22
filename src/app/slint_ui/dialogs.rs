@@ -241,11 +241,33 @@ impl Adapter {
                     | PromptKind::RemoteDelete { .. }
                     | PromptKind::PermanentDelete(_)
             ) {
-                d.fields.push(Field::text("prompt", "Value", &prompt.value));
+                d.fields.push(Field::text(
+                    "prompt",
+                    if matches!(prompt.kind, PromptKind::DropTransfer { .. }) {
+                        "Destination"
+                    } else {
+                        "Value"
+                    },
+                    &prompt.value,
+                ));
+            }
+            if let PromptKind::DropTransfer {
+                selection, moving, ..
+            } = &prompt.kind
+            {
+                d.fields.push(Field::choice(
+                    "drop-mode",
+                    "Transfer action",
+                    if *moving { "Move" } else { "Copy" },
+                    ["Copy", "Move"]
+                        .into_iter()
+                        .take(if selection.can_move() { 2 } else { 1 }),
+                ));
             }
             if matches!(
                 prompt.kind,
                 PromptKind::Transfer { .. }
+                    | PromptKind::DropTransfer { .. }
                     | PromptKind::RemoteTransfer { .. }
                     | PromptKind::Extract { .. }
             ) {
@@ -268,6 +290,7 @@ impl Adapter {
                 if matches!(
                     prompt.kind,
                     PromptKind::Transfer { .. }
+                        | PromptKind::DropTransfer { .. }
                         | PromptKind::RemoteTransfer { .. }
                         | PromptKind::Extract { .. }
                 ) {

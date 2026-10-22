@@ -413,7 +413,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Copy files", Action::CopyClipboard),
                 ("Cut files", Action::CutClipboard),
                 ("Paste files", Action::PasteClipboard),
-                ("Native drag-out", Action::NativeDrag),
+                ("Prepare files for external drag…", Action::NativeDrag),
             ],
         ),
     ]);
@@ -476,6 +476,11 @@ struct Prompt {
     pending_conflicts: Option<Receiver<Result<Vec<crate::transfer::Conflict>, String>>>,
 }
 enum PromptKind {
+    DropTransfer {
+        selection: crate::drag_drop::Selection,
+        to: Location,
+        moving: bool,
+    },
     Mkfile(PathBuf),
     Split {
         source: PathBuf,
@@ -2058,6 +2063,17 @@ impl Commander {
         };
         let result = (|| -> anyhow::Result<Option<Operation>> {
             Ok(Some(match &prompt.kind {
+                PromptKind::DropTransfer {
+                    selection,
+                    to,
+                    moving,
+                } => Operation::DropTransfer {
+                    selection: selection.clone(),
+                    to: filesystem::parse_location(&prompt.value, to)?,
+                    moving: *moving,
+                    options: prompt.transfer_options,
+                    overrides: prompt.overrides.clone(),
+                },
                 PromptKind::Mkfile(base) => {
                     filesystem::validate_name(&prompt.value)?;
                     Operation::Mkfile(base.join(&prompt.value))
@@ -2272,6 +2288,25 @@ impl Commander {
                         merge,
                     )
                     .map_err(|e| format!("{e:#}"));
+                    let _ = sender.send(result);
+                    ctx.request_repaint();
+                });
+            }
+        }
+        if let PromptKind::DropTransfer { selection, to, .. } = &prompt.kind {
+            let key = format!("{}:{}", prompt.value, prompt.transfer_options.merge_folders);
+            if key != prompt.conflict_key && prompt.pending_conflicts.is_none() {
+                prompt.conflict_key = key;
+                let selection = selection.clone();
+                let to = filesystem::parse_location(&prompt.value, to);
+                let merge = prompt.transfer_options.merge_folders;
+                let (sender, receiver) = mpsc::channel();
+                prompt.pending_conflicts = Some(receiver);
+                let ctx = ctx.clone();
+                std::thread::spawn(move || {
+                    let result = to
+                        .and_then(|to| crate::drag_drop::conflicts(&selection, &to, merge))
+                        .map_err(|e| format!("{e:#}"));
                     let _ = sender.send(result);
                     ctx.request_repaint();
                 });
@@ -2509,6 +2544,42 @@ impl Commander {
                 self.pending_save = Some((editor.title.clone(), editor.text.clone()));
             }
         }
+    }
+    fn drop_selection(
+        &mut self,
+        side: usize,
+        selection: crate::drag_drop::Selection,
+        to: Location,
+        moving: bool,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.job.is_none() && self.prompt.is_none(),
+            "Finish the current operation before dropping files."
+        );
+        selection.check_target(&to, moving)?;
+        self.active = side.min(1);
+        self.prompt = Some(Prompt {
+            title: "Transfer dropped files".into(),
+            description: format!(
+                "{} item(s) from {}. Review the destination and conflict choices before transferring.",
+                selection.entries.len(),
+                selection.from.label()
+            ),
+            value: to.label(),
+            kind: PromptKind::DropTransfer {
+                selection,
+                to,
+                moving,
+            },
+            error: None,
+            resumable: false,
+            transfer_options: Default::default(),
+            overrides: Default::default(),
+            conflicts: Vec::new(),
+            conflict_key: String::new(),
+            pending_conflicts: None,
+        });
+        Ok(())
     }
     fn drop_files(
         &mut self,

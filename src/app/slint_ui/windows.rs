@@ -259,6 +259,7 @@ pub(super) fn tick() {
     });
     for (_, ui, state) in &sessions {
         with_state(state, |a| a.tick(ui));
+        drag::dispatch(state, ui);
         dispatch_native_drag(state, ui);
     }
     SESSIONS.with(|all| {
@@ -311,6 +312,7 @@ pub(super) fn tick() {
                 let dirty = sessions.iter().any(|(_, _, s)| {
                     s.borrow().app.editor.as_ref().is_some_and(Editor::dirty)
                         || s.borrow().enhancements.external.is_some()
+                        || s.borrow().drag.preparation.is_some()
                 });
                 if job || dirty {
                     if let Some((_, ui, state)) = sessions.iter().find(|(id, _, _)| *id == source) {
@@ -333,6 +335,9 @@ pub(super) fn tick() {
                         if let Some(job) = &a.app.job {
                             job.cancel.store(true, Ordering::Relaxed);
                         }
+                        if let Some(preparation) = &a.drag.preparation {
+                            preparation.cancel.store(true, Ordering::Relaxed);
+                        }
                         a.app.editor = None;
                         a.app.confirm_exit = false;
                         a.app.exiting = true;
@@ -350,6 +355,7 @@ pub(super) fn tick() {
                     .job
                     .as_ref()
                     .is_none_or(|j| j.owner != a.app.window_id)
+                && a.drag.preparation.is_none()
         });
         if done {
             with_state(&state, |a| a.app.save_settings());

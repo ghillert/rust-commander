@@ -18,10 +18,11 @@ its own GTK4 helper on Linux, so the GTK3 backend serves no purpose here.
 - Removed GTK3/GDK/GDK-X11 dependencies, backend source, and backend selection.
 - Removed upstream example/development dependencies and Linux-only API/docs.
 - Added an explicit unsupported-platform error and disabled publishing.
-- Retained the macOS and Windows backend sources without changes.
+- Publish both modern file URLs and the legacy aggregate macOS file list for winit destinations.
+- Added a CopyMove action mask and enabled it in the Windows source. Native completion never deletes originals in Rust Commander.
 
 The root manifest patches `drag` to this local crate. No GLib advisory is ignored
-or suppressed. Linux continues to use `src/linux_drag.rs` and GTK4. Remove this
+or suppressed. Linux uses `src/native_drag.rs` on the existing X11/Wayland surface; `src/linux_drag.rs` remains a legacy helper. Remove this
 copy and its root patch when a published upstream release allows excluding GTK3
 from the resolved dependency graph; verify Cargo.lock and all three platforms
 when updating.

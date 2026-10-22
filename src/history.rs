@@ -316,7 +316,7 @@ pub fn execute_in(operation: Operation, task: &mut Task, root: &Path) -> Result<
     let local_undo = !matches!(
         operation,
         Operation::RemoteTransfer { .. } | Operation::RemoteTransferResolved { .. }
-    );
+    ) && !matches!(&operation, Operation::DropTransfer{selection,to,..} if matches!(selection.from, crate::filesystem::Location::Remote{..}) || matches!(to,crate::filesystem::Location::Remote{..}));
     task.before_change = if local_undo {
         Some(Box::new(move |path: &Path| {
             capture

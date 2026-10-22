@@ -60,8 +60,9 @@ published.
 - **Recovery and transfers:** guarded local Undo/Redo, storage retention controls,
   persistent history/queue, verified local file resume, and per-file conflict choices.
 - **Desktop integration:** system file clipboard, mounted drives, clickable
-  breadcrumbs, native file actions, configurable columns/toolbar, and native
-  drag-out (a GTK helper window on Linux).
+  breadcrumbs, native file actions, configurable columns/toolbar, and
+  [drag and drop](docs/DRAG_AND_DROP.md) for local, archive, and remote entries,
+  with native file drags on macOS, Windows, X11, and Wayland.
 - **Languages:** system language, English, German, and Spanish.
 - **File tools:** batch rename with preview, recursive name/content search,
   folder comparison, checksums, properties, permissions, and split/combine.
@@ -296,7 +297,7 @@ in Settings. Search by command name to find a binding.
 | Mod + Z / Mod + Shift + Z | Undo / Redo |
 | Mod + J | Persistent queue and history |
 | Mod + P / Mod + Shift + P | Preview pane / macOS Quick Look |
-| Alt + drag | Native drag-out; GTK drag window on Linux |
+| Drag a selection | Copy/move to panes, folders, tabs, tree, sidebar, or another application |
 | Mod + S | Save text |
 | Alt + Left / Right | Back / forward |
 | Escape | Clear marks/filter or close dialog |
@@ -401,7 +402,8 @@ Local validation is recorded in [parity/VALIDATION.md](parity/VALIDATION.md).
 
 The macOS/Windows drag dependency is a small vendored subset of `drag` 2.1.1.
 Its [provenance and update instructions](vendor/drag/README.md) explain why the
-unused GTK3 backend is excluded. Linux uses the separate GTK4 helper.
+unused GTK3 backend is excluded. Linux uses native X11/Wayland adapters on the Slint window;
+[Wayland adapter provenance](vendor/wayland-dnd/README.md) and licenses are included.
 
 Tests use temporary directories and generated archive/PDF fixtures. The WebDAV
 integration test opens a loopback-only server; it requires permission to bind

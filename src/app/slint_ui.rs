@@ -6,6 +6,7 @@ use std::{cell::RefCell, rc::Rc};
 
 slint::include_modules!();
 mod dialogs;
+mod drag;
 mod enhancements;
 #[cfg(feature = "screenshot")]
 mod icon_smoke;
@@ -33,6 +34,7 @@ struct RowData {
 pub(super) struct Adapter {
     app: Commander,
     enhancements: enhancements::State,
+    drag: drag::State,
     extra: parity::State,
     ctx: UiSignal,
     rows: [Rc<VecModel<FileRow>>; 2],
@@ -140,6 +142,7 @@ impl Adapter {
         Self {
             app,
             enhancements: Default::default(),
+            drag: Default::default(),
             extra: Default::default(),
             ctx,
             rows: std::array::from_fn(|_| Rc::new(VecModel::default())),
@@ -180,6 +183,7 @@ impl Adapter {
 
     fn blocked(&self) -> bool {
         self.enhancements_modal()
+            || self.drag.preparation.is_some()
             || self.extra.dialog.is_some()
             || self.app.features.active()
             || self.app.prompt.is_some()
@@ -266,6 +270,9 @@ impl Adapter {
             return;
         }
         if name == "CancelJob" {
+            if let Some(preparation) = &self.drag.preparation {
+                preparation.cancel.store(true, Ordering::Relaxed);
+            }
             if let Some(job) = &self.app.job {
                 job.cancel.store(true, Ordering::Relaxed);
             }
@@ -345,17 +352,13 @@ impl Adapter {
         if name == "Back" || name == "Forward" {
             self.app.tab_mut().history(name == "Forward", &self.ctx);
         } else if name == "NativeDrag" {
-            if self.app.tab().location.local().is_some() {
-                self.pending_native_drag = Some(
-                    self.app
-                        .tab()
-                        .chosen(self.app.show_hidden)
-                        .iter()
-                        .map(|entry| entry.path.clone())
-                        .collect(),
-                );
-            } else {
-                self.app.fail("Native drag-out requires local files.");
+            let entries = self.app.tab().chosen(self.app.show_hidden);
+            if !entries.is_empty() {
+                self.drag.prepare_requested = true;
+                self.drag.pending = Some(Rc::new(crate::drag_drop::Selection {
+                    from: self.app.tab().location.clone(),
+                    entries,
+                }));
             }
         } else if let Some(action) = action_named(name) {
             self.app.act(action, &self.ctx);
@@ -392,6 +395,7 @@ impl Adapter {
             .job
             .as_ref()
             .is_some_and(|job| job.owner == self.app.window_id)
+            || self.drag.preparation.is_some()
             || self.app.editor.as_ref().is_some_and(Editor::dirty)
             || self.enhancements.external.is_some()
         {
@@ -431,6 +435,7 @@ impl Adapter {
                 self.action(&format!("{action:?}"));
             }
         }
+        self.drag_tick(ui);
         if self
             .drop_deadline
             .is_some_and(|deadline| std::time::Instant::now() >= deadline)
@@ -438,9 +443,22 @@ impl Adapter {
             self.drop_deadline = None;
             let paths = std::mem::take(&mut self.pending_drops);
             if let Some(side) = self.pending_drop_side.take() {
-                let mut data = slint::DataTransfer::default();
-                data.set_file_paths(paths);
-                self.drop_files(side, data);
+                let data = drag::native_payload(paths);
+                let target = self.drag.last_hit.take().or_else(|| {
+                    self.drag
+                        .position
+                        .is_none_or(|(x, y)| ui.invoke_drop_side(x, y) >= 0)
+                        .then(|| (side as i32, "pane".into()))
+                });
+                let action = self
+                    .drag
+                    .drop_action
+                    .take()
+                    .unwrap_or(slint::private_unstable_api::re_exports::DragAction::Copy);
+                if let Some((side, target)) = target {
+                    self.drop_to(side, &target, data, action);
+                }
+                self.drag.hovered.clear();
             }
         }
         self.app.poll(&self.ctx);
@@ -554,13 +572,15 @@ impl Adapter {
         ui.set_single_pane(self.app.preferences.single_pane);
         let active_changed = ui.get_active_pane() != self.app.active as i32;
         ui.set_active_pane(self.app.active as i32);
-        ui.set_busy(self.app.job.is_some());
+        ui.set_busy(self.app.job.is_some() || self.drag.preparation.is_some());
         ui.set_show_hidden(self.app.show_hidden);
-        let fraction = self
+        let transfer_progress = self
             .app
             .job
             .as_ref()
-            .and_then(|job| job.progress.fraction());
+            .map(|job| &job.progress)
+            .or_else(|| self.drag.preparation.as_ref().map(|p| &p.progress));
+        let fraction = transfer_progress.and_then(Progress::fraction);
         // Reserve completion for the finished job: flushes, guarded publishing
         // and verification can still be running after the last byte is copied.
         let fraction = fraction.map(|value| value.min(0.99));
@@ -573,16 +593,21 @@ impl Adapter {
                 .into(),
         );
         ui.set_transfer_speed(
-            self.app
-                .job
-                .as_ref()
+            transfer_progress
                 .filter(|_| !self.app.status_error)
-                .and_then(|job| job.progress.bytes_per_second())
+                .and_then(Progress::bytes_per_second)
                 .map(|rate| format!("{}/s", filesystem::human_size(rate)))
                 .unwrap_or_default()
                 .into(),
         );
-        let status = if let Some(job) = &self.app.job
+        let status = if let Some(preparation) = &self.drag.preparation {
+            format!(
+                "{} · {} · {}",
+                tr("Preparing files for drag…"),
+                preparation.progress.current,
+                filesystem::human_size(preparation.progress.bytes)
+            )
+        } else if let Some(job) = &self.app.job
             && !self.app.status_error
         {
             format!(
@@ -699,9 +724,19 @@ impl Adapter {
                 self.app.preferences.language
             );
             if self.listing_stamp[side] != listing {
-                let rows = visible
+                self.drag.rows[side] = visible
                     .iter()
                     .map(|&index| {
+                        drag::Handle::new(crate::drag_drop::Selection {
+                            from: tab.location.clone(),
+                            entries: vec![tab.entries[index].clone()],
+                        })
+                    })
+                    .collect();
+                let rows = visible
+                    .iter()
+                    .enumerate()
+                    .map(|(row_index, &index)| {
                         let entry = &tab.entries[index];
                         RowData {
                             id: path_id(&entry.path),
@@ -726,13 +761,7 @@ impl Adapter {
                             directory: entry.is_dir,
                             selected: tab.selected.contains(&entry.path),
                             cursor: tab.cursor.as_ref() == Some(&entry.path),
-                            payload: if tab.location.local().is_some() {
-                                url::Url::from_file_path(&entry.path)
-                                    .map(|url| url.to_string())
-                                    .unwrap_or_default()
-                            } else {
-                                String::new()
-                            },
+                            payload: self.drag.rows[side][row_index].token.clone(),
                         }
                     })
                     .collect();
@@ -767,16 +796,17 @@ impl Adapter {
                 }
             }
             if self.selection_stamp[side] != selection || self.listing_stamp[side] != listing {
-                let payload = if tab.location.local().is_some() {
-                    tab.chosen(self.app.show_hidden)
-                        .iter()
-                        .filter_map(|entry| url::Url::from_file_path(&entry.path).ok())
-                        .map(|url| url.to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                } else {
-                    String::new()
-                };
+                let chosen = tab.chosen(self.app.show_hidden);
+                self.drag.selected[side] = (!chosen.is_empty()).then(|| {
+                    drag::Handle::new(crate::drag_drop::Selection {
+                        from: tab.location.clone(),
+                        entries: chosen,
+                    })
+                });
+                let payload = self.drag.selected[side]
+                    .as_ref()
+                    .map(|handle| handle.token.clone())
+                    .unwrap_or_default();
                 if side == 0 {
                     ui.set_left_selection_payload(payload.into());
                 } else {
@@ -1264,6 +1294,10 @@ fn terminal_color(color: vt100::Color, foreground: bool) -> slint::Color {
 
 impl Drop for Adapter {
     fn drop(&mut self) {
+        if let Some(preparation) = &self.drag.preparation {
+            preparation.cancel.store(true, Ordering::Relaxed);
+        }
+
         if let Some(cancel) = &self.app.oauth_cancel {
             cancel.store(true, Ordering::Relaxed);
         }
@@ -1440,24 +1474,7 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
     });
     ui.global::<Words>()
         .on_translate(|text, _version| tr(&text).into_owned().into());
-    let mut selected_payload = String::new();
-    let mut selected_data = slint::DataTransfer::default();
-    ui.global::<Transfers>().on_payload(move |text| {
-        if text.contains('\n') && selected_payload == text.as_str() {
-            return selected_data.clone();
-        }
-        let mut data = slint::DataTransfer::default();
-        if let Ok(paths) = crate::native_files::decode_paths(&[text.to_string()]) {
-            data.set_file_paths(paths);
-        }
-        if text.contains('\n') {
-            selected_payload = text.to_string();
-            selected_data = data.clone();
-        }
-        data
-    });
-    ui.global::<Transfers>()
-        .on_accepts(|data| data.has_file_paths());
+    drag::wire(ui, state.clone());
     macro_rules! callback {
         ($method:ident, |$adapter:ident, $window:ident $(, $arg:ident)*| $body:block) => {{
             let state=state.clone(); let weak=ui.as_weak();
@@ -1691,16 +1708,74 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
         if let Some(ui) = weak.upgrade() {
             match event {
                 WindowEvent::ModifiersChanged(next) => {
+                    let pressed_modifiers = next.state();
+                    event_state.borrow_mut().drag.move_modifier = (pressed_modifiers.shift_key()
+                        || cfg!(target_os = "macos") && pressed_modifiers.super_key())
+                        && !pressed_modifiers.control_key()
+                        && !pressed_modifiers.alt_key();
                     sync_modifiers(&ui, &modifiers, next.state());
                     return slint::winit_030::EventResult::Propagate;
                 }
                 WindowEvent::Focused(false) => sync_modifiers(&ui, &modifiers, Default::default()),
                 _ => {}
             }
+            if matches!(
+                event,
+                WindowEvent::MouseInput {
+                    state: slint::winit_030::winit::event::ElementState::Released,
+                    button: slint::winit_030::winit::event::MouseButton::Left,
+                    ..
+                }
+            ) {
+                drag::prime_release(&event_state, &ui);
+            }
             let mut a = event_state.borrow_mut();
+            match event {
+                WindowEvent::MouseInput {
+                    state,
+                    button: slint::winit_030::winit::event::MouseButton::Left,
+                    ..
+                } => {
+                    a.drag.pressed =
+                        *state == slint::winit_030::winit::event::ElementState::Pressed;
+                    drag::trace(if a.drag.pressed {
+                        "winit press"
+                    } else {
+                        "winit release"
+                    });
+                }
+                WindowEvent::CursorLeft { .. } => a.drag.outside = true,
+                WindowEvent::CursorEntered { .. } => a.drag.outside = false,
+                WindowEvent::CursorMoved { position, .. } => {
+                    let size = window.size();
+                    a.drag.cursor = Some(slint::LogicalPosition::new(
+                        (position.x / f64::from(window.scale_factor())) as f32,
+                        (position.y / f64::from(window.scale_factor())) as f32,
+                    ));
+                    a.drag.outside = position.x < 0.0
+                        || position.y < 0.0
+                        || position.x >= f64::from(size.width)
+                        || position.y >= f64::from(size.height);
+                }
+                WindowEvent::HoveredFile(path) => {
+                    drag::trace("native hover");
+                    if a.drag.hovered.is_empty() {
+                        a.drag.last_hit = None;
+                        a.drag.hits.borrow_mut().clear();
+                    }
+                    if !a.drag.hovered.contains(path) {
+                        a.drag.hovered.push(path.clone());
+                    }
+                }
+                WindowEvent::HoveredFileCancelled if a.pending_drops.is_empty() => {
+                    a.drag.hovered.clear();
+                }
+                _ => {}
+            }
             if let WindowEvent::DroppedFile(path) = event
                 && !a.blocked()
             {
+                drag::trace("native drop");
                 if a.pending_drops.is_empty() {
                     use raw_window_handle::HasWindowHandle;
                     let position = window
@@ -1713,6 +1788,12 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
                                 f64::from(window.scale_factor()),
                             )
                         });
+                    a.drag.position = position;
+                    a.drag.drop_action = Some(if a.drag.buttons().1 {
+                        slint::private_unstable_api::re_exports::DragAction::Move
+                    } else {
+                        slint::private_unstable_api::re_exports::DragAction::Copy
+                    });
                     a.pending_drop_side = match position {
                         Some((x, y)) => usize::try_from(ui.invoke_drop_side(x, y))
                             .ok()
@@ -1720,7 +1801,8 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
                         // Compositors that prohibit pointer queries use an explicit
                         // confirmation for the active pane, never a stale position.
                         None => Some(a.app.active),
-                    };
+                    }
+                    .or(Some(a.app.active));
                 }
                 if a.pending_drop_side.is_some() {
                     a.pending_drops.push(path.clone());

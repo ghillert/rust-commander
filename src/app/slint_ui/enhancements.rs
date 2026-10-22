@@ -518,6 +518,30 @@ impl Adapter {
     }
 }
 
+impl State {
+    pub(super) fn drop_count(&self) -> usize {
+        self.nodes.len()
+    }
+    pub(super) fn drop_location(&self, index: usize) -> Option<Location> {
+        Some(crate::directory_tree::at(
+            self.tree_root.as_ref()?,
+            &self.nodes.get(index)?.path,
+        ))
+    }
+}
+impl Adapter {
+    pub(super) fn expand_drop_tree(&mut self, index: usize) {
+        if self
+            .enhancements
+            .nodes
+            .get(index)
+            .is_some_and(|node| !node.expanded)
+        {
+            self.tree_action(index as i32, true);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

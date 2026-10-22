@@ -16,6 +16,13 @@ pub(crate) mod totals;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Operation {
+    DropTransfer {
+        selection: crate::drag_drop::Selection,
+        to: crate::filesystem::Location,
+        moving: bool,
+        options: crate::transfer::TransferOptions,
+        overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
+    },
     EmptyTrash,
     ResumeRemote {
         id: String,
@@ -219,6 +226,7 @@ impl Operation {
                 "Extract archive"
             }
             Self::ArchiveEdit { .. } | Self::ArchiveSaveBytes { .. } => "Edit archive",
+            Self::DropTransfer { .. } => "Drag and drop transfer",
             Self::RemoteTransfer { .. } | Self::RemoteTransferResolved { .. } => "Remote transfer",
             Self::Properties(_) => "Properties",
             Self::Compare { .. } => "Compare folders",
@@ -232,6 +240,17 @@ impl Operation {
     /// Recipe details exclude passwords and editor buffers.
     pub fn description(&self) -> String {
         match self {
+            Self::DropTransfer { selection, to, .. } => format!(
+                "{}\n{}\n→ {}",
+                selection.from.label(),
+                selection
+                    .entries
+                    .iter()
+                    .map(|e| e.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                to.label()
+            ),
             Self::ResumeLocal {
                 source,
                 destination,
@@ -572,6 +591,13 @@ pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
 pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
     task.check()?;
     match operation {
+        Operation::DropTransfer {
+            selection,
+            to,
+            moving,
+            options,
+            overrides,
+        } => crate::drag_drop::transfer(&selection, &to, moving, options, &overrides, task),
         Operation::ResumeRemote {
             id,
             from,
@@ -919,6 +945,7 @@ pub fn run(operation: Operation, task: &mut Task) -> Result<String> {
             | Operation::ResolvedTransfer { .. }
             | Operation::RemoteTransfer { .. }
             | Operation::RemoteTransferResolved { .. }
+            | Operation::DropTransfer { .. }
             | Operation::ResumeLocal { .. }
             | Operation::ResumeRemote { .. }
     ) {

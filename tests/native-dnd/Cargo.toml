@@ -1,0 +1,12 @@
+[package]
+name = "rust-commander-native-dnd-tests"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+publish = false
+license = "GPL-3.0-only"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+anyhow = "1"
+url = "2"
+x11rb = { version = "0.13", default-features = false, features = ["xtest"] }

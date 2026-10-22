@@ -2,15 +2,16 @@
 
 This overview reflects the current source and the recorded checks in
 [VALIDATION.md](VALIDATION.md). It separates absent behavior from behavior that
-exists but still needs compatibility or native acceptance testing. This source
-review did not perform new desktop or live-account tests. Historical validation
+exists but still needs compatibility or native acceptance testing. Drag/drop
+includes the new checks recorded there; the other areas below remain source
+reviews without new live-account acceptance. Historical validation
 sections describe their original snapshots; later sections supersede older limits.
 
 ### Main implementation gaps
 
 | Area | Existing behavior | Missing or limited behavior |
 | --- | --- | --- |
-| Drag and drop | Local-file copy payloads, pane drop confirmations, incoming OS handlers and explicit native drag-out | Move gestures; remote/archive sources; folder-row, tree and tab drop targets; hover navigation; seamless native drag-out. See the detailed matrix below. |
+| Drag and drop | Local/remote/archive selections; guarded copy/move; folder/tab/tree/breadcrumb/sidebar targets; hover navigation and edge scrolling; native X11/Wayland/AppKit/OLE bridges | Native desktop acceptance remains incomplete; outgoing Linux native lists/virtual exports are Copy, and external virtual exports require explicit preparation. See the detailed matrix below. |
 | Network services | HTTP/HTTPS, FTP/both FTPS modes, SFTP on all three desktop platforms, SMB2/3 and cloud adapters | NFS, Android/ADB, Windows Registry, oVirt/vSphere and Bonjour discovery. WebHDFS does not establish full Hadoop parity. |
 | Archives | Create/extract common formats; edit local ZIP/TAR/7z; encrypted ZIP/7z; nested/remote browsing | Nested/remote editing, LST and libguestfs; archive links and special files. NRG/CPIO/RPM lack dedicated format fixtures. See [format support](../docs/FILE_OPERATIONS.md#archives). |
 | Search and comparison | Local/remote search and separate local/remote synchronization | Local content search skips files over 16 MiB and matches literal text; Compare folders is local-only and skips symlinks. Full upstream search options remain open. |
@@ -31,23 +32,23 @@ inventory counts do not include an additional DragDrop entry.
 
 | Workflow | Current implementation | Missing behavior / acceptance still required |
 | --- | --- | --- |
-| Local selection between panes | Slint file payloads and pane-wide copy drop targets; confirmation before transfer | Move negotiation/modifier semantics; real gesture-to-transfer completion across supported desktops |
-| Finder/Explorer/Linux file manager into a pane | Incoming file events are grouped; destination pane is detected or explicitly confirmed through the active-pane fallback | End-to-end OS interoperability and correct targeting on native desktops, especially Wayland |
-| Local files into a remote pane or open local archive | Upload confirmation or archive-add form; routing has callback coverage | Physical-drop completion with real destinations; folder/tab/tree targeting |
-| Local files out to another application | Alt + drag or Selection → Native drag-out on macOS/Windows; separate GTK4 helper on Linux | Ordinary seamless drag-out, native source/destination completion and platform copy/move negotiation |
-| Remote/archive entries as drag sources | No payload is provided for these sources | Downloads/extraction or virtual-entry payloads, plus source lifetime and cleanup |
-| Folder rows, directory tree and tabs | Drops currently target the pane's open location | Dedicated targets, hover-to-open/tab switching and drag-specific scrolling |
+| Local selection between panes | Immutable multi-file payloads, copy/move confirmation and normal conflict/Undo guards | Broader physical gesture acceptance on Windows/Linux |
+| Finder/Explorer/Linux file manager into a pane | Grouped file lists, frozen coordinates, highlighted folder/tab/tree/breadcrumb/sidebar targets; guarded confirmation | Real Explorer/Nautilus/Dolphin interoperation and compositor coverage |
+| Transfers involving remote panes or local archives | Common transfer engine, per-item conflicts, completed-source-only deletion; atomic same-archive moves | Backend-specific live service acceptance; nested/remote archive mutation remains limited |
+| Local files out to another application | Ordinary gesture handoff on leaving the window; native AppKit/OLE/XDND/Wayland sources without the Linux helper | Outgoing Linux native sources advertise Copy; native destination behavior still needs desktop acceptance |
+| Remote/archive entries as drag sources | In-window typed payloads; explicit cancellable export for native file lists; retained private exports; gestures never fetch contents | External virtual exports need the preparation command; lazy OS file promises are not implemented; native virtual exports advertise Copy |
+| Folder rows, directory tree, tabs, breadcrumbs and sidebar | Dedicated targets, 650 ms hover navigation/expansion, and file-list edge scrolling | Wider multi-scale/desktop acceptance |
 
-Implementation evidence: [Slint drag/drop widgets](../ui/commander.slint),
-[payload/native-event routing](../src/app/slint_ui.rs),
-[transfer confirmation](../src/app.rs), [native adapters](../src/native_files.rs)
-and [Linux helper](../src/linux_drag.rs).
-Callback tests in [slint_ui/tests.rs](../src/app/slint_ui/tests.rs) cover confirmation,
-modal guards and local-file drops into remote/archive destinations; pane-layout
-hit testing is covered in [parity_tests.rs](../src/app/slint_ui/parity_tests.rs).
-The GTK fixture checks the file-list payload and helper window. These checks do
-**not** establish physical/native cross-application drop completion. Remote/archive
-destinations accepting local files do **not** mean remote/archive drag sources work.
+Implementation: [gesture/widgets](../ui/drag-drop.slint),
+[payload ownership and target routing](../src/app/slint_ui/drag.rs),
+[guarded transfers](../src/drag_drop.rs), [native Linux bridge](../src/native_drag.rs),
+and [usage/limits](../docs/DRAG_AND_DROP.md).
+Pointer-event and callback tests cover initiation, selection lifetime, routing,
+confirmation, cancellation and native hit feedback. Domain tests cover archive/remote
+pairs, skipped moves, changed sources, recovery, progress and local Undo.
+The standalone Linux fixtures exercise actual XDND small/INCR transfers under Xvfb
+and Wayland connection lifetime under headless Weston. These checks do **not**
+establish physical Explorer/Nautilus/Dolphin interoperability or every compositor.
 
 ### Validation gaps for existing implementations
 

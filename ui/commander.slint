@@ -22,10 +22,9 @@ export global Words {
     pure callback translate(string,int)->string;
 }
 
-export global Transfers {
-    pure callback payload(string) -> data-transfer;
-    pure callback accepts(data-transfer) -> bool;
-}
+import { FileDropZone } from "drag-drop.slint";
+export { Transfers } from "drag-drop.slint";
+import { Transfers } from "drag-drop.slint";
 
 component FilePane inherits Rectangle {
     in property <int> side;
@@ -107,6 +106,7 @@ component FilePane inherits Rectangle {
                     muted: index != root.active-tab;
                     max-width: 170px; min-width: 50px; height: 26px;
                     clicked => { root.tab(index); }
+                    FileDropZone {side:root.side;target:"tab:"+index;priority:60;}
                 }
                 Rectangle { horizontal-stretch: 1; }
                 ChromeButton { label: Words.translate("New tab",Words.version); icon: Glyphs.action("NewTab"); height: 24px; clicked => { root.action("NewTab"); } }
@@ -152,6 +152,7 @@ component FilePane inherits Rectangle {
                                     emphasized: index == root.breadcrumbs.length - 1;
                                     max-width: 150px; min-width: 20px; height: 24px;
                                     clicked => {root.breadcrumb(index);}
+                                    FileDropZone {side:root.side;target:"breadcrumb:"+index;priority:60;}
                                 }
                             }
                         }
@@ -206,6 +207,7 @@ component FilePane inherits Rectangle {
             accessible-item-count: root.rows.length;
             accessible-delegate-focus: root.cursor-index;
             key-pressed(event) => { return root.key-event(event) ? EventResult.accept : EventResult.reject; }
+            FileDropZone {side:root.side;priority:5;
             list := ListView {
                 for row[index] in root.rows: Rectangle {
                     height: max(24px, (root.text-size + 10) * 1px);
@@ -253,7 +255,8 @@ component FilePane inherits Rectangle {
                         data: Transfers.payload(row.selected ? root.selection-payload : row.payload);
                         enabled: !root.native-drag;
                         allow-copy: row.payload != "";
-                        allow-move: false;
+                        allow-move: Transfers.movable(self.data);
+                        changed dragging => {if self.dragging {Transfers.begin(row.selected ? root.selection-payload : row.payload);}}
                         TouchArea {
                             private property <bool> modified-press;
                             clicked => {if !self.modified-press {root.clicked-file(row.id);}}
@@ -265,19 +268,24 @@ component FilePane inherits Rectangle {
                                     root.context-menu((self.absolute-position.x+self.mouse-x)/1px,(self.absolute-position.y+self.mouse-y)/1px);
                                 } else if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {
                                     self.modified-press=event.modifiers.control || event.modifiers.meta || event.modifiers.shift || event.modifiers.alt;
-                                    files-focus.focus(); root.native-drag=event.modifiers.alt;
+                                    files-focus.focus();
                                     root.selected(row.id,event.modifiers.control || event.modifiers.meta,event.modifiers.shift);
-                                    if event.modifiers.alt {root.action("NativeDrag");}
                                 }
                             }
                         }
                     }
+                    FileDropZone {
+                        side:root.side;target:"folder:"+row.id;priority:50;
+                        clip-top:files-focus.absolute-position.y/1px;
+                        clip-bottom:(files-focus.absolute-position.y+files-focus.height)/1px;
+                    }
                 }
             }
             if root.busy: Text { text: Words.translate("Loading…", Words.version); x: 12px; y: 12px; color: Palette.foreground; }
-            DropArea {
-                can-drop(event) => { return Transfers.accepts(event.data) ? DragAction.copy : DragAction.none; }
-                dropped(event) => { return root.dropped(event.data) ? DragAction.copy : DragAction.none; }
+            scroll-up := FileDropZone {side:root.side;priority:101;height:18px;highlight:false;}
+            scroll-down := FileDropZone {side:root.side;priority:100;height:18px;y:parent.height - self.height;highlight:false;}
+            Timer {interval:60ms;running:scroll-up.active;triggered=>{list.content-y=min(0px,list.content-y+24px);}}
+            Timer {interval:60ms;running:scroll-down.active;triggered=>{list.content-y=max(min(0px,list.visible-height - list.content-height),list.content-y - 24px);}}
             }
         }
         if root.error != "": Text { text: root.error; color: #c74343; wrap: word-wrap; }
@@ -522,7 +530,7 @@ export component CommanderWindow inherits Window {
                 spacing: 1px;
                 if root.sidebar-visible: Rectangle {
                     width: 186px; background: Chrome.sidebar;
-                    ListView {
+                    places-list := ListView {
                         for place in root.places: place-focus := FocusScope {
                             focus-on-tab-navigation: true;
                             accessible-role: list-item;
@@ -559,6 +567,11 @@ export component CommanderWindow inherits Window {
                                         if root.place-menu(place.id) {root.menu-x=(self.absolute-position.x+self.mouse-x)/1px;root.menu-y=(self.absolute-position.y+self.mouse-y)/1px;app-menu.show();}
                                     }
                                 }
+                            }
+                            if !place.heading: FileDropZone {
+                                side:root.active-pane;target:"place:"+place.id;priority:60;
+                                clip-top:places-list.absolute-position.y/1px;
+                                clip-bottom:(places-list.absolute-position.y+places-list.height)/1px;
                             }
                             if !place.heading: Tooltip {text:@markdown("\{place.title}");}
                         }
@@ -601,6 +614,11 @@ export component CommanderWindow inherits Window {
                                     node-touch := TouchArea {x:26px+min(node.depth,14)*12px;width:parent.width - self.x;
                                         clicked=>{tree-focus.focus();root.tree-focused-index=node.index;root.tree-action(node.index,false);}}
                                     TouchArea {x:6px+min(node.depth,14)*12px;width:20px;clicked=>{tree-focus.focus();root.tree-focused-index=node.index;root.tree-action(node.index,true);}}
+                                    FileDropZone {
+                                        side:root.active-pane;target:"tree:"+node.index;priority:60;
+                                        clip-top:tree-list.absolute-position.y/1px;
+                                        clip-bottom:(tree-list.absolute-position.y+tree-list.height)/1px;
+                                    }
                                     Tooltip {text:@markdown("\{node.title} \{node.detail}");}
                                 }
                             }

@@ -251,6 +251,7 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
                     let effect = match options.mode {
                         DragMode::Copy => DROPEFFECT_COPY,
                         DragMode::Move => DROPEFFECT_MOVE,
+                        DragMode::CopyMove => DROPEFFECT_COPY | DROPEFFECT_MOVE,
                     };
 
                     let drop_result =

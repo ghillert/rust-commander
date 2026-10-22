@@ -16,7 +16,7 @@ use crate::{CursorPosition, DragItem, DragMode, DragResult, Image, Options};
 use objc2_app_kit::{
     NSApp, NSDraggingContext, NSDraggingItem, NSDraggingSession, NSDraggingSource, NSEvent,
     NSEventModifierFlags, NSEventType, NSImage, NSPasteboardItem, NSPasteboardItemDataProvider,
-    NSView,
+    NSPasteboardTypeFileURL, NSView,
 };
 
 type OnDropCallback = Box<dyn Fn(DragResult, CursorPosition) + Send>;
@@ -176,14 +176,31 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
 
             match item {
                 DragItem::Files(files) => {
-                    for path in files {
+                    // winit's macOS destination still reads the legacy aggregate
+                    // file list. Keep it alongside modern per-item file URLs so
+                    // native drags can return to another Rust Commander window.
+                    let names = files
+                        .iter()
+                        .map(|p| NSString::from_str(&p.to_string_lossy()))
+                        .collect::<Vec<_>>();
+                    let names = NSArray::from_retained_slice(&names);
+                    let legacy_files_type = NSString::from_str("NSFilenamesPboardType");
+                    for (index, path) in files.iter().enumerate() {
                         let nsurl = NSURL::fileURLWithPath_isDirectory(
                             &NSString::from_str(&path.display().to_string()),
                             false,
                         );
+                        let writer = NSPasteboardItem::new();
+                        writer.setString_forType(
+                            &nsurl.absoluteString().expect("file URL string"),
+                            NSPasteboardTypeFileURL,
+                        );
+                        if index == 0 {
+                            writer.setPropertyList_forType(&names, &legacy_files_type);
+                        }
                         let item = NSDraggingItem::initWithPasteboardWriter(
                             NSDraggingItem::alloc(),
-                            &ProtocolObject::from_retained(nsurl),
+                            &ProtocolObject::from_retained(writer),
                         );
                         item.setDraggingFrame_contents(image_rect, Some(&*img));
                         dragging_items.addObject(&*item);

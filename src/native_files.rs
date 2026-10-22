@@ -373,6 +373,16 @@ pub(crate) fn drop_position(
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn drag_out(window: &Window, paths: Vec<PathBuf>) -> Result<()> {
+    drag_out_with(window, paths, false, || {})
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub(crate) fn drag_out_with(
+    window: &Window,
+    paths: Vec<PathBuf>,
+    moving: bool,
+    finished: impl Fn() + Send + 'static,
+) -> Result<()> {
     let mut preview = std::io::Cursor::new(Vec::new());
     let image = image::RgbaImage::from_fn(32, 32, |x, y| {
         if x > 2 && x < 29 && y > 7 && y < 27 {
@@ -386,8 +396,15 @@ pub fn drag_out(window: &Window, paths: Vec<PathBuf>) -> Result<()> {
         window,
         drag::DragItem::Files(paths),
         drag::Image::Raw(preview.into_inner()),
-        |_, _| {},
-        drag::Options::default(),
+        move |_, _| finished(),
+        drag::Options {
+            mode: if moving {
+                drag::DragMode::CopyMove
+            } else {
+                drag::DragMode::Copy
+            },
+            ..Default::default()
+        },
     )
     .map_err(|e| anyhow::anyhow!("Native drag failed: {e}"))?;
     Ok(())
@@ -455,4 +472,25 @@ pub fn breadcrumbs(path: &Path) -> Vec<(String, PathBuf)> {
         result.push((label, current.clone()));
     }
     result
+}
+
+/// Current physical button/modifier state, including while the OS owns a drag.
+#[cfg(target_os = "macos")]
+pub(crate) fn drag_buttons() -> (bool, bool) {
+    use objc2_app_kit::{NSEvent, NSEventModifierFlags as Flags};
+    let flags = NSEvent::modifierFlags_class();
+    let moving = (flags.contains(Flags::Shift) || flags.contains(Flags::Command))
+        && !flags.intersects(Flags::Option | Flags::Control);
+    (NSEvent::pressedMouseButtons() & 1 != 0, moving)
+}
+#[cfg(target_os = "windows")]
+pub(crate) fn drag_buttons() -> (bool, bool) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_CONTROL, VK_LBUTTON, VK_MENU, VK_SHIFT,
+    };
+    let down = |key| unsafe { GetAsyncKeyState(i32::from(key)) } < 0;
+    (
+        down(VK_LBUTTON),
+        down(VK_SHIFT) && !down(VK_CONTROL) && !down(VK_MENU),
+    )
 }

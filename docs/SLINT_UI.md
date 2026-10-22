@@ -106,19 +106,17 @@ for commands and drop targets.
 
 ## Desktop drag and drop
 
-Slint's `DragArea`/`DropArea` handles drags between panes. The winit backend's
-incoming OS file events are grouped into one confirmation for a multi-file drop.
-Native AppKit, Win32 and X11 pointer queries identify the pane under the drop,
-because winit does not report cursor movement during an external drag. If the
-desktop prohibits that query, confirmation targets the active pane and displays
-its destination for review. This bridge is needed by the pinned Slint
-winit backend; it must be reviewed when upgrading Slint.
+The [drag-and-drop guide](DRAG_AND_DROP.md) covers targets, copy/move confirmation,
+conflict rules, hover navigation, scrolling, virtual export preparation and native
+interoperation. Slint retains in-window gestures; leaving the window hands a
+local file list to AppKit, OLE, XDND or Wayland. Native calls run after the
+controller borrow ends. A release-time target refresh handles fast gestures.
 
-For outgoing OS drags, use **Alt + drag** on a local selection or
-**Selection → Native drag-out**. macOS and Windows use the retained native drag
-implementation with the Slint window handle. Linux opens the existing GTK4
-helper window. Its file payload uses GTK4's native `GdkFileList` representation.
-Native drag invocation is deferred until the controller is no longer borrowed.
+Incoming native file events are grouped and routed using frozen drop coordinates,
+with dedicated folder/tab/tree/sidebar targets. If a desktop cannot provide
+coordinates, the active-pane fallback opens an explicit destination confirmation.
+Native offers acknowledge Copy while confirmation is pending; source deletion
+requires a confirmed successful Move through the normal transfer engine.
 
 ## Source layout
 

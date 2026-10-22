@@ -64,3 +64,8 @@ pub mod storage;
 pub mod resumable;
 
 mod remote_upload;
+
+pub mod drag_drop;
+
+#[cfg(target_os = "linux")]
+mod native_drag;

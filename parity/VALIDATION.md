@@ -753,3 +753,54 @@ in light/software and dark/FemtoVG native windows. Both captures were visually
 inspected (`target/progress-smoke/`); the fixture and automated checks are in
 `scripts/progress-smoke.py`. Linux CI is configured to run this under Xvfb.
 Native Windows/Linux desktop validation was not performed on this Mac.
+
+
+## Drag and drop — 2026-10-21
+
+Local, archive and remote selections now share typed, stable payloads and guarded
+Copy/Move confirmation. Targets include panes, folders, tabs, breadcrumbs, sidebar
+locations, directory-tree nodes and writable local archives, with hover navigation
+and file-list edge scrolling. Starting or abandoning a gesture never downloads or
+extracts virtual contents. External virtual exports require the explicit
+**Prepare files for external drag…** command; lazy native file promises remain a
+gap. Archive conflict previews inspect metadata without exporting payloads.
+
+Checks actually performed on the available Apple Silicon Mac:
+
+- Full application tests: 270 passed, no failures, 15 environment-dependent
+  cases ignored. Clippy with all targets/features and warnings denied passed.
+  Formatting and diff checks passed.
+- Automated cases cover frozen multi-selections, destination routing, cancellation,
+  stale payloads, preparation lifecycle, read-only targets, exact pointer release
+  routing, archive/local/remote transfer combinations, skipped Move sources,
+  recursive targets, durable archive recovery, local Undo and metadata-only
+  conflict discovery. A loopback HTTP regression confirms zero content requests
+  when a virtual drag is abandoned. Explicit preparation completion cannot launch
+  an unrelated mouse gesture.
+- Physical desktop checks: local Move, Undo, folder-row targeting and Cancel;
+  archive-entry Copy into a local folder; and the live Kew HTTPS listing. Dragging
+  its ZIP onto an invalid target started no transfer. Dropping it into the other
+  pane opened Copy confirmation without downloading; Cancel left it unchanged.
+  The isolated test profile had no export folder or downloaded Kew ZIP afterward.
+- File/PDF desktop smoke captures passed with software and FemtoVG renderers
+  (`target/desktop-smoke/`). The FemtoVG file-list capture was visually inspected.
+  The updated debug app bundle built and passed ad hoc signature verification.
+- Icon catalog checks passed (nine tests); release-tooling checks passed
+  (18 tests, including two platform-dependent skips).
+
+Linux checks ran in an ARM64 Debian Bookworm container with Rust 1.92: application
+check and all-target/all-feature Clippy passed. Native fixtures passed under Xvfb
+(two XDND cases, including Unicode/large INCR payloads and cancellation), plus
+five Wayland URI/pipe checks and one headless Weston connection/lifetime check.
+The full Linux application test executable exceeded this container's link memory
+limit; its full test suite is not claimed as passed. Logs are retained under
+`target/native-dnd-logs/`. CI now includes the native fixture command.
+
+The changed Windows native helper and vendored OLE source cross-compiled for
+x64 MSVC. A full Windows application build and interactive desktop checks remain
+for CI/Windows. Finder, Explorer, Nautilus and Dolphin interoperability, physical
+Wayland gestures, and every display scale have not been acceptance-tested here.
+Linux outgoing native file lists and all virtual exports currently advertise Copy;
+use the application's guarded Move confirmation between its panes/windows.
+See [drag-and-drop documentation](../docs/DRAG_AND_DROP.md) for export retention
+and backend limitations.

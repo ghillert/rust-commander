@@ -245,6 +245,23 @@ pub fn transfer_resolved(
     overrides: &BTreeMap<PathBuf, ConflictPolicy>,
     task: &mut Task,
 ) -> Result<String> {
+    Ok(transfer_report(sources, destination, moving, options, overrides, task)?.message)
+}
+
+pub(crate) struct TransferReport {
+    pub message: String,
+    pub complete: Vec<bool>,
+    pub recovery: Option<PathBuf>,
+}
+
+pub(crate) fn transfer_report(
+    sources: &[PathBuf],
+    destination: &Path,
+    moving: bool,
+    options: TransferOptions,
+    overrides: &BTreeMap<PathBuf, ConflictPolicy>,
+    task: &mut Task,
+) -> Result<TransferReport> {
     operations::validate_sources(sources)?;
     let normalized_overrides = overrides
         .iter()
@@ -336,7 +353,7 @@ pub fn transfer_resolved(
         replacements: 0,
         skipped: 0,
     };
-    let result: Result<String> = (|| {
+    let result: Result<TransferReport> = (|| {
         let mut completed = Vec::new();
         let mut renamed = BTreeSet::new();
         for (plan, size) in plans.iter().zip(&sizes) {
@@ -384,28 +401,35 @@ pub fn transfer_resolved(
                 }
             }
         }
-        Ok(format!(
-            "{} {} item(s); skipped {} conflict(s).{}",
-            if moving { "Moved" } else { "Copied" },
-            completed.iter().filter(|v| **v).count(),
-            execution.skipped,
-            if moving && execution.skipped > 0 {
-                " Source folders containing skipped items were kept in full."
-            } else {
-                ""
-            }
-        ))
+        Ok(TransferReport {
+            message: format!(
+                "{} {} item(s); skipped {} conflict(s).{}",
+                if moving { "Moved" } else { "Copied" },
+                completed.iter().filter(|v| **v).count(),
+                execution.skipped,
+                if moving && execution.skipped > 0 {
+                    " Source folders containing skipped items were kept in full."
+                } else {
+                    ""
+                }
+            ),
+            complete: completed,
+            recovery: None,
+        })
     })();
     if let Some(recovery) = execution.recovery {
         if execution.replacements == 0 {
             let _ = fs::remove_dir_all(recovery);
         } else {
             return result
-                .map(|message| {
-                    format!(
-                        "{message}\nReplaced originals are kept in {}",
+                .map(|mut report| {
+                    report.message = format!(
+                        "{}\nReplaced originals are kept in {}",
+                        report.message,
                         recovery.display()
-                    )
+                    );
+                    report.recovery = Some(recovery.clone());
+                    report
                 })
                 .with_context(|| format!("Replaced originals are kept in {}", recovery.display()));
         }

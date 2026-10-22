@@ -452,3 +452,59 @@ pub fn edit_archive(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> 
     temporary.persist(file)?;
     Ok(())
 }
+
+/// Apply a compound edit to a private tree and publish one guarded archive replacement.
+/// Used by drag/drop so merge/skip decisions and in-archive moves are committed together.
+pub(crate) fn edit_tree<T>(
+    file: &Path,
+    task: &mut Task,
+    edit: impl FnOnce(&Path, &mut Task) -> Result<T>,
+) -> Result<T> {
+    anyhow::ensure!(
+        editable(file),
+        "This archive is read-only. Extract it locally before editing."
+    );
+    anyhow::ensure!(
+        !fs::symlink_metadata(file)?.file_type().is_symlink(),
+        "Edit the archive's actual file, not a symlink."
+    );
+    let before = crate::history::fingerprint(file, task)?;
+    let directory = tempfile::Builder::new()
+        .prefix(".rust-commander-archive-drop-")
+        .tempdir_in(file.parent().context("Missing archive folder")?)?;
+    let tree = directory.path().join("contents");
+    if crate::archive::list(file, Path::new(""))?.is_empty() {
+        fs::create_dir(&tree)?;
+    } else {
+        crate::archive::extract(file, &[], Path::new(""), &tree, task)?;
+    }
+    let result = crate::drag_drop::transient(task, directory.path(), |task| edit(&tree, task))?;
+    let sources = fs::read_dir(&tree)?
+        .map(|e| e.map(|e| e.path()))
+        .collect::<std::io::Result<Vec<_>>>()?;
+    let output = directory
+        .path()
+        .join(file.file_name().context("Missing archive name")?);
+    let password = crate::archive::password(file);
+    if let Some(password) = password.as_deref() {
+        crate::archive::pack_with_password(&sources, &output, password, task)?;
+        crate::archive::unlock(&output, password)?;
+    } else {
+        crate::archive::pack(&sources, &output, task)?;
+        crate::archive::list(&output, Path::new(""))?;
+    }
+    anyhow::ensure!(
+        before == crate::history::fingerprint(file, task)?,
+        "Archive changed during the drop; the original was preserved."
+    );
+    task.check()?;
+    task.capture(file)?;
+    let mut temporary = tempfile::NamedTempFile::new_in(file.parent().unwrap())?;
+    task.stream(&mut File::open(&output)?, &mut temporary, file)?;
+    temporary
+        .as_file()
+        .set_permissions(fs::metadata(file)?.permissions())?;
+    temporary.as_file().sync_all()?;
+    temporary.persist(file)?;
+    Ok(result)
+}

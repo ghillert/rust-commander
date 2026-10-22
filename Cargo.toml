@@ -6,6 +6,11 @@ rust-version = "1.92"
 description = "A native Rust dual-pane file manager inspired by muCommander"
 license = "GPL-3.0-only"
 
+[workspace]
+members = ["vendor/wayland-dnd", "tests/native-dnd"]
+default-members = ["."]
+resolver = "3"
+
 [dependencies]
 slint = { version = "=1.18.1", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "renderer-software", "accessibility", "compat-1-18", "unstable-winit-030", "raw-window-handle-06"] }
 anyhow = "1"
@@ -74,6 +79,7 @@ drag = "2.1.1"
 [features]
 screenshot = []
 
+
 [profile.release]
 # Keep all features and panic recovery; favor a smaller distributed executable.
 opt-level = "z"
@@ -89,7 +95,7 @@ path = "src/main.rs"
 [target.'cfg(target_os = "macos")'.dependencies]
 # Disable Slint's default AppKit menu in favor of our localized command menus.
 i-slint-backend-winit = { version = "=1.18.1", default-features = false }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSView", "NSResponder", "NSButton", "NSControl", "NSWorkspace", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "objc2-core-graphics", "objc2-uniform-type-identifiers"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSView", "NSEvent", "NSResponder", "NSButton", "NSControl", "NSWorkspace", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "objc2-core-graphics", "objc2-uniform-type-identifiers"] }
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSDictionary", "NSArray", "NSBundle", "NSGeometry"] }
 objc2-uniform-type-identifiers = { version = "0.3", default-features = false, features = ["std", "UTType", "UTCoreTypes"] }
@@ -98,15 +104,16 @@ muda = { version = "0.21", default-features = false }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
-windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_Foundation", "Win32_Security", "Win32_System_Com"] }
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_Foundation", "Win32_Security", "Win32_System_Com", "Win32_UI_Input_KeyboardAndMouse"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+rust-commander-wayland-dnd = { path = "vendor/wayland-dnd" }
 x11rb = { version = "0.13", default-features = false }
 gtk4 = {version="0.10.3", default-features=false, features=["v4_8"]}
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 
 # Upstream drag 2.1.1 locks unused GTK3/GLib dependencies. Linux uses our GTK4
-# helper; retain only the unchanged native macOS/Windows backends here.
+# legacy helper; retain the native macOS/Windows backends here.
 [patch.crates-io]
 drag = { path = "vendor/drag" }
 
@@ -116,3 +123,6 @@ slint-build = { version = "=1.18.1", default-features = false, features = ["comp
 
 [dev-dependencies]
 i-slint-backend-testing = "=1.18.1"
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+x11rb = { version = "0.13", default-features = false, features = ["xtest"] }

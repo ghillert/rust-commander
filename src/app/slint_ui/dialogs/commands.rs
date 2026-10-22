@@ -55,6 +55,9 @@ impl Adapter {
                     {
                         job.cancel.store(true, Ordering::Relaxed);
                     }
+                    if let Some(preparation) = &self.drag.preparation {
+                        preparation.cancel.store(true, Ordering::Relaxed);
+                    }
                     self.app.editor = None;
                     self.app.confirm_exit = false;
                     self.app.exiting = true;

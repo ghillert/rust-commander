@@ -1,0 +1,59 @@
+import { Chrome } from "chrome.slint";
+
+export global Transfers {
+    pure callback payload(string) -> data-transfer;
+    pure callback accepts(data-transfer) -> bool;
+    pure callback movable(data-transfer) -> bool;
+    pure callback can-drop(int,string,data-transfer,DragAction) -> DragAction;
+    callback drop(int,string,data-transfer,DragAction) -> bool;
+    callback hover(int,string);
+    callback begin(string);
+    callback hit(int,string,int,bool);
+    in-out property <bool> native-active;
+    in-out property <float> native-x;
+    in-out property <float> native-y;
+    in-out property <int> native-revision;
+    in-out property <data-transfer> native-data;
+    in-out property <DragAction> native-action:copy;
+}
+
+export component FileDropZone inherits Rectangle {
+    width:100%;height:100%;
+    background:transparent;
+    in property <int> side;
+    in property <string> target:"pane";
+    in property <int> priority:10;
+    in property <bool> enabled:true;
+    in property <bool> highlight:true;
+    in property <float> clip-top:-1000000;
+    in property <float> clip-bottom:1000000;
+    private property <bool> native-over: root.enabled && Transfers.native-active
+        && Transfers.native-y >= root.clip-top && Transfers.native-y < root.clip-bottom
+        && Transfers.native-x*1px >= root.absolute-position.x && Transfers.native-x*1px < root.absolute-position.x+root.width
+        && Transfers.native-y*1px >= root.absolute-position.y && Transfers.native-y*1px < root.absolute-position.y+root.height
+        && Transfers.can-drop(root.side,root.target,Transfers.native-data,Transfers.native-action)!=DragAction.none;
+    changed native-over => {Transfers.hit(root.side,root.target,root.priority,root.native-over);}
+    private property <int> revision:Transfers.native-revision;
+    changed revision => {Transfers.hit(root.side,root.target,root.priority,root.native-over);}
+    out property <bool> active:dropper.has-drag || root.native-over;
+    dropper := DropArea {
+        enabled:root.enabled;
+        @children
+        can-drop(event) => {return Transfers.can-drop(root.side,root.target,event.data,event.proposed-action);}
+        dropped(event) => {
+            let action=Transfers.can-drop(root.side,root.target,event.data,event.proposed-action);
+            return action!=DragAction.none && Transfers.drop(root.side,root.target,event.data,action) ? action : DragAction.none;
+        }
+    }
+    Rectangle {
+        visible:root.highlight && root.active;
+        background:transparent;border-width:2px;border-color:Chrome.accent;border-radius:4px;
+    }
+    private property <bool> opened;
+    changed active => {root.opened=false;}
+    Timer {
+        interval:650ms;
+        running:root.active && !root.opened && root.target!="pane";
+        triggered => {root.opened=true;Transfers.hover(root.side,root.target);}
+    }
+}

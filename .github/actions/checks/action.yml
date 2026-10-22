@@ -42,6 +42,11 @@ runs:
         cargo test --locked --all-features --lib native_file_icons_load_on_the_worker -- --ignored --test-threads=1
         NATIVE_TESTS
 
+    - name: Test native X11 and Wayland drag protocols
+      if: runner.os == 'Linux'
+      shell: bash
+      run: ./scripts/test-native-dnd.sh
+
     - name: Smoke test both desktop renderers
       if: runner.os == 'Linux'
       env:
@@ -74,5 +79,6 @@ runs:
           target/uri-smoke/*.log
           target/progress-smoke/*.png
           target/progress-smoke/*.log
+          target/native-dnd-logs/*.log
         if-no-files-found: ignore
         retention-days: 7
