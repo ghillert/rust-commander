@@ -48,7 +48,7 @@ tar = "0.4"
 tempfile = "3"
 trash = "5"
 tokio = { version = "1", features = ["rt-multi-thread"] }
-russh = { version = "=0.63.2", default-features = false, features = ["ring", "rsa"] }
+russh = { version = "=0.64.1", default-features = false, features = ["ring", "rsa"] }
 russh-sftp = "=3.0.1"
 scraper = { version = "0.24", default-features = false }
 suppaftp = { version = "=6.3.0", default-features = false, features = ["rustls", "deprecated"] }
