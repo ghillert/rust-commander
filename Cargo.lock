@@ -1871,6 +1871,7 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 name = "drag"
 version = "2.1.1"
 dependencies = [
+ "block2 0.6.2",
  "core-graphics 0.24.0",
  "dunce",
  "log",
@@ -1878,6 +1879,7 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "raw-window-handle",
+ "serde",
  "thiserror 2.0.21",
  "windows 0.52.0",
  "windows-core 0.58.0",
@@ -6981,7 +6983,16 @@ name = "rust-commander-native-dnd-tests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "block2 0.6.2",
+ "drag",
+ "dunce",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "raw-window-handle",
+ "tempfile",
  "url",
+ "windows 0.52.0",
  "x11rb",
 ]
 

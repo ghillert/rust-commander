@@ -804,3 +804,61 @@ Linux outgoing native file lists and all virtual exports currently advertise Cop
 use the application's guarded Move confirmation between its panes/windows.
 See [drag-and-drop documentation](../docs/DRAG_AND_DROP.md) for export retention
 and backend limitations.
+
+
+## Deferred native exports and drag hardening — 2026-10-22
+
+Native source offers now defer virtual-file contents until the accepted-drop path:
+AppKit file promises, Windows Shell descriptors/streams, and X11/Wayland URI
+providers. Descriptor/name probes do not download or extract file bodies. Linux
+local-file sources negotiate Copy/Move; virtual exports remain Copy. Preparation
+remains a compatibility fallback for receivers requiring pre-existing file URLs.
+
+Deferred sessions share one staged export across concurrent requests, preserve
+originals, reject unsafe descriptor paths, report errors, support cancellation,
+and time out idle receivers. AppKit destinations publish complete files/folders
+without overwriting an existing path. Leases protect active exports during cache
+cleanup; expired interrupted exports can be recovered by cleanup. Native handoff
+handles window-exit events and polls native pointer positions while held, rather
+than authorizing work from a released gesture.
+
+Checks actually completed:
+
+- Apple Silicon Mac: the full application suite passed 278 tests, with no failures
+  and 15 environment-dependent skips. After the final lint/status cleanup, the
+  affected 17 drag tests passed again. All-target/all-feature Clippy with warnings
+  denied, formatting, and patch whitespace checks passed.
+- New lifecycle cases include abandoned offers, accepted concurrent readers,
+  corrupt exports, cancellation after materialization, idle receiver timeouts,
+  released gestures, exact folder/file delivery, destination collisions, and
+  active/unowned directory protection during interrupted-export cleanup.
+- The actual AppKit provider fixture passed on the main thread: native name
+  queries perform no writes; the deferred delegate writes the requested file and
+  completes its callback; abandoning a provider does not invoke the writer.
+  This is provider validation, not a Finder drag-and-drop acceptance result.
+- Linux ARM64 Debian/Rust 1.92: application Clippy passed. Three Xvfb XDND tests
+  passed, including early content probes, accepted/canceled deferred delivery,
+  native Move negotiation, Unicode and large INCR lists. Six Wayland pipe/URI
+  cases and the headless Weston connection/lifetime test passed. A complete Linux
+  application test run is still not claimed; the earlier link-memory limit remains.
+- Windows x64 MSVC: the native adapter and OLE provider fixture cross-compiled.
+  The fixture checks descriptor access on hover, rejected early content reads,
+  accepted-drop gating and cancellation. It was not executed on Windows locally.
+- Nine icon catalog tests passed. Release tooling ran 18 tests with two
+  platform-dependent skips. The updated macOS development bundle built and passed
+  its ad hoc signature verification.
+
+Desktop smoke checks used an isolated profile and a loopback HTTP directory. A
+real in-window gesture opened Copy confirmation; Cancel and abandoned external
+gestures produced no GET of the file body or export folder. Attempts at a Finder
+cross-application gesture did not establish an accepted drop, so successful Finder
+delivery is **not** claimed. Explorer/Nautilus/Dolphin interaction, physical
+Wayland drags, Windows responsiveness with large exports, and cold virtual drags
+between separate Rust Commander windows remain acceptance/compatibility gaps.
+For receivers without virtual-file support, prepare the selection first.
+
+GitHub CI now runs AppKit/OLE provider fixtures on macOS/Windows and the native
+protocol suite on Linux. These workflow changes have not been pushed or executed
+on GitHub; the results above are local Mac, cross-compilation and container runs.
+Logs are retained in `target/native-dnd-logs/promises-*.log`; no remote CI success
+is inferred from them. The parity overview remains **partial** for drag and drop.

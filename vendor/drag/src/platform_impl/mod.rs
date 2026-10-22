@@ -9,3 +9,6 @@ mod platform;
 #[path = "macos/mod.rs"]
 mod platform;
 pub use platform::start_drag;
+
+#[cfg(target_os = "macos")]
+pub use platform::file_promise_provider;

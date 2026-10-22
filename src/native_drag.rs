@@ -17,7 +17,7 @@ pub struct Linux {
 enum Backend {
     Wayland {
         device: rust_commander_wayland_dnd::FileDnd,
-        finished: Option<Box<dyn Fn() + Send>>,
+        finished: Option<Box<dyn Fn(bool) + Send>>,
     },
     X11(Box<x11::Pointer>),
 }
@@ -56,9 +56,9 @@ impl Linux {
                     rust_commander_wayland_dnd::DndEvent::Dropped { x, y, paths } => {
                         Some(Event::Drop(x, y, paths))
                     }
-                    rust_commander_wayland_dnd::DndEvent::DragEnded => {
+                    rust_commander_wayland_dnd::DndEvent::DragEnded { accepted } => {
                         if let Some(callback) = finished.take() {
-                            callback();
+                            callback(accepted);
                         }
                         None
                     }
@@ -82,7 +82,8 @@ impl Linux {
     pub fn start(
         &mut self,
         paths: Vec<PathBuf>,
-        finished: impl Fn() + Send + 'static,
+        moving: bool,
+        finished: impl Fn(bool) + Send + 'static,
     ) -> Result<()> {
         match &mut self.backend {
             Backend::Wayland {
@@ -90,10 +91,29 @@ impl Linux {
                 finished: callback,
             } => {
                 *callback = Some(Box::new(finished));
-                device.start_drag(paths, false);
+                device.start_drag(paths, moving);
                 Ok(())
             }
-            Backend::X11(_) => x11::start(paths, finished),
+            Backend::X11(_) => x11::start_files(paths, moving, finished),
+        }
+    }
+    pub fn start_deferred(
+        &mut self,
+        provider: std::sync::Arc<
+            dyn Fn() -> std::result::Result<Vec<PathBuf>, String> + Send + Sync,
+        >,
+        finished: impl Fn(bool) + Send + 'static,
+    ) -> Result<()> {
+        match &mut self.backend {
+            Backend::Wayland {
+                device,
+                finished: callback,
+            } => {
+                *callback = Some(Box::new(finished));
+                device.start_deferred(provider);
+                Ok(())
+            }
+            Backend::X11(_) => x11::start_deferred(provider, finished),
         }
     }
 }

@@ -42,6 +42,11 @@ runs:
         cargo test --locked --all-features --lib native_file_icons_load_on_the_worker -- --ignored --test-threads=1
         NATIVE_TESTS
 
+    - name: Test native AppKit and OLE deferred file providers
+      if: runner.os != 'Linux'
+      shell: bash
+      run: cargo test --locked -p rust-commander-native-dnd-tests -- --test-threads=1
+
     - name: Test native X11 and Wayland drag protocols
       if: runner.os == 'Linux'
       shell: bash

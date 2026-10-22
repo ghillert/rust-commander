@@ -34,8 +34,56 @@ use crate::DndEvent;
 
 const MIME: &str = "text/uri-list";
 
+#[derive(Clone)]
+enum Payload {
+    Bytes(Vec<u8>),
+    Deferred(Arc<dyn Fn() -> Result<Vec<u8>, String> + Send + Sync>),
+}
+struct Outgoing {
+    payload: Payload,
+    performed: bool,
+    pending: Vec<WritePipe>,
+}
+impl Outgoing {
+    fn new(payload: Payload) -> Self {
+        Self {
+            payload,
+            performed: false,
+            pending: Vec::new(),
+        }
+    }
+    fn request(&mut self, pipe: WritePipe) {
+        if matches!(self.payload, Payload::Deferred(_)) && !self.performed {
+            // Some targets probe while hovering. Keep a bounded number of pipes,
+            // but do not call the content provider until dnd_drop_performed.
+            if self.pending.len() < 8 {
+                self.pending.push(pipe);
+            }
+            return;
+        }
+        let payload = self.payload.clone();
+        let _ = std::thread::Builder::new()
+            .name("rust-commander-dnd-write".into())
+            .spawn(move || {
+                let data = match payload {
+                    Payload::Bytes(data) => Ok(data),
+                    Payload::Deferred(provider) => provider(),
+                };
+                if let Ok(data) = data {
+                    let _ = crate::pipe::send(pipe, &data);
+                }
+            });
+    }
+    fn drop_performed(&mut self) {
+        self.performed = true;
+        for pipe in std::mem::take(&mut self.pending) {
+            self.request(pipe);
+        }
+    }
+}
+
 enum Command {
-    StartDrag(Vec<u8>, bool),
+    StartDrag(Outgoing, bool),
     Received { x: f64, y: f64, data: Vec<u8> },
     Exit,
 }
@@ -97,8 +145,17 @@ impl Worker {
     }
     pub fn start_drag(&self, uri_list: Vec<u8>, allow_move: bool) {
         if !uri_list.is_empty() {
-            let _ = self.commands.send(Command::StartDrag(uri_list, allow_move));
+            let _ = self.commands.send(Command::StartDrag(
+                Outgoing::new(Payload::Bytes(uri_list)),
+                allow_move,
+            ));
         }
+    }
+    pub fn start_deferred(&self, provider: Arc<dyn Fn() -> Result<Vec<u8>, String> + Send + Sync>) {
+        let _ = self.commands.send(Command::StartDrag(
+            Outgoing::new(Payload::Deferred(provider)),
+            false,
+        ));
     }
 }
 
@@ -182,7 +239,7 @@ struct State {
     surface: WlSurface,
     queue_handle: QueueHandle<Self>,
     /// Our outgoing drag and the URI list it serves.
-    drag: Option<(DragSource, Vec<u8>)>,
+    drag: Option<(DragSource, Outgoing)>,
     /// An acceptable drag is over our surface.
     hovering: bool,
     action: DndAction,
@@ -218,7 +275,7 @@ impl State {
                 let Some((seat, device)) =
                     seat.and_then(|seat| Some((seat, seat.device.as_ref()?)))
                 else {
-                    self.emit(DndEvent::DragEnded);
+                    self.emit(DndEvent::DragEnded { accepted: false });
                     return;
                 };
                 let source = self.manager.create_drag_and_drop_source(
@@ -447,42 +504,49 @@ impl DataSourceHandler for State {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &WlDataSource,
+        source: &WlDataSource,
         mime: String,
         pipe: WritePipe,
     ) {
-        if let Some((_, uri_list)) = self.drag.as_ref().filter(|_| mime == MIME) {
-            let data = uri_list.clone();
-            let _ = std::thread::Builder::new()
-                .name("rust-commander-dnd-write".into())
-                .spawn(move || {
-                    let _ = crate::pipe::send(pipe, &data);
-                });
+        if let Some((_, outgoing)) = self
+            .drag
+            .as_mut()
+            .filter(|(drag, _)| mime == MIME && drag.inner() == source)
+        {
+            outgoing.request(pipe);
         }
     }
 
     fn cancelled(&mut self, _: &Connection, _: &QueueHandle<Self>, source: &WlDataSource) {
-        self.end_drag(source);
+        self.end_drag(source, false);
     }
 
-    fn dnd_dropped(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataSource) {}
+    fn dnd_dropped(&mut self, _: &Connection, _: &QueueHandle<Self>, source: &WlDataSource) {
+        if let Some((_, outgoing)) = self
+            .drag
+            .as_mut()
+            .filter(|(drag, _)| drag.inner() == source)
+        {
+            outgoing.drop_performed();
+        }
+    }
 
     fn dnd_finished(&mut self, _: &Connection, _: &QueueHandle<Self>, source: &WlDataSource) {
-        self.end_drag(source);
+        self.end_drag(source, true);
     }
 
     fn action(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataSource, _: DndAction) {}
 }
 
 impl State {
-    fn end_drag(&mut self, source: &WlDataSource) {
+    fn end_drag(&mut self, source: &WlDataSource, accepted: bool) {
         if self
             .drag
             .as_ref()
             .is_some_and(|(drag, _)| drag.inner() == source)
         {
             self.drag = None;
-            self.emit(DndEvent::DragEnded);
+            self.emit(DndEvent::DragEnded { accepted });
         }
     }
 }
@@ -549,7 +613,7 @@ mod tests {
         worker.start_drag(b"file:///tmp/a\r\n".to_vec(), false);
         assert_eq!(
             worker.events.recv_timeout(Duration::from_secs(2)),
-            Ok(DndEvent::DragEnded)
+            Ok(DndEvent::DragEnded { accepted: false })
         );
         // Let seats, pointers and data devices bind on the worker's queue.
         std::thread::sleep(Duration::from_millis(300));
@@ -557,5 +621,36 @@ mod tests {
         drop(worker);
         queue.roundtrip(&mut Host).unwrap();
         assert!(connection.protocol_error().is_none());
+    }
+    #[test]
+    fn deferred_pipe_probes_never_fetch_until_drop_and_cancellation_closes_them() {
+        use std::{io::Read, os::unix::net::UnixStream, sync::atomic::AtomicUsize};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = calls.clone();
+        let mut outgoing = Outgoing::new(Payload::Deferred(Arc::new(move || {
+            counter.fetch_add(1, Ordering::Relaxed);
+            Ok(b"file:///tmp/deferred.txt\r\n".to_vec())
+        })));
+        let (mut reader, writer) = UnixStream::pair().unwrap();
+        reader
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        outgoing.request(WritePipe::from(std::os::fd::OwnedFd::from(writer)));
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        outgoing.drop_performed();
+        let mut data = Vec::new();
+        reader.read_to_end(&mut data).unwrap();
+        assert_eq!(data, b"file:///tmp/deferred.txt\r\n");
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        let counter = calls.clone();
+        let mut abandoned = Outgoing::new(Payload::Deferred(Arc::new(move || {
+            counter.fetch_add(1, Ordering::Relaxed);
+            Ok(vec![])
+        })));
+        let (mut reader, writer) = UnixStream::pair().unwrap();
+        abandoned.request(WritePipe::from(std::os::fd::OwnedFd::from(writer)));
+        drop(abandoned);
+        assert_eq!(reader.read(&mut [0]).unwrap(), 0);
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
     }
 }

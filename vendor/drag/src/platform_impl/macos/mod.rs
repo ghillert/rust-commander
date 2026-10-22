@@ -19,6 +19,8 @@ use objc2_app_kit::{
     NSPasteboardTypeFileURL, NSView,
 };
 
+mod promises;
+
 type OnDropCallback = Box<dyn Fn(DragResult, CursorPosition) + Send>;
 
 define_class!(
@@ -175,6 +177,17 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
             let dragging_items = NSMutableArray::new();
 
             match item {
+                DragItem::Promised(files) => {
+                    for (index, entry) in files.entries.iter().enumerate() {
+                        let provider = promises::provider(&files, index, entry.directory);
+                        let item = NSDraggingItem::initWithPasteboardWriter(
+                            NSDraggingItem::alloc(),
+                            &ProtocolObject::from_retained(provider),
+                        );
+                        item.setDraggingFrame_contents(image_rect, Some(&*img));
+                        dragging_items.addObject(&*item);
+                    }
+                }
                 DragItem::Files(files) => {
                     // winit's macOS destination still reads the legacy aggregate
                     // file list. Keep it alongside modern per-item file URLs so
@@ -259,4 +272,14 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
     } else {
         Err(crate::Error::UnsupportedWindowHandle)
     }
+}
+
+/// Construct the same native file promise used by drag sessions. The returned
+/// provider owns its weak delegate until delayed writes have completed.
+pub fn file_promise_provider(
+    files: &crate::PromisedFiles,
+    index: usize,
+    directory: bool,
+) -> Retained<objc2_app_kit::NSFilePromiseProvider> {
+    promises::provider(files, index, directory)
 }

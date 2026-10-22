@@ -72,6 +72,7 @@ pub(super) struct State {
     pub pressed: bool,
     pub cursor: Option<slint::LogicalPosition>,
     pub prepare_requested: bool,
+    pub deferred: Option<Selection>,
     targets: Targets,
 }
 impl Adapter {
@@ -318,6 +319,8 @@ pub(super) struct Preparation {
     pub progress: Progress,
     updates: Receiver<Progress>,
     result: Receiver<Result<Ready, String>>,
+    pub external: Option<Arc<PromiseSession>>,
+    pub waiting_since: std::time::Instant,
 }
 fn same(selection: &Selection, other: &Selection) -> bool {
     selection.from == other.from
@@ -362,51 +365,7 @@ pub(super) fn native_payload(paths: Vec<PathBuf>) -> slint::DataTransfer {
     }
     data
 }
-fn export_cache() -> anyhow::Result<PathBuf> {
-    let cache = crate::settings::path()?
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("Missing configuration folder"))?
-        .join("drag-exports");
-    std::fs::create_dir_all(&cache)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(0o700))?;
-    }
-    Ok(cache)
-}
-fn retain_export(export: crate::drag_drop::Export) -> anyhow::Result<Vec<PathBuf>> {
-    let cache = export
-        .directory
-        .path()
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("Missing export cache"))?
-        .to_owned();
-    std::fs::write(
-        export.directory.path().join("created.json"),
-        serde_json::to_vec(&std::time::SystemTime::now())?,
-    )?;
-    let paths = export.paths;
-    let _ = export.directory.keep();
-    // Only our own timestamped directories older than a day are eligible for cleanup.
-    for entry in std::fs::read_dir(&cache)?.flatten() {
-        if !entry.file_name().to_string_lossy().starts_with("export-")
-            || !entry.file_type()?.is_dir()
-        {
-            continue;
-        }
-        let created = std::fs::read(entry.path().join("created.json"))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<std::time::SystemTime>(&bytes).ok());
-        if created
-            .and_then(|created| created.elapsed().ok())
-            .is_some_and(|age| age > Duration::from_secs(24 * 60 * 60))
-        {
-            let _ = std::fs::remove_dir_all(entry.path());
-        }
-    }
-    Ok(paths)
-}
+use crate::drag_drop::promises::{PromiseSession, export_cache, retain_export};
 fn discard_export(ready: Ready) {
     if ready.selection.from.local().is_some() {
         return;
@@ -495,17 +454,37 @@ impl Adapter {
         }
 
         if let Some(preparation) = &mut self.drag.preparation {
+            if let Some(session) = &preparation.external {
+                if preparation.cancel.load(Ordering::Relaxed) {
+                    session.abort("External drop cancelled.");
+                } else if session.idle()
+                    && preparation.waiting_since.elapsed() > Duration::from_secs(120)
+                {
+                    session.abort("The receiving application did not request all promised files. Try preparing files explicitly.");
+                } else if !session.idle() {
+                    preparation.waiting_since = std::time::Instant::now();
+                }
+            }
             while let Ok(progress) = preparation.updates.try_recv() {
+                preparation.waiting_since = std::time::Instant::now();
                 preparation.progress = progress;
             }
             if let Ok(result) = preparation.result.try_recv() {
-                let cancelled = preparation.cancel.load(Ordering::Relaxed);
+                let cancelled = preparation.cancel.load(Ordering::Relaxed)
+                    && (preparation.external.is_none()
+                        || matches!(&result, Err(error) if error.to_ascii_lowercase().contains("cancelled")));
+                let external = preparation.external.is_some();
                 self.drag.preparation = None;
                 if cancelled {
                     if let Ok(ready) = result {
                         discard_export(ready);
                     }
-                    self.app.status = "Drag preparation cancelled.".into();
+                    self.app.status = if external {
+                        "External drag cancelled."
+                    } else {
+                        "Drag preparation cancelled."
+                    }
+                    .into();
                     return;
                 }
                 match result {
@@ -513,9 +492,12 @@ impl Adapter {
                         remember(ready.clone());
                         // Preparation is explicit and completes independently of
                         // any mouse button held elsewhere in the window.
-                        self.app.status =
+                        self.app.status = if external {
+                            "External drop completed."
+                        } else {
                             "Files ready to drag. Drag the selection to another application."
-                                .into();
+                        }
+                        .into();
                     }
                     Err(error) => self.app.fail(error),
                 }
@@ -588,6 +570,11 @@ impl Adapter {
     pub(super) fn prepare_native_drag(&mut self) {
         let held = self.drag.buttons().0;
         let requested = std::mem::take(&mut self.drag.prepare_requested);
+        if !requested && !held {
+            self.drag.pending = None;
+            self.drag.deferred = None;
+            return;
+        }
         if !requested && !self.drag.outside {
             if !held {
                 self.drag.pending = None;
@@ -638,9 +625,7 @@ impl Adapter {
             // A gesture is never authorization to fetch virtual file contents.
             // Other applications require real files: only the explicitly named
             // preparation command may create those exports before a drop.
-            self.app.status =
-                "For external drags, use Selection → Prepare files for external drag… first."
-                    .into();
+            self.drag.deferred = Some((*selection).clone());
             return;
         }
         let cancel = Arc::new(AtomicBool::new(false));
@@ -652,6 +637,8 @@ impl Adapter {
             progress: Default::default(),
             updates,
             result,
+            external: None,
+            waiting_since: std::time::Instant::now(),
         });
         let selection = (*selection).clone();
         let ctx = self.ctx.clone();
@@ -679,7 +666,31 @@ impl Adapter {
     }
 }
 pub(super) fn dispatch(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        use raw_window_handle::HasWindowHandle;
+        let poll = {
+            let a = state.borrow();
+            a.drag.pending.is_some() && a.drag.buttons().0
+        };
+        if poll
+            && let Ok(handle) = ui.window().window_handle().window_handle()
+            && let Some((x, y)) = crate::native_files::drop_position(
+                handle.as_raw(),
+                f64::from(ui.window().scale_factor()),
+            )
+        {
+            let size = ui.window().size().to_logical(ui.window().scale_factor());
+            state.borrow_mut().drag.outside =
+                x < 0.0 || y < 0.0 || x >= size.width || y >= size.height;
+        }
+    }
     windows::with_state(state, |a| a.prepare_native_drag());
+    let deferred = state.borrow_mut().drag.deferred.take();
+    if let Some(selection) = deferred {
+        dispatch_deferred(state, ui, selection);
+        return;
+    }
     let ready = state.borrow_mut().drag.ready.take();
     let Some(ready) = ready else {
         return;
@@ -728,9 +739,13 @@ pub(super) fn dispatch(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Native drag backend is unavailable."))
             .and_then(|backend| {
-                backend.start(ready.paths, move || {
-                    let _ = sender.send(());
-                })
+                backend.start(
+                    ready.paths,
+                    ready.selection.from.local().is_some(),
+                    move |_| {
+                        let _ = sender.send(());
+                    },
+                )
             });
         if let Err(error) = result {
             state.borrow_mut().drag.finished = None;
@@ -756,5 +771,110 @@ pub(super) fn prime_release(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) 
         trace("release target refresh");
         ui.window()
             .dispatch_event(slint::platform::WindowEvent::PointerMoved { position });
+    }
+}
+
+fn dispatch_deferred(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow, selection: Selection) {
+    let (sender, result) = mpsc::channel();
+    let (progress_sender, updates) = mpsc::channel();
+    let ctx = state.borrow().ctx.clone();
+    let progress_ctx = ctx.clone();
+    let ready_selection = selection.clone();
+    let session = PromiseSession::new(
+        selection,
+        cfg!(target_os = "macos"),
+        Arc::new(move |progress| {
+            let _ = progress_sender.send(progress);
+            progress_ctx.request_repaint();
+        }),
+        Box::new(move |result| {
+            let _ = sender.send(result.map(|paths| Ready {
+                selection: ready_selection.clone(),
+                paths,
+                prepared: std::time::Instant::now(),
+            }));
+            ctx.request_repaint();
+        }),
+    );
+    state.borrow_mut().drag.preparation = Some(Preparation {
+        cancel: session.cancel.clone(),
+        progress: Default::default(),
+        updates,
+        result,
+        external: Some(session.clone()),
+        waiting_since: std::time::Instant::now(),
+    });
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::PointerExited);
+    let (finished_tx, finished) = mpsc::channel();
+    state.borrow_mut().drag.finished = Some(finished);
+    let done_session = session.clone();
+    let callback = move |accepted| {
+        done_session.end_drag(accepted);
+        let _ = finished_tx.send(());
+    };
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let result = {
+        use raw_window_handle::HasWindowHandle;
+        let entries = session
+            .selection
+            .entries
+            .iter()
+            .map(|e| ::drag::PromiseEntry {
+                path: PathBuf::from(&e.name),
+                directory: e.is_dir,
+                size: e.size_known.then_some(e.size),
+            })
+            .collect::<Vec<_>>();
+        let list_session = session.clone();
+        let read_session = session.clone();
+        let write_session = session.clone();
+        let promises = ::drag::PromisedFiles {
+            entries,
+            list: Arc::new(move || {
+                crate::drag_drop::promises::manifest(&list_session.selection, &list_session.cancel)
+                    .map(|entries| {
+                        entries
+                            .into_iter()
+                            .map(|(path, directory, size)| ::drag::PromiseEntry {
+                                path,
+                                directory,
+                                size,
+                            })
+                            .collect()
+                    })
+                    .map_err(|e| e.to_string())
+            }),
+            read: Arc::new(move |path| read_session.local_path(path)),
+            write: Arc::new(move |index, destination| write_session.write(index, destination)),
+        };
+        ui.window()
+            .window_handle()
+            .window_handle()
+            .map_err(anyhow::Error::from)
+            .and_then(|handle| {
+                crate::native_files::drag_promised(
+                    &crate::native_files::Window(handle.as_raw()),
+                    promises,
+                    callback,
+                )
+            })
+    };
+    #[cfg(target_os = "linux")]
+    let result = {
+        let read_session = session.clone();
+        state
+            .borrow_mut()
+            .drag
+            .linux
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Native drag backend is unavailable."))
+            .and_then(|backend| {
+                backend.start_deferred(Arc::new(move || read_session.materialize()), callback)
+            })
+    };
+    if let Err(error) = result {
+        session.abort(&format!("Could not start native drag: {error:#}"));
+        state.borrow_mut().drag.finished = None;
     }
 }

@@ -62,7 +62,8 @@ published.
 - **Desktop integration:** system file clipboard, mounted drives, clickable
   breadcrumbs, native file actions, configurable columns/toolbar, and
   [drag and drop](docs/DRAG_AND_DROP.md) for local, archive, and remote entries,
-  with native file drags on macOS, Windows, X11, and Wayland.
+  with native file drags and deferred remote/archive exports on macOS, Windows,
+  X11, and Wayland.
 - **Languages:** system language, English, German, and Spanish.
 - **File tools:** batch rename with preview, recursive name/content search,
   folder comparison, checksums, properties, permissions, and split/combine.

@@ -16,8 +16,10 @@ copy/move through its guarded transfer engine. This prevents a foreign source
 from deleting files when a confirmation is cancelled. The application never deletes
 sources solely in response to a native drag-finished event.
 
-The host currently requests Copy for outgoing Linux drags. Native offers are
-separate from the application's confirmed in-window Move operations.
+Local outgoing offers negotiate Copy/Move. Deferred virtual offers advertise Copy
+and queue early URI-list pipes until `dnd_drop_performed`; cancellation closes the
+queued pipes without calling the provider. The bounded pipe workers stay off the
+Wayland event queue. Native completion alone never removes source files.
 
 The upstream MIT and Apache-2.0 notices are retained. Rust Commander distributes
 this adaptation under the MIT option; packaged notices include its full license.

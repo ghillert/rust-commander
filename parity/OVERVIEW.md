@@ -1,4 +1,4 @@
-## Current review — 2026-10-21
+## Current review — 2026-10-22
 
 This overview reflects the current source and the recorded checks in
 [VALIDATION.md](VALIDATION.md). It separates absent behavior from behavior that
@@ -11,7 +11,7 @@ sections describe their original snapshots; later sections supersede older limit
 
 | Area | Existing behavior | Missing or limited behavior |
 | --- | --- | --- |
-| Drag and drop | Local/remote/archive selections; guarded copy/move; folder/tab/tree/breadcrumb/sidebar targets; hover navigation and edge scrolling; native X11/Wayland/AppKit/OLE bridges | Native desktop acceptance remains incomplete; outgoing Linux native lists/virtual exports are Copy, and external virtual exports require explicit preparation. See the detailed matrix below. |
+| Drag and drop | Local/remote/archive selections; guarded copy/move; folder/tab/tree/breadcrumb/sidebar targets; hover navigation and edge scrolling; native X11/Wayland/AppKit/OLE bridges | Native desktop acceptance remains incomplete; virtual exports are Copy. Deferred native providers exist, with preparation available for receivers that require pre-existing local paths. See the detailed matrix below. |
 | Network services | HTTP/HTTPS, FTP/both FTPS modes, SFTP on all three desktop platforms, SMB2/3 and cloud adapters | NFS, Android/ADB, Windows Registry, oVirt/vSphere and Bonjour discovery. WebHDFS does not establish full Hadoop parity. |
 | Archives | Create/extract common formats; edit local ZIP/TAR/7z; encrypted ZIP/7z; nested/remote browsing | Nested/remote editing, LST and libguestfs; archive links and special files. NRG/CPIO/RPM lack dedicated format fixtures. See [format support](../docs/FILE_OPERATIONS.md#archives). |
 | Search and comparison | Local/remote search and separate local/remote synchronization | Local content search skips files over 16 MiB and matches literal text; Compare folders is local-only and skips symlinks. Full upstream search options remain open. |
@@ -35,8 +35,8 @@ inventory counts do not include an additional DragDrop entry.
 | Local selection between panes | Immutable multi-file payloads, copy/move confirmation and normal conflict/Undo guards | Broader physical gesture acceptance on Windows/Linux |
 | Finder/Explorer/Linux file manager into a pane | Grouped file lists, frozen coordinates, highlighted folder/tab/tree/breadcrumb/sidebar targets; guarded confirmation | Real Explorer/Nautilus/Dolphin interoperation and compositor coverage |
 | Transfers involving remote panes or local archives | Common transfer engine, per-item conflicts, completed-source-only deletion; atomic same-archive moves | Backend-specific live service acceptance; nested/remote archive mutation remains limited |
-| Local files out to another application | Ordinary gesture handoff on leaving the window; native AppKit/OLE/XDND/Wayland sources without the Linux helper | Outgoing Linux native sources advertise Copy; native destination behavior still needs desktop acceptance |
-| Remote/archive entries as drag sources | In-window typed payloads; explicit cancellable export for native file lists; retained private exports; gestures never fetch contents | External virtual exports need the preparation command; lazy OS file promises are not implemented; native virtual exports advertise Copy |
+| Local files out to another application | Ordinary gesture handoff on leaving the window; native AppKit/OLE/XDND/Wayland sources without the Linux helper | Native Copy/Move negotiation implemented on all platforms; destination behavior still needs desktop acceptance |
+| Remote/archive entries as drag sources | In-window typed payloads; deferred AppKit/OLE/URI delivery after an accepted drop; shared cancellable exports and retained private files; gestures never fetch contents | Virtual exports are Copy. Receivers without deferred-format support need explicit preparation; cold virtual drags into other Rust Commander windows need broader receiver support/acceptance |
 | Folder rows, directory tree, tabs, breadcrumbs and sidebar | Dedicated targets, 650 ms hover navigation/expansion, and file-list edge scrolling | Wider multi-scale/desktop acceptance |
 
 Implementation: [gesture/widgets](../ui/drag-drop.slint),
@@ -47,7 +47,7 @@ Pointer-event and callback tests cover initiation, selection lifetime, routing,
 confirmation, cancellation and native hit feedback. Domain tests cover archive/remote
 pairs, skipped moves, changed sources, recovery, progress and local Undo.
 The standalone Linux fixtures exercise actual XDND small/INCR transfers under Xvfb
-and Wayland connection lifetime under headless Weston. These checks do **not**
+and Wayland connection lifetime under headless Weston. Native AppKit/OLE provider fixtures cover deferred writes and content gating. These checks do **not**
 establish physical Explorer/Nautilus/Dolphin interoperability or every compositor.
 
 ### Validation gaps for existing implementations

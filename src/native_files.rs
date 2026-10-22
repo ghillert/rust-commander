@@ -383,6 +383,32 @@ pub(crate) fn drag_out_with(
     moving: bool,
     finished: impl Fn() + Send + 'static,
 ) -> Result<()> {
+    drag_item(window, drag::DragItem::Files(paths), moving, move |_, _| {
+        finished()
+    })
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub(crate) fn drag_promised(
+    window: &Window,
+    promises: drag::PromisedFiles,
+    finished: impl Fn(bool) + Send + 'static,
+) -> Result<()> {
+    drag_item(
+        window,
+        drag::DragItem::Promised(promises),
+        false,
+        move |result, _| finished(matches!(result, drag::DragResult::Dropped)),
+    )
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn drag_item(
+    window: &Window,
+    item: drag::DragItem,
+    moving: bool,
+    finished: impl Fn(drag::DragResult, drag::CursorPosition) + Send + 'static,
+) -> Result<()> {
     let mut preview = std::io::Cursor::new(Vec::new());
     let image = image::RgbaImage::from_fn(32, 32, |x, y| {
         if x > 2 && x < 29 && y > 7 && y < 27 {
@@ -394,9 +420,9 @@ pub(crate) fn drag_out_with(
     image::DynamicImage::ImageRgba8(image).write_to(&mut preview, image::ImageFormat::Png)?;
     drag::start_drag(
         window,
-        drag::DragItem::Files(paths),
+        item,
         drag::Image::Raw(preview.into_inner()),
-        move |_, _| finished(),
+        finished,
         drag::Options {
             mode: if moving {
                 drag::DragMode::CopyMove

@@ -107,10 +107,10 @@ for commands and drop targets.
 ## Desktop drag and drop
 
 The [drag-and-drop guide](DRAG_AND_DROP.md) covers targets, copy/move confirmation,
-conflict rules, hover navigation, scrolling, virtual export preparation and native
+conflict rules, hover navigation, scrolling, deferred virtual exports and native
 interoperation. Slint retains in-window gestures; leaving the window hands a
-local file list to AppKit, OLE, XDND or Wayland. Native calls run after the
-controller borrow ends. A release-time target refresh handles fast gestures.
+local file list or deferred virtual offer to AppKit, OLE, XDND or Wayland. Native calls run after the
+controller borrow ends. A release-time target refresh handles fast internal gestures; window-exit events and native pointer polling hand external gestures off while their button is held.
 
 Incoming native file events are grouped and routed using frozen drop coordinates,
 with dedicated folder/tab/tree/sidebar targets. If a desktop cannot provide

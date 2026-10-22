@@ -234,6 +234,8 @@ fn drag_preparation_cancel_and_close_wait_for_the_worker() {
         progress: Default::default(),
         updates,
         result,
+        external: None,
+        waiting_since: std::time::Instant::now(),
     });
     let mut escape = slint::language::KeyEvent::default();
     escape.text = slint::platform::Key::Escape.into();
@@ -256,6 +258,8 @@ fn drag_preparation_cancel_and_close_wait_for_the_worker() {
         progress: Default::default(),
         updates,
         result,
+        external: None,
+        waiting_since: std::time::Instant::now(),
     });
     state.borrow_mut().request_close();
     assert!(state.borrow().app.confirm_exit);
@@ -409,6 +413,8 @@ fn explicit_preparation_completion_does_not_start_an_unrelated_mouse_gesture() {
         progress: Default::default(),
         updates,
         result,
+        external: None,
+        waiting_since: std::time::Instant::now(),
     });
     sender
         .send(Ok(Ready {
@@ -424,4 +430,62 @@ fn explicit_preparation_completion_does_not_start_an_unrelated_mouse_gesture() {
         "preparing files must not launch a drag just because the mouse is held"
     );
     assert!(a.app.status.contains("Files ready to drag"));
+}
+
+#[test]
+fn a_released_gesture_cannot_start_a_delayed_native_offer() {
+    let (_root, _ui, state, left, _right) = setup();
+    let mut a = state.borrow_mut();
+    a.drag.pending = Some(Rc::new(Selection {
+        from: Location::Archive {
+            file: left.join("fixture.zip"),
+            prefix: PathBuf::new(),
+        },
+        entries: vec![Entry {
+            path: "alpha.txt".into(),
+            ..filesystem::entry_from_path(&left.join("alpha.txt")).unwrap()
+        }],
+    }));
+    a.drag.outside = true;
+    a.drag.pressed = false;
+    a.prepare_native_drag();
+    assert!(a.drag.pending.is_none());
+    assert!(a.drag.deferred.is_none());
+    assert!(a.drag.preparation.is_none());
+}
+
+#[test]
+fn an_idle_native_receiver_times_out_without_leaving_the_window_blocked() {
+    let (_root, ui, state, left, _right) = setup();
+    let selection = Selection::local(&[left.join("alpha.txt")]).unwrap();
+    let ready_selection = selection.clone();
+    let (sender, result) = mpsc::channel();
+    let (_updates_tx, updates) = mpsc::channel();
+    let session = PromiseSession::new(
+        selection,
+        true,
+        Arc::new(|_| {}),
+        Box::new(move |result| {
+            let _ = sender.send(result.map(|paths| Ready {
+                selection: ready_selection.clone(),
+                paths,
+                prepared: std::time::Instant::now(),
+            }));
+        }),
+    );
+    session.end_drag(true);
+    let mut a = state.borrow_mut();
+    a.drag.preparation = Some(Preparation {
+        cancel: session.cancel.clone(),
+        progress: Default::default(),
+        updates,
+        result,
+        external: Some(session),
+        waiting_since: std::time::Instant::now() - Duration::from_secs(121),
+    });
+    assert!(a.blocked());
+    a.drag_tick(&ui);
+    assert!(a.drag.preparation.is_none());
+    assert!(a.app.status_error);
+    assert!(a.app.job.is_none());
 }

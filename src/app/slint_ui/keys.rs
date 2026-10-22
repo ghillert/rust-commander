@@ -79,6 +79,7 @@ impl Adapter {
         if key_is(text, slint::platform::Key::Escape) {
             self.drag.pending = None;
             self.drag.ready = None;
+            self.drag.deferred = None;
             self.drag.prepare_requested = false;
         }
         if key_is(text, slint::platform::Key::Escape) && self.drag.preparation.is_some() {

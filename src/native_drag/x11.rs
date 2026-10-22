@@ -3,6 +3,7 @@ use anyhow::{Context, Result, ensure};
 use std::{
     collections::BTreeMap,
     path::PathBuf,
+    sync::{Arc, mpsc},
     time::{Duration, Instant},
 };
 use x11rb::{
@@ -14,7 +15,7 @@ use x11rb::{
 
 x11rb::atom_manager! { Atoms:AtomsCookie {
     XdndAware,XdndProxy,XdndEnter,XdndLeave,XdndPosition,XdndStatus,XdndDrop,XdndFinished,
-    XdndSelection,XdndActionCopy,TARGETS,INCR,
+    XdndSelection,XdndActionCopy,XdndActionMove,XdndActionList,TARGETS,INCR,
     uri_list:b"text/uri-list",
 }}
 pub(super) struct Pointer {
@@ -102,7 +103,12 @@ fn message(
     connection.flush()?;
     Ok(())
 }
+pub(super) type Deferred = Arc<dyn Fn() -> std::result::Result<Vec<PathBuf>, String> + Send + Sync>;
+#[cfg(test)]
 pub(super) fn start(paths: Vec<PathBuf>, finished: impl Fn() + Send + 'static) -> Result<()> {
+    start_offer(Some(encode(&paths)?), None, false, move |_| finished())
+}
+fn encode(paths: &[PathBuf]) -> Result<Vec<u8>> {
     let data = paths
         .iter()
         .map(|path| url::Url::from_file_path(path).map(|url| url.to_string()))
@@ -114,17 +120,46 @@ pub(super) fn start(paths: Vec<PathBuf>, finished: impl Fn() + Send + 'static) -
         !data.is_empty() && data.len() <= 16 * 1024 * 1024,
         "The native file list exceeds the 16 MiB limit"
     );
+    Ok(data)
+}
+pub(super) fn start_files(
+    paths: Vec<PathBuf>,
+    moving: bool,
+    finished: impl Fn(bool) + Send + 'static,
+) -> Result<()> {
+    start_offer(Some(encode(&paths)?), None, moving, finished)
+}
+pub(super) fn start_deferred(
+    provider: Deferred,
+    finished: impl Fn(bool) + Send + 'static,
+) -> Result<()> {
+    start_offer(None, Some(provider), false, finished)
+}
+fn start_offer(
+    data: Option<Vec<u8>>,
+    provider: Option<Deferred>,
+    moving: bool,
+    finished: impl Fn(bool) + Send + 'static,
+) -> Result<()> {
     std::thread::Builder::new()
         .name("rust-commander-xdnd".into())
         .spawn(move || {
-            if let Err(error) = run(data) {
-                eprintln!("Native X11 drag failed: {error:#}");
-            }
-            finished();
+            let accepted = match run(data, provider, moving) {
+                Ok(value) => value,
+                Err(error) => {
+                    eprintln!("Native X11 drag failed: {error:#}");
+                    false
+                }
+            };
+            finished(accepted);
         })?;
     Ok(())
 }
-fn run(data: Vec<u8>) -> Result<()> {
+fn run(
+    mut data: Option<Vec<u8>>,
+    mut provider: Option<Deferred>,
+    allow_move: bool,
+) -> Result<bool> {
     let (connection, screen) = x11rb::connect(None)?;
     let root = connection.setup().roots[screen].root;
     let atoms = Atoms::new(&connection)?.reply()?;
@@ -147,6 +182,18 @@ fn run(data: Vec<u8>) -> Result<()> {
     connection
         .set_selection_owner(source, atoms.XdndSelection, x11rb::CURRENT_TIME)?
         .check()?;
+    let actions = if allow_move {
+        vec![atoms.XdndActionCopy, atoms.XdndActionMove]
+    } else {
+        vec![atoms.XdndActionCopy]
+    };
+    connection.change_property32(
+        PropMode::REPLACE,
+        source,
+        atoms.XdndActionList,
+        AtomEnum::ATOM,
+        &actions,
+    )?;
     connection.flush()?;
     let setup = connection.setup();
     let keycodes = setup.max_keycode - setup.min_keycode + 1;
@@ -163,9 +210,21 @@ fn run(data: Vec<u8>) -> Result<()> {
     let mut dropped = None;
     let mut increments: BTreeMap<(u32, u32), usize> = BTreeMap::new();
     let began = Instant::now();
+    let (result_tx, result_rx) = mpsc::channel();
+    let mut waiting = Vec::new();
+    let mut preferred = atoms.XdndActionCopy;
     loop {
         for _ in 0..512 {
-            let Some(event) = connection.poll_for_event()? else {
+            let queued = if data.is_some() {
+                waiting.pop().map(Event::SelectionRequest)
+            } else {
+                None
+            };
+            let event = match queued {
+                Some(event) => Some(event),
+                None => connection.poll_for_event()?,
+            };
+            let Some(event) = event else {
                 break;
             };
             match event {
@@ -177,7 +236,8 @@ fn run(data: Vec<u8>) -> Result<()> {
                             .is_some_and(|(window, _)| event.data.as_data32()[0] == window) =>
                 {
                     accepted = event.data.as_data32()[1] & 1 != 0
-                        && event.data.as_data32()[4] == atoms.XdndActionCopy;
+                        && (event.data.as_data32()[4] == atoms.XdndActionCopy
+                            || (allow_move && event.data.as_data32()[4] == atoms.XdndActionMove));
                 }
                 Event::ClientMessage(event)
                     if event.type_ == atoms.XdndFinished
@@ -189,7 +249,10 @@ fn run(data: Vec<u8>) -> Result<()> {
                 {
                     connection.destroy_window(source)?;
                     connection.flush()?;
-                    return Ok(());
+                    return Ok(event.data.as_data32()[1] & 1 != 0
+                        || current.is_some_and(|(window, _)| {
+                            property(&connection, window, atoms.XdndAware).unwrap_or(5) < 5
+                        }));
                 }
                 Event::SelectionRequest(request) if request.selection == atoms.XdndSelection => {
                     let property = if request.property == 0 {
@@ -207,13 +270,21 @@ fn run(data: Vec<u8>) -> Result<()> {
                             &[atoms.uri_list, atoms.TARGETS],
                         )?;
                     } else if request.target == atoms.uri_list {
+                        let Some(data) = data.as_ref() else {
+                            if waiting.len() < 32 {
+                                waiting.push(request);
+                            } else {
+                                reject_request(&connection, &request)?;
+                            }
+                            continue;
+                        };
                         if data.len() <= 48 * 1024 {
                             connection.change_property8(
                                 PropMode::REPLACE,
                                 request.requestor,
                                 property,
                                 atoms.uri_list,
-                                &data,
+                                data,
                             )?;
                         } else {
                             connection.change_window_attributes(
@@ -251,6 +322,7 @@ fn run(data: Vec<u8>) -> Result<()> {
                 }
                 Event::PropertyNotify(event) if event.state == Property::DELETE => {
                     if let Some(offset) = increments.get_mut(&(event.window, event.atom)) {
+                        let data = data.as_ref().context("Missing incremental payload")?;
                         let end = (*offset + 48 * 1024).min(data.len());
                         connection.change_property8(
                             PropMode::REPLACE,
@@ -270,7 +342,24 @@ fn run(data: Vec<u8>) -> Result<()> {
                 _ => {}
             }
         }
-        if dropped.is_some_and(|when: Instant| when.elapsed() > Duration::from_secs(30)) {
+        if dropped.is_some()
+            && data.is_none()
+            && !waiting.is_empty()
+            && let Some(provider) = provider.take()
+        {
+            let sender = result_tx.clone();
+            std::thread::spawn(move || {
+                let value = provider()
+                    .map_err(anyhow::Error::msg)
+                    .and_then(|paths| encode(&paths))
+                    .map_err(|e| e.to_string());
+                let _ = sender.send(value);
+            });
+        }
+        if let Ok(value) = result_rx.try_recv() {
+            data = Some(value.map_err(anyhow::Error::msg)?);
+        }
+        if dropped.is_some_and(|when: Instant| when.elapsed() > Duration::from_secs(30 * 60)) {
             break;
         }
         if dropped.is_none() {
@@ -281,6 +370,18 @@ fn run(data: Vec<u8>) -> Result<()> {
             } else {
                 false
             };
+            let requested = if allow_move
+                && pointer.mask.contains(KeyButMask::SHIFT)
+                && !pointer.mask.contains(KeyButMask::CONTROL)
+            {
+                atoms.XdndActionMove
+            } else {
+                atoms.XdndActionCopy
+            };
+            if requested != preferred {
+                preferred = requested;
+                accepted = false;
+            }
             let next = target(&connection, root, &atoms);
             if next != current {
                 if let Some(previous) = current {
@@ -334,21 +435,37 @@ fn run(data: Vec<u8>) -> Result<()> {
                     &connection,
                     current,
                     atoms.XdndPosition,
-                    [
-                        source,
-                        0,
-                        position,
-                        x11rb::CURRENT_TIME,
-                        atoms.XdndActionCopy,
-                    ],
+                    [source, 0, position, x11rb::CURRENT_TIME, preferred],
                 )?;
             }
         }
         std::thread::sleep(Duration::from_millis(12));
     }
+    for request in waiting {
+        reject_request(&connection, &request)?;
+    }
     connection
         .destroy_window(source)
         .context("Finish native file drag")?;
+    connection.flush()?;
+    Ok(false)
+}
+
+fn reject_request(connection: &RustConnection, request: &SelectionRequestEvent) -> Result<()> {
+    connection.send_event(
+        false,
+        request.requestor,
+        EventMask::NO_EVENT,
+        SelectionNotifyEvent {
+            response_type: SELECTION_NOTIFY_EVENT,
+            sequence: 0,
+            time: request.time,
+            requestor: request.requestor,
+            selection: request.selection,
+            target: request.target,
+            property: 0,
+        },
+    )?;
     connection.flush()?;
     Ok(())
 }
@@ -577,5 +694,226 @@ mod tests {
             .unwrap();
         connection.flush().unwrap();
         finished.recv_timeout(Duration::from_secs(2)).unwrap();
+    }
+    #[test]
+    #[ignore = "requires an isolated X server (xvfb-run)"]
+    fn xdnd_deferred_probes_wait_for_drop_and_native_move_is_negotiated() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        for (deferred, accept) in [(true, true), (true, false), (false, true)] {
+            let (connection, screen) = x11rb::connect(None).unwrap();
+            let root = connection.setup().roots[screen].root;
+            let atoms = Atoms::new(&connection).unwrap().reply().unwrap();
+            let window = connection.generate_id().unwrap();
+            connection
+                .create_window(
+                    0,
+                    window,
+                    root,
+                    200,
+                    200,
+                    300,
+                    300,
+                    0,
+                    WindowClass::INPUT_OUTPUT,
+                    0,
+                    &CreateWindowAux::new(),
+                )
+                .unwrap()
+                .check()
+                .unwrap();
+            connection
+                .change_property32(
+                    PropMode::REPLACE,
+                    window,
+                    atoms.XdndAware,
+                    AtomEnum::ATOM,
+                    &[5],
+                )
+                .unwrap();
+            connection.map_window(window).unwrap();
+            connection
+                .warp_pointer(x11rb::NONE, root, 0, 0, 0, 0, 250, 250)
+                .unwrap();
+            connection
+                .xtest_fake_input(
+                    BUTTON_PRESS_EVENT,
+                    1,
+                    x11rb::CURRENT_TIME,
+                    root,
+                    250,
+                    250,
+                    0,
+                )
+                .unwrap();
+            connection.flush().unwrap();
+            connection.get_input_focus().unwrap().reply().unwrap();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let counter = calls.clone();
+            let (tx, rx) = mpsc::channel();
+            if deferred {
+                start_deferred(
+                    Arc::new(move || {
+                        counter.fetch_add(1, Ordering::Relaxed);
+                        Ok(vec!["/tmp/deferred café.txt".into()])
+                    }),
+                    move |ok| {
+                        let _ = tx.send(ok);
+                    },
+                )
+                .unwrap();
+            } else {
+                start_files(vec!["/tmp/local-move.txt".into()], true, move |ok| {
+                    let _ = tx.send(ok);
+                })
+                .unwrap();
+            }
+            let property = connection
+                .intern_atom(false, b"DEFERRED_DROP_TEST")
+                .unwrap()
+                .reply()
+                .unwrap()
+                .atom;
+            let mut source = 0;
+            let mut released = false;
+            let mut notified = false;
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                assert!(Instant::now() < deadline, "deferred XDND fixture timed out");
+                if !accept
+                    && released
+                    && let Ok(ok) = rx.try_recv()
+                {
+                    assert!(!ok);
+                    break;
+                }
+                if let Some(event) = connection.poll_for_event().unwrap() {
+                    match event {
+                        Event::ClientMessage(event) if event.type_ == atoms.XdndEnter => {
+                            source = event.data.as_data32()[0];
+                        }
+                        Event::ClientMessage(event)
+                            if event.type_ == atoms.XdndPosition && !released =>
+                        {
+                            message(
+                                &connection,
+                                (source, source),
+                                atoms.XdndStatus,
+                                [
+                                    window,
+                                    if accept { 3 } else { 0 },
+                                    0,
+                                    0,
+                                    if deferred {
+                                        atoms.XdndActionCopy
+                                    } else {
+                                        atoms.XdndActionMove
+                                    },
+                                ],
+                            )
+                            .unwrap();
+                            if deferred {
+                                connection
+                                    .convert_selection(
+                                        window,
+                                        atoms.XdndSelection,
+                                        atoms.uri_list,
+                                        property,
+                                        x11rb::CURRENT_TIME,
+                                    )
+                                    .unwrap();
+                                connection.flush().unwrap();
+                                std::thread::sleep(Duration::from_millis(80));
+                                assert_eq!(
+                                    calls.load(Ordering::Relaxed),
+                                    0,
+                                    "a hover probe must never materialize files"
+                                );
+                            } else {
+                                let actions = connection
+                                    .get_property(
+                                        false,
+                                        source,
+                                        atoms.XdndActionList,
+                                        AtomEnum::ATOM,
+                                        0,
+                                        16,
+                                    )
+                                    .unwrap()
+                                    .reply()
+                                    .unwrap();
+                                assert!(
+                                    actions
+                                        .value32()
+                                        .unwrap()
+                                        .any(|action| action == atoms.XdndActionMove)
+                                );
+                            }
+                            connection
+                                .xtest_fake_input(
+                                    BUTTON_RELEASE_EVENT,
+                                    1,
+                                    x11rb::CURRENT_TIME,
+                                    root,
+                                    250,
+                                    250,
+                                    0,
+                                )
+                                .unwrap();
+                            connection.flush().unwrap();
+                            released = true;
+                        }
+                        Event::ClientMessage(event) if event.type_ == atoms.XdndDrop => {
+                            assert!(accept);
+                            if !deferred {
+                                connection
+                                    .convert_selection(
+                                        window,
+                                        atoms.XdndSelection,
+                                        atoms.uri_list,
+                                        property,
+                                        x11rb::CURRENT_TIME,
+                                    )
+                                    .unwrap();
+                                connection.flush().unwrap();
+                            }
+                        }
+                        Event::SelectionNotify(event) if event.property == property => {
+                            notified = true;
+                            break;
+                        }
+                        _ => {}
+                    }
+                } else {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+            assert_eq!(
+                calls.load(Ordering::Relaxed),
+                usize::from(deferred && accept)
+            );
+            if accept {
+                assert!(notified);
+                message(
+                    &connection,
+                    (source, source),
+                    atoms.XdndFinished,
+                    [
+                        window,
+                        1,
+                        if deferred {
+                            atoms.XdndActionCopy
+                        } else {
+                            atoms.XdndActionMove
+                        },
+                        0,
+                        0,
+                    ],
+                )
+                .unwrap();
+                assert!(rx.recv_timeout(Duration::from_secs(2)).unwrap());
+            }
+            connection.destroy_window(window).unwrap();
+            connection.flush().unwrap();
+        }
     }
 }

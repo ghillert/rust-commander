@@ -41,7 +41,10 @@ pub enum DndEvent {
         paths: Vec<PathBuf>,
     },
     /// A drag started with `start_drag` was dropped or cancelled.
-    DragEnded,
+    DragEnded {
+        /// Whether the compositor reported an accepted drop.
+        accepted: bool,
+    },
 }
 
 /// A window's connection to the Wayland drag-and-drop protocol. Dropping it stops and joins
@@ -113,5 +116,19 @@ impl FileDnd {
         self.inner.start_drag(uri_list::encode(&paths), allow_move);
         #[cfg(not(target_os = "linux"))]
         let _ = (paths, allow_move);
+    }
+}
+
+/// A provider that is called only after the compositor reports a performed drop.
+pub type DeferredFiles = std::sync::Arc<dyn Fn() -> Result<Vec<PathBuf>, String> + Send + Sync>;
+impl FileDnd {
+    /// Offer files without downloading or extracting anything during the gesture.
+    pub fn start_deferred(&self, provider: DeferredFiles) {
+        #[cfg(target_os = "linux")]
+        self.inner.start_deferred(std::sync::Arc::new(move || {
+            provider().map(|paths| uri_list::encode(&paths))
+        }));
+        #[cfg(not(target_os = "linux"))]
+        let _ = provider;
     }
 }

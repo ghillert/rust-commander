@@ -1,4 +1,5 @@
 //! Drag selections and guarded transfers shared by every UI/native drop target.
+pub(crate) mod promises;
 use crate::{
     filesystem::{self, Entry, Location},
     operations::{self, Task},
@@ -171,6 +172,7 @@ pub(crate) fn transient<T>(
 pub struct Export {
     pub directory: tempfile::TempDir,
     pub paths: Vec<PathBuf>,
+    _lease: Option<fs::File>,
 }
 pub fn export(selection: &Selection, task: &mut Task) -> Result<Export> {
     selection.validate()?;
@@ -191,6 +193,23 @@ pub(crate) fn export_in(
         tempfile::Builder::new()
             .prefix("rust-commander-drag-")
             .tempdir()?
+    };
+    let lease = if parent.is_some() {
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(directory.path().join("lease.lock"))?;
+        file.try_lock()?;
+        file.write_all(b"RustCommanderExportLease1")?;
+        fs::write(
+            directory.path().join("created.json"),
+            serde_json::to_vec(&std::time::SystemTime::now())?,
+        )?;
+        Some(file)
+    } else {
+        None
     };
     let tree = directory.path().join("files");
     match &selection.from {
@@ -231,7 +250,11 @@ pub(crate) fn export_in(
         before == witness(selection, task)?,
         "A source changed while preparing the drag. Try again with the updated selection."
     );
-    Ok(Export { directory, paths })
+    Ok(Export {
+        directory,
+        paths,
+        _lease: lease,
+    })
 }
 
 pub fn transfer(

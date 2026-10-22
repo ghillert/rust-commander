@@ -603,7 +603,17 @@ impl Adapter {
         let status = if let Some(preparation) = &self.drag.preparation {
             format!(
                 "{} · {} · {}",
-                tr("Preparing files for drag…"),
+                tr(
+                    if preparation
+                        .external
+                        .as_ref()
+                        .is_some_and(|session| session.waiting())
+                    {
+                        "Waiting for an external drop…"
+                    } else {
+                        "Preparing files for drag…"
+                    }
+                ),
                 preparation.progress.current,
                 filesystem::human_size(preparation.progress.bytes)
             )
@@ -1807,6 +1817,29 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
                 if a.pending_drop_side.is_some() {
                     a.pending_drops.push(path.clone());
                     a.drop_deadline = Some(std::time::Instant::now() + Duration::from_millis(80));
+                }
+            }
+            let handoff = a.drag.outside
+                && a.drag.pressed
+                && a.drag.finished.is_none()
+                && a.drag.preparation.is_none()
+                && matches!(
+                    event,
+                    WindowEvent::CursorMoved { .. } | WindowEvent::CursorLeft { .. }
+                );
+            let cursor = a.drag.cursor;
+            drop(a);
+            if handoff {
+                // The native pointer may release before the 50 ms UI timer.
+                // Let Slint establish its immutable payload, then hand off while
+                // this actual button gesture is still held, outside all borrows.
+                if let Some(position) = cursor {
+                    ui.window()
+                        .dispatch_event(slint::platform::WindowEvent::PointerMoved { position });
+                }
+                drag::dispatch(&event_state, &ui);
+                if event_state.borrow().drag.finished.is_some() {
+                    return slint::winit_030::EventResult::PreventDefault;
                 }
             }
         }

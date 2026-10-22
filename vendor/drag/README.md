@@ -11,7 +11,7 @@ GLib 0.18 dependency in Cargo.lock even when the application only enables drag
 on macOS and Windows. That GLib version is affected by
 [RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html), and
 GTK3 cannot resolve to the fixed GLib 0.20+ series. Rust Commander already uses
-its own GTK4 helper on Linux, so the GTK3 backend serves no purpose here.
+its own native X11/Wayland adapters on Linux, so the GTK3 backend serves no purpose here.
 
 ## Changes from upstream
 
@@ -26,6 +26,10 @@ or suppressed. Linux uses `src/native_drag.rs` on the existing X11/Wayland surfa
 copy and its root patch when a published upstream release allows excluding GTK3
 from the resolved dependency graph; verify Cargo.lock and all three platforms
 when updating.
+
+- Added AppKit file-promise providers with retained delegates and background operation queues.
+- Added Windows Shell virtual descriptors and deferred file streams, gated on accepted-drop feedback/button release. Metadata requests cannot invoke content readers.
+- Native provider fixtures live in `tests/native-dnd` and run in the platform CI jobs.
 
 ## License
 

@@ -36,6 +36,7 @@ use windows::{
 };
 
 mod image;
+mod promises;
 
 static mut OLE_RESULT: Result<()> = Ok(());
 static OLE_UNINITIALIZE: Once = Once::new();
@@ -221,6 +222,9 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
 ) -> crate::Result<()> {
     if let Ok(RawWindowHandle::Win32(_w)) = handle.window_handle().map(|h| h.as_raw()) {
         match item {
+            DragItem::Promised(files) => {
+                return promises::start(files, image, on_drop_callback);
+            }
             DragItem::Files(files) => {
                 init_ole();
                 unsafe {
