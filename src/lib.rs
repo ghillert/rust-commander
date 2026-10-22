@@ -5,6 +5,7 @@ pub mod app;
 pub mod appearance;
 pub mod archive;
 pub mod background;
+pub mod comparison;
 pub mod desktop;
 pub mod filesystem;
 pub mod model;

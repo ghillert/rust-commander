@@ -489,3 +489,130 @@ fn an_idle_native_receiver_times_out_without_leaving_the_window_blocked() {
     assert!(a.app.status_error);
     assert!(a.app.job.is_none());
 }
+
+#[test]
+fn private_cross_window_offers_show_confirmation_without_exporting_and_cannot_replay() {
+    let (root, ui, target, left, right) = setup();
+    let input = left.join("alpha.txt");
+    let archive = root.path().join("source.zip");
+    crate::archive::pack(&[input], &archive, &mut Task::default()).unwrap();
+    let from = Location::Archive {
+        file: archive,
+        prefix: PathBuf::new(),
+    };
+    let source = Selection {
+        entries: filesystem::list(&from).unwrap(),
+        from: from.clone(),
+    };
+    let (tx, rx) = mpsc::channel();
+    let session = PromiseSession::new(
+        source,
+        true,
+        Arc::new(|_| {}),
+        Box::new(move |v| {
+            let _ = tx.send(v);
+        }),
+    );
+    let token = format!("{:032x}", rand::random::<u128>());
+    PRIVATE.with(|offers| {
+        offers.borrow_mut().insert(
+            token.clone(),
+            PrivateOffer {
+                session: session.clone(),
+                until: std::time::Instant::now() + Duration::from_secs(60),
+            },
+        );
+    });
+    let hover = native_payload(vec![marker(&token)]);
+    assert_eq!(selection(&hover).unwrap().from, from);
+    assert!(session.waiting());
+    assert!(rx.try_recv().is_err());
+    let dropped = dropped_payload(vec![marker(&token)]);
+    assert!(
+        rx.recv().unwrap().unwrap().is_empty(),
+        "internal delivery must not export native files"
+    );
+    assert!(session.waiting());
+    assert!(session.materialize().is_err());
+    assert!(
+        private_payload(&token, true).is_none(),
+        "an accepted offer is single-use"
+    );
+    assert!(
+        target
+            .borrow_mut()
+            .drop_to(1, "pane", dropped, DragAction::Copy)
+    );
+    let a = target.borrow();
+    match &a.app.prompt.as_ref().unwrap().kind {
+        PromptKind::DropTransfer { selection, to, .. } => {
+            assert_eq!(selection.from, from);
+            assert_eq!(*to, Location::Local(right));
+        }
+        _ => panic!("expected guarded confirmation"),
+    }
+    assert!(!ui.get_busy());
+}
+#[test]
+fn cancelled_or_expired_private_offers_never_become_drops() {
+    let (_root, _ui, _state, left, _right) = setup();
+    for expired in [false, true] {
+        let source = Selection::local(&[left.join("alpha.txt")]).unwrap();
+        let session = PromiseSession::new(source, false, Arc::new(|_| {}), Box::new(|_| {}));
+        let token = format!("{:032x}", rand::random::<u128>());
+        PRIVATE.with(|offers| {
+            offers.borrow_mut().insert(
+                token.clone(),
+                PrivateOffer {
+                    session: session.clone(),
+                    until: if expired {
+                        std::time::Instant::now() - Duration::from_secs(1)
+                    } else {
+                        std::time::Instant::now() + Duration::from_secs(60)
+                    },
+                },
+            );
+        });
+        if !expired {
+            session.end_drag(false);
+        }
+        assert!(private_payload(&token, true).is_none());
+        assert!(session.waiting());
+    }
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn window_exit_before_the_first_drag_move_preserves_the_held_selection() {
+    use i_slint_backend_testing::ElementHandle;
+    use slint::platform::{PointerEventButton, WindowEvent};
+    let (_root, ui, state, _left, _right) = setup();
+    slint::platform::update_timers_and_animations();
+    let row = ElementHandle::find_by_accessible_label(&ui, "alpha.txt")
+        .next()
+        .unwrap();
+    let origin = row.absolute_position();
+    let position = slint::LogicalPosition::new(origin.x + 30.0, origin.y + 10.0);
+    ui.window().dispatch_event(WindowEvent::PointerPressed {
+        position,
+        button: PointerEventButton::Left,
+    });
+    {
+        let mut a = state.borrow_mut();
+        a.drag.pressed = true;
+        a.drag.cursor = Some(position);
+    }
+    assert!(state.borrow().drag.pending.is_none());
+    prime_exit(&state, &ui);
+    assert_eq!(
+        state.borrow().drag.pending.as_ref().unwrap().entries[0].name,
+        "alpha.txt"
+    );
+    state.borrow_mut().drag.pressed = false;
+    state.borrow_mut().drag.pending = None;
+    prime_exit(&state, &ui);
+    assert!(
+        state.borrow().drag.pending.is_none(),
+        "a released click cannot become a drag"
+    );
+}

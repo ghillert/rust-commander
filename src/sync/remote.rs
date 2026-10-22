@@ -125,14 +125,20 @@ pub(super) fn preview(
             && storage::stamp(right, b, task)? == right_stamp,
         "Folders changed during preview; preview again"
     );
-    Ok(Plan {
+    let mut plan = Plan {
         left: a.into(),
         right: b.into(),
         remote_roots: Some((left.clone(), right.clone())),
         items,
         left_stamp,
         right_stamp,
-    })
+    };
+    for index in 0..plan.items.len() {
+        if !plan.allows(&plan.items[index], plan.items[index].choice) {
+            plan.items[index].choice = Choice::Skip;
+        }
+    }
+    Ok(plan)
 }
 pub(super) fn apply(plan: &Plan, task: &mut Task) -> Result<String> {
     let (left, right) = plan

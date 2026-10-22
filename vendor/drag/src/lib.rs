@@ -17,7 +17,26 @@ use std::path::PathBuf;
 mod platform_impl;
 #[cfg(target_os = "macos")]
 pub use platform_impl::file_promise_provider;
-pub use platform_impl::start_drag;
+pub use platform_impl::{attach_drop_target, start_drag, DropTarget};
+/// Native receiver events. Private tokens identify only a live in-process selection.
+#[derive(Clone, Debug)]
+pub enum DropEvent {
+    Hover {
+        x: f32,
+        y: f32,
+        token: Option<String>,
+        paths: Vec<PathBuf>,
+    },
+    Leave,
+    Drop {
+        x: f32,
+        y: f32,
+        token: Option<String>,
+        paths: Vec<PathBuf>,
+    },
+}
+pub type DropCallback = std::sync::Arc<dyn Fn(DropEvent) + Send + Sync>;
+pub const INTERNAL_FORMAT: &str = "application/x-rust-commander-selection";
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -134,6 +153,8 @@ pub type PromiseWrite = std::sync::Arc<
 /// Kept alive by the native data object for delayed delivery after a drop.
 #[derive(Clone)]
 pub struct PromisedFiles {
+    /// Opaque in-process selection token; never contains paths or credentials.
+    pub internal_token: Option<String>,
     pub entries: Vec<PromiseEntry>,
     pub list: PromiseList,
     pub read: PromiseRead,

@@ -40,6 +40,17 @@ pub enum DndEvent {
         /// The local files of the drop, in the order of the source's URI list. Never empty.
         paths: Vec<PathBuf>,
     },
+    /// An in-process selection, transferred without materializing file contents.
+    Internal {
+        /// Logical pointer position.
+        x: f32,
+        /// Logical pointer position.
+        y: f32,
+        /// Opaque live-session token; contains no paths or secrets.
+        token: String,
+        /// True only after the compositor reports a drop on this surface.
+        dropped: bool,
+    },
     /// A drag started with `start_drag` was dropped or cancelled.
     DragEnded {
         /// Whether the compositor reported an accepted drop.
@@ -122,6 +133,16 @@ impl FileDnd {
 /// A provider that is called only after the compositor reports a performed drop.
 pub type DeferredFiles = std::sync::Arc<dyn Fn() -> Result<Vec<PathBuf>, String> + Send + Sync>;
 impl FileDnd {
+    /// Offer the same files plus a private representation for other windows in this process.
+    pub fn start_deferred_with_token(&self, provider: DeferredFiles, token: String) {
+        #[cfg(target_os = "linux")]
+        self.inner.start_deferred_with_token(
+            std::sync::Arc::new(move || provider().map(|paths| uri_list::encode(&paths))),
+            token,
+        );
+        #[cfg(not(target_os = "linux"))]
+        let _ = (provider, token);
+    }
     /// Offer files without downloading or extracting anything during the gesture.
     pub fn start_deferred(&self, provider: DeferredFiles) {
         #[cfg(target_os = "linux")]

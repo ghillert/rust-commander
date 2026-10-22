@@ -113,11 +113,14 @@
   },
   "CompareFolders": {
     "evidence": [
+      "src/comparison.rs::pub fn compare",
       "src/desktop.rs::pub fn compare",
       "tests/desktop_tools.rs::folder_comparison_uses_file_contents",
+      "tests/features_08.rs::comparison_and_sync_cover_local_remote_and_remote_remote_pairs",
+      "tests/uri_navigation.rs",
       "docs/FEATURES_NEXT.md"
     ],
-    "note": "Recursive content-based comparison is implemented for local folders and skips symlinks. Remote synchronization has a separate implementation; this comparison command remains local-only. Broader upstream comparison options and native desktop acceptance remain open.",
+    "note": "Recursive SHA-256 comparison supports local/local, local/remote and remote/remote panes, including HTTP files with rounded or missing listing sizes. Links are reported without following; archive roots are unsupported. Reviewed sync retains typed pane roots and blocks read-only destinations. Broader upstream comparison options and live-provider/desktop acceptance remain open.",
     "status": "partial"
   },
   "ConnectToServer": {

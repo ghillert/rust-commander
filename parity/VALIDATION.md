@@ -862,3 +862,73 @@ protocol suite on Linux. These workflow changes have not been pushed or executed
 on GitHub; the results above are local Mac, cross-compilation and container runs.
 Logs are retained in `target/native-dnd-logs/promises-*.log`; no remote CI success
 is inferred from them. The parity overview remains **partial** for drag and drop.
+
+## Cross-window drops, Windows responsiveness, and remote comparison — 2026-10-22
+
+The current changes add private same-process selection handoffs on AppKit, OLE,
+X11, and Wayland. The receiving window opens guarded transfer confirmation
+without preparing, downloading, or extracting an external export. Tokens expire,
+are single-use, and reject cancelled/completed sessions. Wayland latches private
+delivery so a late URI request cannot start an export. macOS accepts modern file
+URLs, preserving legacy incoming handling. Fast window-exit gestures preserve a
+real pressed row selection; physical button state prevents delayed handoffs after
+release.
+
+Windows virtual files expose `IDataObjectAsyncCapability`; completion can arrive
+before or after the native drag loop returns. Synchronous receivers export on a
+worker while COM dispatches window messages/calls. New fixtures cover completion
+ordering, failure, and delivery of a Win32 window message during a blocked export.
+They have been cross-compiled here, **not executed on Windows**.
+
+Folder comparison now recursively hashes local/local, local/remote, and
+remote/remote file streams. Tests cover equal/different contents, one-sided files,
+Unicode nested paths, and an actual loopback HTTP listing whose rounded size does
+not equal the content length. Sync retains typed pane locations, cancels obsolete
+previews, and filters read-only destinations. Execution rejects invalid choices
+before any write, including restored queue plans. Local-backed remote operators
+exercise reviewed mixed/remote sync; these are not live cloud-service acceptance.
+
+Observed failures in [CI run 39838462721](https://github.com/ghillert/rust-commander/actions/runs/39838462721)
+were addressed: Windows native joined paths use portable path validation, lease
+cleanup reads the already locked file handle, and pinned cargo-packager setup
+handles an executable restored by another cache. CI now runs checksum-verified
+actionlint 1.7.12 over all workflows. Local actionlint accepts the current workflows
+and rejects the original malformed release workflow. Composite-action YAML also
+parses successfully. These working-tree changes have not been pushed; no new
+GitHub CI success is claimed.
+
+Automated checks on this Mac and a disposable ARM64 Linux container:
+
+- macOS Apple Silicon: `cargo test --locked --all-targets --all-features`:
+  **284 passed, 0 failed, 15 ignored**. Formatting and warnings-denied all-targets,
+  all-features Clippy passed. A screenshot-enabled development binary built.
+- The actual main-thread AppKit provider fixture passed metadata-only hover,
+  deferred write, completion, and abandonment checks.
+- Windows x64 MSVC: the native receiver, provider, and responsiveness fixture
+  pass `cargo check --locked -p rust-commander-native-dnd-tests --tests
+  --target x86_64-pc-windows-msvc`.
+- Linux Rust 1.92: warnings-denied all-targets/all-features Clippy passed.
+  **3 actual XDND fixtures** passed under Xvfb, including a private internal
+  target that never invokes the export provider. **7 Wayland URI/pipe tests**
+  passed, and **1 live headless Weston connection/lifetime test** passed.
+- Release automation: **18 tests, 2 platform skips**. Icon catalog: **9 passed**.
+  Workflow validation, formatting, and `git diff --check` passed.
+
+Physical Mac acceptance used an isolated Rust Commander QA bundle, disposable
+configuration, loopback HTTP server, ZIP, and destination. The user performed
+Finder drops because the automation tool did not deliver a held drag outside the
+source window. Exact byte checks confirmed local-file delivery (Finder negotiated
+a move), a deferred HTTP file, a nested HTTP folder, and an archive entry.
+Remote sources and the original ZIP remained intact. A cold archive drag from
+QA Window 2 into QA Window 1 opened confirmation with the original archive
+location and the correct destination. Before confirmation, the destination was
+empty and the export-cache inventory was unchanged. Confirming copied the exact
+bytes, preserved the original ZIP, and still created no native export. Earlier
+automated in-window gestures opened normal confirmation and cancellation left
+the destination empty.
+
+The Linux full application suite was not rerun in the container. Windows execution,
+Explorer/Nautilus/Dolphin interoperability, real Wayland desktop gestures, and
+large-transfer responsiveness still need native acceptance. Protocol fixtures do
+not establish those desktop contracts. Logs are retained under
+`target/native-dnd-logs/next-*.log` and `rc-next-final-*.log`.

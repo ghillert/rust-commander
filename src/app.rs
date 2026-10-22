@@ -1292,6 +1292,10 @@ impl Commander {
                 if let Some(form) = &mut self.features.sync {
                     form.left = self.panes[0].tab().location.label();
                     form.right = self.panes[1].tab().location.label();
+                    form.locations = Some((
+                        self.panes[0].tab().location.clone(),
+                        self.panes[1].tab().location.clone(),
+                    ));
                 }
                 return;
             }
@@ -1392,10 +1396,14 @@ impl Commander {
                 return;
             }
             Action::Compare => {
-                if let (Some(left), Some(right)) = (local, other) {
-                    self.start_job(Operation::Compare { left, right }, ctx);
+                let left = self.panes[0].tab().location.clone();
+                let right = self.panes[1].tab().location.clone();
+                if matches!(left, Location::Archive { .. })
+                    || matches!(right, Location::Archive { .. })
+                {
+                    self.fail("Choose local folders or connected remote folders to compare.");
                 } else {
-                    self.fail("Choose two local folders to compare.");
+                    self.start_job(Operation::CompareLocations { left, right }, ctx);
                 }
                 return;
             }

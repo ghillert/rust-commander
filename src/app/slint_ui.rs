@@ -443,7 +443,11 @@ impl Adapter {
             self.drop_deadline = None;
             let paths = std::mem::take(&mut self.pending_drops);
             if let Some(side) = self.pending_drop_side.take() {
-                let data = drag::native_payload(paths);
+                let data = self
+                    .drag
+                    .incoming
+                    .take()
+                    .unwrap_or_else(|| drag::dropped_payload(paths));
                 let target = self.drag.last_hit.take().or_else(|| {
                     self.drag
                         .position
@@ -1739,6 +1743,9 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
             ) {
                 drag::prime_release(&event_state, &ui);
             }
+            let leaving = matches!(event, WindowEvent::CursorLeft { .. }) || matches!(event,
+                WindowEvent::CursorMoved { position, .. } if position.x < 0.0 || position.y < 0.0 || position.x >= f64::from(window.size().width) || position.y >= f64::from(window.size().height));
+            if leaving { drag::prime_exit(&event_state, &ui); }
             let mut a = event_state.borrow_mut();
             match event {
                 WindowEvent::MouseInput {
@@ -1754,9 +1761,13 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
                         "winit release"
                     });
                 }
-                WindowEvent::CursorLeft { .. } => a.drag.outside = true,
+                WindowEvent::CursorLeft { .. } => {
+                    drag::trace(&format!("cursor left held={} pending={}", a.drag.pressed, a.drag.pending.is_some()));
+                    a.drag.outside = true;
+                },
                 WindowEvent::CursorEntered { .. } => a.drag.outside = false,
                 WindowEvent::CursorMoved { position, .. } => {
+                    if a.drag.pressed { drag::trace(&format!("held pointer {},{}", position.x, position.y)); }
                     let size = window.size();
                     a.drag.cursor = Some(slint::LogicalPosition::new(
                         (position.x / f64::from(window.scale_factor())) as f32,

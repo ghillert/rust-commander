@@ -136,6 +136,10 @@ pub enum Operation {
         left: PathBuf,
         right: PathBuf,
     },
+    CompareLocations {
+        left: crate::filesystem::Location,
+        right: crate::filesystem::Location,
+    },
     Split {
         source: PathBuf,
         destination: PathBuf,
@@ -229,7 +233,7 @@ impl Operation {
             Self::DropTransfer { .. } => "Drag and drop transfer",
             Self::RemoteTransfer { .. } | Self::RemoteTransferResolved { .. } => "Remote transfer",
             Self::Properties(_) => "Properties",
-            Self::Compare { .. } => "Compare folders",
+            Self::Compare { .. } | Self::CompareLocations { .. } => "Compare folders",
             Self::Checksum(_) => "Checksums",
             Self::Permissions { .. } => "Permissions",
             Self::Modified { .. } => "Modification time",
@@ -758,6 +762,19 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             "Properties\n{}",
             crate::desktop::properties(&paths, task)?
         )),
+        Operation::CompareLocations { left, right } => {
+            let entries = crate::comparison::compare(&left, &right, task)?;
+            Ok(format!(
+                "Folder comparison\n{}\n{}\n\n{}",
+                left.label(),
+                right.label(),
+                entries
+                    .iter()
+                    .map(|e| format!("{}  {}", e.status, e.name))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ))
+        }
         Operation::Compare { left, right } => {
             let entries = crate::desktop::compare(&left, &right, task)?;
             Ok(format!(

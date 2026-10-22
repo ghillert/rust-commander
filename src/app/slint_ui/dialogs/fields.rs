@@ -287,16 +287,22 @@ impl Adapter {
                     if let Some(form) = &mut self.app.features.sync {
                         match id {
                             "sync-left" => {
+                                form.cancel.store(true, Ordering::Relaxed);
+                                form.pending = None;
                                 form.left = value.into();
                                 form.plan = None;
                                 form.confirmed = false;
                             }
                             "sync-right" => {
+                                form.cancel.store(true, Ordering::Relaxed);
+                                form.pending = None;
                                 form.right = value.into();
                                 form.plan = None;
                                 form.confirmed = false;
                             }
                             "direction" => {
+                                form.cancel.store(true, Ordering::Relaxed);
+                                form.pending = None;
                                 form.direction = match value {
                                     "Left → right" => 1,
                                     "Right → left" => 2,

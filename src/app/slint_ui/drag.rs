@@ -73,6 +73,9 @@ pub(super) struct State {
     pub cursor: Option<slint::LogicalPosition>,
     pub prepare_requested: bool,
     pub deferred: Option<Selection>,
+    pub incoming: Option<slint::DataTransfer>,
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    native_target: Option<NativeTarget>,
     targets: Targets,
 }
 impl Adapter {
@@ -314,6 +317,54 @@ pub(super) struct Ready {
 }
 thread_local! {static ACTIVE:RefCell<Option<(Ready,std::time::Instant)>>=const{RefCell::new(None)};}
 thread_local! {static READY:RefCell<std::collections::VecDeque<Ready>>=const{RefCell::new(std::collections::VecDeque::new())};}
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+struct NativeTarget {
+    _registration: ::drag::DropTarget,
+    events: Receiver<::drag::DropEvent>,
+}
+struct PrivateOffer {
+    session: Arc<PromiseSession>,
+    until: std::time::Instant,
+}
+thread_local! { static PRIVATE: RefCell<BTreeMap<String,PrivateOffer>> = const {RefCell::new(BTreeMap::new())}; }
+fn private_payload(token: &str, claim: bool) -> Option<slint::DataTransfer> {
+    let session = PRIVATE.with(|offers| {
+        let mut offers = offers.borrow_mut();
+        offers
+            .retain(|_, offer| offer.until > std::time::Instant::now() && offer.session.routable());
+        let session = offers.get(token)?.session.clone();
+        if claim {
+            offers.remove(token);
+        }
+        Some(session)
+    })?;
+    let mut data = slint::DataTransfer::default();
+    data.set_user_data(Rc::new(session.selection.clone()));
+    if claim {
+        session.internal_drop();
+    }
+    Some(data)
+}
+fn marker(token: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(".rust-commander-offer-{token}"))
+}
+fn marker_token(paths: &[PathBuf]) -> Option<String> {
+    if paths.len() != 1 {
+        return None;
+    }
+    let token = paths[0]
+        .file_name()?
+        .to_str()?
+        .strip_prefix(".rust-commander-offer-")?;
+    (token.len() == 32 && token.bytes().all(|c| c.is_ascii_hexdigit()) && paths[0] == marker(token))
+        .then(|| token.to_owned())
+}
+pub(super) fn dropped_payload(paths: Vec<PathBuf>) -> slint::DataTransfer {
+    if let Some(data) = marker_token(&paths).and_then(|token| private_payload(&token, true)) {
+        return data;
+    }
+    native_payload(paths)
+}
 pub(super) struct Preparation {
     pub cancel: Arc<AtomicBool>,
     pub progress: Progress,
@@ -347,6 +398,9 @@ fn remember(ready: Ready) {
     });
 }
 pub(super) fn native_payload(paths: Vec<PathBuf>) -> slint::DataTransfer {
+    if let Some(data) = marker_token(&paths).and_then(|token| private_payload(&token, false)) {
+        return data;
+    }
     let mut data = slint::DataTransfer::default();
     data.set_file_paths(&paths);
     let selection = ACTIVE.with(|active| {
@@ -406,6 +460,50 @@ impl State {
 }
 impl Adapter {
     pub(super) fn drag_tick(&mut self, ui: &CommanderWindow) {
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            use raw_window_handle::HasWindowHandle;
+            if self.drag.native_target.is_none()
+                && let Ok(handle) = ui.window().window_handle().window_handle()
+            {
+                let (sender, events) = mpsc::channel();
+                let ctx = self.ctx.clone();
+                if let Ok(registration) = ::drag::attach_drop_target(
+                    &crate::native_files::Window(handle.as_raw()),
+                    Arc::new(move |event| {
+                        let _ = sender.send(event);
+                        ctx.request_repaint();
+                    }),
+                ) {
+                    self.drag.native_target = Some(NativeTarget {
+                        _registration: registration,
+                        events,
+                    });
+                }
+            }
+            let events = self
+                .drag
+                .native_target
+                .as_ref()
+                .map(|target| target.events.try_iter().collect::<Vec<_>>())
+                .unwrap_or_default();
+            for event in events {
+                match event {
+                    ::drag::DropEvent::Leave => {
+                        if self.pending_drops.is_empty() {
+                            self.drag.hovered.clear();
+                            self.drag.incoming = None;
+                        }
+                    }
+                    ::drag::DropEvent::Hover { x, y, token, paths } => {
+                        self.receive_native(ui, x, y, token, paths, false)
+                    }
+                    ::drag::DropEvent::Drop { x, y, token, paths } => {
+                        self.receive_native(ui, x, y, token, paths, true)
+                    }
+                }
+            }
+        }
         #[cfg(target_os = "linux")]
         {
             use raw_window_handle::HasWindowHandle;
@@ -420,6 +518,9 @@ impl Adapter {
             if let Some(backend) = &mut self.drag.linux {
                 for event in backend.poll() {
                     match event {
+                        crate::native_drag::Event::Internal(x, y, token, dropped) => {
+                            self.receive_native(ui, x, y, Some(token), Vec::new(), dropped)
+                        }
                         crate::native_drag::Event::Hover(x, y) => {
                             self.drag.position = Some((x, y));
                             if self.drag.hovered.is_empty() {
@@ -489,7 +590,9 @@ impl Adapter {
                 }
                 match result {
                     Ok(ready) => {
-                        remember(ready.clone());
+                        if !ready.paths.is_empty() {
+                            remember(ready.clone());
+                        }
                         // Preparation is explicit and completes independently of
                         // any mouse button held elsewhere in the window.
                         self.app.status = if external {
@@ -503,12 +606,12 @@ impl Adapter {
                 }
             }
         }
-        if self
-            .drag
-            .finished
-            .as_ref()
-            .is_some_and(|receiver| receiver.try_recv().is_ok())
-        {
+        if self.drag.finished.as_ref().is_some_and(|receiver| {
+            matches!(
+                receiver.try_recv(),
+                Ok(()) | Err(mpsc::TryRecvError::Disconnected)
+            )
+        }) {
             self.drag.finished = None;
             self.drag.pressed = false;
             // Destination events may arrive just after native completion.
@@ -548,7 +651,12 @@ impl Adapter {
                 } else {
                     self.pending_drops.clone()
                 };
-                global.set_native_data(native_payload(paths));
+                global.set_native_data(
+                    self.drag
+                        .incoming
+                        .clone()
+                        .unwrap_or_else(|| native_payload(paths)),
+                );
                 global.set_native_action(if self.drag.buttons().1 {
                     DragAction::Move
                 } else {
@@ -566,6 +674,51 @@ impl Adapter {
             }
         }
         global.set_native_active(active);
+    }
+    fn receive_native(
+        &mut self,
+        ui: &CommanderWindow,
+        x: f32,
+        y: f32,
+        token: Option<String>,
+        paths: Vec<PathBuf>,
+        dropped: bool,
+    ) {
+        let scale = if cfg!(target_os = "windows") {
+            ui.window().scale_factor()
+        } else {
+            1.0
+        };
+        let (x, y) = (x / scale, y / scale);
+        let data = if let Some(token) = token {
+            private_payload(&token, dropped)
+        } else {
+            Some(native_payload(paths.clone()))
+        };
+        let Some(data) = data else {
+            self.drag.hovered.clear();
+            self.drag.incoming = None;
+            return;
+        };
+        self.drag.incoming = Some(data);
+        self.drag.position = Some((x, y));
+        self.drag.hovered = if paths.is_empty() {
+            vec![std::env::temp_dir().join(".rust-commander-native-offer")]
+        } else {
+            paths.clone()
+        };
+        if dropped {
+            self.pending_drops = self.drag.hovered.clone();
+            self.pending_drop_side = usize::try_from(ui.invoke_drop_side(x, y))
+                .ok()
+                .filter(|side| *side < 2);
+            self.drag.drop_action = Some(if self.drag.buttons().1 {
+                DragAction::Move
+            } else {
+                DragAction::Copy
+            });
+            self.drop_deadline = Some(std::time::Instant::now() + Duration::from_millis(80));
+        }
     }
     pub(super) fn prepare_native_drag(&mut self) {
         let held = self.drag.buttons().0;
@@ -671,7 +824,7 @@ pub(super) fn dispatch(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
         use raw_window_handle::HasWindowHandle;
         let poll = {
             let a = state.borrow();
-            a.drag.pending.is_some() && a.drag.buttons().0
+            a.drag.pressed && crate::native_files::drag_buttons().0
         };
         if poll
             && let Ok(handle) = ui.window().window_handle().window_handle()
@@ -681,9 +834,20 @@ pub(super) fn dispatch(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
             )
         {
             let size = ui.window().size().to_logical(ui.window().scale_factor());
-            state.borrow_mut().drag.outside =
-                x < 0.0 || y < 0.0 || x >= size.width || y >= size.height;
+            let outside = x < 0.0 || y < 0.0 || x >= size.width || y >= size.height;
+            if outside {
+                prime_exit(state, ui);
+            }
+            state.borrow_mut().drag.outside = outside;
         }
+    }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if !crate::native_files::drag_buttons().0 && !state.borrow().drag.prepare_requested {
+        let mut a = state.borrow_mut();
+        a.drag.pending = None;
+        a.drag.deferred = None;
+        a.drag.ready = None;
+        return;
     }
     windows::with_state(state, |a| a.prepare_native_drag());
     let deferred = state.borrow_mut().drag.deferred.take();
@@ -760,6 +924,23 @@ mod tests;
 // Slint starts its in-window drag on the first movement beyond the threshold.
 // A fast OS gesture can release before a second move discovers the drop target.
 // Refresh that target before winit forwards the release to Slint.
+/// The OS can send CursorLeft before a threshold-crossing CursorMoved. Preserve
+/// the real, held row gesture before Slint receives PointerExited and releases it.
+pub(super) fn prime_exit(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
+    let position = {
+        let a = state.borrow();
+        (a.drag.pressed && a.drag.pending.is_none() && a.drag.finished.is_none() && !a.blocked())
+            .then_some(a.drag.cursor)
+            .flatten()
+    };
+    if let Some(position) = position {
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::PointerMoved {
+                position: slint::LogicalPosition::new(position.x + 24.0, position.y),
+            });
+    }
+}
+
 pub(super) fn prime_release(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
     let cursor = {
         let a = state.borrow();
@@ -796,6 +977,19 @@ fn dispatch_deferred(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow, selecti
             ctx.request_repaint();
         }),
     );
+    let token = format!("{:032x}", rand::random::<u128>());
+    PRIVATE.with(|offers| {
+        let mut offers = offers.borrow_mut();
+        offers
+            .retain(|_, offer| offer.until > std::time::Instant::now() && offer.session.routable());
+        offers.insert(
+            token.clone(),
+            PrivateOffer {
+                session: session.clone(),
+                until: std::time::Instant::now() + Duration::from_secs(300),
+            },
+        );
+    });
     state.borrow_mut().drag.preparation = Some(Preparation {
         cancel: session.cancel.clone(),
         progress: Default::default(),
@@ -830,6 +1024,7 @@ fn dispatch_deferred(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow, selecti
         let read_session = session.clone();
         let write_session = session.clone();
         let promises = ::drag::PromisedFiles {
+            internal_token: Some(token.clone()),
             entries,
             list: Arc::new(move || {
                 crate::drag_drop::promises::manifest(&list_session.selection, &list_session.cancel)
@@ -870,7 +1065,13 @@ fn dispatch_deferred(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow, selecti
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Native drag backend is unavailable."))
             .and_then(|backend| {
-                backend.start_deferred(Arc::new(move || read_session.materialize()), callback)
+                backend.start_deferred(
+                    token.clone(),
+                    windows::x11_windows(),
+                    marker(&token),
+                    Arc::new(move || read_session.materialize()),
+                    callback,
+                )
             })
     };
     if let Err(error) = result {

@@ -74,6 +74,30 @@ pub(super) fn with_state<T>(state: &Rc<RefCell<Adapter>>, f: impl FnOnce(&mut Ad
         }
     })
 }
+#[cfg(target_os = "linux")]
+pub(super) fn x11_windows() -> Vec<u32> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    SESSIONS.with(|sessions| {
+        sessions
+            .borrow()
+            .iter()
+            .filter_map(|session| {
+                match session
+                    .ui
+                    .window()
+                    .window_handle()
+                    .window_handle()
+                    .ok()?
+                    .as_raw()
+                {
+                    RawWindowHandle::Xlib(h) => u32::try_from(h.window).ok(),
+                    RawWindowHandle::Xcb(h) => Some(h.window.get()),
+                    _ => None,
+                }
+            })
+            .collect()
+    })
+}
 pub(super) fn entries() -> Vec<(usize, String)> {
     SESSIONS.with(|sessions| {
         sessions

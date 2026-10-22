@@ -2,22 +2,24 @@
 use super::*;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, OnceLock,
+    Arc, Mutex, OnceLock,
 };
 use windows::Win32::{
     System::DataExchange::RegisterClipboardFormatW,
     UI::Shell::{
-        SHCreateStdEnumFmtEtc, SHCreateStreamOnFileEx, FD_ATTRIBUTES, FD_FILESIZE, FILEDESCRIPTORW,
+        IDataObjectAsyncCapability, IDataObjectAsyncCapability_Impl, SHCreateStdEnumFmtEtc,
+        SHCreateStreamOnFileEx, FD_ATTRIBUTES, FD_FILESIZE, FILEDESCRIPTORW,
     },
 };
 
-#[implement(IDataObject)]
+#[implement(IDataObject, IDataObjectAsyncCapability)]
 struct VirtualFiles {
     files: crate::PromisedFiles,
     manifest: OnceLock<std::result::Result<Vec<crate::PromiseEntry>, String>>,
     dropped: Arc<AtomicBool>,
     descriptors: u16,
     contents: u16,
+    operation: Arc<AsyncOperation>,
 }
 impl VirtualFiles {
     fn entries(&self) -> Result<&Vec<crate::PromiseEntry>> {
@@ -26,8 +28,8 @@ impl VirtualFiles {
             .as_ref()
             .map_err(|_| Error::from(E_FAIL))
     }
-    fn formats(&self) -> [FORMATETC; 2] {
-        [
+    fn formats(&self) -> Vec<FORMATETC> {
+        let mut formats = vec![
             FORMATETC {
                 cfFormat: self.descriptors,
                 dwAspect: DVASPECT_CONTENT.0,
@@ -42,7 +44,17 @@ impl VirtualFiles {
                 tymed: TYMED_ISTREAM.0 as u32,
                 ..Default::default()
             },
-        ]
+        ];
+        if self.files.internal_token.is_some() {
+            formats.push(FORMATETC {
+                cfFormat: internal_format(),
+                dwAspect: DVASPECT_CONTENT.0,
+                lindex: -1,
+                tymed: TYMED_HGLOBAL.0 as u32,
+                ..Default::default()
+            });
+        }
+        formats
     }
 }
 #[allow(non_snake_case)]
@@ -52,6 +64,14 @@ impl IDataObject_Impl for VirtualFiles {
             return Err(Error::from(DV_E_FORMATETC));
         }
         let format = unsafe { &*format };
+        if format.cfFormat == internal_format() {
+            let token = self
+                .files
+                .internal_token
+                .as_ref()
+                .ok_or_else(|| Error::from(DV_E_FORMATETC))?;
+            return global_medium(token.as_bytes());
+        }
         if format.cfFormat == self.descriptors {
             let entries = self.entries()?;
             let size = 4 + entries.len() * std::mem::size_of::<FILEDESCRIPTORW>();
@@ -121,7 +141,7 @@ impl IDataObject_Impl for VirtualFiles {
         if entry.directory {
             return Err(Error::from(DV_E_LINDEX));
         }
-        let path = (self.files.read)(&entry.path).map_err(|_| Error::from(E_FAIL))?;
+        let path = responsive_read(self.files.read.clone(), entry.path.clone())?;
         let name = path
             .as_os_str()
             .encode_wide()
@@ -143,6 +163,12 @@ impl IDataObject_Impl for VirtualFiles {
         };
         if f.dwAspect != DVASPECT_CONTENT.0 {
             return DV_E_DVASPECT;
+        }
+        if f.cfFormat == internal_format()
+            && self.files.internal_token.is_some()
+            && f.tymed & TYMED_HGLOBAL.0 as u32 != 0
+        {
+            return S_OK;
         }
         if (f.cfFormat == self.descriptors && f.tymed & TYMED_HGLOBAL.0 as u32 != 0)
             || (f.cfFormat == self.contents && f.tymed & TYMED_ISTREAM.0 as u32 != 0)
@@ -223,12 +249,14 @@ pub(super) fn start(
             return Err(e.clone().into());
         }
         let dropped = Arc::new(AtomicBool::new(false));
+        let operation = Arc::new(AsyncOperation::new(dropped.clone(), Box::new(finished)));
         let object: IDataObject = VirtualFiles {
             files,
             manifest: OnceLock::new(),
             dropped: dropped.clone(),
             descriptors: RegisterClipboardFormatW(w!("FileGroupDescriptorW")) as u16,
             contents: RegisterClipboardFormatW(w!("FileContents")) as u16,
+            operation: operation.clone(),
         }
         .into();
         let source: IDropSource = VirtualSource {
@@ -242,16 +270,15 @@ pub(super) fn start(
             }
         }
         let mut effect = DROPEFFECT::default();
+        // Tell compatible Shell receivers to extract on their background worker.
+        object
+            .cast::<IDataObjectAsyncCapability>()?
+            .SetAsyncMode(true)?;
         let outcome = DoDragDrop(&object, &source, DROPEFFECT_COPY, &mut effect);
-        dropped.store(false, Ordering::Release);
         let mut point = POINT::default();
         let _ = GetCursorPos(&mut point);
-        finished(
-            if outcome == DRAGDROP_S_DROP && effect & DROPEFFECT_COPY != DROPEFFECT(0) {
-                DragResult::Dropped
-            } else {
-                DragResult::Cancel
-            },
+        operation.drag_ended(
+            outcome == DRAGDROP_S_DROP && effect & DROPEFFECT_COPY != DROPEFFECT(0),
             CursorPosition {
                 x: point.x,
                 y: point.y,
@@ -267,6 +294,7 @@ mod tests {
     #[test]
     fn virtual_descriptors_are_safe_on_hover_and_contents_require_an_accepted_drop() {
         use std::sync::atomic::AtomicUsize;
+        init_ole();
         let root = tempfile::tempdir().unwrap();
         let file = root.path().join("fixture.txt");
         std::fs::write(&file, b"deferred bytes").unwrap();
@@ -281,6 +309,7 @@ mod tests {
         let listing = entry.clone();
         let object = VirtualFiles {
             files: crate::PromisedFiles {
+                internal_token: None,
                 entries: vec![entry],
                 list: Arc::new(move || Ok(vec![listing.clone()])),
                 read: Arc::new(move |_| {
@@ -293,6 +322,7 @@ mod tests {
             dropped: dropped.clone(),
             descriptors: 49100,
             contents: 49101,
+            operation: Arc::new(AsyncOperation::new(dropped.clone(), Box::new(|_, _| {}))),
         };
         let mut descriptor = object.formats()[0];
         assert!(object.QueryGetData(&descriptor).is_ok());
@@ -322,5 +352,277 @@ mod tests {
         let _ = source.QueryContinueDrag(BOOL(1), MK_LBUTTON);
         assert!(object.GetData(&descriptor).is_err());
         assert_eq!(calls.load(Ordering::Relaxed), 1);
+    }
+}
+
+fn internal_format() -> u16 {
+    unsafe { RegisterClipboardFormatW(w!("application/x-rust-commander-selection")) as u16 }
+}
+fn global_medium(bytes: &[u8]) -> Result<STGMEDIUM> {
+    unsafe {
+        let memory = GlobalAlloc(GMEM_MOVEABLE, bytes.len())?;
+        let pointer = GlobalLock(memory);
+        if pointer.is_null() {
+            let _ = GlobalFree(memory);
+            return Err(Error::from(E_OUTOFMEMORY));
+        }
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), pointer.cast::<u8>(), bytes.len());
+        let _ = GlobalUnlock(memory);
+        Ok(STGMEDIUM {
+            tymed: TYMED_HGLOBAL.0 as u32,
+            u: STGMEDIUM_0 { hGlobal: memory },
+            pUnkForRelease: std::mem::ManuallyDrop::new(None),
+        })
+    }
+}
+
+// Receiver completion can arrive before or after DoDragDrop returns. Finish once,
+// retaining the accepted content gate for the entire asynchronous extraction.
+type Finished = Box<dyn Fn(DragResult, CursorPosition) + Send>;
+struct AsyncState {
+    running: bool,
+    drag_ended: bool,
+    accepted: bool,
+    failed: bool,
+    point: CursorPosition,
+    finished: Option<Finished>,
+}
+struct AsyncOperation {
+    mode: AtomicBool,
+    dropped: Arc<AtomicBool>,
+    state: Mutex<AsyncState>,
+}
+impl AsyncOperation {
+    fn new(dropped: Arc<AtomicBool>, finished: Finished) -> Self {
+        Self {
+            mode: AtomicBool::new(false),
+            dropped,
+            state: Mutex::new(AsyncState {
+                running: false,
+                drag_ended: false,
+                accepted: false,
+                failed: false,
+                point: CursorPosition { x: 0, y: 0 },
+                finished: Some(finished),
+            }),
+        }
+    }
+    fn drag_ended(&self, accepted: bool, point: CursorPosition) {
+        {
+            let mut state = self.state.lock().unwrap();
+            state.drag_ended = true;
+            state.accepted = accepted;
+            state.point = point;
+        }
+        self.complete();
+    }
+    fn complete(&self) {
+        let result = {
+            let mut state = self.state.lock().unwrap();
+            if !state.drag_ended || state.running {
+                return;
+            }
+            let Some(finished) = state.finished.take() else {
+                return;
+            };
+            let accepted = state.accepted && !state.failed;
+            self.dropped.store(false, Ordering::Release);
+            (
+                finished,
+                if accepted {
+                    DragResult::Dropped
+                } else {
+                    DragResult::Cancel
+                },
+                state.point.clone(),
+            )
+        };
+        (result.0)(result.1, result.2);
+    }
+}
+#[allow(non_snake_case)]
+impl IDataObjectAsyncCapability_Impl for VirtualFiles {
+    fn SetAsyncMode(&self, enabled: BOOL) -> Result<()> {
+        self.operation
+            .mode
+            .store(enabled.as_bool(), Ordering::Release);
+        Ok(())
+    }
+    fn GetAsyncMode(&self) -> Result<BOOL> {
+        Ok(self.operation.mode.load(Ordering::Acquire).into())
+    }
+    fn StartOperation(&self, _: Option<&IBindCtx>) -> Result<()> {
+        if !self.dropped.load(Ordering::Acquire) || !self.operation.mode.load(Ordering::Acquire) {
+            return Err(Error::from(E_UNEXPECTED));
+        }
+        let mut state = self.operation.state.lock().unwrap();
+        if state.running || state.finished.is_none() {
+            return Err(Error::from(E_UNEXPECTED));
+        }
+        state.running = true;
+        Ok(())
+    }
+    fn InOperation(&self) -> Result<BOOL> {
+        Ok(self.operation.state.lock().unwrap().running.into())
+    }
+    fn EndOperation(&self, result: HRESULT, _: Option<&IBindCtx>, _: u32) -> Result<()> {
+        {
+            let mut state = self.operation.state.lock().unwrap();
+            if !state.running {
+                return Err(Error::from(E_UNEXPECTED));
+            }
+            state.running = false;
+            state.failed |= result.is_err();
+        }
+        self.operation.complete();
+        Ok(())
+    }
+}
+
+// Synchronous receivers remain supported. The export runs off-thread, while COM
+// dispatches window messages/calls so repaint, progress, and Cancel stay available.
+fn responsive_read(reader: crate::PromiseRead, path: PathBuf) -> Result<PathBuf> {
+    use windows::Win32::System::Threading::{CreateEventW, SetEvent};
+    struct Event(isize);
+    impl Drop for Event {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = CloseHandle(HANDLE(self.0));
+            }
+        }
+    }
+    let event = Arc::new(Event(unsafe { CreateEventW(None, true, false, None)?.0 }));
+    let notify = event.clone();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .name("rust-commander-ole-export".into())
+        .spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reader(&path)))
+                .unwrap_or_else(|_| Err("Virtual file export failed".into()));
+            let _ = sender.send(result);
+            unsafe {
+                let _ = SetEvent(HANDLE(notify.0));
+            }
+        })
+        .map_err(|_| Error::from(E_FAIL))?;
+    unsafe {
+        CoWaitForMultipleHandles(
+            (COWAIT_DISPATCH_CALLS.0 | COWAIT_DISPATCH_WINDOW_MESSAGES.0) as u32,
+            u32::MAX,
+            &[HANDLE(event.0)],
+        )?;
+    }
+    receiver
+        .recv()
+        .map_err(|_| Error::from(E_FAIL))?
+        .map_err(|_| Error::from(E_FAIL))
+}
+
+#[cfg(test)]
+mod async_tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+    #[test]
+    fn async_extraction_outlives_drag_loop_and_completes_exactly_once() {
+        for end_first in [false, true] {
+            let gate = Arc::new(AtomicBool::new(true));
+            let calls = Arc::new(AtomicUsize::new(0));
+            let counter = calls.clone();
+            let op = AsyncOperation::new(
+                gate.clone(),
+                Box::new(move |result, _| {
+                    assert!(matches!(result, DragResult::Dropped));
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }),
+            );
+            op.state.lock().unwrap().running = true;
+            if end_first {
+                op.state.lock().unwrap().running = false;
+                op.complete();
+                assert_eq!(calls.load(Ordering::Relaxed), 0);
+            }
+            op.drag_ended(true, CursorPosition { x: 1, y: 2 });
+            if !end_first {
+                assert!(gate.load(Ordering::Acquire));
+                assert_eq!(calls.load(Ordering::Relaxed), 0);
+                op.state.lock().unwrap().running = false;
+                op.complete();
+            }
+            assert!(!gate.load(Ordering::Acquire));
+            assert_eq!(calls.load(Ordering::Relaxed), 1);
+            op.complete();
+            assert_eq!(calls.load(Ordering::Relaxed), 1);
+        }
+    }
+    #[test]
+    fn async_failure_is_reported_as_cancellation() {
+        let gate = Arc::new(AtomicBool::new(true));
+        let op = AsyncOperation::new(
+            gate.clone(),
+            Box::new(|result, _| assert!(matches!(result, DragResult::Cancel))),
+        );
+        op.state.lock().unwrap().failed = true;
+        op.drag_ended(true, CursorPosition { x: 0, y: 0 });
+        assert!(!gate.load(Ordering::Acquire));
+    }
+    #[test]
+    fn synchronous_export_runs_off_thread_and_dispatches_window_messages() {
+        use windows::Win32::UI::WindowsAndMessaging::*;
+        static MESSAGES: AtomicUsize = AtomicUsize::new(0);
+        unsafe extern "system" fn procedure(
+            window: HWND,
+            message: u32,
+            w: WPARAM,
+            l: LPARAM,
+        ) -> LRESULT {
+            if message == WM_APP {
+                MESSAGES.fetch_add(1, Ordering::Relaxed);
+                return LRESULT(0);
+            }
+            unsafe { DefWindowProcW(window, message, w, l) }
+        }
+        unsafe {
+            OleInitialize(None).unwrap();
+            let class = WNDCLASSW {
+                lpfnWndProc: Some(procedure),
+                lpszClassName: w!("RustCommanderResponsiveExportTest"),
+                ..Default::default()
+            };
+            RegisterClassW(&class);
+            let window = CreateWindowExW(
+                Default::default(),
+                class.lpszClassName,
+                w!(""),
+                Default::default(),
+                0,
+                0,
+                0,
+                0,
+                HWND_MESSAGE,
+                None,
+                None,
+                None,
+            );
+            assert_ne!(window.0, 0);
+            let receiver = std::thread::current().id();
+            let hwnd = window.0;
+            let result = responsive_read(
+                Arc::new(move |_| {
+                    assert_ne!(receiver, std::thread::current().id());
+                    PostMessageW(HWND(hwnd), WM_APP, WPARAM(0), LPARAM(0)).unwrap();
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                    Ok("fixture.txt".into())
+                }),
+                "fixture.txt".into(),
+            )
+            .unwrap();
+            assert_eq!(result, PathBuf::from("fixture.txt"));
+            assert!(
+                MESSAGES.load(Ordering::Relaxed) > 0,
+                "COM wait must keep the source window responsive"
+            );
+            DestroyWindow(window).unwrap();
+            windows::Win32::System::Ole::OleUninitialize();
+        }
     }
 }

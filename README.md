@@ -63,10 +63,11 @@ published.
   breadcrumbs, native file actions, configurable columns/toolbar, and
   [drag and drop](docs/DRAG_AND_DROP.md) for local, archive, and remote entries,
   with native file drags and deferred remote/archive exports on macOS, Windows,
-  X11, and Wayland.
+  X11, and Wayland, plus unprepared virtual selections between windows in the
+  same process.
 - **Languages:** system language, English, German, and Spanish.
 - **File tools:** batch rename with preview, recursive name/content search,
-  folder comparison, checksums, properties, permissions, and split/combine.
+  local/remote folder comparison, checksums, properties, permissions, and split/combine.
 - **Built-in viewers:** UTF-8, UTF-16 and legacy text editing, bounded local large-file paging,
   images, hex, PDF page navigation,
   encrypted PDF unlock/rotation/fit-width, streaming text/hex search, a persistent

@@ -61,6 +61,9 @@ impl PromiseSession {
     pub fn idle(&self) -> bool {
         self.state.lock().unwrap().running == 0
     }
+    pub fn routable(&self) -> bool {
+        !self.cancel.load(Ordering::Acquire) && !self.state.lock().unwrap().finished
+    }
     pub fn waiting(&self) -> bool {
         !self.state.lock().unwrap().started
     }
@@ -99,7 +102,7 @@ impl PromiseSession {
     }
     #[cfg(any(test, target_os = "macos", target_os = "windows"))]
     pub fn local_path(&self, relative: &Path) -> Result<PathBuf, String> {
-        filesystem::safe_relative(relative).map_err(|e| e.to_string())?;
+        filesystem::portable_relative(relative).map_err(|e| e.to_string())?;
         let paths = self.materialize()?;
         let root = paths
             .first()
@@ -157,6 +160,11 @@ impl PromiseSession {
             Err(error) => self.finish(Err(error.clone())),
         }
         result
+    }
+    /// An in-process drop transfers the typed selection; native export must never run.
+    pub fn internal_drop(&self) {
+        self.cancel.store(true, Ordering::Relaxed);
+        self.finish(Ok(Vec::new()));
     }
     pub fn end_drag(&self, accepted: bool) {
         if !accepted {
@@ -270,9 +278,13 @@ fn cleanup_expired(cache: &Path) {
         if lease.as_ref().is_some_and(|file| file.try_lock().is_err()) {
             continue;
         }
-        let owned_lease = fs::read(directory.join("lease.lock"))
-            .ok()
-            .is_some_and(|bytes| bytes == b"RustCommanderExportLease1");
+        // Read via the locked handle. Windows byte-range locks reject reading
+        // the same bytes through a second handle, even in this process.
+        let owned_lease = lease.as_ref().is_some_and(|file| {
+            use std::io::Read;
+            let mut bytes = Vec::new();
+            file.take(64).read_to_end(&mut bytes).is_ok() && bytes == b"RustCommanderExportLease1"
+        });
         let created = fs::read(directory.join("created.json"))
             .ok()
             .and_then(|b| serde_json::from_slice::<std::time::SystemTime>(&b).ok())
@@ -340,7 +352,7 @@ pub(crate) fn manifest(
             !entry.is_symlink,
             "External virtual drags cannot export symbolic links."
         );
-        filesystem::safe_relative(&relative)?;
+        filesystem::portable_relative(&relative)?;
         result.push((
             relative.clone(),
             entry.is_dir,

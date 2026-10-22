@@ -5,7 +5,7 @@ use crate::{
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     fs::{self, File},
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -315,73 +315,11 @@ pub struct Comparison {
     pub status: String,
 }
 pub fn compare(left: &Path, right: &Path, task: &mut Task) -> Result<Vec<Comparison>> {
-    fn inventory(root: &Path, task: &mut Task) -> Result<BTreeMap<PathBuf, (bool, u64)>> {
-        let mut stack = vec![root.to_owned()];
-        let mut items = BTreeMap::new();
-        while let Some(folder) = stack.pop() {
-            for item in fs::read_dir(folder)? {
-                let path = item?.path();
-                task.tick(&path, 0)?;
-                let metadata = fs::symlink_metadata(&path)?;
-                if metadata.file_type().is_symlink() {
-                    continue;
-                }
-                if metadata.is_dir() {
-                    stack.push(path.clone());
-                }
-                items.insert(
-                    path.strip_prefix(root)?.to_owned(),
-                    (metadata.is_dir(), metadata.len()),
-                );
-            }
-        }
-        Ok(items)
-    }
-    let a = inventory(left, task)?;
-    let b = inventory(right, task)?;
-    let names: BTreeSet<_> = a.keys().chain(b.keys()).collect();
-    let mut result = Vec::new();
-    for name in names {
-        let status = match (a.get(name), b.get(name)) {
-            (Some(_), None) => "Only left",
-            (None, Some(_)) => "Only right",
-            (Some((ad, al)), Some((bd, bl))) => {
-                if ad != bd {
-                    "Different type"
-                } else if *ad {
-                    "Folder"
-                } else if al != bl {
-                    "Different"
-                } else if digest(&left.join(name), task)? == digest(&right.join(name), task)? {
-                    "Equal"
-                } else {
-                    "Different"
-                }
-            }
-            _ => unreachable!(),
-        };
-        result.push(Comparison {
-            name: name.display().to_string(),
-            status: status.into(),
-        });
-    }
-    Ok(result)
-}
-fn digest(path: &Path, task: &mut Task) -> Result<Vec<u8>> {
-    use sha2::Digest;
-    let mut hash = sha2::Sha256::new();
-    let mut input = File::open(path)?;
-    let mut buffer = [0; 64 * 1024];
-    loop {
-        task.check()?;
-        let n = input.read(&mut buffer)?;
-        if n == 0 {
-            break;
-        }
-        hash.update(&buffer[..n]);
-        task.tick(path, n as u64)?;
-    }
-    Ok(hash.finalize().to_vec())
+    crate::comparison::compare(
+        &crate::filesystem::Location::Local(left.into()),
+        &crate::filesystem::Location::Local(right.into()),
+        task,
+    )
 }
 
 pub fn split(source: &Path, destination: &Path, chunk_size: u64, task: &mut Task) -> Result<()> {

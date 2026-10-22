@@ -684,3 +684,86 @@ fn remote_sync_does_not_propagate_its_own_recovery_copies() {
             .is_empty()
     );
 }
+
+#[test]
+fn comparison_and_sync_cover_local_remote_and_remote_remote_pairs() {
+    let root = tempfile::tempdir().unwrap();
+    let a = root.path().join("left");
+    let b = root.path().join("right");
+    fs::create_dir_all(a.join("nested")).unwrap();
+    fs::create_dir(&b).unwrap();
+    fs::write(a.join("nested/café.txt"), b"left").unwrap();
+    fs::write(a.join("same"), b"same").unwrap();
+    fs::write(b.join("same"), b"same").unwrap();
+    fs::write(a.join("different"), b"aaaa").unwrap();
+    fs::write(b.join("different"), b"bbbb").unwrap();
+    let local = Location::Local(a.clone());
+    let left = mount(&a);
+    let right = mount(&b);
+    for from in [&local, &left] {
+        let result =
+            rust_commander::comparison::compare(from, &right, &mut Task::default()).unwrap();
+        assert!(
+            result
+                .iter()
+                .any(|v| v.name == "same" && v.status == "Equal")
+        );
+        assert!(
+            result
+                .iter()
+                .any(|v| v.name == "different" && v.status == "Different")
+        );
+        assert!(
+            result
+                .iter()
+                .any(|v| v.name.ends_with("café.txt") && v.status == "Only left")
+        );
+    }
+    let mut plan = sync::preview_locations(&left, &right, 1, &Task::default()).unwrap();
+    for item in &mut plan.items {
+        if item.conflict {
+            item.choice = Choice::LeftToRight;
+        }
+    }
+    sync::apply(&plan, &mut Task::default()).unwrap();
+    let result = rust_commander::comparison::compare(&local, &right, &mut Task::default()).unwrap();
+    assert!(
+        result
+            .iter()
+            .all(|v| matches!(v.status.as_str(), "Equal" | "Folder")
+                || (v.status == "Only right" && v.name.starts_with(".rust-commander-replaced-")))
+    );
+}
+#[test]
+fn read_only_sync_choices_are_skipped_and_invalid_plans_fail_before_any_write() {
+    let root = tempfile::tempdir().unwrap();
+    let a = root.path().join("left");
+    let b = root.path().join("right");
+    fs::create_dir(&a).unwrap();
+    fs::create_dir(&b).unwrap();
+    fs::write(a.join("a"), b"left").unwrap();
+    fs::write(b.join("b"), b"right").unwrap();
+    let left = Location::Local(a.clone());
+    let right = mount(&b);
+    let Location::Remote { connection, .. } = &right else {
+        unreachable!()
+    };
+    let mut profile = remote::profile(connection).unwrap();
+    profile.service = "http".into();
+    remote::register_profiles(&[profile]);
+    let mut plan = sync::preview_locations(&left, &right, 0, &Task::default()).unwrap();
+    let index = plan
+        .items
+        .iter()
+        .position(|i| i.path == Path::new("a"))
+        .unwrap();
+    assert_eq!(plan.items[index].choice, Choice::Skip);
+    assert!(!plan.allows(&plan.items[index], Choice::LeftToRight));
+    plan.items[index].choice = Choice::LeftToRight;
+    assert!(sync::apply(&plan, &mut Task::default()).is_err());
+    assert!(!a.join("b").exists());
+    assert!(!b.join("a").exists());
+    plan.items[index].choice = Choice::Skip;
+    sync::apply(&plan, &mut Task::default()).unwrap();
+    assert_eq!(fs::read(a.join("b")).unwrap(), b"right");
+}

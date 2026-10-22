@@ -10,9 +10,11 @@ runs:
         path: ~/.cargo/bin/cargo-packager*
         key: cargo-packager-0.11.8-${{ runner.os }}-${{ runner.arch }}
     - name: Install cargo-packager
-      if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
-      run: cargo install cargo-packager --version 0.11.8 --locked
+      run: |
+        if [ "$(cargo-packager --version 2>/dev/null || true)" != 'cargo-packager 0.11.8' ]; then
+          cargo install cargo-packager --version 0.11.8 --locked --force
+        fi
     - name: Check cargo-packager version
       shell: bash
       run: cargo-packager --version

@@ -20,6 +20,10 @@ use objc2_app_kit::{
 };
 
 mod promises;
+mod target;
+pub use target::{attach_drop_target, DropTarget};
+
+thread_local! {static INTERNAL_TOKEN: std::cell::RefCell<Option<String>> = const {std::cell::RefCell::new(None)};}
 
 type OnDropCallback = Box<dyn Fn(DragResult, CursorPosition) + Send>;
 
@@ -92,6 +96,7 @@ define_class!(
             ended_at_point: NSPoint,
             operation: objc2_app_kit::NSDragOperation,
         ) {
+            INTERNAL_TOKEN.with(|token| token.borrow_mut().take());
             let callback = &self.ivars().on_drop_callback;
 
             let mouse_location = CursorPosition {
@@ -176,8 +181,10 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
 
             let dragging_items = NSMutableArray::new();
 
+            INTERNAL_TOKEN.with(|token| token.borrow_mut().take());
             match item {
                 DragItem::Promised(files) => {
+                    INTERNAL_TOKEN.with(|token| *token.borrow_mut() = files.internal_token.clone());
                     for (index, entry) in files.entries.iter().enumerate() {
                         let provider = promises::provider(&files, index, entry.directory);
                         let item = NSDraggingItem::initWithPasteboardWriter(
@@ -189,16 +196,9 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
                     }
                 }
                 DragItem::Files(files) => {
-                    // winit's macOS destination still reads the legacy aggregate
-                    // file list. Keep it alongside modern per-item file URLs so
-                    // native drags can return to another Rust Commander window.
-                    let names = files
-                        .iter()
-                        .map(|p| NSString::from_str(&p.to_string_lossy()))
-                        .collect::<Vec<_>>();
-                    let names = NSArray::from_retained_slice(&names);
-                    let legacy_files_type = NSString::from_str("NSFilenamesPboardType");
-                    for (index, path) in files.iter().enumerate() {
+                    // Each modern file URL is handled by our native receiver;
+                    // legacy NSFilenamesPboardType is not a valid per-item UTI.
+                    for path in files.iter() {
                         let nsurl = NSURL::fileURLWithPath_isDirectory(
                             &NSString::from_str(&path.display().to_string()),
                             false,
@@ -208,9 +208,6 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
                             &nsurl.absoluteString().expect("file URL string"),
                             NSPasteboardTypeFileURL,
                         );
-                        if index == 0 {
-                            writer.setPropertyList_forType(&names, &legacy_files_type);
-                        }
                         let item = NSDraggingItem::initWithPasteboardWriter(
                             NSDraggingItem::alloc(),
                             &ProtocolObject::from_retained(writer),

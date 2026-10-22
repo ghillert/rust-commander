@@ -8,6 +8,7 @@ pub enum Event {
     Hover(f32, f32),
     Leave,
     Drop(f32, f32, Vec<PathBuf>),
+    Internal(f32, f32, String, bool),
 }
 pub struct Linux {
     backend: Backend,
@@ -56,6 +57,12 @@ impl Linux {
                     rust_commander_wayland_dnd::DndEvent::Dropped { x, y, paths } => {
                         Some(Event::Drop(x, y, paths))
                     }
+                    rust_commander_wayland_dnd::DndEvent::Internal {
+                        x,
+                        y,
+                        token,
+                        dropped,
+                    } => Some(Event::Internal(x, y, token, dropped)),
                     rust_commander_wayland_dnd::DndEvent::DragEnded { accepted } => {
                         if let Some(callback) = finished.take() {
                             callback(accepted);
@@ -99,6 +106,9 @@ impl Linux {
     }
     pub fn start_deferred(
         &mut self,
+        token: String,
+        windows: Vec<u32>,
+        path: PathBuf,
         provider: std::sync::Arc<
             dyn Fn() -> std::result::Result<Vec<PathBuf>, String> + Send + Sync,
         >,
@@ -110,10 +120,10 @@ impl Linux {
                 finished: callback,
             } => {
                 *callback = Some(Box::new(finished));
-                device.start_deferred(provider);
+                device.start_deferred_with_token(provider, token);
                 Ok(())
             }
-            Backend::X11(_) => x11::start_deferred(provider, finished),
+            Backend::X11(_) => x11::start_deferred_internal(provider, windows, path, finished),
         }
     }
 }

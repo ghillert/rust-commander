@@ -799,6 +799,7 @@ impl Adapter {
                             choices.push(crate::sync::Choice::DeleteRight);
                         }
                     }
+                    choices.retain(|choice| plan.allows(item, *choice));
                     d.fields.push(Field::choice(
                         format!("sync-item-{i}"),
                         format!(

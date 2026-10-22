@@ -5,11 +5,11 @@ mod x11;
 
 #[cfg(all(target_os = "windows", test))]
 pub use drag::{
-    CursorPosition, DragItem, DragMode, DragResult, Error, Image, Options, PromiseEntry,
-    PromisedFiles, Result,
+    CursorPosition, DragItem, DragMode, DragResult, DropCallback, DropEvent, Error, Image, Options,
+    PromiseEntry, PromiseRead, PromisedFiles, Result,
 };
 #[cfg(all(target_os = "windows", test))]
 #[path = "../../../vendor/drag/src/platform_impl/windows/mod.rs"]
-#[allow(dead_code)]
+#[allow(dead_code, unused_imports)]
 #[rustfmt::skip]
 mod windows_provider;

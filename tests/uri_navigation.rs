@@ -467,3 +467,41 @@ fn kew_https_directory_smoke() {
     assert!(zip.modified.is_some());
     assert!(entries.iter().all(|e| e.modified.is_some()));
 }
+
+#[test]
+fn folder_comparison_hashes_http_contents_even_when_listing_sizes_are_rounded() {
+    let server = Server::new();
+    let profile = server.connection();
+    remote::connect(&profile, Secrets::default(), false).unwrap();
+    let right = Location::Remote {
+        connection: profile.id,
+        path: "dir".into(),
+    };
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("a b.pdf"), b"0123456789").unwrap();
+    std::fs::create_dir(root.path().join("sub")).unwrap();
+    let left = Location::Local(root.path().into());
+    let result = rust_commander::comparison::compare(
+        &left,
+        &right,
+        &mut rust_commander::operations::Task::default(),
+    )
+    .unwrap();
+    assert!(
+        result
+            .iter()
+            .any(|v| v.name == "a b.pdf" && v.status == "Equal")
+    );
+    std::fs::write(root.path().join("a b.pdf"), b"abcdefghij").unwrap();
+    let result = rust_commander::comparison::compare(
+        &left,
+        &right,
+        &mut rust_commander::operations::Task::default(),
+    )
+    .unwrap();
+    assert!(
+        result
+            .iter()
+            .any(|v| v.name == "a b.pdf" && v.status == "Different")
+    );
+}

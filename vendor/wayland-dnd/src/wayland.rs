@@ -33,6 +33,8 @@ use wayland_backend::client::{Backend, ObjectId};
 use crate::DndEvent;
 
 const MIME: &str = "text/uri-list";
+const PRIVATE: &str = "application/x-rust-commander-selection-";
+static TOKENS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 #[derive(Clone)]
 enum Payload {
@@ -43,6 +45,9 @@ struct Outgoing {
     payload: Payload,
     performed: bool,
     pending: Vec<WritePipe>,
+    token: Option<String>,
+    private_selected: bool,
+    private_dropped: bool,
 }
 impl Outgoing {
     fn new(payload: Payload) -> Self {
@@ -50,9 +55,15 @@ impl Outgoing {
             payload,
             performed: false,
             pending: Vec::new(),
+            token: None,
+            private_selected: false,
+            private_dropped: false,
         }
     }
     fn request(&mut self, pipe: WritePipe) {
+        if self.private_dropped {
+            return;
+        }
         if matches!(self.payload, Payload::Deferred(_)) && !self.performed {
             // Some targets probe while hovering. Keep a bounded number of pipes,
             // but do not call the content provider until dnd_drop_performed.
@@ -76,12 +87,24 @@ impl Outgoing {
     }
     fn drop_performed(&mut self) {
         self.performed = true;
+        self.private_dropped = self.private_selected;
+        if self.private_dropped {
+            self.pending.clear();
+            return;
+        }
         for pipe in std::mem::take(&mut self.pending) {
             self.request(pipe);
         }
     }
 }
 
+impl Drop for Outgoing {
+    fn drop(&mut self) {
+        if let Some(token) = &self.token {
+            TOKENS.lock().unwrap().retain(|v| v != token);
+        }
+    }
+}
 enum Command {
     StartDrag(Outgoing, bool),
     Received { x: f64, y: f64, data: Vec<u8> },
@@ -151,6 +174,16 @@ impl Worker {
             ));
         }
     }
+    pub fn start_deferred_with_token(
+        &self,
+        provider: Arc<dyn Fn() -> Result<Vec<u8>, String> + Send + Sync>,
+        token: String,
+    ) {
+        let mut outgoing = Outgoing::new(Payload::Deferred(provider));
+        TOKENS.lock().unwrap().push(token.clone());
+        outgoing.token = Some(token);
+        let _ = self.commands.send(Command::StartDrag(outgoing, false));
+    }
     pub fn start_deferred(&self, provider: Arc<dyn Fn() -> Result<Vec<u8>, String> + Send + Sync>) {
         let _ = self.commands.send(Command::StartDrag(
             Outgoing::new(Payload::Deferred(provider)),
@@ -197,6 +230,7 @@ fn run(
         queue_handle,
         drag: None,
         hovering: false,
+        internal: None,
         action: DndAction::None,
         dropped: None,
         replies,
@@ -242,6 +276,7 @@ struct State {
     drag: Option<(DragSource, Outgoing)>,
     /// An acceptable drag is over our surface.
     hovering: bool,
+    internal: Option<String>,
     action: DndAction,
     /// Kept until its data arrives, then finished and destroyed.
     dropped: Option<DragOffer>,
@@ -278,9 +313,13 @@ impl State {
                     self.emit(DndEvent::DragEnded { accepted: false });
                     return;
                 };
+                let mut types = vec![MIME.to_owned()];
+                if let Some(token) = &uri_list.token {
+                    types.push(format!("{PRIVATE}{token}"));
+                }
                 let source = self.manager.create_drag_and_drop_source(
                     &self.queue_handle,
-                    [MIME],
+                    types.iter().map(String::as_str),
                     if allow_move {
                         DndAction::Copy | DndAction::Move
                     } else {
@@ -405,6 +444,7 @@ impl DataDeviceHandler for State {
         surface: &WlSurface,
     ) {
         self.hovering = false;
+        self.internal = None;
         self.action = DndAction::None;
         if *surface != self.surface {
             return;
@@ -412,19 +452,40 @@ impl DataDeviceHandler for State {
         let Some(offer) = self.offer(device) else {
             return;
         };
+        self.internal = offer.with_mime_types(|types| {
+            types
+                .iter()
+                .filter_map(|mime| mime.strip_prefix(PRIVATE))
+                .find(|token| TOKENS.lock().unwrap().iter().any(|known| known == token))
+                .map(str::to_owned)
+        });
         if !offer.with_mime_types(|types| types.iter().any(|mime| mime == MIME)) {
             offer.accept_mime_type(offer.serial, None);
             return;
         }
-        offer.accept_mime_type(offer.serial, Some(MIME.into()));
+        let mime = self
+            .internal
+            .as_ref()
+            .map(|token| format!("{PRIVATE}{token}"))
+            .unwrap_or_else(|| MIME.into());
+        offer.accept_mime_type(offer.serial, Some(mime));
         // Our transfer confirmation is asynchronous. Never acknowledge an external
         // move and make its source delete files before the user has accepted.
         offer.set_actions(DndAction::Copy, DndAction::Copy);
         self.hovering = true;
-        self.emit(DndEvent::Hovered {
-            x: x as f32,
-            y: y as f32,
-        });
+        if let Some(token) = &self.internal {
+            self.emit(DndEvent::Internal {
+                x: x as f32,
+                y: y as f32,
+                token: token.clone(),
+                dropped: false,
+            });
+        } else {
+            self.emit(DndEvent::Hovered {
+                x: x as f32,
+                y: y as f32,
+            });
+        }
     }
 
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {
@@ -435,10 +496,19 @@ impl DataDeviceHandler for State {
 
     fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice, x: f64, y: f64) {
         if self.hovering {
-            self.emit(DndEvent::Hovered {
-                x: x as f32,
-                y: y as f32,
-            });
+            if let Some(token) = &self.internal {
+                self.emit(DndEvent::Internal {
+                    x: x as f32,
+                    y: y as f32,
+                    token: token.clone(),
+                    dropped: false,
+                });
+            } else {
+                self.emit(DndEvent::Hovered {
+                    x: x as f32,
+                    y: y as f32,
+                });
+            }
         }
     }
 
@@ -451,6 +521,19 @@ impl DataDeviceHandler for State {
         let Some(offer) = self.offer(device) else {
             return;
         };
+        if let Some(token) = self.internal.take() {
+            self.emit(DndEvent::Internal {
+                x: offer.x as f32,
+                y: offer.y as f32,
+                token,
+                dropped: true,
+            });
+            if self.action.intersects(DndAction::Copy | DndAction::Move) {
+                offer.finish();
+            }
+            offer.destroy();
+            return;
+        }
         let Ok(pipe) = offer.receive(MIME.into()) else {
             offer.destroy();
             return;
@@ -495,9 +578,19 @@ impl DataSourceHandler for State {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &WlDataSource,
-        _: Option<String>,
+        source: &WlDataSource,
+        mime: Option<String>,
     ) {
+        if let Some((_, outgoing)) = self
+            .drag
+            .as_mut()
+            .filter(|(drag, _)| drag.inner() == source)
+        {
+            outgoing.private_selected = outgoing
+                .token
+                .as_ref()
+                .is_some_and(|token| mime.as_deref() == Some(&format!("{PRIVATE}{token}")));
+        }
     }
 
     fn send_request(
@@ -511,9 +604,20 @@ impl DataSourceHandler for State {
         if let Some((_, outgoing)) = self
             .drag
             .as_mut()
-            .filter(|(drag, _)| mime == MIME && drag.inner() == source)
+            .filter(|(drag, _)| drag.inner() == source)
         {
-            outgoing.request(pipe);
+            if mime == MIME {
+                outgoing.request(pipe);
+            } else if let Some(token) = outgoing
+                .token
+                .as_ref()
+                .filter(|token| mime == format!("{PRIVATE}{token}"))
+            {
+                let data = token.as_bytes().to_vec();
+                let _ = std::thread::spawn(move || {
+                    let _ = crate::pipe::send(pipe, &data);
+                });
+            }
         }
     }
 
@@ -652,5 +756,21 @@ mod tests {
         drop(abandoned);
         assert_eq!(reader.read(&mut [0]).unwrap(), 0);
         assert_eq!(calls.load(Ordering::Relaxed), 1);
+    }
+    #[test]
+    fn private_drop_discards_old_uri_probes_and_rejects_late_content_requests() {
+        use std::{io::Read, os::unix::net::UnixStream};
+        let mut outgoing = Outgoing::new(Payload::Deferred(Arc::new(|| {
+            panic!("private drops must never export")
+        })));
+        let (mut early, writer) = UnixStream::pair().unwrap();
+        outgoing.request(WritePipe::from(std::os::fd::OwnedFd::from(writer)));
+        outgoing.private_selected = true;
+        outgoing.drop_performed();
+        assert_eq!(early.read(&mut [0]).unwrap(), 0);
+        outgoing.private_selected = false; // a late leave cannot authorize content
+        let (mut late, writer) = UnixStream::pair().unwrap();
+        outgoing.request(WritePipe::from(std::os::fd::OwnedFd::from(writer)));
+        assert_eq!(late.read(&mut [0]).unwrap(), 0);
     }
 }

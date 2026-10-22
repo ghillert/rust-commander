@@ -37,6 +37,8 @@ use windows::{
 
 mod image;
 mod promises;
+mod target;
+pub use target::{attach_drop_target, DropTarget};
 
 static mut OLE_RESULT: Result<()> = Ok(());
 static OLE_UNINITIALIZE: Once = Once::new();

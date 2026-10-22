@@ -45,6 +45,7 @@ impl Features {
             left: left.display().to_string(),
             right: right.display().to_string(),
             direction: 1,
+            locations: None,
             plan: None,
             pending: None,
             cancel: Arc::new(AtomicBool::new(false)),
@@ -60,6 +61,7 @@ impl Features {
     }
 }
 pub struct SyncForm {
+    pub(crate) locations: Option<(crate::filesystem::Location, crate::filesystem::Location)>,
     pub(crate) left: String,
     pub(crate) right: String,
     pub(crate) direction: u8,
@@ -69,6 +71,12 @@ pub struct SyncForm {
     pub(crate) deletions: bool,
     pub(crate) confirmed: bool,
     pub(crate) error: Option<String>,
+}
+impl Drop for SyncForm {
+    fn drop(&mut self) {
+        self.cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 impl SyncForm {
     pub(crate) fn start_preview(&mut self, ctx: &UiSignal) {
@@ -82,6 +90,18 @@ impl SyncForm {
             &self.right,
             &crate::filesystem::Location::Local(crate::filesystem::home()),
         );
+        let left = self
+            .locations
+            .as_ref()
+            .filter(|(a, _)| a.label() == self.left)
+            .map(|(a, _)| Ok(a.clone()))
+            .unwrap_or(left);
+        let right = self
+            .locations
+            .as_ref()
+            .filter(|(_, b)| b.label() == self.right)
+            .map(|(_, b)| Ok(b.clone()))
+            .unwrap_or(right);
         let direction = self.direction;
         let (sender, receiver) = mpsc::channel();
         self.pending = Some(receiver);

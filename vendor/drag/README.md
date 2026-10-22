@@ -18,7 +18,8 @@ its own native X11/Wayland adapters on Linux, so the GTK3 backend serves no purp
 - Removed GTK3/GDK/GDK-X11 dependencies, backend source, and backend selection.
 - Removed upstream example/development dependencies and Linux-only API/docs.
 - Added an explicit unsupported-platform error and disabled publishing.
-- Publish both modern file URLs and the legacy aggregate macOS file list for winit destinations.
+- Publish modern macOS file URLs; accept modern URLs and preserve legacy incoming compatibility.
+- Extend app-owned AppKit delegates and register OLE drop receivers for normal file lists and private, in-process virtual-selection handoffs.
 - Added a CopyMove action mask and enabled it in the Windows source. Native completion never deletes originals in Rust Commander.
 
 The root manifest patches `drag` to this local crate. No GLib advisory is ignored
@@ -29,6 +30,7 @@ when updating.
 
 - Added AppKit file-promise providers with retained delegates and background operation queues.
 - Added Windows Shell virtual descriptors and deferred file streams, gated on accepted-drop feedback/button release. Metadata requests cannot invoke content readers.
+- Support `IDataObjectAsyncCapability`, retaining the content gate through asynchronous extraction. Synchronous readers export on a worker while COM dispatches window messages/calls; native fixtures exercise completion ordering and message delivery.
 - Native provider fixtures live in `tests/native-dnd` and run in the platform CI jobs.
 
 ## License

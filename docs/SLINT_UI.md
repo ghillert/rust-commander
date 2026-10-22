@@ -118,6 +118,18 @@ coordinates, the active-pane fallback opens an explicit destination confirmation
 Native offers acknowledge Copy while confirmation is pending; source deletion
 requires a confirmed successful Move through the normal transfer engine.
 
+Windows in the same process exchange virtual selections with expiring, single-use
+private offers. The receiving window uses the original typed location and opens
+guarded confirmation without preparing an export. Native receivers handle AppKit
+file URLs/private promises, OLE private metadata/CF_HDROP, and X11/Wayland private
+handoffs. Windows OLE supports asynchronous extraction and a message-pumping
+fallback for synchronous receivers. Physical desktop acceptance remains separate
+from the protocol/provider fixtures recorded in the parity tracker.
+
+Folder comparison uses local/remote typed pane locations and streaming SHA-256.
+Synchronization retains those locations through preview, invalidates edited
+previews, and filters choices by destination write capability.
+
 ## Source layout
 
 - `ui/commander.slint`: widgets, layouts, focus scopes and input callbacks.

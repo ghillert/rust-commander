@@ -106,7 +106,9 @@ fn message(
 pub(super) type Deferred = Arc<dyn Fn() -> std::result::Result<Vec<PathBuf>, String> + Send + Sync>;
 #[cfg(test)]
 pub(super) fn start(paths: Vec<PathBuf>, finished: impl Fn() + Send + 'static) -> Result<()> {
-    start_offer(Some(encode(&paths)?), None, false, move |_| finished())
+    start_offer(Some(encode(&paths)?), None, false, None, move |_| {
+        finished()
+    })
 }
 fn encode(paths: &[PathBuf]) -> Result<Vec<u8>> {
     let data = paths
@@ -127,24 +129,40 @@ pub(super) fn start_files(
     moving: bool,
     finished: impl Fn(bool) + Send + 'static,
 ) -> Result<()> {
-    start_offer(Some(encode(&paths)?), None, moving, finished)
+    start_offer(Some(encode(&paths)?), None, moving, None, finished)
 }
+#[cfg(test)]
 pub(super) fn start_deferred(
     provider: Deferred,
     finished: impl Fn(bool) + Send + 'static,
 ) -> Result<()> {
-    start_offer(None, Some(provider), false, finished)
+    start_offer(None, Some(provider), false, None, finished)
+}
+pub(super) fn start_deferred_internal(
+    provider: Deferred,
+    windows: Vec<u32>,
+    path: PathBuf,
+    finished: impl Fn(bool) + Send + 'static,
+) -> Result<()> {
+    start_offer(
+        None,
+        Some(provider),
+        false,
+        Some((windows, encode(&[path])?)),
+        finished,
+    )
 }
 fn start_offer(
     data: Option<Vec<u8>>,
     provider: Option<Deferred>,
     moving: bool,
+    internal: Option<(Vec<u32>, Vec<u8>)>,
     finished: impl Fn(bool) + Send + 'static,
 ) -> Result<()> {
     std::thread::Builder::new()
         .name("rust-commander-xdnd".into())
         .spawn(move || {
-            let accepted = match run(data, provider, moving) {
+            let accepted = match run(data, provider, moving, internal) {
                 Ok(value) => value,
                 Err(error) => {
                     eprintln!("Native X11 drag failed: {error:#}");
@@ -159,6 +177,7 @@ fn run(
     mut data: Option<Vec<u8>>,
     mut provider: Option<Deferred>,
     allow_move: bool,
+    internal: Option<(Vec<u32>, Vec<u8>)>,
 ) -> Result<bool> {
     let (connection, screen) = x11rb::connect(None)?;
     let root = connection.setup().roots[screen].root;
@@ -214,8 +233,12 @@ fn run(
     let mut waiting = Vec::new();
     let mut preferred = atoms.XdndActionCopy;
     loop {
+        let internal_data = internal
+            .as_ref()
+            .filter(|(windows, _)| current.is_some_and(|(window, _)| windows.contains(&window)))
+            .map(|(_, bytes)| bytes);
         for _ in 0..512 {
-            let queued = if data.is_some() {
+            let queued = if data.is_some() || internal_data.is_some() {
                 waiting.pop().map(Event::SelectionRequest)
             } else {
                 None
@@ -270,7 +293,16 @@ fn run(
                             &[atoms.uri_list, atoms.TARGETS],
                         )?;
                     } else if request.target == atoms.uri_list {
-                        let Some(data) = data.as_ref() else {
+                        let private = internal_data.filter(|_| {
+                            internal
+                                .as_ref()
+                                .is_some_and(|(windows, _)| windows.contains(&request.requestor))
+                        });
+                        if internal_data.is_some() && private.is_none() {
+                            reject_request(&connection, &request)?;
+                            continue;
+                        }
+                        let Some(data) = private.or(data.as_ref()) else {
                             if waiting.len() < 32 {
                                 waiting.push(request);
                             } else {
@@ -343,6 +375,7 @@ fn run(
             }
         }
         if dropped.is_some()
+            && internal_data.is_none()
             && data.is_none()
             && !waiting.is_empty()
             && let Some(provider) = provider.take()
@@ -699,7 +732,12 @@ mod tests {
     #[ignore = "requires an isolated X server (xvfb-run)"]
     fn xdnd_deferred_probes_wait_for_drop_and_native_move_is_negotiated() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        for (deferred, accept) in [(true, true), (true, false), (false, true)] {
+        for (deferred, accept, internal) in [
+            (true, true, false),
+            (true, false, false),
+            (false, true, false),
+            (true, true, true),
+        ] {
             let (connection, screen) = x11rb::connect(None).unwrap();
             let root = connection.setup().roots[screen].root;
             let atoms = Atoms::new(&connection).unwrap().reply().unwrap();
@@ -751,16 +789,24 @@ mod tests {
             let counter = calls.clone();
             let (tx, rx) = mpsc::channel();
             if deferred {
-                start_deferred(
-                    Arc::new(move || {
-                        counter.fetch_add(1, Ordering::Relaxed);
-                        Ok(vec!["/tmp/deferred café.txt".into()])
-                    }),
-                    move |ok| {
-                        let _ = tx.send(ok);
-                    },
-                )
-                .unwrap();
+                let provider: Deferred = Arc::new(move || {
+                    counter.fetch_add(1, Ordering::Relaxed);
+                    Ok(vec!["/tmp/deferred café.txt".into()])
+                });
+                let callback = move |ok| {
+                    let _ = tx.send(ok);
+                };
+                if internal {
+                    start_deferred_internal(
+                        provider,
+                        vec![window],
+                        "/tmp/private-selection-token".into(),
+                        callback,
+                    )
+                    .unwrap();
+                } else {
+                    start_deferred(provider, callback).unwrap();
+                }
             } else {
                 start_files(vec!["/tmp/local-move.txt".into()], true, move |ok| {
                     let _ = tx.send(ok);
@@ -776,6 +822,7 @@ mod tests {
             let mut source = 0;
             let mut released = false;
             let mut notified = false;
+            let mut saw_drop = false;
             let deadline = Instant::now() + Duration::from_secs(5);
             loop {
                 assert!(Instant::now() < deadline, "deferred XDND fixture timed out");
@@ -864,6 +911,7 @@ mod tests {
                         }
                         Event::ClientMessage(event) if event.type_ == atoms.XdndDrop => {
                             assert!(accept);
+                            saw_drop = true;
                             if !deferred {
                                 connection
                                     .convert_selection(
@@ -879,17 +927,31 @@ mod tests {
                         }
                         Event::SelectionNotify(event) if event.property == property => {
                             notified = true;
-                            break;
+                            if internal {
+                                let data = connection
+                                    .get_property(false, window, property, atoms.uri_list, 0, 1024)
+                                    .unwrap()
+                                    .reply()
+                                    .unwrap()
+                                    .value;
+                                assert_eq!(
+                                    data,
+                                    encode(&["/tmp/private-selection-token".into()]).unwrap()
+                                );
+                            }
                         }
                         _ => {}
                     }
                 } else {
                     std::thread::sleep(Duration::from_millis(2));
                 }
+                if notified && saw_drop {
+                    break;
+                }
             }
             assert_eq!(
                 calls.load(Ordering::Relaxed),
-                usize::from(deferred && accept)
+                usize::from(deferred && accept && !internal)
             );
             if accept {
                 assert!(notified);

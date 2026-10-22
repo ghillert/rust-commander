@@ -104,14 +104,27 @@ without conditional writes cannot exclude simultaneous external changes.
 
 ## 9. Remote synchronization
 
-**Operations → Synchronize** now accepts local or `remote://` locations in either
-pane, including two remote profiles. Preview compares contents and produces the
-same reviewable per-item directions and explicit conflict choices as local sync.
+**Operations → Synchronize** accepts local or connected remote locations in
+either pane, including two remote profiles and locations opened directly by URI.
+The dialog retains the actual pane locations instead of reparsing their public
+display addresses. Editing a root or direction cancels obsolete previews.
+Preview compares contents and produces reviewable per-item directions and
+explicit conflict choices. Read-only destinations, including HTTP, cannot be
+selected for writes; a queued plan is checked again before any write.
+
 Deletions remain opt-in and separately confirmed. Applying checks the root and
 item content snapshots and refuses stale plans. Replacements/deletions preserve
-recovery copies. Mixed/remote plans do not offer a misleading partial local Undo.
-Remote scans can involve substantial network I/O; review is bounded to 5,000
-differences. Protocol authentication and live-provider limits still apply.
+recovery copies. Mixed/remote plans do not offer a partial local Undo. Remote
+scans can involve substantial network I/O; review is bounded to 5,000 differences.
+Protocol authentication and live-provider limits still apply.
+
+**Compare folders** also works across local/local, local/remote, and remote/remote
+panes. It recursively hashes file contents with SHA-256, including files whose
+listing sizes are unknown or rounded. This can download every compared remote
+file. Links are reported without following them; archives are not comparison
+roots. Traversal is bounded to 64 levels and 100,000 entries and supports Cancel.
+Comparison reports recovery files as ordinary entries; synchronization excludes
+its own recovery copies. Broader upstream comparison options remain open.
 
 ## 10. Native copy metadata
 

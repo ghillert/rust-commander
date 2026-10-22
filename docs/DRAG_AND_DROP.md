@@ -68,11 +68,26 @@ requesting promised entries times out rather than blocking the window indefinite
 that require existing local paths or inspect file URLs before accepting a drop.
 It also avoids waiting for a large export in a Linux receiver's URI-list timeout.
 Prepare the selection, wait for “Files ready to drag”, then drag it out. Prepared
-file URLs also support other Rust Commander windows whose native backend does not
-receive virtual-file promises. Windows uses synchronous OLE content requests; responsiveness during large exports
-still needs native Windows acceptance testing. Windows virtual descriptors reject symlinks and
-paths exceeding the Shell's descriptor-name limit; use an ordinary local copy
-when a selection cannot be represented safely.
+file URLs also support receivers in a separate Rust Commander process.
+Windows virtual descriptors reject symlinks and paths exceeding the Shell's
+descriptor-name limit; use an ordinary local copy when a selection cannot be
+represented safely.
+
+Windows advertises `IDataObjectAsyncCapability` so compatible Shell receivers
+can extract on a background worker. For synchronous receivers, exports still
+run off-thread while COM dispatches window messages and calls, allowing repaint,
+progress, and cancellation. Native Windows desktop responsiveness still requires
+acceptance testing; cross-compilation alone does not establish it.
+
+Dragging a remote/archive selection between windows in the **same running
+process** needs no preparation. A short-lived, single-use private token carries
+the original selection to the destination window. Hovering and dropping do not
+export or download contents; dropping opens the normal confirmation. Cancel
+leaves both sides unchanged. AppKit/OLE use private native metadata, X11 sends a
+private marker only to this process's known windows, and Wayland negotiates a
+private MIME type only for an active in-process offer. Late content requests
+cannot turn a private handoff into an external export. Separate processes and
+applications that cannot accept deferred formats retain the preparation fallback.
 
 Native incoming drops acknowledge Copy while the asynchronous confirmation is
 open. A requested Move is performed by Rust Commander's guarded transfer engine
@@ -106,7 +121,9 @@ interrupted exports with an application lease can be cleaned on the next export.
   file-list edge targets handle scrolling.
 - `src/native_drag/` provides the X11 adapter; `vendor/wayland-dnd/` records
   provenance, MIT/Apache licenses, bounded URI pipes, and the Wayland adapter.
-  `vendor/drag/` contains the macOS/Windows source adapters.
+  `vendor/drag/` contains the macOS/Windows source and drop-receiver adapters.
+  The macOS receiver accepts modern file URLs while preserving the existing
+  winit delegate's remaining behavior.
 
 Run ordinary regression checks with `cargo test --locked --all-targets
 --all-features`, `cargo clippy --locked --all-targets --all-features -- -D warnings`,

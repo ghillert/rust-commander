@@ -11,6 +11,7 @@ fn main() {
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
     let files = drag::PromisedFiles {
+        internal_token: None,
         entries: vec![drag::PromiseEntry {
             path: "café.txt".into(),
             directory: false,

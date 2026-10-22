@@ -49,6 +49,24 @@ pub struct Plan {
     left_stamp: Option<String>,
     right_stamp: Option<String>,
 }
+impl Plan {
+    /// Capability and source-presence checks apply to UI choices and restored queue plans.
+    pub fn allows(&self, item: &Item, choice: Choice) -> bool {
+        let (left, right) = self.remote_roots.clone().unwrap_or_else(|| {
+            (
+                crate::filesystem::Location::Local(self.left.clone()),
+                crate::filesystem::Location::Local(self.right.clone()),
+            )
+        });
+        match choice {
+            Choice::Skip => true,
+            Choice::LeftToRight => item.left && crate::drag_drop::writable(&right),
+            Choice::RightToLeft => item.right && crate::drag_drop::writable(&left),
+            Choice::DeleteLeft => item.left && crate::drag_drop::writable(&left),
+            Choice::DeleteRight => item.right && crate::drag_drop::writable(&right),
+        }
+    }
+}
 fn scan(root: &Path, at: &Path, items: &mut BTreeMap<PathBuf, bool>, task: &Task) -> Result<()> {
     task.check()?;
     for entry in fs::read_dir(at)? {
@@ -172,6 +190,10 @@ pub fn preview(left: &Path, right: &Path, direction: u8, task: &Task) -> Result<
     })
 }
 pub fn apply(plan: &Plan, task: &mut Task) -> Result<String> {
+    anyhow::ensure!(
+        plan.items.iter().all(|item| plan.allows(item, item.choice)),
+        "The synchronization plan writes to a read-only folder or has a missing source. Preview again."
+    );
     if plan.remote_roots.is_some() {
         return remote::apply(plan, task);
     }

@@ -21,6 +21,12 @@ and queue early URI-list pipes until `dnd_drop_performed`; cancellation closes t
 queued pipes without calling the provider. The bounded pipe workers stay off the
 Wayland event queue. Native completion alone never removes source files.
 
+Same-process virtual selections advertise a per-offer private MIME type. Only
+active locally known tokens are negotiated by this receiver. Private drops send
+the token to the host without asking for file contents. The private-drop choice
+is latched so a late MIME change or URI request cannot start an export after the
+handoff. External receivers retain the accepted-drop URI delivery path.
+
 The upstream MIT and Apache-2.0 notices are retained. Rust Commander distributes
 this adaptation under the MIT option; packaged notices include its full license.
 Ordinary builds require no downloads beyond Cargo's existing dependencies.
