@@ -479,10 +479,11 @@ impl IDataObjectAsyncCapability_Impl for VirtualFiles {
     }
 }
 
-// Synchronous receivers remain supported. The export runs off-thread, while COM
-// dispatches window messages/calls so repaint, progress, and Cancel stay available.
+// Synchronous receivers remain supported. The export runs off-thread, while the
+// source thread pumps window messages so repaint, progress, and Cancel stay available.
 fn responsive_read(reader: crate::PromiseRead, path: PathBuf) -> Result<PathBuf> {
     use windows::Win32::System::Threading::{CreateEventW, SetEvent};
+    use windows::Win32::UI::WindowsAndMessaging::*;
     struct Event(isize);
     impl Drop for Event {
         fn drop(&mut self) {
@@ -506,11 +507,34 @@ fn responsive_read(reader: crate::PromiseRead, path: PathBuf) -> Result<PathBuf>
         })
         .map_err(|_| Error::from(E_FAIL))?;
     unsafe {
-        CoWaitForMultipleHandles(
-            (COWAIT_DISPATCH_CALLS.0 | COWAIT_DISPATCH_WINDOW_MESSAGES.0) as u32,
-            u32::MAX,
-            &[HANDLE(event.0)],
-        )?;
+        loop {
+            let ready = MsgWaitForMultipleObjectsEx(
+                Some(&[HANDLE(event.0)]),
+                u32::MAX,
+                QS_ALLINPUT,
+                MWMO_INPUTAVAILABLE,
+            );
+            if ready == WAIT_OBJECT_0 {
+                break;
+            }
+            if ready == WAIT_FAILED {
+                return Err(Error::from_win32());
+            }
+            if ready.0 != WAIT_OBJECT_0.0 + 1 {
+                return Err(Error::from(E_FAIL));
+            }
+            // COM's modal wait can leave ordinary posted messages undispatched.
+            // Process one at a time so a busy queue cannot starve export completion.
+            let mut message = MSG::default();
+            if PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
+                if message.message == WM_QUIT {
+                    PostQuitMessage(message.wParam.0 as i32);
+                    return Err(Error::from(E_ABORT));
+                }
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+        }
     }
     receiver
         .recv()
@@ -567,8 +591,9 @@ mod async_tests {
     }
     #[test]
     fn synchronous_export_runs_off_thread_and_dispatches_window_messages() {
+        use std::sync::Condvar;
         use windows::Win32::UI::WindowsAndMessaging::*;
-        static MESSAGES: AtomicUsize = AtomicUsize::new(0);
+        static HANDLED: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
         unsafe extern "system" fn procedure(
             window: HWND,
             message: u32,
@@ -576,7 +601,8 @@ mod async_tests {
             l: LPARAM,
         ) -> LRESULT {
             if message == WM_APP {
-                MESSAGES.fetch_add(1, Ordering::Relaxed);
+                *HANDLED.0.lock().unwrap() = true;
+                HANDLED.1.notify_one();
                 return LRESULT(0);
             }
             unsafe { DefWindowProcW(window, message, w, l) }
@@ -610,19 +636,53 @@ mod async_tests {
                 Arc::new(move |_| {
                     assert_ne!(receiver, std::thread::current().id());
                     PostMessageW(HWND(hwnd), WM_APP, WPARAM(0), LPARAM(0)).unwrap();
-                    std::thread::sleep(std::time::Duration::from_millis(150));
+                    let (handled, _) = HANDLED
+                        .1
+                        .wait_timeout_while(
+                            HANDLED.0.lock().unwrap(),
+                            std::time::Duration::from_secs(5),
+                            |handled| !*handled,
+                        )
+                        .unwrap();
+                    assert!(
+                        *handled,
+                        "export wait must keep the source window responsive"
+                    );
                     Ok("fixture.txt".into())
                 }),
                 "fixture.txt".into(),
-            )
-            .unwrap();
-            assert_eq!(result, PathBuf::from("fixture.txt"));
-            assert!(
-                MESSAGES.load(Ordering::Relaxed) > 0,
-                "COM wait must keep the source window responsive"
             );
             DestroyWindow(window).unwrap();
             windows::Win32::System::Ole::OleUninitialize();
+            assert_eq!(result.unwrap(), PathBuf::from("fixture.txt"));
+        }
+    }
+    #[test]
+    fn synchronous_export_preserves_quit_message() {
+        use windows::Win32::UI::WindowsAndMessaging::*;
+        let (release, blocked) = std::sync::mpsc::channel();
+        let blocked = Mutex::new(blocked);
+        unsafe {
+            OleInitialize(None).unwrap();
+            PostQuitMessage(42);
+            let result = responsive_read(
+                Arc::new(move |_| {
+                    let _ = blocked
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(std::time::Duration::from_secs(5));
+                    Ok("fixture.txt".into())
+                }),
+                "fixture.txt".into(),
+            );
+            let _ = release.send(());
+            let mut message = MSG::default();
+            let queued = PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool();
+            windows::Win32::System::Ole::OleUninitialize();
+            assert_eq!(result.unwrap_err().code(), E_ABORT);
+            assert!(queued);
+            assert_eq!(message.message, WM_QUIT);
+            assert_eq!(message.wParam.0, 42);
         }
     }
 }
