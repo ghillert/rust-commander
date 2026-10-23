@@ -24,6 +24,17 @@ fn decoded(text: &str) -> Result<String> {
         .into_owned())
 }
 
+// Remote names need not be valid local filenames (for example, '?' on Windows).
+// Still reject separators and traversal before joining a decoded URI segment.
+fn validate_remote_segment(name: &str) -> Result<()> {
+    ensure!(
+        !name.trim().is_empty() && !name.contains(['/', '\\', '\0']) && name != "." && name != "..",
+        "Invalid remote path component."
+    );
+    crate::remote::key(Path::new(name), false)?;
+    Ok(())
+}
+
 pub fn parse(text: &str, base: &Location) -> Result<Input> {
     let text = text.trim();
     ensure!(!text.is_empty(), "Enter a folder path or URI.");
@@ -59,7 +70,7 @@ pub fn parse(text: &str, base: &Location) -> Result<Input> {
                         target.pop();
                     }
                     name => {
-                        filesystem::validate_name(name)?;
+                        validate_remote_segment(name)?;
                         target.push(name);
                     }
                 }
@@ -134,7 +145,7 @@ pub fn parse(text: &str, base: &Location) -> Result<Input> {
         .filter(|s| !s.is_empty())
     {
         let segment = decoded(segment)?;
-        filesystem::validate_name(&segment)?;
+        validate_remote_segment(&segment)?;
         path.push(segment);
     }
     crate::remote::key(&path, false)?;

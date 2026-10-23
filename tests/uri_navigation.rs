@@ -141,6 +141,60 @@ fn local_legacy_unsupported_and_encoded_paths() {
     }
 }
 #[test]
+fn remote_names_do_not_inherit_local_windows_filename_restrictions() {
+    let base = Location::Remote {
+        connection: "remote-names".into(),
+        path: "base".into(),
+    };
+    for name in [
+        "a#b?.txt",
+        "a<b>c.txt",
+        "a\"b|c*.txt",
+        "trailing.",
+        "trailing ",
+    ] {
+        let path = Path::new(name).join("child.txt");
+        for scheme in ["https", "sftp", "s3"] {
+            let t = target(&format!("{scheme}://example.test/"));
+            remote::register_profiles(std::slice::from_ref(&t.connection));
+            let address = uri::address(&t.connection.id, &path);
+            assert_eq!(target(&address).path, path, "{address}");
+        }
+        let input = format!("{name}/child.txt");
+        assert!(
+            matches!(uri::parse(&input, &base).unwrap(), Input::Location(Location::Remote { connection, path: actual })
+                if connection == "remote-names" && actual == Path::new("base").join(&path)),
+            "{input}"
+        );
+        #[cfg(windows)]
+        assert!(rust_commander::filesystem::validate_name(name).is_err());
+    }
+}
+
+#[test]
+fn remote_uri_segments_reject_encoded_separators_and_unsafe_components() {
+    let base = Location::Remote {
+        connection: "remote-segments".into(),
+        path: "base".into(),
+    };
+    for segment in [
+        "a%2fb",
+        "a%5cb",
+        "%2e%2e%5csecret",
+        "%00",
+        "C%3a",
+        "a%3ab",
+        "%20",
+    ] {
+        let address = format!("https://example.test/{segment}/child");
+        assert!(uri::parse(&address, &base).is_err(), "{address}");
+    }
+    for input in ["a\\b/child", "../a\\b", "a\0b", "dir/C:/child"] {
+        assert!(uri::parse(input, &base).is_err(), "{input:?}");
+    }
+}
+
+#[test]
 fn legacy_preferences_and_profile_defaults() {
     let p: rust_commander::preferences::Preferences = serde_json::from_str("{}").unwrap();
     assert_eq!(
