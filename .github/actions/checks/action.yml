@@ -69,7 +69,7 @@ runs:
       run: cargo test --release --locked --jobs 1 --test stabilization --test features_08
 
     - name: Upload stabilization reports
-      if: always() && runner.os == 'Linux'
+      if: always()
       uses: actions/upload-artifact@v7
       with:
         name: stabilization-reports-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ github.run_attempt }}

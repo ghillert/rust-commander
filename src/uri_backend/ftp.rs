@@ -272,21 +272,71 @@ impl Output for FtpWrite {
     fn finish(&mut self) -> Result<()> {
         if let Some(mut data) = self.data.take() {
             data.flush()?;
-            // Keep the socket alive while Rustls sends close_notify, then complete the
-            // data-channel shutdown before waiting for the control-channel completion.
+            // Keep the socket alive while Rustls sends close_notify, then signal
+            // EOF to the server. The FTP completion reply confirms the upload;
+            // waiting for TCP EOF here can stall even after the server has replied.
             drop(data);
             self.socket.shutdown(std::net::Shutdown::Write)?;
-            let mut buffer = [0; 4096];
-            loop {
-                match self.socket.read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(_) => {}
-                    Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => break,
-                    Err(e) => return Err(e.into()),
-                }
-            }
             self.ftp.finalize_put_stream(std::io::sink())?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{net::TcpListener, sync::mpsc, thread};
+
+    // A server may acknowledge the upload before closing its data socket. Keep
+    // that socket open until finish returns, so waiting for TCP EOF fails here.
+    fn finish_with_open_data_socket(reply: &[u8]) -> Result<()> {
+        let control = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let data = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let control_address = control.local_addr().unwrap();
+        let data_address = data.local_addr().unwrap();
+        let reply = reply.to_vec();
+        let (release, wait) = mpsc::channel();
+        let server = thread::spawn(move || {
+            let (mut control, _) = control.accept().unwrap();
+            control.write_all(b"220 Test FTP server\r\n").unwrap();
+            let (mut data, _) = data.accept().unwrap();
+            data.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut received = Vec::new();
+            data.read_to_end(&mut received).unwrap();
+            assert_eq!(received, b"uploaded bytes");
+            control.write_all(&reply).unwrap();
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            drop(data);
+        });
+        let ftp = RustlsFtpStream::connect(control_address).unwrap();
+        ftp.get_ref()
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let socket = TcpStream::connect(data_address).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let mut writer = FtpWrite {
+            ftp,
+            data: Some(Box::new(socket.try_clone().unwrap())),
+            socket,
+        };
+        writer.write_all(b"uploaded bytes").unwrap();
+        let result = writer.finish();
+        release.send(()).unwrap();
+        server.join().unwrap();
+        result
+    }
+
+    #[test]
+    fn upload_completion_does_not_wait_for_data_socket_eof() {
+        finish_with_open_data_socket(b"226 Transfer complete\r\n").unwrap();
+    }
+
+    #[test]
+    fn upload_completion_requires_a_successful_ftp_reply() {
+        let error = finish_with_open_data_socket(b"426 Transfer aborted\r\n").unwrap_err();
+        assert!(error.to_string().contains("426"), "{error}");
     }
 }
