@@ -13,7 +13,7 @@ PASSWORD = "commander-test-only"
 def ftp(args):
     from pyftpdlib.authorizers import DummyAuthorizer
     from pyftpdlib.handlers import FTPHandler, TLS_FTPHandler
-    from pyftpdlib.servers import FTPServer
+    from pyftpdlib.servers import ThreadedFTPServer
     authorizer = DummyAuthorizer()
     authorizer.add_user("commander", PASSWORD, str(args.root), perm="elradfmwMT")
     authorizer.add_anonymous(str(args.root), perm="elr")
@@ -23,7 +23,14 @@ def ftp(args):
         def handle(self):
             if args.service == "implicit":
                 self.secure_connection(self.ssl_context)
-            super().handle()
+            else:
+                super().handle()
+
+        def handle_ssl_established(self):
+            super().handle_ssl_established()
+            if args.service == "implicit":
+                # Send the greeting after TLS is ready on the connection's loop.
+                super().handle()
 
     Handler.authorizer = authorizer
     Handler.banner = "Disposable Rust Commander URI fixture"
@@ -32,7 +39,9 @@ def ftp(args):
         Handler.keyfile = str(args.key)
         Handler.tls_control_required = True
         Handler.tls_data_required = True
-    FTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    # Isolate each connection's OpenSSL state. The single-loop Windows fixture
+    # can fail an upload with a "system library" error as a concurrent RETR closes.
+    ThreadedFTPServer(("127.0.0.1", args.port), Handler).serve_forever()
 
 
 def sftp(args):
