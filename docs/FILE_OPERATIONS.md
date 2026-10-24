@@ -40,6 +40,16 @@ OS call already in progress.
 These are desktop operations, not filesystem transactions; concurrent external
 changes are not locked out.
 
+### Live transfer controls and durable copies
+
+The progress bar offers **Pause** / **Resume** for active transfers. The queue
+and history dialog holds the bandwidth limit and automatic retry settings.
+Select **Checkpoint this copy** to recover a whole local or remote batch with
+fixed merge/conflict decisions. Checkpointed replacements retain originals in
+the private batch recovery folder reported by the result, rather than the ordinary
+replacement folder described above. See [checkpoint storage, retry rules and
+provider limits](FEATURES_NEXT.md#7-checkpointed-copies-and-live-transfer-controls).
+
 ## Archives
 
 | Format | Browse / extract | Create |

@@ -133,11 +133,14 @@ impl Http {
             if response.status() == StatusCode::UNAUTHORIZED {
                 bail!("HTTP authentication required (401). Enter credentials to continue.");
             }
-            ensure!(
-                response.status().is_success(),
-                "HTTP request failed ({}).",
-                response.status().as_u16()
-            );
+            if !response.status().is_success() {
+                return Err(crate::transfer_control::SanitizedError {
+                    message: format!("HTTP request failed ({}).", response.status().as_u16()),
+                    temporary: response.status() == StatusCode::TOO_MANY_REQUESTS
+                        || response.status().is_server_error(),
+                }
+                .into());
+            }
             return Ok(response);
         }
         bail!("Too many HTTP redirects.")

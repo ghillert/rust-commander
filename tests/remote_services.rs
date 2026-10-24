@@ -210,6 +210,57 @@ fn exercise(service: &str) {
     );
 
     println!("{service}: checkpoint publish/conflict passed");
+    // Durable replacements exercise non-recursive deletion and original-copy
+    // verification against each real transport, then merge another replacement.
+    let recovery_local = work.path().join("recovery-source");
+    fs::create_dir_all(recovery_local.join("folder")).unwrap();
+    fs::write(recovery_local.join("folder/old"), b"retained original").unwrap();
+    let recovery_from = Location::Local(recovery_local.clone());
+    let recovery_path = base.join("recovery");
+    remote::mkdir(&connection.id, &recovery_path).unwrap();
+    let recovery_to = location(&connection, &recovery_path);
+    remote::transfer(
+        &recovery_from,
+        &filesystem::list(&recovery_from).unwrap(),
+        &recovery_to,
+        false,
+        &mut Task::default(),
+    )
+    .unwrap();
+    fs::remove_file(recovery_local.join("folder/old")).unwrap();
+    fs::write(recovery_local.join("folder/new"), b"first replacement").unwrap();
+    for (id, merge) in [("batch-replace-tree", false), ("batch-merge-replace", true)] {
+        resumable::run_resolved_in(
+            &checkpoints,
+            id,
+            &recovery_from,
+            &filesystem::list(&recovery_from).unwrap(),
+            &recovery_to,
+            TransferOptions {
+                conflicts: ConflictPolicy::Replace,
+                merge_folders: merge,
+            },
+            &BTreeMap::new(),
+            &mut Task::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            contents(&connection, &recovery_path.join("folder/new")),
+            if merge {
+                b"second replacement".as_slice()
+            } else {
+                b"first replacement".as_slice()
+            }
+        );
+        if !merge {
+            assert_eq!(
+                fs::read(checkpoints.join("batch-replace-tree/original-0/old")).unwrap(),
+                b"retained original"
+            );
+            fs::write(recovery_local.join("folder/new"), b"second replacement").unwrap();
+        }
+    }
+    println!("{service}: checkpointed replacement and merge passed");
     // Review and apply a local/remote sync, then reject a stale preview.
     let sync_local = work.path().join("sync");
     fs::create_dir(&sync_local).unwrap();

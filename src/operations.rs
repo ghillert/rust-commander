@@ -29,6 +29,10 @@ pub enum Operation {
         from: crate::filesystem::Location,
         entries: Vec<crate::filesystem::Entry>,
         to: crate::filesystem::Location,
+        #[serde(default)]
+        options: crate::transfer::TransferOptions,
+        #[serde(default)]
+        overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
     },
     ArchiveSaveBytes {
         archive: PathBuf,
@@ -201,6 +205,22 @@ pub enum Operation {
 }
 
 impl Operation {
+    pub fn is_transfer(&self) -> bool {
+        matches!(
+            self,
+            Self::Copy { .. }
+                | Self::Move { .. }
+                | Self::Transfer { .. }
+                | Self::ResolvedTransfer { .. }
+                | Self::RemoteTransfer { .. }
+                | Self::RemoteTransferResolved { .. }
+                | Self::DropTransfer { .. }
+                | Self::ResumeRemote { .. }
+                | Self::ResumeLocal { .. }
+                | Self::Sync(_)
+        )
+    }
+
     pub fn label(&self) -> &'static str {
         match self {
             Self::EmptyTrash => "Empty Trash",
@@ -210,7 +230,7 @@ impl Operation {
             | Self::RemoteSave { .. }
             | Self::SaveBytes { .. }
             | Self::RemoteSaveBytes { .. } => "Save text",
-            Self::ResumeRemote { .. } => "Resumable remote copy",
+            Self::ResumeRemote { .. } => "Checkpointed copy",
             Self::ResumeLocal { .. } => "Resumable transfer",
             Self::Sync(_) => "Synchronize folders",
             Self::Transfer { moving: true, .. }
@@ -291,6 +311,9 @@ impl Operation {
             }
             | Self::RemoteTransferResolved {
                 from, entries, to, ..
+            }
+            | Self::ResumeRemote {
+                from, entries, to, ..
             } => format!(
                 "{}\n{}\n→ {}",
                 from.label(),
@@ -352,6 +375,7 @@ pub struct Task {
     pub undo_blocked: bool,
     pub before_change: Option<ChangeHook>,
     pub cancel: Arc<AtomicBool>,
+    pub control: Option<Arc<crate::transfer_control::Control>>,
     pub progress: Progress,
     report: Box<dyn FnMut(Progress) + Send>,
     total_planned: bool,
@@ -371,6 +395,7 @@ impl Task {
             undo_blocked: false,
             before_change: None,
             cancel,
+            control: None,
             progress: Progress::default(),
             report: Box::new(report),
             total_planned: false,
@@ -428,11 +453,67 @@ impl Task {
         if self.cancel.load(Ordering::Relaxed) {
             bail!("Operation cancelled. Completed items were kept.");
         }
+        if let Some(control) = &self.control {
+            control.check(&self.cancel)?;
+        }
         Ok(())
+    }
+
+    pub fn chunk_size(&self) -> usize {
+        self.control.as_ref().map_or(65536, |c| c.chunk_size())
+    }
+    pub fn pace(&self, bytes: u64) -> Result<()> {
+        if let Some(control) = &self.control {
+            control.pace(bytes, &self.cancel)?;
+        }
+        Ok(())
+    }
+    /// Retry only a caller-provided checkpoint recovery operation. Each attempt
+    /// rebuilds progress from verified receipts; streamed bytes are not credited twice.
+    pub(crate) fn retry_checkpoint<T>(
+        &mut self,
+        mut run: impl FnMut(&mut Self) -> Result<T>,
+    ) -> Result<T> {
+        let mut attempt = 0u8;
+        loop {
+            self.check()?;
+            match run(self) {
+                Ok(value) => return Ok(value),
+                Err(error) => {
+                    let Some(control) = self.control.clone() else {
+                        return Err(error);
+                    };
+                    if attempt >= control.settings().retries.min(8)
+                        || !crate::transfer_control::temporary(&error)
+                    {
+                        return Err(if attempt > 0 {
+                            error.context(format!(
+                                "Transfer failed after {attempt} automatic retries"
+                            ))
+                        } else {
+                            error
+                        });
+                    }
+                    attempt += 1;
+                    control.backoff(
+                        attempt,
+                        std::time::Duration::from_secs((1u64 << (attempt - 1)).min(30)),
+                        &self.cancel,
+                    )?;
+                    if attempt > control.settings().retries.min(8) {
+                        return Err(error);
+                    }
+                    self.progress = Progress::default();
+                    self.total_planned = false;
+                    (self.report)(self.progress.clone());
+                }
+            }
+        }
     }
 
     pub fn tick(&mut self, path: &Path, bytes: u64) -> Result<()> {
         self.check()?;
+        self.pace(bytes)?;
         self.progress.current = path.display().to_string();
         self.progress.bytes += bytes;
         self.advance_progress(bytes);
@@ -455,7 +536,7 @@ impl Task {
         let mut total = 0;
         loop {
             self.check()?;
-            let count = input.read(&mut buffer)?;
+            let count = input.read(&mut buffer[..self.chunk_size()])?;
             if count == 0 {
                 break;
             }
@@ -607,7 +688,11 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             from,
             entries,
             to,
-        } => crate::resumable::run(&id, &from, &entries, &to, task),
+            options,
+            overrides,
+        } => task.retry_checkpoint(|task| {
+            crate::resumable::run_resolved(&id, &from, &entries, &to, options, &overrides, task)
+        }),
         Operation::ArchiveSaveBytes {
             archive,
             path,
@@ -671,7 +756,15 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             moving,
             partial,
             stamp,
-        } => crate::queue::resume_local(&source, &destination, moving, &partial, &stamp, task),
+        } => {
+            if moving {
+                crate::queue::resume_local(&source, &destination, moving, &partial, &stamp, task)
+            } else {
+                task.retry_checkpoint(|task| {
+                    crate::queue::resume_local(&source, &destination, false, &partial, &stamp, task)
+                })
+            }
+        }
         Operation::Sync(plan) => crate::sync::apply(&plan, task),
         Operation::SaveText {
             path,

@@ -21,6 +21,7 @@ impl LocationBar {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
+    pub transfers: crate::transfer_control::Settings,
     pub folder_tool_presets: Vec<crate::comparison::Preset>,
     pub directory_tree: bool,
     pub associations: Vec<crate::associations::Rule>,
@@ -50,6 +51,7 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            transfers: Default::default(),
             folder_tool_presets: Vec::new(),
             directory_tree: false,
             associations: Vec::new(),

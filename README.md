@@ -86,6 +86,8 @@ published.
   system fonts, light/dark mode, and native macOS menus and window controls.
 - **Editor integration:** installed-application choices, remembered filename rules,
   and reviewed external-editor save-back for local/remote files and local archive entries.
+- **Transfer controls:** active pause/resume, live bandwidth limits, bounded automatic retries
+  and durable copy recovery with fixed merge/conflict decisions and replacement originals.
 - **Remote adapters:** checkpointed copies, recursive folder conflicts, saved connection profiles and streaming transfers for
   SMB2/3, SFTP, FTP, WebDAV, S3, and several cloud services. Validation is limited; see
   [Remote connections](#remote-connections).

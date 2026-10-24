@@ -594,6 +594,7 @@ struct Job {
     label: String,
 
     receiver: Receiver<JobEvent>,
+    control: Option<Arc<crate::transfer_control::Control>>,
     cancel: Arc<AtomicBool>,
     progress: Progress,
 }
@@ -824,6 +825,12 @@ impl Commander {
         let retention = self.preferences.recovery.clone();
         let (sender, receiver) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
+        let control = operation.is_transfer().then(|| {
+            Arc::new(crate::transfer_control::Control::new(
+                self.preferences.transfers,
+            ))
+        });
+        let worker_control = control.clone();
         let worker_cancel = cancel.clone();
         let worker_ctx = ctx.clone();
         self.status = "Working…".into();
@@ -835,6 +842,7 @@ impl Commander {
                 let _ = progress_sender.send(JobEvent::Progress(p));
                 progress_ctx.request_repaint();
             });
+            task.control = worker_control;
             let result =
                 crate::history::execute(operation, &mut task).map_err(|e| format!("{e:#}"));
             if retention.automatic
@@ -856,6 +864,7 @@ impl Commander {
             owner: self.window_id,
             label,
             receiver,
+            control,
             cancel,
             progress: Progress::default(),
         });
@@ -2075,6 +2084,22 @@ impl Commander {
                     selection,
                     to,
                     moving,
+                } if prompt.resumable => {
+                    anyhow::ensure!(!moving, "Checkpointing supports copies only");
+                    selection.validate()?;
+                    Operation::ResumeRemote {
+                        id: format!("batch-{:016x}", rand::random::<u64>()),
+                        from: selection.from.clone(),
+                        entries: selection.entries.clone(),
+                        to: filesystem::parse_location(&prompt.value, to)?,
+                        options: prompt.transfer_options,
+                        overrides: prompt.overrides.clone(),
+                    }
+                }
+                PromptKind::DropTransfer {
+                    selection,
+                    to,
+                    moving,
                 } => Operation::DropTransfer {
                     selection: selection.clone(),
                     to: filesystem::parse_location(&prompt.value, to)?,
@@ -2117,19 +2142,14 @@ impl Commander {
                     to,
                     moving,
                 } if prompt.resumable => {
-                    anyhow::ensure!(
-                        !moving
-                            && prompt.transfer_options.conflicts
-                                == crate::transfer::ConflictPolicy::Refuse
-                            && !prompt.transfer_options.merge_folders
-                            && prompt.overrides.is_empty(),
-                        "Resumable copies require Stop on conflicts, new target folders, and no per-file overrides"
-                    );
+                    anyhow::ensure!(!moving, "Checkpointing supports copies only");
                     Operation::ResumeRemote {
                         id: format!("batch-{:016x}", rand::random::<u64>()),
                         from: from.clone(),
                         entries: entries.clone(),
                         to: filesystem::parse_location(&prompt.value, to)?,
+                        options: prompt.transfer_options,
+                        overrides: prompt.overrides.clone(),
                     }
                 }
                 PromptKind::RemoteTransfer {
@@ -2159,6 +2179,22 @@ impl Commander {
                     connection: connection.clone(),
                     entries: entries.clone(),
                 },
+                PromptKind::Transfer {
+                    sources,
+                    moving,
+                    base,
+                } if prompt.resumable => {
+                    anyhow::ensure!(!moving, "Checkpointing supports copies only");
+                    let selection = crate::drag_drop::Selection::local(sources)?;
+                    Operation::ResumeRemote {
+                        id: format!("batch-{:016x}", rand::random::<u64>()),
+                        from: selection.from,
+                        entries: selection.entries,
+                        to: Location::Local(filesystem::resolve_path(&prompt.value, base)),
+                        options: prompt.transfer_options,
+                        overrides: prompt.overrides.clone(),
+                    }
+                }
                 PromptKind::Transfer {
                     sources,
                     moving,

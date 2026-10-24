@@ -275,10 +275,12 @@ impl Adapter {
                 if matches!(
                     prompt.kind,
                     PromptKind::RemoteTransfer { moving: false, .. }
-                ) {
+                        | PromptKind::Transfer { moving: false, .. }
+                ) || matches!(&prompt.kind, PromptKind::DropTransfer { selection, moving: false, .. } if !matches!(selection.from, Location::Archive { .. }))
+                {
                     d.fields.push(Field::check(
                         "resumable",
-                        "Checkpoint this copy (new targets; retry from queue)",
+                        "Checkpoint this copy (automatic retry and recovery)",
                         prompt.resumable,
                     ));
                 }
@@ -322,7 +324,7 @@ impl Adapter {
                 }
                 d.button("apply-all", "Apply to all", true);
                 if prompt.transfer_options.conflicts == crate::transfer::ConflictPolicy::Replace {
-                    d.fields.push(Field::label("Recoverable replacement","Replaced items stay in a hidden recovery folder in the destination. The result reports its path."));
+                    d.fields.push(Field::label("Recoverable replacement", if prompt.resumable { "Originals stay in this copy’s private recovery folder under the configuration directory. The result reports its path; review it before deleting." } else { "Replaced items stay in a hidden recovery folder in the destination. The result reports its path." }));
                 }
             }
             d.button(
@@ -1014,7 +1016,32 @@ impl Adapter {
             if let Some(job) = &self.app.job {
                 d.description = format!("{} · {}", tr(&job.label), job.progress.current);
                 d.button("cancel-job", "Cancel running operation", true);
+                if let Some(control) = &job.control {
+                    let status = control.status();
+                    if !status.is_empty() {
+                        d.description = format!("{status} · {}", d.description);
+                    }
+                    d.button(
+                        "pause-job",
+                        if control.paused() {
+                            "Resume transfer"
+                        } else {
+                            "Pause transfer"
+                        },
+                        true,
+                    );
+                }
             }
+            d.fields.push(Field::text(
+                "transfer-limit",
+                "Bandwidth limit (KiB/s; 0 = unlimited)",
+                self.app.preferences.transfers.kib_per_second.to_string(),
+            ));
+            d.fields.push(Field::text(
+                "transfer-retries",
+                "Automatic retries (0–8; checkpointed copies only)",
+                self.app.preferences.transfers.retries.to_string(),
+            ));
             d.button(
                 "pause-queue",
                 if self.app.queue.paused {

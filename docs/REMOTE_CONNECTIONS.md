@@ -165,7 +165,9 @@ See the [validation record](../parity/VALIDATION.md) and
 
 ## Checkpointed copies and synchronization
 
-Copies can opt into durable batch checkpoints for new targets. Verified downloads
+Copies can opt into durable batch checkpoints with merges and fixed conflict decisions,
+including replacement recovery copies. Pause/resume, a live bandwidth limit and
+bounded automatic retries are available in the transfer controls. Verified downloads
 use ranged readers; uploads append to hidden staging files when the service
 supports it and restart that staged file otherwise. Interrupted final publishes
 can require review of a partial destination. Synchronization accepts local/remote

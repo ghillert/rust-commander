@@ -19,7 +19,7 @@ pub enum ConflictPolicy {
     Replace,
 }
 
-#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TransferOptions {
     pub conflicts: ConflictPolicy,
     pub merge_folders: bool,

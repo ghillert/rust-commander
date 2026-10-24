@@ -1,6 +1,72 @@
 use super::*;
 
 #[test]
+fn active_transfer_controls_work_with_queue_dialog_and_validate_live_settings() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, _left, _right) = fixture();
+    let ui = CommanderWindow::new().unwrap();
+    let (_sender, receiver) = mpsc::channel();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let control = Arc::new(crate::transfer_control::Control::new(Default::default()));
+    adapter.app.job = Some(Job {
+        owner: adapter.app.window_id,
+        label: "Checkpointed copy".into(),
+        receiver,
+        control: Some(control.clone()),
+        cancel: cancel.clone(),
+        progress: Default::default(),
+    });
+    adapter.app.show_history = true;
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    assert!(ui.get_transfer_controllable());
+    assert!(ui.get_dialog_compact());
+    ui.invoke_action("PauseTransfer".into());
+    assert!(control.paused());
+    assert!(ui.get_transfer_paused());
+    assert!(ui.get_status().starts_with("Pausing"));
+    ui.invoke_dialog_field("transfer-limit".into(), "128".into());
+    assert_eq!(control.settings().kib_per_second, 128);
+    ui.invoke_dialog_field("transfer-retries".into(), "9".into());
+    assert!(ui.get_dialog_error().contains("0 to 8"));
+    assert_eq!(control.settings().retries, 3);
+    ui.invoke_dialog_field("transfer-retries".into(), "0".into());
+    assert_eq!(control.settings().retries, 0);
+    assert!(ui.get_dialog_error().is_empty());
+    ui.invoke_dialog_action("pause-job".into());
+    assert!(!control.paused());
+    assert!(!ui.get_transfer_paused());
+    ui.invoke_action("CancelJob".into());
+    assert!(cancel.load(Ordering::Relaxed));
+}
+
+#[test]
+fn local_folder_copy_dialog_offers_checkpoints_with_merge_and_replace() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, left, _right) = fixture();
+    adapter.app.panes[0].tab_mut().selected =
+        std::collections::BTreeSet::from([left.join("folder")]);
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    ui.invoke_action("Copy".into());
+    assert!(state.borrow().fields.iter().any(|f| f.id == "resumable"));
+    ui.invoke_dialog_field("resumable".into(), "true".into());
+    ui.invoke_dialog_field("policy".into(), "Replace".into());
+    ui.invoke_dialog_field("merge".into(), "true".into());
+    let borrowed = state.borrow();
+    let prompt = borrowed.app.prompt.as_ref().unwrap();
+    assert!(prompt.resumable);
+    assert!(prompt.transfer_options.merge_folders);
+    assert_eq!(
+        prompt.transfer_options.conflicts,
+        crate::transfer::ConflictPolicy::Replace
+    );
+}
+
+#[test]
 fn running_progress_shows_speed_beside_the_transferred_byte_count() {
     i_slint_backend_testing::init_no_event_loop();
     let (_root, mut adapter, _left, _right) = fixture();
@@ -15,6 +81,7 @@ fn running_progress_shows_speed_beside_the_transferred_byte_count() {
         owner: adapter.app.window_id,
         label: "Remote transfer".into(),
         receiver,
+        control: None,
         cancel,
         progress: task.progress,
     });

@@ -79,7 +79,7 @@ impl fmt::Debug for Backend {
     }
 }
 
-fn error(e: impl fmt::Display) -> Error {
+fn error(e: impl fmt::Display + 'static) -> Error {
     let message = e.to_string();
     let kind = if message.contains("not found") || message.contains("No such file") {
         ErrorKind::NotFound
@@ -88,7 +88,12 @@ fn error(e: impl fmt::Display) -> Error {
     } else {
         ErrorKind::Unexpected
     };
-    Error::new(kind, message)
+    let error = Error::new(kind, message);
+    if crate::transfer_control::temporary_any(&e) {
+        error.set_temporary()
+    } else {
+        error
+    }
 }
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
@@ -226,7 +231,7 @@ impl oio::Write for StreamWrite {
         Ok(Metadata::new(EntryMode::FILE).with_content_length(self.size))
     }
     async fn abort(&mut self) -> Result<()> {
-        self.writer.lock().map_err(error)?.take();
+        self.writer.lock().map_err(|e| error(e.to_string()))?.take();
         Ok(())
     }
 }

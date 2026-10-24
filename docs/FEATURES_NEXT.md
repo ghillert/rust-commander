@@ -70,28 +70,57 @@ F3/F4 retain the built-in viewer/editor. Programs receive filename arguments
 directly without a shell. Discovery scans standard application locations with
 bounded depth; applications outside those locations can be entered by path.
 
-## 7. Checkpointed remote copies
+## 7. Checkpointed copies and live transfer controls
 
-For a local/remote or remote/remote copy, select **Checkpoint this copy** in the
-confirmation. This mode requires new targets, Stop on conflicts, no merge and
-no per-file overrides. It copies complete folder trees, including empty folders.
-The durable queue recipe identifies a private batch manifest and staging files
-under the configuration folder's `transfers/` directory; credentials are excluded.
+Local, local/remote and remote/remote copies offer **Checkpoint this copy** in the
+confirmation, including folder merges, Skip, Keep both, Replace and per-file
+choices. The durable plan fixes destination names and conflict decisions before
+writing. A retry never chooses another Keep both name. Links are refused in this
+mode; ordinary local copies can still preserve links.
 
-Retry interrupted work from the queue. Completed targets are checked by content
-hash, partial local files are checked against the source prefix, and remote
-readers resume at the verified byte offset. Uploads use hidden server staging
-files and append when supported; other services restart that staged file.
-Source and destination content is verified before recording completion.
-Verification can reread substantial data. SMB and filesystem adapters publish with exclusive native rename. Other
-providers use their normal exclusive-create support; providers without it retain
-the documented concurrent write limitation. An interrupted final publish can require review of a partial
-final target before retrying. Moves continue to use the guarded move workflow.
+The private batch manifest and staging files live under the configuration
+folder's `transfers/` directory; credentials are excluded. OS locks prevent two
+processes from replaying or discarding the same batch; empty sibling `.lock` files
+remain after cleanup. Completed targets are
+checked by content hash, partial local files against the source prefix, and remote
+readers resume at the verified byte offset. Uploads append to hidden server staging
+files when supported; other services restart that staged file. Verification can
+reread substantial data.
 
-Successful batches remove local checkpoints. Discarding a queued recipe removes
-its validated local checkpoint data; hidden server staging files can require
-explicit server-side cleanup. Failed/cancelled checkpoints can occupy the full
-size of staged files. Checkpointed remote batches do not advertise local Undo.
+Checkpointed replacements verify a local recovery copy before clearing an old
+destination. Each deletion has a durable intent and completion receipt. Recovery
+checks the remaining original files and rejects unexpected additions or changes.
+Originals remain under `original-N` in the batch folder, with the matching target
+in `manifest.json`. The result reports this folder even after success. Review and
+restore originals manually if needed; queue Discard refuses to delete a batch
+that holds verified originals. These batches do not advertise local Undo.
+Batches without replacements remove local checkpoints after success. Hidden server
+staging files can require explicit cleanup. Failed/cancelled checkpoints and
+replacement originals can occupy the full size of the transferred trees.
+
+**Pause** beside the progress bar pauses the active transfer; **Resume** continues
+it. **Pause queue** only holds waiting jobs. Pausing is cooperative between chunks
+and provider calls; an in-flight OS/server call may finish before **Paused** is
+shown. Cancel also works while paused or waiting to retry.
+
+**Transfer queue and history…** exposes a live bandwidth limit in KiB/s
+(`0` = unlimited) and the automatic retry count (`0` = disabled, maximum `8`,
+default `3`). Both settings are saved and shared across windows. The limit paces
+streamed copy, staging and checkpoint verification work. Provider buffering and
+single-request commits can still produce short network bursts. Resuming or
+changing the limit does not accumulate unused bandwidth credit.
+
+Only checkpointed copies automatically retry typed temporary I/O/provider errors,
+HTTP 429 and server errors, using delays of 1, 2, 4, 8, 16 and then 30 seconds.
+Authentication, permissions, changed sources/destinations, corrupt receipts and
+conflicts stop for review. Ordinary uncheckpointed operations and moves are not
+replayed automatically. Interrupted work can also be retried manually from the
+queue; restored queues start paused.
+
+SMB and filesystem adapters publish with exclusive native rename. Other providers
+use their normal exclusive-create support; providers without it retain the
+concurrent-write limitation. An interrupted final publish can require review of
+a partial final target. Moves continue to use the guarded move workflow.
 
 ## 8. Recursive remote conflicts
 

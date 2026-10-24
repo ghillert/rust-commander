@@ -141,6 +141,9 @@ impl Share {
                 self.delete(&child, task)?;
             }
         }
+        self.delete_leaf(entry)
+    }
+    pub(crate) fn delete_leaf(&self, entry: &Entry) -> Result<()> {
         self.run(async {
             let (mut c, t) = self.connect().await?;
             if entry.is_dir {
@@ -193,7 +196,7 @@ impl Share {
         let mut buffer = [0; 65536];
         loop {
             task.check()?;
-            let n = input.read(&mut buffer)?;
+            let n = input.read(&mut buffer[..task.chunk_size()])?;
             if n == 0 {
                 break;
             }

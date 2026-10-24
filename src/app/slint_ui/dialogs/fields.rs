@@ -18,10 +18,14 @@ impl Adapter {
                     PromptKind::DropTransfer {
                         selection, moving, ..
                     },
+                resumable,
                 ..
             }) = &mut self.app.prompt
             {
                 *moving = value == "Move" && selection.can_move();
+                if *moving {
+                    *resumable = false;
+                }
             }
             return;
         }
@@ -54,6 +58,22 @@ impl Adapter {
                             }
                         }
                     }
+                }
+                "history" => {
+                    let mut settings = self.app.preferences.transfers;
+                    match id {
+                        "transfer-limit" => settings.kib_per_second = number::<u32>(value)?,
+                        "transfer-retries" => {
+                            settings.retries = number::<u8>(value)?;
+                            anyhow::ensure!(settings.retries <= 8, "Choose 0 to 8 retries.");
+                        }
+                        _ => return Ok(()),
+                    }
+                    self.app.preferences.transfers = settings;
+                    if let Some(control) = self.app.job.as_ref().and_then(|j| j.control.as_ref()) {
+                        control.update(settings);
+                    }
+                    self.app.save_settings();
                 }
                 "preferences" => {
                     if let Some(p) = &mut self.app.preferences_form {

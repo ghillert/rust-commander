@@ -253,7 +253,10 @@ fn options(connection: &Connection, secrets: &Secrets) -> HashMap<String, String
     map
 }
 
-pub(crate) fn clean_error(error: impl std::fmt::Display, secrets: &Secrets) -> anyhow::Error {
+pub(crate) fn clean_error(
+    error: impl std::fmt::Display + 'static,
+    secrets: &Secrets,
+) -> anyhow::Error {
     let mut text = error.to_string();
     for secret in [
         &secrets.password,
@@ -268,7 +271,11 @@ pub(crate) fn clean_error(error: impl std::fmt::Display, secrets: &Secrets) -> a
             text = text.replace(secret, "[redacted]");
         }
     }
-    anyhow::anyhow!(text)
+    crate::transfer_control::SanitizedError {
+        message: text,
+        temporary: crate::transfer_control::temporary_any(&error),
+    }
+    .into()
 }
 
 pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Result<()> {
@@ -1352,6 +1359,40 @@ pub fn transfer_resolved(
         planner.skipped
     ))
 }
+/// Remove exactly one checkpoint node. Never recurse into a newly added child.
+pub(crate) fn remove_checkpoint_leaf(
+    location: &Location,
+    entry: &Entry,
+    task: &Task,
+) -> Result<()> {
+    task.check()?;
+    match location {
+        Location::Local(_) => {
+            if entry.is_dir {
+                fs::remove_dir(&entry.path)?;
+            } else {
+                fs::remove_file(&entry.path)?;
+            }
+        }
+        Location::Remote { connection, .. } => {
+            let session = session(connection)?;
+            if let Some(smb) = &session.smb {
+                smb.delete_leaf(entry)?;
+            } else {
+                session
+                    .operator()?
+                    .delete(&key(&entry.path, entry.is_dir)?)
+                    .map_err(|e| clean_error(e, &session.secrets))?;
+            }
+        }
+        _ => bail!("Archive entries are read-only"),
+    }
+    anyhow::ensure!(
+        entry_at(location, &entry.path)?.is_none(),
+        "Checkpoint replacement was not removed"
+    );
+    Ok(())
+}
 pub(crate) fn remove_entry(location: &Location, entry: &Entry, task: &mut Task) -> Result<()> {
     task.check()?;
     match location {
@@ -1539,6 +1580,28 @@ pub(crate) fn checkpoint_passes(location: &Location) -> Result<u64> {
         }
     }
     Ok(2)
+}
+
+/// Resolve filesystem-backed locations for overlap checks, including aliases
+/// reached through a saved filesystem connection.
+pub(crate) fn checkpoint_local_path(location: &Location, path: &Path) -> Result<Option<PathBuf>> {
+    match location {
+        Location::Local(_) => Ok(Some(path.into())),
+        Location::Remote { connection, .. } => {
+            let session = session(connection)?;
+            if session.smb.is_none() && session.operator()?.info().scheme() == opendal::Scheme::Fs {
+                let root = PathBuf::from(session.operator()?.info().root());
+                Ok(Some(if path.as_os_str().is_empty() {
+                    root
+                } else {
+                    root.join(filesystem::portable_relative(path)?)
+                }))
+            } else {
+                Ok(None)
+            }
+        }
+        _ => Ok(None),
+    }
 }
 
 pub(crate) fn publish_checkpoint(

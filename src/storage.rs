@@ -19,10 +19,11 @@ pub fn hash(location: &Location, path: &Path, task: &Task) -> Result<String> {
     let mut buffer = [0; 65536];
     loop {
         task.check()?;
-        let n = input.read(&mut buffer)?;
+        let n = input.read(&mut buffer[..task.chunk_size()])?;
         if n == 0 {
             break;
         }
+        task.pace(n as u64)?;
         hash.update(&buffer[..n]);
     }
     Ok(format!("{:x}", hash.finalize()))

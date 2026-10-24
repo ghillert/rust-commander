@@ -586,6 +586,12 @@ impl Adapter {
     }
 
     fn history_action(&mut self, id: &str, idle: bool) -> anyhow::Result<()> {
+        if id == "pause-job" {
+            if let Some(control) = self.app.job.as_ref().and_then(|j| j.control.as_ref()) {
+                control.toggle_pause();
+            }
+            return Ok(());
+        }
         if id == "pause-queue" {
             self.app.queue.paused = !self.app.queue.paused;
             return Ok(());

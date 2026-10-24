@@ -21,6 +21,7 @@ pub mod settings;
 pub mod terminal;
 pub mod tools_ui;
 pub mod transfer;
+pub mod transfer_control;
 pub mod uri;
 mod uri_backend;
 pub mod viewer;

@@ -484,6 +484,7 @@ mod tests {
                 owner: states[0].0,
                 label: "Fixture job".into(),
                 receiver,
+                control: None,
                 cancel: cancel.clone(),
                 progress: Default::default(),
             })

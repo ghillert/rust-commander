@@ -269,6 +269,12 @@ impl Adapter {
             self.extra.window_request = Some(windows::Request::Quit);
             return;
         }
+        if name == "PauseTransfer" {
+            if let Some(control) = self.app.job.as_ref().and_then(|j| j.control.as_ref()) {
+                control.toggle_pause();
+            }
+            return;
+        }
         if name == "CancelJob" {
             if let Some(preparation) = &self.drag.preparation {
                 preparation.cancel.store(true, Ordering::Relaxed);
@@ -596,9 +602,12 @@ impl Adapter {
                 .unwrap_or_default()
                 .into(),
         );
+        let control = self.app.job.as_ref().and_then(|j| j.control.as_ref());
+        ui.set_transfer_controllable(control.is_some());
+        ui.set_transfer_paused(control.is_some_and(|c| c.paused()));
         ui.set_transfer_speed(
             transfer_progress
-                .filter(|_| !self.app.status_error)
+                .filter(|_| !self.app.status_error && control.is_none_or(|c| c.status().is_empty()))
                 .and_then(Progress::bytes_per_second)
                 .map(|rate| format!("{}/s", filesystem::human_size(rate)))
                 .unwrap_or_default()
@@ -625,7 +634,13 @@ impl Adapter {
             && !self.app.status_error
         {
             format!(
-                "{} · {} · {} files · {}",
+                "{}{} · {} · {} files · {}",
+                job.control
+                    .as_ref()
+                    .map(|c| c.status())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| format!("{s} · "))
+                    .unwrap_or_default(),
                 tr(&job.label),
                 job.progress.current,
                 job.progress.files,
@@ -925,6 +940,7 @@ impl Adapter {
             "prompt" => (spec.fields.len() as f32 * 64.0 + 180.0).clamp(260.0, 700.0),
             "open-with" => 300.0,
             "workspaces" => 480.0,
+            "history" => 520.0,
             "archive" => 520.0,
             "text-diff" => (spec.fields.len() as f32 * 32.0 + 240.0).clamp(300.0, 700.0),
             _ => 700.0,
@@ -932,7 +948,7 @@ impl Adapter {
         ui.set_dialog_diff(spec.kind == "text-diff");
         ui.set_dialog_compact(matches!(
             spec.kind.as_str(),
-            "text-diff" | "comparison" | "search" | "sync"
+            "text-diff" | "comparison" | "search" | "sync" | "history"
         ));
         ui.set_dialog_title(spec.title.into());
         ui.set_dialog_description(spec.description.into());

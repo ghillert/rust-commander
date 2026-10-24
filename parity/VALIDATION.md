@@ -965,3 +965,32 @@ logs are in `/private/tmp/rc-advanced-visual/renders/`. All rendered runs used
 disposable files and isolated configuration. These are local checks, not a claim
 of CI success for the uncommitted feature changes. Native Windows/Linux interaction
 and broader live-provider acceptance remain open.
+
+## Transfer controls and durable conflict recovery — 2026-10-23
+
+Validation on Apple Silicon macOS:
+
+- The complete all-target/all-feature suite passed: **314 passed, 0 failed,
+  16 ignored**. Formatting, all-target/all-feature Clippy with warnings denied,
+  and `git diff --check` passed.
+- Shared-controller tests cover acknowledged pause, cancellation while paused or
+  backing off, live bandwidth changes, bounded temporary-error retries, permanent
+  failures and credential redaction. Slint callbacks exercise pause/resume through
+  the queue dialog, live settings validation and checkpointed local folder copies.
+- Durable conflict tests cover all four local/filesystem-adapter directions,
+  fixed Keep both names, per-file overrides, retained originals, stale destination
+  and corrupt-backup refusal, source aliases, metadata preservation, safe discard
+  and exclusive checkpoint leases. Worker subprocesses terminate during backup,
+  deletion and publication before the completion receipt; fresh workers recover.
+- The portable URI harness passed all **six** real loopback fixtures: anonymous
+  FTP, authenticated FTP, explicit FTPS, implicit FTPS and native SFTP with password
+  or public-key authentication. Each now also exercises checkpointed whole-folder
+  replacement and merged file replacement.
+- Paused transfers and the queue controls rendered with both software and femtovg.
+  Visual inspection caught stretched settings fields; the corrected compact queue
+  form was rendered and inspected again.
+
+Logs are under `/private/tmp/rc-transfer-*.log`; final screenshots are under
+`/private/tmp/rc-transfer-visual-final/`. Tests and screenshots used disposable
+configuration and files. These checks do not claim native Windows/Linux acceptance,
+cloud-provider coverage or CI success for this uncommitted batch.

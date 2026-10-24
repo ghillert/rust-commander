@@ -62,7 +62,7 @@ TLS certificate deployments or all provider-specific concurrency behavior.
 ## Interruption and recovery
 
 ```sh
-./scripts/cargo-local.sh test --locked --test stabilization
+./scripts/cargo-local.sh test --locked --test stabilization --test transfer_controls
 ./scripts/cargo-local.sh test --release --locked --test stabilization --test features_08
 ```
 
@@ -72,8 +72,14 @@ that checkpoint, compares all source/destination bytes and checks cleanup.
 Another regression interrupts replacement during a move and verifies that the
 old target and complete source survive with uncommitted staging removed.
 
-The helper `checkpoint_crash_child` is deliberately ignored in normal runs; the
-parent invokes it with its own temporary fixture. Do not run every ignored test
+The transfer-controls suite also terminates workers during replacement backup,
+deleting an original node, and publishing before its completion receipt. It checks
+recovery, fixed Keep both names, stale destinations and all four local/filesystem-
+adapter directions. Shared-controller tests cover pause/cancel, live rate changes,
+bounded retries, permanent failures and cancellation during backoff.
+
+The helpers `checkpoint_crash_child` and `replacement_crash_child` are deliberately ignored in normal runs; the
+parents invoke them with their own temporary fixtures. Do not run every ignored test
 indiscriminately: other ignored cases require a live server or desktop.
 
 ## Keyboard and assistive technology

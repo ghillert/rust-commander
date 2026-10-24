@@ -220,6 +220,7 @@ struct Recorder {
     directory: PathBuf,
     changes: Vec<Change>,
     cancel: Arc<std::sync::atomic::AtomicBool>,
+    control: Option<Arc<crate::transfer_control::Control>>,
 }
 impl Recorder {
     fn capture(&mut self, path: &Path) -> Result<()> {
@@ -245,6 +246,7 @@ impl Recorder {
             bail!("Undo storage overlaps this operation. Choose another location.");
         }
         let mut task = Task::new(self.cancel.clone(), |_| {});
+        task.control = self.control.clone();
         let before = fingerprint(&path, &task)?;
         let before_native = native_fingerprint(&path, &task)?;
         let backup = if before.is_some() {
@@ -311,6 +313,7 @@ pub fn execute_in(operation: Operation, task: &mut Task, root: &Path) -> Result<
         directory: directory.canonicalize()?,
         changes: Vec::new(),
         cancel: task.cancel.clone(),
+        control: task.control.clone(),
     }));
     let capture = recorder.clone();
     let local_undo = !matches!(
