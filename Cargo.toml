@@ -24,7 +24,7 @@ unicode-normalization = "0.1"
 chrono = "0.4"
 compress-tools = "0.16"
 directories = "6"
-flate2 = "1"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs", "runtime_detection"] }
 bzip2 = "0.5"
 globset = "0.4"
 hayro = "0.8"
@@ -56,7 +56,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 webpki-roots = "0.26"
 url = "2"
 vt100 = "0.15"
-zip = { version = "2.4", default-features = false, features = ["deflate", "bzip2", "aes-crypto"] }
+zip = { version = "2.4", default-features = false, features = ["deflate-flate2", "flate2", "bzip2", "aes-crypto"] }
 
 # File and text clipboard support; image previews use the image dependency directly.
 clipboard-rs = { version = "0.3.5", default-features = false, features = ["wayland"] }
@@ -87,6 +87,45 @@ lto = "fat"
 codegen-units = 1
 strip = true
 panic = "unwind"
+
+# Archive codecs and recovery hashes process every byte. Optimize them in the
+# development app and exempt them from the release executable's size preference.
+# Application/UI code retains normal development debugging and fast rebuilds.
+
+[profile.dev.package."zlib-rs"]
+opt-level = 3
+debug-assertions = false
+
+[profile.dev.package."lzma-rust"]
+opt-level = 3
+debug-assertions = false
+
+[profile.dev.package."sevenz-rust"]
+opt-level = 3
+debug-assertions = false
+
+[profile.dev.package."sha2"]
+opt-level = 3
+debug-assertions = false
+
+[profile.dev.package."crc"]
+opt-level = 3
+debug-assertions = false
+
+[profile.release.package."zlib-rs"]
+opt-level = 3
+
+[profile.release.package."lzma-rust"]
+opt-level = 3
+
+[profile.release.package."sevenz-rust"]
+opt-level = 3
+
+[profile.release.package."sha2"]
+opt-level = 3
+
+[profile.release.package."crc"]
+opt-level = 3
 
 [[bin]]
 name = "rust-commander"

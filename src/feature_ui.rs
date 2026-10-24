@@ -8,6 +8,7 @@ pub struct ArchiveForm {
     pub file: String,
     pub destination: String,
     pub password: String,
+    pub compression_level: Option<u8>,
     pub mode: usize,
     pub edit_mode: usize,
     pub additions: String,

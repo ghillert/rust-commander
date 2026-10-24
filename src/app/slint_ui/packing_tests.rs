@@ -56,6 +56,24 @@ fn pack_dialog_tracks_format_comment_selection_and_validation() {
         right.join("left.zip").display().to_string()
     );
     assert_eq!(field(&ui, "pack-format").value, "ZIP");
+    assert_eq!(field(&ui, "pack-level").value, "Default");
+    ui.invoke_dialog_field("pack-level".into(), "0 — Store only".into());
+    ui.invoke_dialog_field("pack-format".into(), "TAR.BZ2".into());
+    assert_eq!(field(&ui, "pack-level").value, "Default");
+    assert!(
+        !field(&ui, "pack-level")
+            .choices
+            .iter()
+            .any(|s| s.starts_with("0"))
+    );
+    ui.invoke_dialog_field("pack-format".into(), "TAR".into());
+    assert!(!ui.get_dialog_fields().iter().any(|f| f.id == "pack-level"));
+    assert!(
+        ui.get_dialog_fields()
+            .iter()
+            .any(|f| f.value == "None (uncompressed TAR)")
+    );
+    ui.invoke_dialog_field("pack-format".into(), "ZIP".into());
     assert!(field(&ui, "pack-format").choices.iter().any(|s| s == "7z"));
     assert!(!ui.get_dialog_fields().iter().any(|f| f.kind == 9));
     ui.invoke_dialog_action("pack-files".into());
@@ -165,6 +183,17 @@ fn right_click_pack_and_selection_disclosure_use_physical_clicks() {
         .mock_single_click(Left);
     assert_eq!(field(&ui, "pack-format").value, "7z");
     assert!(field(&ui, "prompt").value.ends_with(".7z"));
+    slint::platform::update_timers_and_animations();
+    ElementHandle::find_by_accessible_label(&ui, "Compression level")
+        .find(|e| e.accessible_role() == Some(i_slint_backend_testing::AccessibleRole::Combobox))
+        .unwrap()
+        .mock_single_click(Left);
+    slint::platform::update_timers_and_animations();
+    ElementHandle::find_by_accessible_label(&ui, "0 — Fastest")
+        .next()
+        .unwrap()
+        .mock_single_click(Left);
+    assert_eq!(field(&ui, "pack-level").value, "0 — Fastest");
     ui.invoke_dialog_action("cancel".into());
     assert_eq!(state.borrow().app.tab().selected.len(), 2);
 }
@@ -189,9 +218,25 @@ fn zip_and_sevenz_dialogs_create_the_marked_selection_with_real_workers() {
         ui.invoke_action("Pack".into());
         ui.invoke_dialog_field("pack-comment".into(), "A useful ZIP comment".into());
         ui.invoke_dialog_field("pack-format".into(), format.into());
+        ui.invoke_dialog_field(
+            "pack-level".into(),
+            if format == "ZIP" {
+                "1 — Fastest"
+            } else {
+                "1"
+            }
+            .into(),
+        );
         ui.invoke_dialog_field("pack-background".into(), background.to_string().into());
         ui.invoke_dialog_action("accept".into());
         assert!(state.borrow().app.prompt.is_none());
+        assert!(matches!(
+            &state.borrow().app.queue.active,
+            Some(Operation::Pack {
+                compression_level: Some(1),
+                ..
+            })
+        ));
         assert_eq!(
             state.borrow().app.job.as_ref().unwrap().foreground,
             !background
@@ -260,4 +305,38 @@ fn foreground_progress_cancels_the_worker_and_can_be_sent_to_background() {
     ui.invoke_dialog_action("pack-background".into());
     assert!(!state.borrow().blocked());
     assert!(ui.get_dialog_title().is_empty());
+}
+
+#[test]
+fn encrypted_archive_dialog_sends_the_selected_level_to_the_worker() {
+    let (_root, ui, state, _left, right) = setup();
+    ui.invoke_action("ArchiveTools".into());
+    ui.invoke_dialog_field("archive-mode".into(), "Create encrypted archive".into());
+    ui.invoke_dialog_field(
+        "destination".into(),
+        right.join("encrypted.7z").display().to_string().into(),
+    );
+    ui.invoke_dialog_field("archive-password".into(), "secret".into());
+    ui.invoke_dialog_field("archive-level".into(), "1".into());
+    assert_eq!(field(&ui, "archive-level").value, "1");
+    ui.invoke_dialog_action("accept".into());
+    assert!(matches!(
+        &state.borrow().app.queue.active,
+        Some(Operation::PackProtected {
+            compression_level: Some(1),
+            ..
+        })
+    ));
+    wait_for_job(&state, &ui);
+    let output = right.join("extracted");
+    crate::archive::extract_with_password(
+        &right.join("encrypted.7z"),
+        &[],
+        Path::new(""),
+        &output,
+        "secret",
+        &mut Task::default(),
+    )
+    .unwrap();
+    assert_eq!(std::fs::read(output.join("alpha.txt")).unwrap(), b"alpha");
 }

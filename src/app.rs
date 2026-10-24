@@ -2270,6 +2270,7 @@ impl Commander {
                     Operation::Pack {
                         sources: sources.clone(),
                         destination,
+                        compression_level: options.compression_level,
                         comment: options.comment().to_owned(),
                         background: options.background,
                     }

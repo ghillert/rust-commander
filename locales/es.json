@@ -431,5 +431,15 @@
   "Pack files…": "Comprimir archivos…",
   "Packing files": "Comprimiendo archivos",
   "Progress": "Progreso",
-  "Run in background": "Ejecutar en segundo plano"
+  "Run in background": "Ejecutar en segundo plano",
+  "Compression": "Compresión",
+  "Compression level": "Nivel de compresión",
+  "Default": "Predeterminado",
+  "None (uncompressed TAR)": "Ninguna (TAR sin comprimir)",
+  "0 — Store only": "0 — Solo almacenar",
+  "0 — No compression": "0 — Sin compresión",
+  "0 — Fastest": "0 — Más rápido",
+  "1 — Fastest": "1 — Más rápido",
+  "6 — Normal": "6 — Normal",
+  "9 — Best compression": "9 — Máxima compresión"
 }

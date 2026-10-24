@@ -735,9 +735,11 @@
       "docs/FILE_OPERATIONS.md",
       "src/packing.rs",
       "src/app/slint_ui/packing_tests.rs",
-      "tests/packing.rs"
+      "tests/packing.rs",
+      "examples/pack_benchmark.rs",
+      "docs/PACKING_PERFORMANCE.md"
     ],
-    "note": "Pack files dialog and right-click action provide destination naming, ZIP/7z/TAR/stream format choices, ZIP comments, foreground/background packing with cancellation and an expandable source list. 7z multi-file/folder creation and encrypted 7z round trips are tested. Existing archive tools provide ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers. Nested/remote archives remain read-only; links/special files are rejected and broader desktop/format/metadata acceptance remains open.",
+    "note": "Pack files dialog and right-click action provide destination naming, ZIP/7z/TAR/stream format choices, validated compression levels (also encrypted/queued), ZIP comments, foreground/background packing with cancellation and an expandable source list. 7z multi-file/folder creation and encrypted 7z round trips are tested. Existing archive tools provide ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers. Nested/remote archives remain read-only; links/special files are rejected and broader desktop/format/metadata acceptance remains open. Performance measurements and the observed bsdtar incompatibility of generated 7z archives are recorded in docs/PACKING_PERFORMANCE.md; built-in 7z round trips do not establish external-reader parity.",
     "status": "partial"
   },
   "PasteClipboardFiles": {

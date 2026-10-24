@@ -119,6 +119,8 @@ pub enum Operation {
         destination: PathBuf,
         #[serde(skip)]
         password: String,
+        #[serde(default)]
+        compression_level: Option<u8>,
     },
     ExtractProtected {
         archive: PathBuf,
@@ -194,6 +196,8 @@ pub enum Operation {
     Pack {
         sources: Vec<PathBuf>,
         destination: PathBuf,
+        #[serde(default)]
+        compression_level: Option<u8>,
         #[serde(default)]
         comment: String,
         #[serde(default)]
@@ -818,9 +822,16 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             sources,
             destination,
             password,
+            compression_level,
         } => {
             task.capture(&destination)?;
-            crate::archive::pack_with_password(&sources, &destination, &password, task)?;
+            crate::archive::pack_with_password_and_level(
+                &sources,
+                &destination,
+                &password,
+                compression_level,
+                task,
+            )?;
             Ok("Encrypted archive created.".into())
         }
         Operation::ExtractProtected {
@@ -1002,11 +1013,18 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             sources,
             destination,
             comment,
+            compression_level,
             ..
         } => {
             validate_sources(&sources)?;
             task.capture(&destination)?;
-            crate::archive::pack_with_comment(&sources, &destination, &comment, task)?;
+            crate::archive::pack_with_compression(
+                &sources,
+                &destination,
+                &comment,
+                compression_level,
+                task,
+            )?;
             Ok(format!("Created {}", destination.display()))
         }
         Operation::Extract {

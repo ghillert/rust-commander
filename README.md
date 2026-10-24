@@ -229,7 +229,7 @@ During transfers, the progress area shows the byte count and a live recent speed
 in B/s, KiB/s, or MiB/s. Resuming a transfer excludes previously copied bytes
 from the speed measurement.
 Right-click marked local files and choose **Pack files…** (also in **Operations**)
-to select ZIP, 7z or TAR variants, add a ZIP comment, review the selected files,
+to select ZIP, 7z or TAR variants and compression levels, add a ZIP comment, review the selected files,
 and run packing in the foreground or background. See [archive options](docs/FILE_OPERATIONS.md#archives).
 **F5** extracts archive entries into new or existing folders with conflict choices. **File → Archive tools…**
 edits local ZIP/TAR/7z containers or creates/unlocks encrypted ZIP and 7z archives. Nested and
@@ -373,6 +373,12 @@ app icon, native menus, and an ad hoc signature. Terminal logs and environment
 overrides are retained. To build the bundle without opening a window, use
 `./scripts/run.sh --build-only`. It uses local development libraries; use the
 release packaging workflow for an app you intend to distribute.
+
+Compression codecs are optimized even in the development app; application code
+keeps normal debugging and quick rebuilds. After pulling changes to compression
+profiles, rebuild and restart with `./scripts/run.sh` so the running dev bundle
+uses the new codecs. See [packing performance](docs/PACKING_PERFORMANCE.md) for
+measurements and a repeatable benchmark.
 
 During iteration, run the tests relevant to the change. Run the full tests,
 Clippy and formatting checks when the feature is ready:

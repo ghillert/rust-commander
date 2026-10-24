@@ -73,6 +73,13 @@ menu or **Operations → Pack files…**. The dialog mirrors the muCommander wor
   current folder when the opposite pane is remote). Edit it to choose another path.
 - **Archive format** selects ZIP, 7z, TAR, compressed TAR, or a single-file stream.
   Changing format replaces the complete archive suffix, including `.tar.gz`.
+- **Compression level** offers the encoder default or an explicit level: ZIP/GZip
+  and 7z/XZ accept 0–9; BZip2 accepts 1–9. The same choices apply to compressed
+  TAR variants. ZIP level 0 stores files, GZip level 0 skips compression, and 7z/XZ
+  level 0 uses the fastest compression preset. Plain TAR is uncompressed.
+  Higher levels usually trade more time and memory for smaller archives. Switching
+  formats retains a supported level and otherwise resets it to Default. The selected
+  level survives queue recovery and is also available when creating encrypted archives.
 - **Comment** stores a UTF-8 archive comment for ZIP, up to 65,535 bytes. Other
   formats hide this field; switching back to ZIP restores the draft comment.
 - **Run in background** keeps the file panes available during packing. Otherwise

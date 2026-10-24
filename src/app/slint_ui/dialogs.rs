@@ -285,6 +285,22 @@ impl Adapter {
                     options.label(),
                     crate::packing::FORMATS.iter().map(|(_, label, _)| *label),
                 ));
+                if options.format == crate::archive::Format::Tar {
+                    d.fields
+                        .push(Field::label("Compression", "None (uncompressed TAR)"));
+                } else {
+                    d.fields.push(Field::choice(
+                        "pack-level",
+                        "Compression level",
+                        tr(&crate::packing::level_label(
+                            options.format,
+                            options.compression_level,
+                        )),
+                        crate::packing::level_choices(options.format)
+                            .into_iter()
+                            .map(|label| tr(&label).into_owned()),
+                    ));
+                }
                 if options.format == crate::archive::Format::Zip {
                     d.fields.push(Field::multiline(
                         "pack-comment",
@@ -752,6 +768,16 @@ impl Adapter {
             } else if form.mode == 1 {
                 d.fields
                     .push(Field::text("destination", "Destination", &form.destination));
+                let format = crate::archive::format(Path::new(&form.destination))
+                    .unwrap_or(crate::archive::Format::Zip);
+                d.fields.push(Field::choice(
+                    "archive-level",
+                    "Compression level",
+                    tr(&crate::packing::level_label(format, form.compression_level)),
+                    crate::packing::level_choices(format)
+                        .into_iter()
+                        .map(|label| tr(&label).into_owned()),
+                ));
                 d.fields.push(Field::label(
                     "Selected files",
                     form.sources

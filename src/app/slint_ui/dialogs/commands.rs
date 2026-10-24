@@ -327,6 +327,7 @@ impl Adapter {
                                         sources: form.sources.clone(),
                                         destination: form.destination.clone().into(),
                                         password: form.password.clone(),
+                                        compression_level: form.compression_level,
                                     },
                                 ))
                             }

@@ -347,6 +347,7 @@ mod tests {
                 sources: vec![],
                 destination: "a.zip".into(),
                 password: "private-password".into(),
+                compression_level: Some(9),
             }),
             ..Default::default()
         };

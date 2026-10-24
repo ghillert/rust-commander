@@ -383,6 +383,7 @@ fn pack_zip<W: Write + Seek>(
     sources: &[PathBuf],
     password: Option<&str>,
     comment: &str,
+    compression_level: Option<u8>,
     task: &mut Task,
 ) -> Result<W> {
     let mut archive = ZipWriter::new(writer);
@@ -399,7 +400,12 @@ fn pack_zip<W: Write + Seek>(
                 .context("ZIP creation requires UTF-8 filenames")?
                 .replace('\\', "/");
             let options = SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated)
+                .compression_method(if compression_level == Some(0) {
+                    zip::CompressionMethod::Stored
+                } else {
+                    zip::CompressionMethod::Deflated
+                })
+                .compression_level(compression_level.filter(|level| *level != 0).map(i64::from))
                 .large_file(true);
             let options = if let Some(password) = password {
                 options.with_aes_encryption(zip::AesMode::Aes256, password)
@@ -473,6 +479,7 @@ fn pack_impl(
     destination: &Path,
     password: Option<&str>,
     comment: &str,
+    compression_level: Option<u8>,
     task: &mut Task,
 ) -> Result<()> {
     if exists(destination) {
@@ -485,6 +492,7 @@ fn pack_impl(
         );
     }
     crate::packing::validate_comment(kind, comment)?;
+    crate::packing::validate_level(kind, compression_level)?;
     let parent = destination
         .parent()
         .context("Missing archive parent folder")?
@@ -506,14 +514,26 @@ fn pack_impl(
     match kind {
         Format::Extended => unreachable!(),
         Format::Zip => {
-            pack_zip(&mut output, sources, password, comment, task)?;
+            pack_zip(
+                &mut output,
+                sources,
+                password,
+                comment,
+                compression_level,
+                task,
+            )?;
         }
         Format::Tar => {
             pack_tar(&mut output, sources, task)?;
         }
         Format::TarGz => {
             pack_tar(
-                GzEncoder::new(&mut output, Compression::default()),
+                GzEncoder::new(
+                    &mut output,
+                    compression_level
+                        .map(|level| Compression::new(u32::from(level)))
+                        .unwrap_or_default(),
+                ),
                 sources,
                 task,
             )?
@@ -521,33 +541,50 @@ fn pack_impl(
         }
         Format::TarBz2 => {
             pack_tar(
-                bzip2::write::BzEncoder::new(&mut output, bzip2::Compression::default()),
+                bzip2::write::BzEncoder::new(
+                    &mut output,
+                    compression_level
+                        .map(|level| bzip2::Compression::new(u32::from(level)))
+                        .unwrap_or_default(),
+                ),
                 sources,
                 task,
             )?
             .finish()?;
         }
         Format::TarXz => {
-            pack_tar(xz2::write::XzEncoder::new(&mut output, 6), sources, task)?.finish()?;
+            pack_tar(
+                xz2::write::XzEncoder::new(&mut output, u32::from(compression_level.unwrap_or(6))),
+                sources,
+                task,
+            )?
+            .finish()?;
         }
         Format::SevenZ => {
             let mut archive = sevenz_rust::SevenZWriter::new(&mut output)?;
+            let method = match compression_level {
+                Some(level) => {
+                    sevenz_rust::lzma::LZMA2Options::with_preset(u32::from(level)).into()
+                }
+                None => sevenz_rust::SevenZMethod::LZMA2.into(),
+            };
+            let mut methods = vec![method];
             if let Some(password) = password {
-                archive.set_content_methods(vec![
+                methods.insert(
+                    0,
                     sevenz_rust::AesEncoderOptions::new(sevenz_rust::Password::from(password))
                         .into(),
-                    sevenz_rust::SevenZMethod::LZMA2.into(),
-                ]);
+                );
             }
+            archive.set_content_methods(methods);
             for source in sources {
                 let name = Path::new(source.file_name().context("Missing filename")?);
                 walk(source, name, task, &mut |source, name, directory, task| {
-                    let entry = sevenz_rust::SevenZArchiveEntry::from_path(
-                        source,
-                        name.to_str()
-                            .context("7z creation requires UTF-8 filenames")?
-                            .replace('\\', "/"),
-                    );
+                    let name = name
+                        .to_str()
+                        .context("7z creation requires UTF-8 filenames")?
+                        .replace('\\', "/");
+                    let entry = sevenz_rust::SevenZArchiveEntry::from_path(source, name);
                     if directory {
                         archive.push_archive_entry::<File>(entry, None)?;
                     } else {
@@ -575,18 +612,30 @@ fn pack_impl(
             let mut input = File::open(&sources[0])?;
             match kind {
                 Format::Gzip => {
-                    let mut encoder = GzEncoder::new(&mut output, Compression::default());
+                    let mut encoder = GzEncoder::new(
+                        &mut output,
+                        compression_level
+                            .map(|level| Compression::new(u32::from(level)))
+                            .unwrap_or_default(),
+                    );
                     task.stream(&mut input, &mut encoder, &sources[0])?;
                     encoder.finish()?;
                 }
                 Format::Bzip2 => {
-                    let mut encoder =
-                        bzip2::write::BzEncoder::new(&mut output, bzip2::Compression::default());
+                    let mut encoder = bzip2::write::BzEncoder::new(
+                        &mut output,
+                        compression_level
+                            .map(|level| bzip2::Compression::new(u32::from(level)))
+                            .unwrap_or_default(),
+                    );
                     task.stream(&mut input, &mut encoder, &sources[0])?;
                     encoder.finish()?;
                 }
                 Format::Xz => {
-                    let mut encoder = xz2::write::XzEncoder::new(&mut output, 6);
+                    let mut encoder = xz2::write::XzEncoder::new(
+                        &mut output,
+                        u32::from(compression_level.unwrap_or(6)),
+                    );
                     task.stream(&mut input, &mut encoder, &sources[0])?;
                     encoder.finish()?;
                 }
@@ -751,7 +800,7 @@ pub fn unlock(path: &Path, secret: &str) -> Result<()> {
     Ok(())
 }
 pub fn pack(sources: &[PathBuf], destination: &Path, task: &mut Task) -> Result<()> {
-    pack_impl(sources, destination, None, "", task)
+    pack_impl(sources, destination, None, "", None, task)
 }
 pub fn pack_with_comment(
     sources: &[PathBuf],
@@ -759,12 +808,30 @@ pub fn pack_with_comment(
     comment: &str,
     task: &mut Task,
 ) -> Result<()> {
-    pack_impl(sources, destination, None, comment, task)
+    pack_impl(sources, destination, None, comment, None, task)
 }
 pub fn pack_with_password(
     sources: &[PathBuf],
     destination: &Path,
     secret: &str,
+    task: &mut Task,
+) -> Result<()> {
+    pack_with_password_and_level(sources, destination, secret, None, task)
+}
+pub fn pack_with_compression(
+    sources: &[PathBuf],
+    destination: &Path,
+    comment: &str,
+    compression_level: Option<u8>,
+    task: &mut Task,
+) -> Result<()> {
+    pack_impl(sources, destination, None, comment, compression_level, task)
+}
+pub fn pack_with_password_and_level(
+    sources: &[PathBuf],
+    destination: &Path,
+    secret: &str,
+    compression_level: Option<u8>,
     task: &mut Task,
 ) -> Result<()> {
     if secret.is_empty() {
@@ -773,7 +840,14 @@ pub fn pack_with_password(
     if !matches!(format(destination), Some(Format::Zip | Format::SevenZ)) {
         bail!("Encryption is supported for ZIP and 7z archives.");
     }
-    pack_impl(sources, destination, Some(secret), "", task)
+    pack_impl(
+        sources,
+        destination,
+        Some(secret),
+        "",
+        compression_level,
+        task,
+    )
 }
 pub fn extract_with_password(
     file: &Path,

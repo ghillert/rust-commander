@@ -945,14 +945,14 @@ impl Adapter {
             "pack" => {
                 if spec.fields.iter().any(|f| f.kind == 9) {
                     if spec.fields.iter().any(|f| f.kind == 4) {
-                        600.0
+                        664.0
                     } else {
-                        460.0
+                        524.0
                     }
                 } else if spec.fields.iter().any(|f| f.kind == 4) {
-                    470.0
+                    534.0
                 } else {
-                    320.0
+                    384.0
                 }
             }
             "pack-progress" => 300.0,

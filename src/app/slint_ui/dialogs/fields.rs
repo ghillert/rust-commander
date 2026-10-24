@@ -6,6 +6,13 @@ fn number<T: std::str::FromStr>(value: &str) -> anyhow::Result<T> {
         .parse()
         .map_err(|_| anyhow::anyhow!("Enter a valid number."))
 }
+fn compression_level(format: crate::archive::Format, value: &str) -> anyhow::Result<Option<u8>> {
+    let label = crate::packing::level_choices(format)
+        .into_iter()
+        .find(|label| label == value || tr(label).as_ref() == value)
+        .context("Choose a supported compression level.")?;
+    crate::packing::parse_level(format, &label)
+}
 fn checked(value: &str) -> bool {
     value == "true"
 }
@@ -45,6 +52,12 @@ impl Adapter {
                             "pack-format" => {
                                 if let PromptKind::Pack { options, .. } = &mut prompt.kind {
                                     options.set_format(value, &mut prompt.value)?;
+                                }
+                            }
+                            "pack-level" => {
+                                if let PromptKind::Pack { options, .. } = &mut prompt.kind {
+                                    options.compression_level =
+                                        compression_level(options.format, value)?;
                                 }
                             }
                             "pack-comment" => {
@@ -275,6 +288,11 @@ impl Adapter {
                             "source" => form.source = value.into(),
                             "target" => form.target = value.into(),
                             "destination" => form.destination = value.into(),
+                            "archive-level" => {
+                                let format = crate::archive::format(Path::new(&form.destination))
+                                    .unwrap_or(crate::archive::Format::Zip);
+                                form.compression_level = compression_level(format, value)?;
+                            }
                             "archive-password" => form.password = value.into(),
                             _ => {}
                         }
