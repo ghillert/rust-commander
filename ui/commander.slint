@@ -776,7 +776,8 @@ export component CommanderWindow inherits Window {
                         height: 28px; horizontal-stretch: 1;
                         label: Words.translate(command.title,Words.version); show-label: true;
                         enabled: command.enabled;
-                        clicked => { app-menu.close(); root.action(command.id); }
+                        // Closing destroys the row and its callback context; dispatch first.
+                        clicked => { root.action(command.id); app-menu.close(); }
                     }
                 }
             }

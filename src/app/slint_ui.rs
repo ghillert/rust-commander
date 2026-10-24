@@ -1928,6 +1928,8 @@ fn sync_modifiers(
     }
 }
 
+#[cfg(all(test, debug_assertions))]
+mod context_menus;
 #[cfg(test)]
 mod tests;
 
