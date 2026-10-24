@@ -194,6 +194,10 @@ pub enum Operation {
     Pack {
         sources: Vec<PathBuf>,
         destination: PathBuf,
+        #[serde(default)]
+        comment: String,
+        #[serde(default)]
+        background: bool,
     },
     Extract {
         archive: PathBuf,
@@ -997,10 +1001,12 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
         Operation::Pack {
             sources,
             destination,
+            comment,
+            ..
         } => {
             validate_sources(&sources)?;
             task.capture(&destination)?;
-            crate::archive::pack(&sources, &destination, task)?;
+            crate::archive::pack_with_comment(&sources, &destination, &comment, task)?;
             Ok(format!("Created {}", destination.display()))
         }
         Operation::Extract {

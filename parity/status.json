@@ -732,9 +732,12 @@
       "tests/features_05.rs",
       "tests/extended_archives.rs",
       "tests/features_08.rs::external_editor_refuses_changed_original_and_can_update_archive_member",
-      "docs/FILE_OPERATIONS.md"
+      "docs/FILE_OPERATIONS.md",
+      "src/packing.rs",
+      "src/app/slint_ui/packing_tests.rs",
+      "tests/packing.rs"
     ],
-    "note": "Creates ZIP, TAR variants, 7z and single-file compressed streams; ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers exist. Encrypted ZIP edits retain encryption. Nested/remote archives are read-only; archive links/special files are rejected and broader format/metadata fixtures remain incomplete.",
+    "note": "Pack files dialog and right-click action provide destination naming, ZIP/7z/TAR/stream format choices, ZIP comments, foreground/background packing with cancellation and an expandable source list. 7z multi-file/folder creation and encrypted 7z round trips are tested. Existing archive tools provide ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers. Nested/remote archives remain read-only; links/special files are rejected and broader desktop/format/metadata acceptance remains open.",
     "status": "partial"
   },
   "PasteClipboardFiles": {

@@ -382,9 +382,11 @@ fn pack_zip<W: Write + Seek>(
     writer: W,
     sources: &[PathBuf],
     password: Option<&str>,
+    comment: &str,
     task: &mut Task,
 ) -> Result<W> {
     let mut archive = ZipWriter::new(writer);
+    archive.set_comment(comment);
     for source in sources {
         let name = Path::new(
             source
@@ -470,6 +472,7 @@ fn pack_impl(
     sources: &[PathBuf],
     destination: &Path,
     password: Option<&str>,
+    comment: &str,
     task: &mut Task,
 ) -> Result<()> {
     if exists(destination) {
@@ -481,6 +484,7 @@ fn pack_impl(
             "This archive format is available for reading only. Create a ZIP, 7z or TAR archive instead."
         );
     }
+    crate::packing::validate_comment(kind, comment)?;
     let parent = destination
         .parent()
         .context("Missing archive parent folder")?
@@ -502,7 +506,7 @@ fn pack_impl(
     match kind {
         Format::Extended => unreachable!(),
         Format::Zip => {
-            pack_zip(&mut output, sources, password, task)?;
+            pack_zip(&mut output, sources, password, comment, task)?;
         }
         Format::Tar => {
             pack_tar(&mut output, sources, task)?;
@@ -747,7 +751,15 @@ pub fn unlock(path: &Path, secret: &str) -> Result<()> {
     Ok(())
 }
 pub fn pack(sources: &[PathBuf], destination: &Path, task: &mut Task) -> Result<()> {
-    pack_impl(sources, destination, None, task)
+    pack_impl(sources, destination, None, "", task)
+}
+pub fn pack_with_comment(
+    sources: &[PathBuf],
+    destination: &Path,
+    comment: &str,
+    task: &mut Task,
+) -> Result<()> {
+    pack_impl(sources, destination, None, comment, task)
 }
 pub fn pack_with_password(
     sources: &[PathBuf],
@@ -761,7 +773,7 @@ pub fn pack_with_password(
     if !matches!(format(destination), Some(Format::Zip | Format::SevenZ)) {
         bail!("Encryption is supported for ZIP and 7z archives.");
     }
-    pack_impl(sources, destination, Some(secret), task)
+    pack_impl(sources, destination, Some(secret), "", task)
 }
 pub fn extract_with_password(
     file: &Path,

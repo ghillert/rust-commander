@@ -419,5 +419,17 @@
   "Known hosts file (optional)": "Archivo de hosts conocidos (opcional)",
   "TLS CA certificate (DER, optional)": "Certificado CA TLS (DER, opcional)",
   "Open in browser": "Abrir en el navegador",
-  "SFTP supports passwords, private keys and SSH agents, with strict known-host verification. Trust the server in known_hosts first.": "SFTP admite contraseñas, claves privadas y agentes SSH con verificación estricta del servidor. Añade primero el servidor de confianza a known_hosts."
+  "SFTP supports passwords, private keys and SSH agents, with strict known-host verification. Trust the server in known_hosts first.": "SFTP admite contraseñas, claves privadas y agentes SSH con verificación estricta del servidor. Añade primero el servidor de confianza a known_hosts.",
+  "Add selected files to": "Añadir archivos seleccionados a",
+  "Archive format": "Formato del archivo",
+  "Cancelling…": "Cancelando…",
+  "Comment": "Comentario",
+  "Creating the archive…": "Creando el archivo…",
+  "Current file": "Archivo actual",
+  "Pack": "Comprimir",
+  "Pack files": "Comprimir archivos",
+  "Pack files…": "Comprimir archivos…",
+  "Packing files": "Comprimiendo archivos",
+  "Progress": "Progreso",
+  "Run in background": "Ejecutar en segundo plano"
 }

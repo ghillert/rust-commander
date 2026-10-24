@@ -10,6 +10,7 @@ fn active_transfer_controls_work_with_queue_dialog_and_validate_live_settings() 
     let control = Arc::new(crate::transfer_control::Control::new(Default::default()));
     adapter.app.job = Some(Job {
         owner: adapter.app.window_id,
+        foreground: false,
         label: "Checkpointed copy".into(),
         receiver,
         control: Some(control.clone()),
@@ -79,6 +80,7 @@ fn running_progress_shows_speed_beside_the_transferred_byte_count() {
         .unwrap();
     adapter.app.job = Some(Job {
         owner: adapter.app.window_id,
+        foreground: false,
         label: "Remote transfer".into(),
         receiver,
         control: None,

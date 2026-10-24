@@ -415,6 +415,7 @@ export component CommanderWindow inherits Window {
     in property <bool> dialog-busy;
     in property <[FormField]> dialog-fields;
     in property <bool> dialog-diff;
+    in property <bool> dialog-pack;
     in property <bool> dialog-compact;
     in property <[FormRow]> dialog-rows;
     in property <[Command]> dialog-buttons;
@@ -867,7 +868,7 @@ export component CommanderWindow inherits Window {
         key-event(event) => { return root.global-key(event); }
         Rectangle {
             x: max(16px, (parent.width - self.width) / 2); y: (parent.height - self.height) / 2;
-            width: min(root.dialog-diff ? 1080px : 760px, parent.width - 32px); height: min(parent.height - 56px,root.dialog-preferred-height * 1px);
+            width: min(root.dialog-diff ? 1080px : root.dialog-pack ? 620px : 760px, parent.width - 32px); height: min(parent.height - 56px,root.dialog-preferred-height * 1px);
             background: Palette.background; border-radius: 10px;
             VerticalBox {
                 Text { text: root.dialog-title; font-size: 20px; font-weight: 600; color: Palette.foreground; }
@@ -878,7 +879,7 @@ export component CommanderWindow inherits Window {
                         for field[index] in root.dialog-fields: VerticalBox {
                             padding: 0px; spacing: 4px;
                             vertical-stretch: root.dialog-compact ? 0 : 1;
-                            if field.kind != 2 && field.kind != 7: Text { text: field.title; color: Palette.foreground; font-weight: 600; wrap: word-wrap; }
+                            if field.kind != 2 && field.kind != 7 && field.kind != 8 && field.kind != 9: Text { text: field.title; color: Palette.foreground; font-weight: 600; wrap: word-wrap; }
                             if field.kind == 0 || field.kind == 1 || field.kind == 5: LineEdit {
                                 init => { if index == 0 { self.focus(); self.select-all(); } }
                                 text <=> field.value;
@@ -889,8 +890,18 @@ export component CommanderWindow inherits Window {
                             }
                             if field.kind == 2: CheckBox { text: field.title; checked: field.value == "true"; toggled => { root.dialog-field(field.id, self.checked ? "true" : "false"); } }
                             if field.kind == 3: ComboBox { accessible-label: field.title; model: field.choices; current-value: field.value; selected(value) => { root.dialog-field(field.id, value); } }
-                            if field.kind == 4: TextEdit { text <=> field.value; height: 140px; edited => { root.dialog-field(field.id, self.text); } }
+                            if field.kind == 4: TextEdit { accessible-label:field.title; text <=> field.value; height: 140px; edited => { root.dialog-field(field.id, self.text); } }
                             if field.kind == 6: Text { text: field.value; color: Palette.foreground; wrap: word-wrap; }
+                            if field.kind == 8: ChromeButton {
+                                label:field.title;show-label:true;
+                                icon:Glyphs.action(field.value == "true" ? "Collapse" : "Expand");
+                                clicked=>{root.dialog-action(field.id);}
+                            }
+                            if field.kind == 9: Rectangle {
+                                height:28px;accessible-role:list-item;accessible-label:field.value;
+                                IconView {source:Glyphs.file(field.choices[0]);x:4px;y:5px;width:18px;height:18px;}
+                                Text {text:field.value;x:30px;width:parent.width - 34px;height:parent.height;vertical-alignment:center;overflow:elide;color:Palette.foreground;}
+                            }
                             if field.kind == 7: Rectangle {
                                 background: field.id == "changed" ? (root.dark ? #493f20 : #fff1c7) : Palette.background;
                                 HorizontalBox {
@@ -934,7 +945,7 @@ export component CommanderWindow inherits Window {
                 if root.dialog-error != "": Text { text: root.dialog-error; color: #c74343; wrap: word-wrap; }
                 HorizontalBox {
                     Rectangle { horizontal-stretch: 1; }
-                    for command in root.dialog-buttons: Button { text: Words.translate(command.title,Words.version); enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
+                    for command in root.dialog-buttons: Button { text: Words.translate(command.title,Words.version); primary:root.dialog-pack && command.id == "accept"; enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
                 }
             }
         }

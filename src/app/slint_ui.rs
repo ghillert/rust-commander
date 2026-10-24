@@ -187,6 +187,11 @@ impl Adapter {
             || self.extra.dialog.is_some()
             || self.app.features.active()
             || self.app.prompt.is_some()
+            || self
+                .app
+                .job
+                .as_ref()
+                .is_some_and(|j| j.foreground && j.owner == self.app.window_id)
             || self.app.editor.is_some()
             || self.app.help
             || self.app.message.is_some()
@@ -937,6 +942,20 @@ impl Adapter {
         ui.set_dialog_preferred_height(match spec.kind.as_str() {
             "exit" => 240.0,
             "prompt" => (spec.fields.len() as f32 * 64.0 + 180.0).clamp(260.0, 700.0),
+            "pack" => {
+                if spec.fields.iter().any(|f| f.kind == 9) {
+                    if spec.fields.iter().any(|f| f.kind == 4) {
+                        600.0
+                    } else {
+                        460.0
+                    }
+                } else if spec.fields.iter().any(|f| f.kind == 4) {
+                    470.0
+                } else {
+                    320.0
+                }
+            }
+            "pack-progress" => 300.0,
             "open-with" => 300.0,
             "workspaces" => 480.0,
             "history" => 520.0,
@@ -945,9 +964,10 @@ impl Adapter {
             _ => 700.0,
         });
         ui.set_dialog_diff(spec.kind == "text-diff");
+        ui.set_dialog_pack(matches!(spec.kind.as_str(), "pack" | "pack-progress"));
         ui.set_dialog_compact(matches!(
             spec.kind.as_str(),
-            "text-diff" | "comparison" | "search" | "sync" | "history"
+            "text-diff" | "comparison" | "search" | "sync" | "history" | "pack" | "pack-progress"
         ));
         ui.set_dialog_title(spec.title.into());
         ui.set_dialog_description(spec.description.into());
@@ -1415,6 +1435,11 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                             "navigate" => ui.invoke_navigate(0, value.into()),
                             "action" => ui.invoke_action(value.into()),
                             "dialog" => ui.invoke_dialog_action(value.into()),
+                            "field" => {
+                                let (id, value): (String, String) = serde_json::from_str(&value)
+                                    .expect("Screenshot field must be an id/value pair");
+                                ui.invoke_dialog_field(id.into(), value.into());
+                            }
                             _ => panic!("Unsupported screenshot callback"),
                         }
                     }
@@ -2013,5 +2038,7 @@ fn location_breadcrumbs(location: &Location) -> Vec<(String, Location)> {
     }
 }
 
+#[cfg(test)]
+mod packing_tests;
 #[cfg(test)]
 mod parity_tests;

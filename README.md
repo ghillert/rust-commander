@@ -228,7 +228,10 @@ stays below 100% while the operation is still flushing, publishing or verifying.
 During transfers, the progress area shows the byte count and a live recent speed
 in B/s, KiB/s, or MiB/s. Resuming a transfer excludes previously copied bytes
 from the speed measurement.
-**F5** extracts archive entries into new or existing folders with conflict choices. **Operations → Archive tools**
+Right-click marked local files and choose **Pack files…** (also in **Operations**)
+to select ZIP, 7z or TAR variants, add a ZIP comment, review the selected files,
+and run packing in the foreground or background. See [archive options](docs/FILE_OPERATIONS.md#archives).
+**F5** extracts archive entries into new or existing folders with conflict choices. **File → Archive tools…**
 edits local ZIP/TAR/7z containers or creates/unlocks encrypted ZIP and 7z archives. Nested and
 remote archives open read-only. **Mod+Z / Mod+Shift+Z** undo/redo eligible local operations and
 **Mod+J** opens the queue and history. **Mod+P** toggles preview. Additional tools are available in the **File**, **Operations**,

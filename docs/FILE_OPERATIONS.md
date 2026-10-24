@@ -66,6 +66,26 @@ provider limits](FEATURES_NEXT.md#7-checkpointed-copies-and-live-transfer-contro
 | AR / DEB | Yes, through libarchive | No |
 | CPIO / RPM | Yes, through libarchive | No |
 
+Mark local files/folders with Space, then choose **Pack files…** from the right-click
+menu or **Operations → Pack files…**. The dialog mirrors the muCommander workflow:
+
+- **Add selected files to** suggests a name in the opposite local pane (or the
+  current folder when the opposite pane is remote). Edit it to choose another path.
+- **Archive format** selects ZIP, 7z, TAR, compressed TAR, or a single-file stream.
+  Changing format replaces the complete archive suffix, including `.tar.gz`.
+- **Comment** stores a UTF-8 archive comment for ZIP, up to 65,535 bytes. Other
+  formats hide this field; switching back to ZIP restores the draft comment.
+- **Run in background** keeps the file panes available during packing. Otherwise
+  a cancellable progress dialog appears; **Run in background** is also available
+  there. Background jobs use the existing durable operation queue and history.
+- The **file(s)** disclosure expands the frozen list of source paths. Cancelling
+  the dialog creates no archive and preserves the source marks.
+
+**Pack** creates a new archive and refuses to overwrite an existing destination.
+The selected format determines the output suffix; a missing/different suffix is
+corrected before packing. For password-protected ZIP or 7z, use **File → Archive
+tools… → Create encrypted archive**.
+
 NRG, CPIO, and RPM still need dedicated format fixtures. Format-edge-case
 coverage is incomplete; see the [validation record](../parity/VALIDATION.md).
 

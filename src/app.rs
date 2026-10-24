@@ -341,6 +341,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
             vec![
                 ("Connections…", Action::Connections),
                 ("Archive tools…", Action::ArchiveTools),
+                ("Pack files…", Action::Pack),
                 ("New file", Action::Mkfile),
                 ("Batch rename…", Action::BatchRename),
                 ("Properties", Action::Properties),
@@ -370,7 +371,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Transfer queue and history…", Action::Queue),
                 ("Copy  F5", Action::Copy),
                 ("Move  F6", Action::Move),
-                ("Create archive", Action::Pack),
+                ("Pack files…", Action::Pack),
                 ("Extract archive", Action::Extract),
                 ("Checksums", Action::Checksum),
                 ("Find files…", Action::Search),
@@ -522,6 +523,7 @@ enum PromptKind {
     Pack {
         sources: Vec<PathBuf>,
         base: PathBuf,
+        options: crate::packing::Options,
     },
     Extract {
         archive: PathBuf,
@@ -591,6 +593,7 @@ enum JobEvent {
 }
 struct Job {
     owner: usize,
+    foreground: bool,
     label: String,
 
     receiver: Receiver<JobEvent>,
@@ -669,6 +672,7 @@ impl Commander {
             _ => true,
         };
         match id {
+            "Pack" => self.tab().location.local().is_some(),
             "Move" => {
                 writable(&self.tab().location)
                     && writable(&self.panes[1 - self.active].tab().location)
@@ -815,6 +819,13 @@ impl Commander {
             self.status = format!("Queued {} operation(s).", self.queue.len());
             return;
         }
+        let foreground = matches!(
+            &operation,
+            Operation::Pack {
+                background: false,
+                ..
+            }
+        );
         let label = operation.label().to_owned();
         self.queue.active = Some(operation.clone());
         if let Err(e) = self.queue.save() {
@@ -862,6 +873,7 @@ impl Commander {
         });
         self.job = Some(Job {
             owner: self.window_id,
+            foreground,
             label,
             receiver,
             control,
@@ -1881,15 +1893,28 @@ impl Commander {
             }
             Action::Pack => {
                 if let Some(base) = local.clone() {
-                    let target = other
-                        .clone()
-                        .unwrap_or_else(|| base.clone())
-                        .join("Archive.zip");
+                    let name = if chosen.len() == 1 {
+                        if chosen[0].is_dir {
+                            sources[0].file_name()
+                        } else {
+                            sources[0].file_stem()
+                        }
+                    } else {
+                        base.file_name()
+                    }
+                    .unwrap_or(std::ffi::OsStr::new("Archive"));
+                    let mut name = name.to_os_string();
+                    name.push(".zip");
+                    let target = other.clone().unwrap_or_else(|| base.clone()).join(name);
                     prompt = Some((
-                        "Create archive",
-                        "Choose a new ZIP, TAR, TAR.GZ, TAR.BZ2, TAR.XZ or 7z filename. GZ, BZ2 and XZ streams accept one file.".into(),
+                        "Pack files",
+                        String::new(),
                         target.display().to_string(),
-                        PromptKind::Pack { sources, base },
+                        PromptKind::Pack {
+                            sources,
+                            base,
+                            options: Default::default(),
+                        },
                     ));
                 }
             }
@@ -2226,10 +2251,29 @@ impl Commander {
                     Operation::Mkdir(base.join(&prompt.value))
                 }
                 PromptKind::Trash(sources) => Operation::Trash(sources.clone()),
-                PromptKind::Pack { sources, base } => Operation::Pack {
-                    sources: sources.clone(),
-                    destination: filesystem::resolve_path(&prompt.value, base),
-                },
+                PromptKind::Pack {
+                    sources,
+                    base,
+                    options,
+                } => {
+                    options.validate(sources)?;
+                    anyhow::ensure!(
+                        !prompt.value.trim().is_empty(),
+                        "Enter an archive destination."
+                    );
+                    let destination =
+                        options.destination(&filesystem::resolve_path(&prompt.value, base));
+                    anyhow::ensure!(
+                        !crate::operations::exists(&destination),
+                        "Archive already exists. Choose a different name."
+                    );
+                    Operation::Pack {
+                        sources: sources.clone(),
+                        destination,
+                        comment: options.comment().to_owned(),
+                        background: options.background,
+                    }
+                }
                 PromptKind::Extract {
                     archive,
                     selected,

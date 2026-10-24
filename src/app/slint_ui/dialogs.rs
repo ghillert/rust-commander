@@ -133,7 +133,7 @@ impl Dialog {
                 "cancel".into(),
                 if matches!(
                     kind,
-                    "prompt" | "preferences" | "archive" | "rename" | "sync" | "open-with"
+                    "prompt" | "pack" | "preferences" | "archive" | "rename" | "sync" | "open-with"
                 ) {
                     "Cancel".into()
                 } else {
@@ -231,7 +231,88 @@ impl Adapter {
             ));
             return d;
         }
+        if let Some(job) = &self.app.job
+            && job.foreground
+            && job.owner == self.app.window_id
+        {
+            let mut d = Dialog::new("pack-progress", "Packing files");
+            d.busy = true;
+            d.description = if job.cancel.load(Ordering::Relaxed) {
+                "Cancelling…".into()
+            } else {
+                "Creating the archive…".into()
+            };
+            d.fields
+                .push(Field::label("Current file", &job.progress.current));
+            d.fields.push(Field::label(
+                "Progress",
+                format!(
+                    "{} file(s) · {}",
+                    job.progress.files,
+                    filesystem::human_size(job.progress.bytes)
+                ),
+            ));
+            d.buttons = vec![
+                ("pack-background".into(), "Run in background".into(), true),
+                (
+                    "cancel-pack".into(),
+                    "Cancel".into(),
+                    !job.cancel.load(Ordering::Relaxed),
+                ),
+            ];
+            return d;
+        }
         if let Some(prompt) = &self.app.prompt {
+            if let PromptKind::Pack {
+                sources, options, ..
+            } = &prompt.kind
+            {
+                let mut d = Dialog::new("pack", "Pack files");
+                d.error = prompt.error.clone().unwrap_or_default();
+                d.fields.push(Field::text(
+                    "prompt",
+                    "Add selected files to",
+                    &prompt.value,
+                ));
+                d.fields.push(Field::check(
+                    "pack-background",
+                    "Run in background",
+                    options.background,
+                ));
+                d.fields.push(Field::choice(
+                    "pack-format",
+                    "Archive format",
+                    options.label(),
+                    crate::packing::FORMATS.iter().map(|(_, label, _)| *label),
+                ));
+                if options.format == crate::archive::Format::Zip {
+                    d.fields.push(Field::multiline(
+                        "pack-comment",
+                        "Comment",
+                        &options.comment,
+                    ));
+                }
+                d.fields.push(Field {
+                    kind: 8,
+                    ..Field::text(
+                        "pack-files",
+                        format!("{} file(s)", sources.len()),
+                        options.expanded,
+                    )
+                });
+                if options.expanded {
+                    for source in sources {
+                        d.fields.push(Field {
+                            kind: 9,
+                            choices: vec![if source.is_dir() { "folder" } else { "file" }.into()],
+                            ..Field::text("", "", source.display())
+                        });
+                    }
+                }
+                d.button("accept", "Pack", !sources.is_empty());
+                return d;
+            }
+
             let mut d = Dialog::new("prompt", &prompt.title);
             d.description = tr(&prompt.description).into_owned();
             d.error = prompt.error.clone().unwrap_or_default();

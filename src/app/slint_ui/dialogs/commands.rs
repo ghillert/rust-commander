@@ -77,7 +77,25 @@ impl Adapter {
                         self.app.native_files.copy_text(message.clone())?;
                     }
                 }
-                "prompt" => match id {
+                "pack-progress" => {
+                    if let Some(job) = &mut self.app.job {
+                        match id {
+                            "pack-background" => job.foreground = false,
+                            "cancel-pack" => job.cancel.store(true, Ordering::Relaxed),
+                            _ => {}
+                        }
+                    }
+                }
+                "prompt" | "pack" => match id {
+                    "pack-files" => {
+                        if let Some(Prompt {
+                            kind: PromptKind::Pack { options, .. },
+                            ..
+                        }) = &mut self.app.prompt
+                        {
+                            options.expanded = !options.expanded;
+                        }
+                    }
                     "accept" => {
                         self.app.poll_prompt(&self.ctx);
                         if self
@@ -498,7 +516,12 @@ impl Adapter {
             }
             "message" => self.app.message = None,
             "help" => self.app.help = false,
-            "prompt" => self.app.prompt = None,
+            "prompt" | "pack" => self.app.prompt = None,
+            "pack-progress" => {
+                if let Some(job) = &mut self.app.job {
+                    job.cancel.store(true, Ordering::Relaxed);
+                }
+            }
             "preferences" => {
                 self.app.preferences_form = None;
                 self.app.preferences_error = None;

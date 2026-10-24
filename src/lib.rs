@@ -13,6 +13,7 @@ pub mod model;
 #[cfg(target_os = "macos")]
 mod native_menu;
 pub mod operations;
+pub mod packing;
 pub mod path_rules;
 pub mod preferences;
 pub mod remote;

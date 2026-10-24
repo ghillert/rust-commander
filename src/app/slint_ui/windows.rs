@@ -482,6 +482,7 @@ mod tests {
         RUNTIME.with(|r| {
             r.borrow_mut().as_mut().unwrap().job = Some(Job {
                 owner: states[0].0,
+                foreground: false,
                 label: "Fixture job".into(),
                 receiver,
                 control: None,

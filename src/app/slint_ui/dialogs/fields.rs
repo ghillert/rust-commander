@@ -38,10 +38,25 @@ impl Adapter {
         }
         let result = (|| -> anyhow::Result<()> {
             match self.dialog_kind.as_str() {
-                "prompt" => {
+                "prompt" | "pack" => {
                     if let Some(prompt) = &mut self.app.prompt {
                         match id {
                             "prompt" => prompt.value = value.into(),
+                            "pack-format" => {
+                                if let PromptKind::Pack { options, .. } = &mut prompt.kind {
+                                    options.set_format(value, &mut prompt.value)?;
+                                }
+                            }
+                            "pack-comment" => {
+                                if let PromptKind::Pack { options, .. } = &mut prompt.kind {
+                                    options.comment = value.into();
+                                }
+                            }
+                            "pack-background" => {
+                                if let PromptKind::Pack { options, .. } = &mut prompt.kind {
+                                    options.background = checked(value);
+                                }
+                            }
                             "resumable" => prompt.resumable = checked(value),
                             "policy" => prompt.transfer_options.conflicts = parse_policy(value),
                             "merge" => prompt.transfer_options.merge_folders = checked(value),
