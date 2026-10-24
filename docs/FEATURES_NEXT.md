@@ -124,7 +124,9 @@ listing sizes are unknown or rounded. This can download every compared remote
 file. Links are reported without following them; archives are not comparison
 roots. Traversal is bounded to 64 levels and 100,000 entries and supports Cancel.
 Comparison reports recovery files as ordinary entries; synchronization excludes
-its own recovery copies. Broader upstream comparison options remain open.
+its own recovery copies. The [advanced tools guide](ADVANCED_TOOLS.md) covers
+the newer include/exclude rules, shared presets, optional unverified metadata
+comparison, read-only text differences and filtered synchronization.
 
 ## 10. Native copy metadata
 

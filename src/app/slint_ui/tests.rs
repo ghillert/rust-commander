@@ -160,6 +160,168 @@ pub(super) fn fixture() -> (tempfile::TempDir, Adapter, PathBuf, PathBuf) {
     (root, adapter, left, right)
 }
 
+fn wait_for_folder_tools(
+    state: &Rc<RefCell<Adapter>>,
+    ui: &CommanderWindow,
+    done: impl Fn(&Adapter) -> bool,
+) {
+    for _ in 0..500 {
+        {
+            let mut adapter = state.borrow_mut();
+            adapter.poll_dialogs();
+            adapter.sync(ui);
+            if done(&adapter) {
+                return;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panic!("Folder tool worker did not finish");
+}
+
+#[test]
+fn advanced_search_dialog_validates_and_runs_the_shared_matcher() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, adapter, left, _right) = fixture();
+    std::fs::write(left.join("alpha.txt"), "Error: 429\n").unwrap();
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    ui.invoke_action("Search".into());
+    ui.invoke_dialog_field("search-regex".into(), "true".into());
+    ui.invoke_dialog_field("content".into(), "[".into());
+    ui.invoke_dialog_action("accept".into());
+    assert!(
+        state
+            .borrow()
+            .app
+            .tools
+            .search
+            .as_ref()
+            .unwrap()
+            .pending
+            .is_none()
+    );
+    assert!(ui.get_dialog_error().contains("Invalid content pattern"));
+    ui.invoke_dialog_field("content".into(), r"^error: \d{3}$".into());
+    ui.invoke_dialog_field("search-content-case".into(), "false".into());
+    ui.invoke_dialog_field("search-min-size".into(), "10".into());
+    ui.invoke_dialog_action("accept".into());
+    wait_for_folder_tools(&state, &ui, |a| {
+        a.app.tools.search.as_ref().unwrap().pending.is_none()
+    });
+    let borrowed = state.borrow();
+    let form = borrowed.app.tools.search.as_ref().unwrap();
+    assert!(form.error.is_none(), "{:?}", form.error);
+    assert_eq!(
+        form.result.as_ref().unwrap().paths,
+        vec![left.join("alpha.txt")]
+    );
+}
+
+#[test]
+fn comparison_dialog_shares_presets_with_sync_and_opens_read_only_aligned_diff() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, adapter, left, right) = fixture();
+    std::fs::write(left.join("alpha.txt"), "alpha\nbeta\n").unwrap();
+    std::fs::write(right.join("alpha.txt"), "alpha\ninsert\nbeta\n").unwrap();
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    ui.invoke_action("Compare".into());
+    assert_eq!(ui.get_dialog_title(), "Compare folders");
+    ui.invoke_dialog_field("folder-include".into(), "*.txt".into());
+    ui.invoke_dialog_field("folder-exclude".into(), "cache;.git".into());
+    ui.invoke_dialog_field("folder-preset-name".into(), "Documents".into());
+    ui.invoke_dialog_action("folder-preset-save".into());
+    assert_eq!(state.borrow().app.preferences.folder_tool_presets.len(), 1);
+    ui.invoke_dialog_action("accept".into());
+    wait_for_folder_tools(&state, &ui, |a| {
+        a.app
+            .features
+            .comparison
+            .as_ref()
+            .unwrap()
+            .pending
+            .is_none()
+    });
+    let index = state
+        .borrow()
+        .app
+        .features
+        .comparison
+        .as_ref()
+        .unwrap()
+        .result
+        .as_ref()
+        .unwrap()
+        .iter()
+        .position(|r| r.name == "alpha.txt")
+        .unwrap();
+    ui.invoke_dialog_action(format!("comparison-diff-{index}").into());
+    wait_for_folder_tools(&state, &ui, |a| {
+        a.app
+            .features
+            .comparison
+            .as_ref()
+            .unwrap()
+            .diff_pending
+            .is_none()
+    });
+    assert!(ui.get_dialog_diff());
+    assert!(
+        ui.get_dialog_fields()
+            .iter()
+            .any(|f| f.kind == 7 && f.choices.row_data(0).unwrap().contains("insert"))
+    );
+    ui.invoke_dialog_action("cancel".into());
+    assert_eq!(ui.get_dialog_title(), "Compare folders");
+    ui.invoke_dialog_action("cancel".into());
+    ui.invoke_action("Synchronize".into());
+    ui.invoke_dialog_action("folder-preset-load-0".into());
+    assert_eq!(
+        state
+            .borrow()
+            .app
+            .features
+            .sync
+            .as_ref()
+            .unwrap()
+            .rules
+            .include,
+        "*.txt"
+    );
+    ui.invoke_dialog_action("sync-preview".into());
+    wait_for_folder_tools(&state, &ui, |a| {
+        a.app.features.sync.as_ref().unwrap().pending.is_none()
+    });
+    assert!(
+        state
+            .borrow()
+            .app
+            .features
+            .sync
+            .as_ref()
+            .unwrap()
+            .plan
+            .is_some()
+    );
+    ui.invoke_dialog_field("folder-exclude".into(), "cache;.git;*.txt".into());
+    assert!(
+        state
+            .borrow()
+            .app
+            .features
+            .sync
+            .as_ref()
+            .unwrap()
+            .plan
+            .is_none()
+    );
+}
+
 #[cfg(debug_assertions)]
 #[test]
 fn sidebar_sections_collapse_independently() {

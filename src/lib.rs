@@ -8,12 +8,15 @@ pub mod background;
 pub mod comparison;
 pub mod desktop;
 pub mod filesystem;
+pub mod folder_tools;
 pub mod model;
 #[cfg(target_os = "macos")]
 mod native_menu;
 pub mod operations;
+pub mod path_rules;
 pub mod preferences;
 pub mod remote;
+pub mod search;
 pub mod settings;
 pub mod terminal;
 pub mod tools_ui;

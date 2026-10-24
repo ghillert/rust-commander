@@ -377,6 +377,7 @@ fn remote_search_and_guarded_save_use_actual_storage_operations() {
         content: "find".into(),
         hidden: false,
         max_results: 100,
+        filters: Default::default(),
     };
     let result = remote::search(&c.id, &options, &mut Task::default()).unwrap();
     assert_eq!(result.paths, vec![Path::new("nested/a.txt").to_owned()]);
@@ -519,6 +520,7 @@ fn smb_live_list_stream_upload_download_rename_edit_search_delete() {
             content: "edited".into(),
             hidden: false,
             max_results: 100,
+            filters: Default::default(),
         },
         &mut Task::default(),
     )

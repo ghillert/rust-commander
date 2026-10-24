@@ -1451,80 +1451,14 @@ pub fn search(
     options: &crate::desktop::SearchOptions,
     task: &mut Task,
 ) -> Result<crate::desktop::SearchResult> {
-    let matcher = globset::GlobBuilder::new(&options.pattern)
-        .case_insensitive(true)
-        .build()?
-        .compile_matcher();
-    let mut result = crate::desktop::SearchResult {
-        paths: Vec::new(),
-        errors: Vec::new(),
-        truncated: false,
-    };
-    let mut stack = vec![(options.root.clone(), 0)];
-    let mut visited = std::collections::BTreeSet::new();
-    let mut count = 0;
-    while let Some((folder, depth)) = stack.pop() {
-        task.check()?;
-        if !visited.insert(folder.clone()) {
-            continue;
-        }
-        let entries = match list(id, &folder) {
-            Ok(e) => e,
-            Err(e) => {
-                if result.errors.len() < 1000 {
-                    result.errors.push(format!("{}: {e:#}", folder.display()));
-                }
-                continue;
-            }
-        };
-        for entry in entries {
-            task.check()?;
-            count += 1;
-            if count > 100_000 || depth > 256 {
-                result.truncated = true;
-                return Ok(result);
-            }
-            if !options.hidden && entry.name.starts_with('.') {
-                continue;
-            }
-            if entry.is_dir {
-                stack.push((entry.path.clone(), depth + 1));
-            }
-            if !matcher.is_match(&entry.name)
-                && !matcher.is_match(
-                    entry
-                        .path
-                        .strip_prefix(&options.root)
-                        .unwrap_or(&entry.path),
-                )
-            {
-                continue;
-            }
-            if !options.content.is_empty() {
-                if entry.is_dir {
-                    continue;
-                }
-                match read_bytes(id, &entry.path, 2 * 1024 * 1024) {
-                    Ok(bytes) if String::from_utf8_lossy(&bytes).contains(&options.content) => {}
-                    Ok(_) => continue,
-                    Err(e) => {
-                        if result.errors.len() < 1000 {
-                            result
-                                .errors
-                                .push(format!("{}: {e:#}", entry.path.display()));
-                        }
-                        continue;
-                    }
-                }
-            }
-            result.paths.push(entry.path);
-            if result.paths.len() >= options.max_results {
-                result.truncated = true;
-                return Ok(result);
-            }
-        }
-    }
-    Ok(result)
+    crate::search::search(
+        &Location::Remote {
+            connection: id.into(),
+            path: options.root.clone(),
+        },
+        options,
+        task,
+    )
 }
 
 /// Start a new ranged reader. Backends without native range support may emulate it.

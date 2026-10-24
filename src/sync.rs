@@ -31,6 +31,8 @@ impl Choice {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
+    #[serde(default)]
+    pub shallow_directory: bool,
     pub path: PathBuf,
     pub choice: Choice,
     pub conflict: bool,
@@ -42,6 +44,8 @@ pub struct Item {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Plan {
     #[serde(default)]
+    pub rules: Box<crate::path_rules::PathRules>,
+    #[serde(default)]
     pub remote_roots: Option<(crate::filesystem::Location, crate::filesystem::Location)>,
     pub left: PathBuf,
     pub right: PathBuf,
@@ -52,6 +56,9 @@ pub struct Plan {
 impl Plan {
     /// Capability and source-presence checks apply to UI choices and restored queue plans.
     pub fn allows(&self, item: &Item, choice: Choice) -> bool {
+        if item.shallow_directory && matches!(choice, Choice::DeleteLeft | Choice::DeleteRight) {
+            return false;
+        }
         let (left, right) = self.remote_roots.clone().unwrap_or_else(|| {
             (
                 crate::filesystem::Location::Local(self.left.clone()),
@@ -67,10 +74,24 @@ impl Plan {
         }
     }
 }
-fn scan(root: &Path, at: &Path, items: &mut BTreeMap<PathBuf, bool>, task: &Task) -> Result<()> {
+fn scan(
+    root: &Path,
+    at: &Path,
+    items: &mut BTreeMap<PathBuf, bool>,
+    task: &Task,
+    rules: &crate::path_rules::CompiledRules,
+) -> Result<()> {
     task.check()?;
+    anyhow::ensure!(
+        at.strip_prefix(root)?.components().count() < 64,
+        "Synchronization tree exceeds 64 levels"
+    );
     for entry in fs::read_dir(at)? {
         let entry = entry?;
+        let relative = entry.path().strip_prefix(root)?.to_owned();
+        if rules.excluded(&relative) {
+            continue;
+        }
         let meta = entry.file_type()?;
         if meta.is_symlink() || (!meta.is_file() && !meta.is_dir()) {
             bail!(
@@ -78,13 +99,12 @@ fn scan(root: &Path, at: &Path, items: &mut BTreeMap<PathBuf, bool>, task: &Task
                 entry.path().display()
             );
         }
-        let relative = entry.path().strip_prefix(root)?.to_owned();
         items.insert(relative, meta.is_dir());
         if items.len() > 100_000 {
             bail!("Synchronization exceeds 100,000 entries");
         }
         if meta.is_dir() {
-            scan(root, &entry.path(), items, task)?;
+            scan(root, &entry.path(), items, task, rules)?;
         }
     }
     Ok(())
@@ -113,6 +133,16 @@ fn contents_equal(a: &Path, b: &Path, task: &Task) -> Result<bool> {
 }
 /// direction: 0 = two-way, 1 = left to right, 2 = right to left. Deletions start disabled.
 pub fn preview(left: &Path, right: &Path, direction: u8, task: &Task) -> Result<Plan> {
+    preview_with_rules(left, right, direction, &Default::default(), task)
+}
+pub fn preview_with_rules(
+    left: &Path,
+    right: &Path,
+    direction: u8,
+    rules: &crate::path_rules::PathRules,
+    task: &Task,
+) -> Result<Plan> {
+    let compiled = rules.compile()?;
     let left = left.canonicalize()?;
     let right = right.canonicalize()?;
     if !left.is_dir() || !right.is_dir() || left.starts_with(&right) || right.starts_with(&left) {
@@ -122,8 +152,8 @@ pub fn preview(left: &Path, right: &Path, direction: u8, task: &Task) -> Result<
     let right_stamp = fingerprint(&right, task)?;
     let mut l = BTreeMap::new();
     let mut r = BTreeMap::new();
-    scan(&left, &left, &mut l, task)?;
-    scan(&right, &right, &mut r, task)?;
+    scan(&left, &left, &mut l, task, &compiled)?;
+    scan(&right, &right, &mut r, task, &compiled)?;
     let keys = l
         .keys()
         .chain(r.keys())
@@ -137,8 +167,16 @@ pub fn preview(left: &Path, right: &Path, direction: u8, task: &Task) -> Result<
         }
         let a = l.get(&path);
         let b = r.get(&path);
+        if a != Some(&true) && b != Some(&true) && !compiled.included(&path) {
+            continue;
+        }
         let conflict = match (a, b) {
             (Some(x), Some(y)) if x != y => {
+                anyhow::ensure!(
+                    !rules.filtered(),
+                    "Filtered synchronization found a file/folder conflict at {}; resolve it before synchronizing",
+                    path.display()
+                );
                 blocked.push(path.clone());
                 true
             }
@@ -162,12 +200,15 @@ pub fn preview(left: &Path, right: &Path, direction: u8, task: &Task) -> Result<
                 _ => Choice::Skip,
             }
         };
-        if (a == Some(&true) && b.is_none()) || (b == Some(&true) && a.is_none()) {
+        let missing_directory =
+            (a == Some(&true) && b.is_none()) || (b == Some(&true) && a.is_none());
+        if missing_directory && !rules.filtered() {
             blocked.push(path.clone());
         }
         let left_item_stamp = fingerprint(&left.join(&path), task)?;
         let right_item_stamp = fingerprint(&right.join(&path), task)?;
         items.push(Item {
+            shallow_directory: missing_directory && rules.filtered(),
             left_stamp: left_item_stamp,
             right_stamp: right_item_stamp,
             path,
@@ -176,11 +217,16 @@ pub fn preview(left: &Path, right: &Path, direction: u8, task: &Task) -> Result<
             left: a.is_some(),
             right: b.is_some(),
         });
+        anyhow::ensure!(
+            items.len() <= 5000,
+            "Too many differences to review; synchronize a smaller folder"
+        );
     }
     if left_stamp != fingerprint(&left, task)? || right_stamp != fingerprint(&right, task)? {
         bail!("Directories changed during preview. Preview again.");
     }
     Ok(Plan {
+        rules: Box::new(rules.clone()),
         remote_roots: None,
         left,
         right,
@@ -190,6 +236,12 @@ pub fn preview(left: &Path, right: &Path, direction: u8, task: &Task) -> Result<
     })
 }
 pub fn apply(plan: &Plan, task: &mut Task) -> Result<String> {
+    let rules = plan.rules.compile()?;
+    anyhow::ensure!(
+        plan.items.iter().all(|item| !rules.excluded(&item.path)
+            && (item.shallow_directory || rules.included(&item.path))),
+        "Synchronization items do not match the reviewed filters"
+    );
     anyhow::ensure!(
         plan.items.iter().all(|item| plan.allows(item, item.choice)),
         "The synchronization plan writes to a read-only folder or has a missing source. Preview again."
@@ -258,6 +310,15 @@ pub fn apply(plan: &Plan, task: &mut Task) -> Result<String> {
                 continue;
             }
             fs::create_dir_all(target.parent().context("Missing target parent")?)?;
+            if item.shallow_directory {
+                anyhow::ensure!(
+                    source.is_dir() && !operations::exists(&target),
+                    "Filtered directory target changed; preview again"
+                );
+                fs::create_dir(&target)?;
+                count += 1;
+                continue;
+            }
             let stage = tempfile::tempdir_in(target.parent().unwrap())?;
             let copy = stage.path().join("copy");
             operations::copy_item(&source, &copy, task)?;
@@ -326,11 +387,20 @@ pub fn preview_locations(
     direction: u8,
     task: &Task,
 ) -> Result<Plan> {
+    preview_locations_with_rules(left, right, direction, &Default::default(), task)
+}
+pub fn preview_locations_with_rules(
+    left: &crate::filesystem::Location,
+    right: &crate::filesystem::Location,
+    direction: u8,
+    rules: &crate::path_rules::PathRules,
+    task: &Task,
+) -> Result<Plan> {
     if let (crate::filesystem::Location::Local(a), crate::filesystem::Location::Local(b)) =
         (left, right)
     {
-        preview(a, b, direction, task)
+        preview_with_rules(a, b, direction, rules, task)
     } else {
-        remote::preview(left, right, direction, task)
+        remote::preview(left, right, direction, rules, task)
     }
 }

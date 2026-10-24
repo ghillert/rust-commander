@@ -107,6 +107,7 @@ fn recursive_search_filters_names_content_hidden_and_does_not_follow_links() {
         content: "needle".into(),
         hidden: false,
         max_results: 100,
+        filters: Default::default(),
     };
     let result = desktop::search(&options, &mut Task::default()).unwrap();
     assert_eq!(result.paths.len(), 1);

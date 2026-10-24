@@ -1,6 +1,7 @@
 use super::*;
 mod commands;
 mod fields;
+mod folders;
 
 #[derive(Clone, PartialEq)]
 pub(super) struct Field {
@@ -722,8 +723,12 @@ impl Adapter {
             d.button("accept", "Rename", idle && d.error.is_empty());
             return d;
         }
+        if let Some(dialog) = self.folder_dialog() {
+            return dialog;
+        }
         if let Some(form) = &self.app.tools.search {
             let mut d = Dialog::new("search", "Find files");
+            d.description = "Patterns match names or relative paths; separate patterns with ;. Literal content searches stream across the entire file. Regex matches one line at a time (8 MiB maximum per line).".into();
             d.error = form.error.clone().unwrap_or_default();
             d.busy = form.pending.is_some();
             let o = &form.options;
@@ -731,12 +736,58 @@ impl Adapter {
                 Field::text("search-root", "Root folder", o.root.display()),
                 Field::text("pattern", "Filename pattern", &o.pattern),
                 Field::text("content", "Containing text", &o.content),
+                Field::check(
+                    "search-regex",
+                    "Content is a regular expression (per line)",
+                    o.filters.content_regex,
+                ),
+                Field::check(
+                    "search-content-case",
+                    "Match content case",
+                    o.filters.content_case_sensitive,
+                ),
+                Field::check(
+                    "search-name-case",
+                    "Match filename case",
+                    o.filters.name_case_sensitive,
+                ),
+                Field::text(
+                    "search-exclude",
+                    "Exclude files/folders (glob patterns separated by ;)",
+                    &o.filters.exclude,
+                ),
+                Field::text(
+                    "search-min-size",
+                    "Minimum file size (bytes; blank for any)",
+                    o.filters
+                        .min_size
+                        .map(|n| n.to_string())
+                        .unwrap_or_default(),
+                ),
+                Field::text(
+                    "search-max-size",
+                    "Maximum file size (bytes; blank for any)",
+                    o.filters
+                        .max_size
+                        .map(|n| n.to_string())
+                        .unwrap_or_default(),
+                ),
+                Field::text(
+                    "search-after",
+                    "Modified on/after (RFC 3339; blank for any)",
+                    crate::search::date_label(o.filters.modified_after),
+                ),
+                Field::text(
+                    "search-before",
+                    "Modified on/before (RFC 3339; blank for any)",
+                    crate::search::date_label(o.filters.modified_before),
+                ),
                 Field::check("search-hidden", "Include hidden files", o.hidden),
                 Field::text("limit", "Maximum results", o.max_results),
             ]);
             if let Some(result) = &form.result {
                 d.description = format!(
-                    "{} results{} · {} unreadable entries",
+                    "{} results{} · {} entries could not be searched",
                     result.paths.len(),
                     if result.truncated {
                         " (limit reached)"
@@ -782,6 +833,15 @@ impl Adapter {
                     form.confirmed,
                 ),
             ]);
+            folders::rules_fields(&mut d, &form.rules);
+            folders::presets(
+                &mut d,
+                &self.app.preferences.folder_tool_presets,
+                &form.preset_name,
+            );
+            if form.rules.filtered() {
+                d.description = "Filters apply to files inside folders. Missing folders are created without copying excluded contents. Directory deletion and file/folder replacement are unavailable with filters.".into();
+            }
             if let Some(plan) = &form.plan {
                 for (i, item) in plan.items.iter().enumerate() {
                     let mut choices = vec![crate::sync::Choice::Skip];
@@ -1017,6 +1077,9 @@ impl Adapter {
     }
 
     pub(super) fn poll_dialogs(&mut self) {
+        if let Some(form) = &mut self.app.features.comparison {
+            form.poll();
+        }
         if let Some(form) = &mut self.app.tools.search
             && let Some(result) = crate::background::poll(&mut form.pending)
         {

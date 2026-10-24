@@ -1403,7 +1403,7 @@ impl Commander {
                 {
                     self.fail("Choose local folders or connected remote folders to compare.");
                 } else {
-                    self.start_job(Operation::CompareLocations { left, right }, ctx);
+                    self.features.comparison = Some(crate::folder_tools::Form::new(left, right));
                 }
                 return;
             }

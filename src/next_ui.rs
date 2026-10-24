@@ -12,6 +12,7 @@ use std::{
 };
 #[derive(Default)]
 pub struct Features {
+    pub comparison: Option<crate::folder_tools::Form>,
     pub sync: Option<SyncForm>,
     pub recovery: Option<RecoveryForm>,
     pub workspaces: bool,
@@ -35,13 +36,16 @@ pub enum Effect {
 }
 impl Features {
     pub fn active(&self) -> bool {
-        self.sync.is_some()
+        self.comparison.is_some()
+            || self.sync.is_some()
             || self.recovery.is_some()
             || self.workspaces
             || self.open_with.is_some()
     }
     pub fn sync(&mut self, left: PathBuf, right: PathBuf) {
         self.sync = Some(SyncForm {
+            rules: Default::default(),
+            preset_name: String::new(),
             left: left.display().to_string(),
             right: right.display().to_string(),
             direction: 1,
@@ -61,6 +65,8 @@ impl Features {
     }
 }
 pub struct SyncForm {
+    pub(crate) rules: crate::path_rules::PathRules,
+    pub(crate) preset_name: String,
     pub(crate) locations: Option<(crate::filesystem::Location, crate::filesystem::Location)>,
     pub(crate) left: String,
     pub(crate) right: String,
@@ -103,6 +109,7 @@ impl SyncForm {
             .map(|(_, b)| Ok(b.clone()))
             .unwrap_or(right);
         let direction = self.direction;
+        let rules = self.rules.clone();
         let (sender, receiver) = mpsc::channel();
         self.pending = Some(receiver);
         self.plan = None;
@@ -112,10 +119,11 @@ impl SyncForm {
             let result = left
                 .and_then(|left| {
                     right.and_then(|right| {
-                        crate::sync::preview_locations(
+                        crate::sync::preview_locations_with_rules(
                             &left,
                             &right,
                             direction,
+                            &rules,
                             &Task::new(cancel, |_| {}),
                         )
                     })

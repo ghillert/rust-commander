@@ -932,3 +932,36 @@ Explorer/Nautilus/Dolphin interoperability, real Wayland desktop gestures, and
 large-transfer responsiveness still need native acceptance. Protocol fixtures do
 not establish those desktop contracts. Logs are retained under
 `target/native-dnd-logs/next-*.log` and `rc-next-final-*.log`.
+
+## Advanced search and folder tools — 2026-10-23
+
+The local implementation adds shared local/remote streaming content search with
+regex/case/size/date/exclusion controls, comparison filters and presets, explicitly
+unverified quick metadata comparison, bounded read-only text differences, and
+filtered synchronization that plans missing folders and files separately.
+
+Validation on Apple Silicon macOS:
+
+- `cargo test --locked --all-targets --all-features`: **299 passed, 0 failed,
+  15 ignored**. The final layout adjustment was followed by rerunning both new
+  Slint callback tests successfully.
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`, formatting
+  and `git diff --check` passed. The screenshot-enabled development binary built.
+- Nine domain regressions cover searches beyond the old file-size cutoffs,
+  Unicode case matching across buffers, regex/date/size/exclusion filters,
+  cancellation and visible long-line errors, metadata comparisons with unknown
+  timestamps, all four local/filesystem-adapter synchronization combinations,
+  excluded descendants, stale/type-conflict refusal, preset serialization and
+  aligned local/remote text differences.
+- Actual Slint callbacks cover invalid regex input, background search, preset
+  save/load across comparison and synchronization, invalidation of reviewed plans,
+  and opening/closing a read-only side-by-side diff.
+- Search, populated comparison and text-diff windows rendered successfully with
+  both software and femtovg renderers. Screenshot inspection found and corrected
+  stretched controls/rows; the final forms and diff were inspected again.
+
+Logs are in `/private/tmp/rc-advanced-*.log`; six final screenshots and renderer
+logs are in `/private/tmp/rc-advanced-visual/renders/`. All rendered runs used
+disposable files and isolated configuration. These are local checks, not a claim
+of CI success for the uncommitted feature changes. Native Windows/Linux interaction
+and broader live-provider acceptance remain open.

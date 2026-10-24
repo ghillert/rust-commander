@@ -926,8 +926,14 @@ impl Adapter {
             "open-with" => 300.0,
             "workspaces" => 480.0,
             "archive" => 520.0,
+            "text-diff" => (spec.fields.len() as f32 * 32.0 + 240.0).clamp(300.0, 700.0),
             _ => 700.0,
         });
+        ui.set_dialog_diff(spec.kind == "text-diff");
+        ui.set_dialog_compact(matches!(
+            spec.kind.as_str(),
+            "text-diff" | "comparison" | "search" | "sync"
+        ));
         ui.set_dialog_title(spec.title.into());
         ui.set_dialog_description(spec.description.into());
         ui.set_dialog_error(

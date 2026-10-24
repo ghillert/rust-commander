@@ -24,6 +24,12 @@ pub struct SearchForm {
     pub(crate) cancel: Arc<AtomicBool>,
     pub(crate) error: Option<String>,
 }
+impl Drop for SearchForm {
+    fn drop(&mut self) {
+        self.cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
 #[derive(Default)]
 pub struct Tools {
     pub(crate) rename: Option<RenameForm>,
@@ -54,6 +60,7 @@ impl Tools {
                 content: String::new(),
                 hidden,
                 max_results: 10_000,
+                filters: Default::default(),
             },
             result: None,
             pending: None,

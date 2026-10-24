@@ -66,8 +66,10 @@ published.
   X11, and Wayland, plus unprepared virtual selections between windows in the
   same process.
 - **Languages:** system language, English, German, and Spanish.
-- **File tools:** batch rename with preview, recursive name/content search,
-  local/remote folder comparison, checksums, properties, permissions, and split/combine.
+- **File tools:** batch rename with preview, streaming literal/regex content search
+  with size/date/exclusion filters, local/remote folder comparison with optional
+  quick metadata mode and read-only text diffs, shared comparison/sync presets,
+  checksums, properties, permissions, and split/combine.
 - **Built-in viewers:** UTF-8, UTF-16 and legacy text editing, bounded local large-file paging,
   images, hex, PDF page navigation,
   encrypted PDF unlock/rotation/fit-width, streaming text/hex search, a persistent
@@ -88,7 +90,8 @@ published.
   SMB2/3, SFTP, FTP, WebDAV, S3, and several cloud services. Validation is limited; see
   [Remote connections](#remote-connections).
 
-See [stabilization and integration testing](docs/STABILIZATION.md) for cross-platform checks
+See [advanced search and folder tools](docs/ADVANCED_TOOLS.md) for filters, presets,
+text differences and their limits. See [stabilization and integration testing](docs/STABILIZATION.md) for cross-platform checks
 and disposable protocol servers. See the [next twelve-feature guide](docs/FEATURES_NEXT.md)
 for the new workflows and limits, the [0.7 twelve-feature guide](docs/FEATURES_0.7.md) for the preceding additions,
 and the [Slint desktop guide](docs/SLINT_UI.md) for the interface,

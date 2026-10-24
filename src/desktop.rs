@@ -230,6 +230,19 @@ pub struct SearchOptions {
     pub content: String,
     pub hidden: bool,
     pub max_results: usize,
+    pub filters: crate::search::SearchFilters,
+}
+impl Default for SearchOptions {
+    fn default() -> Self {
+        Self {
+            root: PathBuf::new(),
+            pattern: "*".into(),
+            content: String::new(),
+            hidden: false,
+            max_results: 10_000,
+            filters: Default::default(),
+        }
+    }
 }
 pub struct SearchResult {
     pub paths: Vec<PathBuf>,
@@ -237,82 +250,19 @@ pub struct SearchResult {
     pub truncated: bool,
 }
 pub fn search(options: &SearchOptions, task: &mut Task) -> Result<SearchResult> {
-    let matcher = globset::GlobBuilder::new(&options.pattern)
-        .case_insensitive(true)
-        .build()?
-        .compile_matcher();
-    let mut result = SearchResult {
-        paths: Vec::new(),
-        errors: Vec::new(),
-        truncated: false,
-    };
-    let mut folders = vec![options.root.clone()];
-    while let Some(folder) = folders.pop() {
-        task.tick(&folder, 0)?;
-        let entries = match fs::read_dir(&folder) {
-            Ok(entries) => entries,
-            Err(error) => {
-                result.errors.push(format!("{}: {error}", folder.display()));
-                continue;
-            }
-        };
-        for item in entries {
-            task.check()?;
-            let item = match item {
-                Ok(item) => item,
-                Err(error) => {
-                    result.errors.push(error.to_string());
-                    continue;
-                }
-            };
-            let name = item.file_name();
-            let path = item.path();
-            if !options.hidden && name.to_string_lossy().starts_with('.') {
-                continue;
-            }
-            let metadata = match fs::symlink_metadata(&path) {
-                Ok(m) => m,
-                Err(e) => {
-                    result.errors.push(e.to_string());
-                    continue;
-                }
-            };
-            if metadata.is_dir() {
-                folders.push(path.clone());
-            }
-            if !matcher.is_match(Path::new(&name)) {
-                continue;
-            }
-            if !options.content.is_empty() {
-                if !metadata.is_file() || metadata.len() > 16 * 1024 * 1024 {
-                    continue;
-                }
-                let mut bytes = Vec::new();
-                if File::open(&path)
-                    .and_then(|f| f.take(16 * 1024 * 1024 + 1).read_to_end(&mut bytes))
-                    .is_err()
-                {
-                    continue;
-                }
-                if !String::from_utf8_lossy(&bytes).contains(&options.content) {
-                    continue;
-                }
-            }
-            result.paths.push(path);
-            if result.paths.len() >= options.max_results {
-                result.truncated = true;
-                return Ok(result);
-            }
-        }
-    }
-    result.paths.sort();
-    Ok(result)
+    crate::search::search(
+        &crate::filesystem::Location::Local(options.root.clone()),
+        options,
+        task,
+    )
 }
 
 #[derive(Clone)]
 pub struct Comparison {
     pub name: String,
     pub status: String,
+    pub path: PathBuf,
+    pub can_diff: bool,
 }
 pub fn compare(left: &Path, right: &Path, task: &mut Task) -> Result<Vec<Comparison>> {
     crate::comparison::compare(

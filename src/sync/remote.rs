@@ -10,6 +10,7 @@ fn scan(
     items: &mut BTreeMap<PathBuf, bool>,
     task: &Task,
     depth: usize,
+    rules: &crate::path_rules::CompiledRules,
 ) -> Result<()> {
     task.check()?;
     anyhow::ensure!(depth < 64, "Remote synchronization tree is too deep");
@@ -24,15 +25,18 @@ fn scan(
         {
             continue;
         }
-        anyhow::ensure!(!entry.is_symlink, "Synchronization refuses links");
         let relative = filesystem::portable_relative(entry.path.strip_prefix(root)?)?;
+        if rules.excluded(&relative) {
+            continue;
+        }
+        anyhow::ensure!(!entry.is_symlink, "Synchronization refuses links");
         items.insert(relative, entry.is_dir);
         anyhow::ensure!(
             items.len() <= 100_000,
             "Synchronization exceeds 100,000 entries"
         );
         if entry.is_dir {
-            scan(location, root, &entry.path, items, task, depth + 1)?;
+            scan(location, root, &entry.path, items, task, depth + 1, rules)?;
         }
     }
     Ok(())
@@ -41,8 +45,10 @@ pub(super) fn preview(
     left: &Location,
     right: &Location,
     direction: u8,
+    rules: &crate::path_rules::PathRules,
     task: &Task,
 ) -> Result<Plan> {
+    let compiled = rules.compile()?;
     anyhow::ensure!(
         !matches!(left, Location::Archive { .. }) && !matches!(right, Location::Archive { .. }),
         "Archive synchronization is unavailable"
@@ -62,8 +68,8 @@ pub(super) fn preview(
     );
     let mut l = BTreeMap::new();
     let mut r = BTreeMap::new();
-    scan(left, a, a, &mut l, task, 0)?;
-    scan(right, b, b, &mut r, task, 0)?;
+    scan(left, a, a, &mut l, task, 0, &compiled)?;
+    scan(right, b, b, &mut r, task, 0, &compiled)?;
     let keys = l
         .keys()
         .chain(r.keys())
@@ -77,11 +83,19 @@ pub(super) fn preview(
         }
         let x = l.get(&path);
         let y = r.get(&path);
+        if x != Some(&true) && y != Some(&true) && !compiled.included(&path) {
+            continue;
+        }
         if x == Some(&true) && y == Some(&true) {
             continue;
         }
         let conflict = match (x, y) {
             (Some(x), Some(y)) if x != y => {
+                anyhow::ensure!(
+                    !rules.filtered(),
+                    "Filtered synchronization found a file/folder conflict at {}; resolve it first",
+                    path.display()
+                );
                 blocked.push(path.clone());
                 true
             }
@@ -103,10 +117,13 @@ pub(super) fn preview(
                 _ => Choice::Skip,
             }
         };
-        if (x == Some(&true) && y.is_none()) || (y == Some(&true) && x.is_none()) {
+        let missing_directory =
+            (x == Some(&true) && y.is_none()) || (y == Some(&true) && x.is_none());
+        if missing_directory && !rules.filtered() {
             blocked.push(path.clone());
         }
         items.push(Item {
+            shallow_directory: missing_directory && rules.filtered(),
             path: path.clone(),
             choice,
             conflict,
@@ -126,6 +143,7 @@ pub(super) fn preview(
         "Folders changed during preview; preview again"
     );
     let mut plan = Plan {
+        rules: Box::new(rules.clone()),
         left: a.into(),
         right: b.into(),
         remote_roots: Some((left.clone(), right.clone())),
@@ -199,6 +217,19 @@ pub(super) fn apply(plan: &Plan, task: &mut Task) -> Result<String> {
             );
             let entry =
                 remote::entry_at(from, &path)?.context("Synchronization source disappeared")?;
+            if item.shallow_directory {
+                anyhow::ensure!(
+                    entry.is_dir && target_stamp.is_none(),
+                    "Filtered directory target changed; preview again"
+                );
+                match to {
+                    Location::Local(_) => fs::create_dir_all(&target)?,
+                    Location::Remote { connection, .. } => remote::mkdir(connection, &target)?,
+                    _ => bail!("Choose a writable destination"),
+                }
+                count += 1;
+                continue;
+            }
             let destination =
                 crate::directory_tree::at(to, target.parent().context("Missing target folder")?);
             messages.push(remote::transfer_resolved(

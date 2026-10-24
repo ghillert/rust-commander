@@ -408,6 +408,8 @@ export component CommanderWindow inherits Window {
     in property <string> dialog-error;
     in property <bool> dialog-busy;
     in property <[FormField]> dialog-fields;
+    in property <bool> dialog-diff;
+    in property <bool> dialog-compact;
     in property <[FormRow]> dialog-rows;
     in property <[Command]> dialog-buttons;
     in property <bool> viewer-visible;
@@ -850,18 +852,19 @@ export component CommanderWindow inherits Window {
     if root.dialog-title != "": Overlay {
         key-event(event) => { return root.global-key(event); }
         Rectangle {
-            x: max(16px, (parent.width - 760px) / 2); y: (parent.height - self.height) / 2;
-            width: min(760px, parent.width - 32px); height: min(parent.height - 56px,root.dialog-preferred-height * 1px);
+            x: max(16px, (parent.width - self.width) / 2); y: (parent.height - self.height) / 2;
+            width: min(root.dialog-diff ? 1080px : 760px, parent.width - 32px); height: min(parent.height - 56px,root.dialog-preferred-height * 1px);
             background: Palette.background; border-radius: 10px;
             VerticalBox {
                 Text { text: root.dialog-title; font-size: 20px; font-weight: 600; color: Palette.foreground; }
                 if root.dialog-description != "": Text { text: root.dialog-description; color: Palette.foreground; wrap: word-wrap; }
                 ScrollView {
                     VerticalBox {
-                        padding: 0px; spacing: 12px;
+                        padding: 0px; spacing: root.dialog-diff ? 0px : 12px;
                         for field[index] in root.dialog-fields: VerticalBox {
                             padding: 0px; spacing: 4px;
-                            if field.kind != 2: Text { text: field.title; color: Palette.foreground; font-weight: 600; wrap: word-wrap; }
+                            vertical-stretch: root.dialog-compact ? 0 : 1;
+                            if field.kind != 2 && field.kind != 7: Text { text: field.title; color: Palette.foreground; font-weight: 600; wrap: word-wrap; }
                             if field.kind == 0 || field.kind == 1 || field.kind == 5: LineEdit {
                                 init => { if index == 0 { self.focus(); self.select-all(); } }
                                 text <=> field.value;
@@ -874,8 +877,17 @@ export component CommanderWindow inherits Window {
                             if field.kind == 3: ComboBox { accessible-label: field.title; model: field.choices; current-value: field.value; selected(value) => { root.dialog-field(field.id, value); } }
                             if field.kind == 4: TextEdit { text <=> field.value; height: 140px; edited => { root.dialog-field(field.id, self.text); } }
                             if field.kind == 6: Text { text: field.value; color: Palette.foreground; wrap: word-wrap; }
+                            if field.kind == 7: Rectangle {
+                                background: field.id == "changed" ? (root.dark ? #493f20 : #fff1c7) : Palette.background;
+                                HorizontalBox {
+                                    padding: 4px; spacing: 12px;
+                                    Text { text: field.value; font-family: "monospace"; font-size: 12px; color: Palette.foreground; wrap: word-wrap; horizontal-stretch: 1; preferred-width: 0px; }
+                                    Text { text: field.choices[0]; font-family: "monospace"; font-size: 12px; color: Palette.foreground; wrap: word-wrap; horizontal-stretch: 1; preferred-width: 0px; }
+                                }
+                            }
                         }
                         for item in root.dialog-rows: Rectangle {
+                            vertical-stretch: root.dialog-compact ? 0 : 1;
                             background: item.selected ? (root.dark ? #30435e : #dfebff) : Palette.background;
                             min-height: 54px;
                             VerticalBox {
@@ -901,6 +913,7 @@ export component CommanderWindow inherits Window {
                                 if item.detail != "": Text { text: item.detail; color: Palette.foreground; wrap: word-wrap; }
                             }
                         }
+                        if root.dialog-compact: Rectangle { vertical-stretch: 1; min-height: 0px; }
                     }
                 }
                 if root.dialog-busy: ProgressIndicator { indeterminate: true; }

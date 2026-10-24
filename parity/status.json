@@ -118,9 +118,13 @@
       "tests/desktop_tools.rs::folder_comparison_uses_file_contents",
       "tests/features_08.rs::comparison_and_sync_cover_local_remote_and_remote_remote_pairs",
       "tests/uri_navigation.rs",
-      "docs/FEATURES_NEXT.md"
+      "docs/FEATURES_NEXT.md",
+      "src/folder_tools.rs",
+      "tests/advanced_tools.rs",
+      "src/app/slint_ui/tests.rs::comparison_dialog_shares_presets_with_sync_and_opens_read_only_aligned_diff",
+      "docs/ADVANCED_TOOLS.md"
     ],
-    "note": "Recursive SHA-256 comparison supports local/local, local/remote and remote/remote panes, including HTTP files with rounded or missing listing sizes. Links are reported without following; archive roots are unsupported. Reviewed sync retains typed pane roots and blocks read-only destinations. Broader upstream comparison options and live-provider/desktop acceptance remain open.",
+    "note": "Local/remote SHA-256 comparison, optional explicitly unverified metadata comparison, include/exclude rules, shared presets and bounded read-only aligned text differences are implemented. Synchronization remains content-verified with filtered file-by-file plans and excluded-subtree guards. Archive roots, comparison of links, broader upstream options and native/live-provider acceptance remain open.",
     "status": "partial"
   },
   "ConnectToServer": {
@@ -272,9 +276,14 @@
       "src/desktop.rs::pub fn search",
       "src/remote.rs",
       "tests/features_05.rs::remote_search_and_guarded_save_use_actual_storage_operations",
-      "tests/features_05.rs::smb_live_list_stream_upload_download_rename_edit_search_delete"
+      "tests/features_05.rs::smb_live_list_stream_upload_download_rename_edit_search_delete",
+      "src/search.rs",
+      "src/path_rules.rs",
+      "tests/advanced_tools.rs",
+      "src/app/slint_ui/tests.rs::advanced_search_dialog_validates_and_runs_the_shared_matcher",
+      "docs/ADVANCED_TOOLS.md"
     ],
-    "note": "Local and cancellable remote filename/content search exist, with filesystem and disposable Samba coverage. Local filename patterns are case-insensitive globs; content matching is literal and skips files over 16 MiB. Full upstream search filters, larger-file content search and broad provider/desktop acceptance remain open.",
+    "note": "Shared local/remote streaming literal and per-line regex content search, independent filename/content case controls, include/exclude globs and size/date filters are implemented. Literal search has no file-size cutoff; regex lines are bounded to 8 MiB. Unknown metadata cannot satisfy size/date filters. Native desktop and broader provider acceptance remain open.",
     "status": "partial"
   },
   "FocusNext": {

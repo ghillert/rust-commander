@@ -265,11 +265,40 @@ impl Adapter {
                 }
                 "search" => {
                     if let Some(form) = &mut self.app.tools.search {
+                        form.cancel.store(true, Ordering::Relaxed);
+                        form.pending = None;
+                        form.result = None;
                         let o = &mut form.options;
                         match id {
                             "search-root" => o.root = PathBuf::from(value),
                             "pattern" => o.pattern = value.into(),
                             "content" => o.content = value.into(),
+                            "search-regex" => o.filters.content_regex = checked(value),
+                            "search-content-case" => {
+                                o.filters.content_case_sensitive = checked(value)
+                            }
+                            "search-name-case" => o.filters.name_case_sensitive = checked(value),
+                            "search-exclude" => o.filters.exclude = value.into(),
+                            "search-min-size" => {
+                                o.filters.min_size = if value.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(number::<u64>(value.trim())?)
+                                }
+                            }
+                            "search-max-size" => {
+                                o.filters.max_size = if value.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(number::<u64>(value.trim())?)
+                                }
+                            }
+                            "search-after" => {
+                                o.filters.modified_after = crate::search::parse_date(value)?
+                            }
+                            "search-before" => {
+                                o.filters.modified_before = crate::search::parse_date(value)?
+                            }
                             "search-hidden" => o.hidden = checked(value),
                             "limit" => {
                                 let limit = number::<usize>(value)?;
@@ -286,6 +315,18 @@ impl Adapter {
                 "sync" => {
                     if let Some(form) = &mut self.app.features.sync {
                         match id {
+                            "folder-preset-name" => form.preset_name = value.into(),
+                            "folder-include" | "folder-exclude" | "folder-case" => {
+                                form.cancel.store(true, Ordering::Relaxed);
+                                form.pending = None;
+                                form.plan = None;
+                                form.confirmed = false;
+                                match id {
+                                    "folder-include" => form.rules.include = value.into(),
+                                    "folder-exclude" => form.rules.exclude = value.into(),
+                                    _ => form.rules.case_sensitive = checked(value),
+                                }
+                            }
                             "sync-left" => {
                                 form.cancel.store(true, Ordering::Relaxed);
                                 form.pending = None;
@@ -363,6 +404,7 @@ impl Adapter {
                         }
                     }
                 }
+                "comparison" => self.comparison_edit(id, value),
                 "recovery" => {
                     let p = &mut self.app.preferences.recovery;
                     match id {

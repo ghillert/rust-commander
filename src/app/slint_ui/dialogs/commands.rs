@@ -40,6 +40,16 @@ impl Adapter {
         }
         self.field_error = None;
         let result = (|| -> anyhow::Result<()> {
+            if matches!(self.dialog_kind.as_str(), "comparison" | "sync")
+                && id.starts_with("folder-preset-")
+            {
+                anyhow::ensure!(
+                    self.invalid_fields.is_empty(),
+                    "Correct invalid fields first"
+                );
+                self.folder_preset_action(id)?;
+                return Ok(());
+            }
             let idle = self.app.job.is_none() && self.app.queue.is_empty();
             match self.dialog_kind.as_str() {
                 "exit" if id == "accept" => {
@@ -344,6 +354,20 @@ impl Adapter {
                         self.app.tab_mut().navigate(location, &self.ctx);
                     }
                 }
+                "comparison" => {
+                    if let Some(form) = &mut self.app.features.comparison {
+                        if id == "accept" && form.pending.is_none() && form.diff_pending.is_none() {
+                            form.start(&self.ctx);
+                        } else if id == "stop" {
+                            form.cancel.store(true, Ordering::Relaxed);
+                        } else if let Some(index) = id
+                            .strip_prefix("comparison-diff-")
+                            .and_then(|s| s.parse::<usize>().ok())
+                        {
+                            form.start_diff(index, &self.ctx);
+                        }
+                    }
+                }
                 "sync" => {
                     if id == "sync-preview" && idle {
                         if let Some(form) = &mut self.app.features.sync {
@@ -488,6 +512,12 @@ impl Adapter {
             }
             "archive" => self.app.archive_form = None,
             "rename" => self.app.tools.rename = None,
+            "comparison" => self.app.features.comparison = None,
+            "text-diff" => {
+                if let Some(form) = &mut self.app.features.comparison {
+                    form.diff = None;
+                }
+            }
             "search" => {
                 if let Some(form) = self.app.tools.search.take() {
                     form.cancel.store(true, Ordering::Relaxed);
@@ -527,6 +557,10 @@ impl Adapter {
             return;
         };
         if form.pending.is_some() {
+            return;
+        }
+        if let Err(error) = crate::search::validate(&form.options) {
+            form.error = Some(format!("{error:#}"));
             return;
         }
         form.cancel = Arc::new(AtomicBool::new(false));
