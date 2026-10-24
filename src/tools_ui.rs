@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool, mpsc::Receiver},
 };
 pub enum Effect {
-    Run(Operation),
+    Run(Box<Operation>),
     Navigate(Location),
 }
 pub struct RenameForm {
