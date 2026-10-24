@@ -73,6 +73,8 @@ pub struct Palette {
     pub stripe: slint::Color,
     pub selection: slint::Color,
     pub selection_text: slint::Color,
+    pub marked_text: slint::Color,
+    pub marked_cursor: slint::Color,
     pub inactive_selection: slint::Color,
     pub folder: slint::Color,
     pub radius: u8,
@@ -154,6 +156,16 @@ impl Palette {
                 }
             } else {
                 slint::Color::from_rgb_u8(255, 255, 255)
+            },
+            marked_text: if dark {
+                rgb(255, 153, 153)
+            } else {
+                rgb(189, 16, 16)
+            },
+            marked_cursor: if dark {
+                rgb(20, 55, 95)
+            } else {
+                rgb(204, 232, 255)
             },
             inactive_selection: if dark {
                 rgb(70, 70, 75)

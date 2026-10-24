@@ -208,7 +208,7 @@ impl Adapter {
                     "↑ / ↓ · Enter · Backspace",
                     "Navigate files · Open · Parent folder",
                 ),
-                ("Space / Insert", "Mark or unmark current file"),
+                ("Space / Insert", "Mark or unmark current file and advance"),
                 ("Shift / Cmd / Ctrl + click", "Range / multiple selection"),
                 ("F2 / F3 / F4", "Rename / View / Edit"),
                 ("F5 / F6 / F7 / F8", "Copy / Move / New folder / Trash"),

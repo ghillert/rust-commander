@@ -56,6 +56,8 @@ component FilePane inherits Rectangle {
     in property <color> accent;
     in property <color> selection-color;
     in property <color> selection-text;
+    in property <color> marked-text;
+    in property <color> marked-cursor-color;
     in property <color> inactive-selection;
     in property <bool> dark;
     in property <float> text-size;
@@ -211,7 +213,7 @@ component FilePane inherits Rectangle {
             list := ListView {
                 for row[index] in root.rows: Rectangle {
                     height: max(24px, (root.text-size + 10) * 1px);
-                    background: row.selected || (row.cursor && root.active) ? (root.active ? root.selection-color : root.inactive-selection) : (mod(index, 2) == 0 ? Chrome.pane : Chrome.stripe);
+                    background: row.cursor ? (root.active ? (row.selected ? root.marked-cursor-color : root.selection-color) : root.inactive-selection) : (mod(index, 2) == 0 ? Chrome.pane : Chrome.stripe);
                     border-width: 0px;
                     border-color: row.cursor ? root.accent : transparent;
                     accessible-role: list-item;
@@ -247,7 +249,7 @@ component FilePane inherits Rectangle {
                                 overflow: elide;
                                 font-size: root.text-size * 1px;
                                 horizontal-alignment: column.title == Words.translate("Size",Words.version) ? right : left;
-                                color: (row.selected || row.cursor) && root.active ? root.selection-text : Chrome.foreground;
+                                color: row.selected ? root.marked-text : row.cursor && root.active ? root.selection-text : Chrome.foreground;
                             }
                         }
                     }
@@ -319,6 +321,8 @@ export component CommanderWindow inherits Window {
     in property <color> accent: #007aff;
     in property <color> selection-color: #0065d3;
     in property <color> selection-text: white;
+    in property <color> marked-text: #bd1010;
+    in property <color> marked-cursor-color: #cce8ff;
     in property <color> inactive-selection: #dedfe3;
     in property <float> text-size: 14;
     in property <bool> toolbar-visible: true;
@@ -515,6 +519,12 @@ export component CommanderWindow inherits Window {
                     ChromeButton {label:Words.translate("Back",Words.version);icon:Glyphs.action("Back");clicked=>{root.action("Back");}}
                     ChromeButton {label:Words.translate("Forward",Words.version);icon:Glyphs.action("Forward");clicked=>{root.action("Forward");}}
                     ChromeButton {label:Words.translate("Refresh",Words.version);icon:Glyphs.action("Refresh");clicked=>{root.action("Refresh");}}
+                    ChromeButton {
+                        label:Words.translate("Swap panes",Words.version);
+                        clicked=>{root.action("Swap");}
+                        IconView {source:Glyphs.action("Back");x:5px;y:5px;width:14px;height:10px;}
+                        IconView {source:Glyphs.action("Forward");x:12px;y:15px;width:14px;height:10px;}
+                    }
                     ChromeButton {label:Words.translate(root.sidebar-visible ? "Hide sidebar" : "Show sidebar",Words.version);icon:Glyphs.action("ToggleSidebar");checkable:true;checked:root.sidebar-visible;clicked=>{root.action("ToggleSidebar");}}
                     Rectangle {width:9px;Rectangle {x:4px;width:1px;height:20px;y:(parent.height - self.height)/2;background:Chrome.separator;}}
                     for command in root.toolbar: ChromeButton {
@@ -644,7 +654,7 @@ export component CommanderWindow inherits Window {
                     side: 0; active: root.active-pane == 0; rows: root.left-rows; columns: root.columns; auto-size-columns:root.auto-size-columns;column-total:root.column-total; tabs: root.left-tabs; active-tab: root.left-tab;
                     address <=> root.left-address; filter <=> root.left-filter; error: root.left-error; busy: root.left-busy; summary: root.left-summary;
                     breadcrumbs-mode:root.breadcrumbs-mode;committed-address:root.left-committed-address;protocol:root.left-protocol;
-                    accent: root.accent; selection-color: root.selection-color; selection-text: root.selection-text; inactive-selection: root.inactive-selection; dark: root.dark; text-size: root.text-size;
+                    accent: root.accent; selection-color: root.selection-color; selection-text: root.selection-text; marked-text:root.marked-text; marked-cursor-color:root.marked-cursor-color; inactive-selection: root.inactive-selection; dark: root.dark; text-size: root.text-size;
                     action(id) => { root.action(id + ":0"); } tab(index) => { root.tab(0, index); }
                     address-edited(text) => { root.address-edited(0,text); }
                     navigate(text) => { root.navigate(0, text); } filter-edited(text) => { root.filter(0, text); }
@@ -669,7 +679,7 @@ export component CommanderWindow inherits Window {
                     side: 1; active: root.active-pane == 1; rows: root.right-rows; columns: root.columns; auto-size-columns:root.auto-size-columns;column-total:root.column-total; tabs: root.right-tabs; active-tab: root.right-tab;
                     address <=> root.right-address; filter <=> root.right-filter; error: root.right-error; busy: root.right-busy; summary: root.right-summary;
                     breadcrumbs-mode:root.breadcrumbs-mode;committed-address:root.right-committed-address;protocol:root.right-protocol;
-                    accent: root.accent; selection-color: root.selection-color; selection-text: root.selection-text; inactive-selection: root.inactive-selection; dark: root.dark; text-size: root.text-size;
+                    accent: root.accent; selection-color: root.selection-color; selection-text: root.selection-text; marked-text:root.marked-text; marked-cursor-color:root.marked-cursor-color; inactive-selection: root.inactive-selection; dark: root.dark; text-size: root.text-size;
                     action(id) => { root.action(id + ":1"); } tab(index) => { root.tab(1, index); }
                     address-edited(text) => { root.address-edited(1,text); }
                     navigate(text) => { root.navigate(1, text); } filter-edited(text) => { root.filter(1, text); }

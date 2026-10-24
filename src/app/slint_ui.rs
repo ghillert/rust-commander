@@ -233,13 +233,10 @@ impl Adapter {
                     tab.selected.insert(tab.entries[i].path.clone());
                 }
             }
-        } else if toggle {
-            if !tab.selected.remove(&entry.path) {
-                tab.selected.insert(entry.path.clone());
-            }
-        } else if !tab.selected.contains(&entry.path) {
-            tab.selected.clear();
+        } else if toggle && !tab.selected.remove(&entry.path) {
+            tab.selected.insert(entry.path.clone());
         }
+        // Cursor navigation is independent of persistent file marks.
         tab.cursor = Some(entry.path);
     }
 
@@ -562,6 +559,8 @@ impl Adapter {
         ui.set_active_location(self.app.tab().location.label().into());
         ui.set_selection_color(palette.selection);
         ui.set_selection_text(palette.selection_text);
+        ui.set_marked_text(palette.marked_text);
+        ui.set_marked_cursor_color(palette.marked_cursor);
         ui.set_inactive_selection(palette.inactive_selection);
         ui.set_text_size(self.app.preferences.font_size);
         ui.set_toolbar_visible(self.app.preferences.toolbar);
@@ -1653,7 +1652,6 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
     });
     callback!(on_clicked_file, |a, w, side, id| {
         if !a.blocked() && (0..2).contains(&side) && a.entry(side as usize, &id).is_some() {
-            a.app.panes[side as usize].tab_mut().selected.clear();
             a.select(side as usize, &id, false, false);
         }
     });

@@ -381,3 +381,45 @@ fn utf16_pages_keep_surrogates_intact_in_both_directions() {
         assert_eq!(page.offset, 6);
     }
 }
+
+#[test]
+fn space_marking_advances_in_visible_sort_order_and_keeps_operation_targets() {
+    let root = tempfile::tempdir().unwrap();
+    for name in ["a.txt", "b.png", "c.txt", ".hidden.txt"] {
+        fs::write(root.path().join(name), b"").unwrap();
+    }
+    let mut tab = tab(root.path());
+    tab.filter = ".txt".into();
+    tab.entries.reverse();
+    let first = root.path().join("c.txt");
+    let last = root.path().join("a.txt");
+    tab.cursor = Some(first.clone());
+    tab.toggle_mark_and_advance(false);
+    assert_eq!(tab.cursor, Some(last.clone()));
+    assert_eq!(
+        tab.chosen(false)
+            .iter()
+            .map(|e| &e.path)
+            .collect::<Vec<_>>(),
+        vec![&first]
+    );
+    assert!(tab.scroll_to_cursor);
+    tab.toggle_mark_and_advance(false);
+    assert_eq!(tab.cursor, Some(last.clone()));
+    assert_eq!(tab.selected.len(), 2);
+    tab.toggle_mark_and_advance(false);
+    assert!(!tab.selected.contains(&last));
+    tab.cursor = Some(first.clone());
+    tab.toggle_mark_and_advance(false);
+    assert!(tab.selected.is_empty());
+    assert_eq!(tab.cursor, Some(last));
+    tab.cursor = Some(root.path().join(".hidden.txt"));
+    tab.toggle_mark_and_advance(false);
+    assert!(tab.selected.is_empty());
+    tab.toggle_mark_and_advance(true);
+    assert!(tab.selected.contains(&root.path().join(".hidden.txt")));
+    tab.filter = "no matches".into();
+    let before = tab.selected.clone();
+    tab.toggle_mark_and_advance(true);
+    assert_eq!(tab.selected, before);
+}

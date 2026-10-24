@@ -267,3 +267,183 @@ fn five_row_block_commands_match_upstream_increments() {
     assert_eq!(state.borrow().app.tab().cursor, Some(tenth));
     assert_eq!(state.borrow().app.tab().selected.len(), 5);
 }
+
+fn press(ui: &CommanderWindow, text: impl Into<SharedString>) {
+    let text = text.into();
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: text.clone() });
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyReleased { text });
+}
+
+#[test]
+fn space_marks_and_advances_after_quick_find_but_types_in_text_fields() {
+    let (_root, ui, state, left, _right) = setup();
+    {
+        let mut a = state.borrow_mut();
+        filesystem::sort_entries(&mut a.app.tab_mut().entries, Default::default(), false);
+        a.app.tab_mut().revision += 1;
+        a.sync(&ui);
+    }
+    slint::platform::update_timers_and_animations();
+    ui.invoke_focus_files(0);
+    press(&ui, "a");
+    assert_eq!(
+        state.borrow().app.tab().cursor,
+        Some(left.join("alpha.txt"))
+    );
+    press(&ui, " ");
+    assert!(
+        state
+            .borrow()
+            .app
+            .tab()
+            .selected
+            .contains(&left.join("alpha.txt"))
+    );
+    assert_eq!(state.borrow().app.tab().cursor, Some(left.join("café.txt")));
+    press(&ui, SharedString::from(slint::platform::Key::Insert));
+    assert_eq!(state.borrow().app.tab().selected.len(), 2);
+    assert_eq!(state.borrow().app.tab().cursor, Some(left.join("café.txt")));
+    press(&ui, " ");
+    assert_eq!(state.borrow().app.tab().selected.len(), 1);
+    let marks = state.borrow().app.tab().selected.clone();
+    ui.invoke_focus_filter(0);
+    press(&ui, " ");
+    assert_eq!(ui.get_left_filter(), " ");
+    assert_eq!(state.borrow().app.tab().selected, marks);
+    ui.invoke_focus_address(0);
+    press(&ui, " ");
+    assert_eq!(ui.get_left_address(), " ");
+    assert_eq!(state.borrow().app.tab().selected, marks);
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn visible_swap_button_moves_tabs_marks_and_keyboard_focus_together() {
+    use i_slint_backend_testing::ElementHandle;
+    let (_root, ui, state, left, right) = setup();
+    ui.invoke_action("NewTab".into());
+    let left_ids: Vec<_> = state.borrow().app.panes[0]
+        .tabs
+        .iter()
+        .map(|t| t.id)
+        .collect();
+    {
+        let mut a = state.borrow_mut();
+        a.app.tab_mut().entries = filesystem::list(&Location::Local(left.clone())).unwrap();
+        filesystem::sort_entries(&mut a.app.tab_mut().entries, Default::default(), false);
+        a.app.tab_mut().cursor = Some(left.join("alpha.txt"));
+        a.app.tab_mut().selected.insert(left.join("alpha.txt"));
+        a.app.tab_mut().revision += 1;
+        a.sync(&ui);
+    }
+    ui.invoke_focus_files(0);
+    for (orientation, single) in [
+        ("SideBySide", false),
+        ("Stacked", false),
+        ("SideBySide", true),
+    ] {
+        ui.invoke_action(orientation.into());
+        state.borrow_mut().app.preferences.single_pane = single;
+        state.borrow_mut().sync(&ui);
+        slint::platform::update_timers_and_animations();
+        ElementHandle::find_by_accessible_label(&ui, "Swap panes")
+            .next()
+            .expect("Visible Swap panes button")
+            .mock_single_click(slint::platform::PointerEventButton::Left);
+        assert_eq!(state.borrow().app.active, 1);
+        assert_eq!(
+            state.borrow().app.panes[0].tab().location,
+            Location::Local(right.clone())
+        );
+        assert_eq!(
+            state.borrow().app.panes[1]
+                .tabs
+                .iter()
+                .map(|t| t.id)
+                .collect::<Vec<_>>(),
+            left_ids
+        );
+        press(&ui, " ");
+        assert_eq!(
+            state.borrow().app.active,
+            1,
+            "Keyboard focus follows the swapped content"
+        );
+        assert!(
+            !state
+                .borrow()
+                .app
+                .tab()
+                .selected
+                .contains(&left.join("alpha.txt"))
+        );
+        assert_eq!(state.borrow().app.tab().cursor, Some(left.join("café.txt")));
+        ui.invoke_action("Swap".into());
+        {
+            let mut a = state.borrow_mut();
+            a.app.tab_mut().cursor = Some(left.join("alpha.txt"));
+            a.app.tab_mut().selected.insert(left.join("alpha.txt"));
+            a.sync(&ui);
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn mouse_clicks_move_cursor_without_clearing_space_marks() {
+    use i_slint_backend_testing::ElementHandle;
+    let (_root, ui, state, left, right) = setup();
+    std::fs::write(right.join("right.txt"), b"right").unwrap();
+    {
+        let mut a = state.borrow_mut();
+        filesystem::sort_entries(&mut a.app.tab_mut().entries, Default::default(), false);
+        a.app.tab_mut().cursor = Some(left.join("alpha.txt"));
+        a.app.tab_mut().revision += 1;
+        a.app.panes[1].tab_mut().entries =
+            filesystem::list(&Location::Local(right.clone())).unwrap();
+        a.app.panes[1].tab_mut().revision += 1;
+        a.sync(&ui);
+    }
+    slint::platform::update_timers_and_animations();
+    ui.invoke_focus_files(0);
+    press(&ui, " ");
+    press(&ui, " ");
+    let marks = state.borrow().app.tab().selected.clone();
+    assert_eq!(marks.len(), 2);
+    // Exercise both mouse-down selection and mouse-up click handling, including
+    // an unmarked row and a trip to the other pane.
+    for (label, side, path) in [
+        ("alpha.txt", 0, left.join("alpha.txt")),
+        ("folder", 0, left.join("folder")),
+        ("right.txt", 1, right.join("right.txt")),
+        ("café.txt", 0, left.join("café.txt")),
+    ] {
+        ElementHandle::find_by_accessible_label(&ui, label)
+            .next()
+            .expect("Visible file row")
+            .mock_single_click(slint::platform::PointerEventButton::Left);
+        let a = state.borrow();
+        assert_eq!(a.app.active, side);
+        assert_eq!(a.app.panes[side].tab().cursor, Some(path));
+        assert_eq!(
+            a.app.panes[0].tab().selected,
+            marks,
+            "Clicking {label} must preserve marks"
+        );
+        assert_eq!(
+            a.app.panes[0]
+                .tab()
+                .chosen(false)
+                .iter()
+                .map(|e| e.path.clone())
+                .collect::<std::collections::BTreeSet<_>>(),
+            marks
+        );
+    }
+    press(&ui, " ");
+    assert_eq!(state.borrow().app.tab().selected.len(), 1);
+    ui.invoke_action("ClearSelection".into());
+    assert!(state.borrow().app.tab().selected.is_empty());
+}

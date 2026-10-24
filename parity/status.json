@@ -524,10 +524,14 @@
   },
   "MarkSelectedFile": {
     "evidence": [
-      "src/app.rs",
-      "src/model.rs"
+      "src/model.rs",
+      "src/app/slint_ui/parity.rs",
+      "ui/commander.slint",
+      "src/app/slint_ui/parity_tests.rs",
+      "tests/features_07.rs",
+      "tests/appearance.rs"
     ],
-    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "note": "Space/Insert toggle the current visible row and advance without wrapping; marks stay red independently of the cursor highlight. Keyboard/pointer tests cover quick-find precedence, spaces in text fields, and persistent marks when clicking marked/unmarked rows or the other pane; domain tests cover filtering, hidden files, sort order and marked operation targets. Broader native desktop acceptance remains open.",
     "status": "partial"
   },
   "MarkToFirstRow": {
@@ -1240,9 +1244,11 @@
   "SwapFolders": {
     "evidence": [
       "src/app.rs",
-      "src/model.rs"
+      "src/app/slint_ui/parity.rs",
+      "ui/commander.slint",
+      "src/app/slint_ui/parity_tests.rs"
     ],
-    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "note": "Visible opposing-arrow toolbar button and Navigate > Swap panes exchange whole panes, including tabs, cursor and marks; active content retains keyboard focus. Pointer/keyboard regression covers side-by-side, stacked and single-pane layouts. Broader native desktop acceptance remains open.",
     "status": "partial"
   },
   "SwitchActiveTable": {

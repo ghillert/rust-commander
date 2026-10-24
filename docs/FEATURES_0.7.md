@@ -20,6 +20,13 @@ expires after a pause. Navigate → Quick find starts an explicit search.
 
 ## 2. Advanced selection
 
+Space or Insert toggles the current file's mark and advances to the next visible
+row, stopping at the last row. Marked files use red text, independently of the
+cursor highlight. Marks remain selected when moving the cursor with the keyboard or clicking a
+marked/unmarked row, including visits to the other pane. Escape clears marks;
+file operations use the marked files instead of the unmarked cursor row. Space also marks while
+quick find is active; spaces typed in address/filter fields remain ordinary text.
+
 Selection → Select/Unselect by pattern accepts wildcard patterns separated by
 semicolons, with optional case sensitivity. It affects visible files only and
 validates every pattern before changing marks. Select same extension uses the
@@ -37,6 +44,10 @@ per pane. A temporary nested/remote archive location restores its persistent
 containing location rather than a cache path.
 
 ## 4. Pane layouts
+
+The opposing-arrow **Swap panes** toolbar button (beside Refresh), or Navigate →
+Swap panes, exchanges the complete left and right panes, including their tabs,
+cursor and marks. Keyboard focus follows the active content to the other side.
 
 View → Side-by-side panes / Stacked panes changes orientation. Drag the divider
 to resize the panes; Equal pane sizes resets the split. The ratio is saved and

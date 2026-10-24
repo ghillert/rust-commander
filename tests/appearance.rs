@@ -107,6 +107,22 @@ fn selected_filename_text_keeps_readable_contrast_in_every_style() {
     for desktop in DesktopStyle::ALL {
         for dark in [false, true] {
             let palette = appearance::Palette::new(desktop, dark);
+            for (foreground, background) in [
+                (palette.marked_text, palette.background),
+                (palette.marked_text, palette.stripe),
+                (palette.marked_text, palette.inactive_selection),
+                (palette.marked_text, palette.marked_cursor),
+            ] {
+                assert!(
+                    foreground.red() > foreground.green() && foreground.red() > foreground.blue()
+                );
+                let a = luminance(foreground);
+                let b = luminance(background);
+                assert!(
+                    (a.max(b) + 0.05) / (a.min(b) + 0.05) >= 4.5,
+                    "Marked text: {desktop:?}, dark={dark}, foreground={foreground:?}, background={background:?}"
+                );
+            }
             let a = luminance(palette.selection);
             let b = luminance(palette.selection_text);
             assert!(

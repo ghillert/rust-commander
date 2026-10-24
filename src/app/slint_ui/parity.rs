@@ -114,12 +114,16 @@ impl Adapter {
                     .move_cursor(delta, name.starts_with("Mark"), hidden);
             }
             "MarkSelectedFile" => {
-                if let Some(path) = self.app.tab().cursor.clone() {
-                    let tab = self.app.tab_mut();
-                    if !tab.selected.remove(&path) {
-                        tab.selected.insert(path);
-                    }
-                }
+                let hidden = self.app.show_hidden;
+                self.app.tab_mut().toggle_mark_and_advance(hidden);
+            }
+            "Swap" => {
+                self.app.act(Action::Swap, &self.ctx);
+                self.extra.query.swap(0, 1);
+                self.extra.deadline.swap(0, 1);
+                self.extra.last_location.swap(0, 1);
+                self.extra.focus_index = self.app.active * 3;
+                self.extra.focus_request = Some(self.extra.focus_index);
             }
             "ClearSelection" => {
                 self.app.tab_mut().selected.clear();
@@ -562,15 +566,14 @@ impl Adapter {
             && !event.modifiers.control
             && !event.modifiers.alt
             && !event.modifiers.meta
-            && (event.text == " "
-                || [
-                    slint::platform::Key::UpArrow,
-                    slint::platform::Key::DownArrow,
-                    slint::platform::Key::Backspace,
-                    slint::platform::Key::Escape,
-                ]
-                .into_iter()
-                .any(|key| event.text == SharedString::from(key)))
+            && [
+                slint::platform::Key::UpArrow,
+                slint::platform::Key::DownArrow,
+                slint::platform::Key::Backspace,
+                slint::platform::Key::Escape,
+            ]
+            .into_iter()
+            .any(|key| event.text == SharedString::from(key))
     }
     pub(super) fn parity_key(&mut self, side: usize, event: &slint::language::KeyEvent) -> bool {
         let text = event.text.as_str();
@@ -604,8 +607,6 @@ impl Adapter {
                 hidden,
             );
             return true;
-        } else if active && text == " " {
-            self.extra.query[side].push(' ');
         } else if !text.is_empty()
             && text
                 .chars()

@@ -285,7 +285,7 @@ in Settings. Search by command name to find a binding.
 | Tab | Switch pane |
 | Arrows / Page Up / Page Down / Home / End | Navigate |
 | Enter / Backspace | Open / parent folder |
-| Space / Insert | Mark or unmark |
+| Space / Insert | Mark or unmark, then advance one row |
 | Shift + arrows or click | Extend selection |
 | Mod + click | Toggle an item |
 | F1 / F2 / F3 / F4 | Help / rename / view / edit |

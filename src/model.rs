@@ -290,6 +290,22 @@ impl Tab {
         }
     }
 
+    /// Toggle the current visible row's mark, then advance without marking the next row.
+    pub fn toggle_mark_and_advance(&mut self, hidden: bool) {
+        let visible = self.visible(hidden);
+        let Some(position) = visible
+            .iter()
+            .position(|&i| Some(&self.entries[i].path) == self.cursor.as_ref())
+        else {
+            return;
+        };
+        let path = self.entries[visible[position]].path.clone();
+        if !self.selected.remove(&path) {
+            self.selected.insert(path);
+        }
+        self.move_cursor(1, false, hidden);
+    }
+
     pub fn move_cursor(&mut self, delta: isize, extend: bool, hidden: bool) {
         let visible = self.visible(hidden);
         if visible.is_empty() {
