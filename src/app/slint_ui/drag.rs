@@ -444,14 +444,20 @@ fn discard_export(ready: Ready) {
 }
 impl State {
     pub(super) fn buttons(&self) -> (bool, bool) {
-        #[cfg(target_os = "linux")]
+        #[cfg(test)]
+        {
+            // Headless UI fixtures drive these fields explicitly. Physical
+            // desktop input must not change the simulated gesture mid-test.
+            (self.pressed, self.move_modifier)
+        }
+        #[cfg(all(not(test), target_os = "linux"))]
         {
             (
                 self.pressed || self.linux.as_ref().is_some_and(|backend| backend.pressed()),
                 self.move_modifier,
             )
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(all(not(test), not(target_os = "linux")))]
         {
             let (pressed, moving) = crate::native_files::drag_buttons();
             (self.pressed || pressed, moving || self.move_modifier)

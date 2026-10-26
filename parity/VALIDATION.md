@@ -1,5 +1,59 @@
 # Validation record
 
+## Path handling audit — 2026-10-26
+
+The follow-up source audit reviewed native/portable relative-path boundaries,
+archive member validation, remote keys and stamps, transfer/recovery paths,
+comparison/synchronization inventories, URI parsing/serialization, startup
+arguments, clipboard/drag paths and saved location identities. It found and fixed
+these additional issues:
+
+- Nested remote/archive drags and archive drop destinations, conflict overrides
+  and move cleanup passed native paths into the raw archive-header validator.
+  They now use native-to-portable validation. Raw archive headers still reject
+  backslashes, drive prefixes, traversal and alternate-stream syntax.
+- Fallback `remote://` addresses did not escape literal URI characters. They now
+  round-trip Unicode, spaces, `#`, `?` and literal percent sequences. Legacy and
+  protocol addresses share segment decoding, so encoded separators are rejected;
+  legacy schemes also accept uppercase spelling and reject fragments.
+- HTTP mount roots treated literal percent sequences as already escaped. Root
+  components now use URL segment encoding while preserving encoded endpoint
+  components. Parent traversal in a configured HTTP root is rejected explicitly.
+- Startup arguments lost non-Unicode filename bytes through a display conversion.
+  They now stay native paths. Component-based home expansion also prevents
+  `~//folder` from discarding the home directory and accepts native Windows
+  separators after `~`.
+
+Regression fixtures cover nested remote exports, nested archive moves, per-file
+Skip decisions, unsafe virtual selections, URI round-trips, a real loopback HTTP
+request with an encoded mount name, and native startup/home paths. This is a
+source audit and fixture validation; Windows execution still requires CI.
+
+The final Apple Silicon Mac run passes 364 tests with 17 ignored across all
+targets/features. Formatting and Clippy with warnings denied also pass.
+
+During final validation, the released-gesture headless test observed the physical
+desktop mouse button instead of only its simulated input. Headless UI tests now
+use their explicit gesture state; application builds still poll native input.
+
+## Remote recovery path normalization — 2026-10-26
+
+Windows CI [run 40378213497](https://github.com/ghillert/rust-commander/actions/runs/40378213497/job/121767193652)
+failed during the mixed-conflict checkpoint transfer test. Remote destination
+stamps hashed native and portable path spellings differently, making an unchanged
+destination appear modified. Stamps now hash the canonical remote object key;
+metadata and content checks remain in place.
+
+A regression test reproduced the mismatch locally before the fix. It covers
+equivalent file/directory paths, Windows separators on Windows, and content edits
+with unchanged size and timestamp. On the available Apple Silicon Mac, the full
+all-target/all-feature suite passes 355 tests with 17 ignored; formatting and
+Clippy with warnings denied also pass. This includes the existing transfer,
+interrupted recovery, and synchronization tests. Windows execution of this
+revision still requires a CI rerun. Existing recovery receipts containing a
+noncanonical stamp continue to refuse a mismatch and retain their recovery files
+for review.
+
 ## Archive interoperability and viewer tools — 2026-10-25
 
 On the available Apple Silicon Mac, the current source passes 354 tests with

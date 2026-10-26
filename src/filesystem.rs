@@ -224,17 +224,16 @@ pub fn home() -> PathBuf {
 }
 
 pub fn resolve_path(text: &str, base: &Path) -> PathBuf {
-    if text == "~" {
-        home()
-    } else if let Some(tail) = text.strip_prefix("~/") {
+    resolve_native_path(Path::new(text), base)
+}
+
+pub(crate) fn resolve_native_path(path: &Path, base: &Path) -> PathBuf {
+    if let Ok(tail) = path.strip_prefix("~") {
         home().join(tail)
+    } else if path.is_absolute() {
+        path.to_owned()
     } else {
-        let path = PathBuf::from(text);
-        if path.is_absolute() {
-            path
-        } else {
-            base.join(path)
-        }
+        base.join(path)
     }
 }
 
@@ -242,22 +241,23 @@ pub fn parse_location(text: &str, base: &Location) -> Result<Location> {
     if text == base.label() {
         return Ok(base.clone());
     }
-    if text.starts_with("remote://") {
+    if text
+        .split_once("://")
+        .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("remote"))
+    {
         let url = url::Url::parse(text)?;
-        if !url.username().is_empty() || url.password().is_some() || url.query().is_some() {
-            bail!("Remote locations cannot contain credentials or query strings.");
+        if !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            bail!("Remote locations cannot contain credentials, query strings or fragments.");
         }
         let connection = url
             .host_str()
             .context("Missing remote connection ID")?
             .to_owned();
-        let text = percent_encoding::percent_decode_str(url.path().trim_start_matches('/'))
-            .decode_utf8()?;
-        let path = if text.is_empty() {
-            PathBuf::new()
-        } else {
-            safe_relative(Path::new(text.as_ref()))?
-        };
+        let path = crate::uri::remote_path(&url)?;
         return Ok(Location::Remote { connection, path });
     }
     let path = resolve_path(text, base.local().unwrap_or_else(|| Path::new("/")));
@@ -384,6 +384,35 @@ pub fn ownership(path: &Path) -> (Option<u32>, Option<u32>, Option<u32>) {
 #[cfg(test)]
 mod relative_path_tests {
     use super::*;
+
+    #[test]
+    fn home_expansion_keeps_repeated_separators_inside_home() {
+        let base = std::env::temp_dir();
+        for text in ["~/nested/file", "~//nested/file"] {
+            assert_eq!(resolve_path(text, &base), home().join("nested/file"));
+        }
+        assert_eq!(resolve_path("~", &base), home());
+        assert_eq!(
+            resolve_path("relative/file", &base),
+            base.join("relative/file")
+        );
+        #[cfg(windows)]
+        assert_eq!(
+            resolve_path(r"~\nested\file", &base),
+            home().join("nested/file")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_startup_paths_preserve_non_unicode_filename_bytes() {
+        use std::os::unix::ffi::OsStringExt;
+        let name = std::ffi::OsString::from_vec(b"native-\xff".to_vec());
+        let base = std::env::temp_dir();
+        let expected = base.join(&name);
+        assert_eq!(resolve_native_path(Path::new(&name), &base), expected);
+        assert_eq!(resolve_native_path(&expected, &base), expected);
+    }
 
     #[test]
     fn native_components_encode_as_portable_names_and_can_be_revalidated() {

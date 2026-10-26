@@ -33,12 +33,22 @@ impl Http {
             matches!(base.scheme(), "http" | "https"),
             "HTTP endpoints must use http:// or https://."
         );
-        let prefix = format!(
-            "{}/{}/",
-            base.path().trim_end_matches('/'),
-            c.root.trim_matches('/')
-        );
-        base.set_path(&prefix.replace("//", "/"));
+        {
+            let mut segments = base
+                .path_segments_mut()
+                .map_err(|_| anyhow::anyhow!("Invalid HTTP endpoint"))?;
+            segments.pop_if_empty();
+            for part in c.root.split('/').filter(|part| !part.is_empty()) {
+                ensure!(
+                    part != "..",
+                    "HTTP roots cannot contain parent traversal components."
+                );
+                // The endpoint is already encoded, but configured root names
+                // are literal names, including any percent characters.
+                segments.push(part);
+            }
+            segments.push("");
+        }
         base.set_query(None);
         base.set_fragment(None);
         let client = Client::builder()

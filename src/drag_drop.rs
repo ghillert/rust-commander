@@ -80,7 +80,9 @@ impl Selection {
                     "Dropped file paths must be absolute."
                 );
             } else {
-                filesystem::safe_relative(&entry.path)?;
+                // Listings contain native paths; raw archive headers have
+                // already passed strict validation in the archive reader.
+                filesystem::portable_relative(&entry.path)?;
                 ensure!(
                     entry.path.parent() == Some(crate::directory_tree::path(&self.from)),
                     "Dragged entries must belong to their source folder."
@@ -295,7 +297,7 @@ pub fn transfer(
                 let destination = if prefix.as_os_str().is_empty() {
                     tree.to_owned()
                 } else {
-                    tree.join(filesystem::safe_relative(prefix)?)
+                    tree.join(filesystem::portable_relative(prefix)?)
                 };
                 ensure!(
                     destination.is_dir(),
@@ -303,7 +305,7 @@ pub fn transfer(
                 );
                 let translated = overrides
                     .iter()
-                    .map(|(p, policy)| Ok((tree.join(filesystem::safe_relative(p)?), *policy)))
+                    .map(|(p, policy)| Ok((tree.join(filesystem::portable_relative(p)?), *policy)))
                     .collect::<Result<BTreeMap<_, _>>>()?;
                 let mut report = transfer::transfer_report(
                     &staged.paths,
@@ -346,7 +348,7 @@ pub fn transfer(
                     for (entry, complete) in selection.entries.iter().zip(&report.complete) {
                         if *complete {
                             operations::remove(
-                                &tree.join(filesystem::safe_relative(&entry.path)?),
+                                &tree.join(filesystem::portable_relative(&entry.path)?),
                             )?;
                         }
                     }

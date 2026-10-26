@@ -727,8 +727,8 @@ impl Commander {
         settings.preferences.upgrade();
         crate::remote::register_profiles(&settings.connections);
         for (side, path) in paths.iter().enumerate().take(2) {
-            let path = filesystem::resolve_path(
-                &path.to_string_lossy(),
+            let path = filesystem::resolve_native_path(
+                path,
                 &std::env::current_dir().unwrap_or_else(|_| filesystem::home()),
             );
             settings.tabs[side] = vec![Location::Local(path)];

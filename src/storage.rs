@@ -47,9 +47,12 @@ pub fn stamp(location: &Location, path: &Path, task: &Task) -> Result<Option<Str
             "Remote tree exceeds the inspection limit"
         );
         ensure!(!entry.is_symlink, "Remote tree inspection refuses links");
+        // Hash the same canonical key used to address the remote object. Native
+        // joins and portable receipt paths can spell it differently on Windows.
+        let path = std::path::PathBuf::from(crate::remote::key(&entry.path, false)?);
         hash.update(format!(
             "{:?}|{}|{}|{:?}",
-            entry.path, entry.is_dir, entry.size, entry.modified
+            path, entry.is_dir, entry.size, entry.modified
         ));
         if entry.is_dir {
             let mut entries = filesystem::list(&crate::directory_tree::at(location, &entry.path))?;

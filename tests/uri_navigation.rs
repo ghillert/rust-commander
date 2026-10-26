@@ -141,6 +141,46 @@ fn local_legacy_unsupported_and_encoded_paths() {
     }
 }
 #[test]
+fn legacy_addresses_round_trip_literal_uri_characters() {
+    let base = Location::Local(std::env::temp_dir());
+    let fallback = Connection {
+        service: "webdav".into(),
+        ..Default::default()
+    };
+    remote::register_profiles(std::slice::from_ref(&fallback));
+    for id in ["path-audit-unregistered", fallback.id.as_str()] {
+        for name in ["café #1?.txt", "100% done", "literal%20name"] {
+            let path = Path::new("nested").join(name);
+            let address = uri::address(id, &path);
+            for address in [
+                address.clone(),
+                address.replacen("remote://", "REMOTE://", 1),
+            ] {
+                assert!(
+                    matches!(
+                        uri::parse(&address, &base).unwrap(),
+                        Input::Location(Location::Remote { connection, path: actual })
+                            if connection == id && actual == path
+                    ),
+                    "{address}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn legacy_addresses_reject_encoded_separators_and_fragments() {
+    let base = Location::Local(std::env::temp_dir());
+    for path in ["a%2Fb", "a%5Cb", "bad%00name", "C%3Adrive", "name#fragment"] {
+        assert!(
+            uri::parse(&format!("remote://legacy/{path}"), &base).is_err(),
+            "{path}"
+        );
+    }
+}
+
+#[test]
 fn remote_names_do_not_inherit_local_windows_filename_restrictions() {
     let base = Location::Remote {
         connection: "remote-names".into(),
@@ -303,7 +343,7 @@ impl Server {
                 "/dir"=>("301 Moved Permanently","text/plain",String::new(),"Location: /dir/\r\n"),
                 "/dir/"=>("200 OK","text/html","<title>Index of /dir/</title><a href='../'>Parent</a><pre><a href='a%20b.pdf?sig=private'>PDF</a> 2026-06-04 15:30 1K\n<a href='sub/'>Folder</a> 2026-06-04 15:31 -\n</pre>".into(),""),
                 "/dir/sub"|"/dir/sub/"=>("200 OK","text/html","<h1>Directory listing for /dir/sub/</h1>".into(),""),
-                "/dir/a%20b.pdf?sig=private"|"/direct.bin"|"/unknown.bin"=>("200 OK","application/octet-stream","0123456789".into(),""),
+                "/dir/a%20b.pdf?sig=private"|"/direct.bin"|"/unknown.bin"|"/endpoint%20base/literal%2520root/direct.bin"=>("200 OK","application/octet-stream","0123456789".into(),""),
                 "/plain"=>("200 OK","text/html","<title>Welcome</title><a href='login'>login</a>".into(),""),
                 "/large"=>("200 OK","text/html",String::new(),"Content-Length: 9000000\r\n"),
                 "/auth"=>("401 Unauthorized","text/plain",String::new(),""),
@@ -343,6 +383,41 @@ impl Drop for Server {
         self.thread.take().unwrap().join().unwrap();
     }
 }
+#[test]
+fn http_mount_preserves_literal_percent_names_and_encoded_endpoint_segments() {
+    let server = Server::new();
+    let mut connection = server.connection();
+    connection.endpoint.push_str("/endpoint%20base");
+    connection.root = "literal%20root".into();
+    remote::connect(&connection, Secrets::default(), false).unwrap();
+    assert_eq!(
+        remote::read_bytes(&connection.id, Path::new("direct.bin"), 100).unwrap(),
+        b"0123456789"
+    );
+    assert!(
+        server
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|request| request.split_whitespace().nth(1)
+                == Some("/endpoint%20base/literal%2520root/direct.bin"))
+    );
+}
+
+#[test]
+fn http_mount_rejects_parent_components_in_configured_roots() {
+    for root in ["../escape", "safe/../escape"] {
+        let connection = Connection {
+            service: "http".into(),
+            endpoint: "https://example.test/base".into(),
+            root: root.into(),
+            ..Default::default()
+        };
+        assert!(remote::connect(&connection, Secrets::default(), false).is_err());
+    }
+}
+
 #[test]
 fn http_index_download_direct_file_range_and_errors() {
     let server = Server::new();

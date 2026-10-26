@@ -2,7 +2,7 @@ use rust_commander::{
     filesystem::{self, Location},
     operations::Task,
     remote::{self, Connection, Secrets},
-    resumable,
+    resumable, storage,
     transfer::{ConflictPolicy, TransferOptions},
 };
 use std::{
@@ -141,6 +141,38 @@ fn replacement(merge_folders: bool) -> TransferOptions {
 }
 
 #[test]
+fn remote_stamps_normalize_equivalent_paths_and_detect_content_changes() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("tree")).unwrap();
+    fs::write(root.path().join("tree/file"), b"original").unwrap();
+    let remote = location(root.path(), true);
+    let task = Task::default();
+    let stamp = |path: &str| {
+        storage::stamp(&remote, Path::new(path), &task)
+            .unwrap()
+            .unwrap()
+    };
+    let original = stamp("tree/file");
+    assert_eq!(original, stamp("tree//file"));
+    assert_eq!(original, stamp("tree/./file"));
+    assert_eq!(stamp("tree"), stamp("tree/."));
+    #[cfg(windows)]
+    assert_eq!(original, stamp(r"tree\file"));
+
+    // Same size and timestamp: the content hash must still guard replacement.
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .open(root.path().join("tree/file"))
+        .unwrap();
+    let modified = file.metadata().unwrap().modified().unwrap();
+    let tree = stamp("tree");
+    fs::write(root.path().join("tree/file"), b"modified").unwrap();
+    file.set_modified(modified).unwrap();
+    assert_ne!(original, stamp("tree/file"));
+    assert_ne!(tree, stamp("tree"));
+}
+
+#[test]
 fn checkpoint_replacements_refuse_source_aliases_across_filesystem_locations() {
     for remote_source in [false, true] {
         for remote_target in [false, true] {
@@ -231,7 +263,9 @@ fn checkpoint_merge_preserves_fixed_per_file_decisions_and_originals_across_all_
                     task,
                 )
             };
-            let result = run(&mut Task::default()).unwrap();
+            let result = run(&mut Task::default()).unwrap_or_else(|error| {
+                panic!("remote_source={remote_source}, remote_target={remote_target}: {error:#}")
+            });
             assert!(result.contains("Original destination items"));
             assert_eq!(
                 fs::read(target.join("tree/replace")).unwrap(),

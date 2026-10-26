@@ -35,6 +35,22 @@ fn validate_remote_segment(name: &str) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn remote_path(url: &Url) -> Result<PathBuf> {
+    let mut path = PathBuf::new();
+    for segment in url
+        .path_segments()
+        .into_iter()
+        .flatten()
+        .filter(|s| !s.is_empty())
+    {
+        let segment = decoded(segment)?;
+        validate_remote_segment(&segment)?;
+        path.push(segment);
+    }
+    crate::remote::key(&path, false)?;
+    Ok(path)
+}
+
 pub fn parse(text: &str, base: &Location) -> Result<Input> {
     let text = text.trim();
     ensure!(!text.is_empty(), "Enter a folder path or URI.");
@@ -137,18 +153,7 @@ pub fn parse(text: &str, base: &Location) -> Result<Input> {
         .map_err(|_| anyhow::anyhow!("Invalid URI authority"))?;
     url.set_query(None);
     url.set_fragment(None);
-    let mut path = PathBuf::new();
-    for segment in url
-        .path_segments()
-        .into_iter()
-        .flatten()
-        .filter(|s| !s.is_empty())
-    {
-        let segment = decoded(segment)?;
-        validate_remote_segment(&segment)?;
-        path.push(segment);
-    }
-    crate::remote::key(&path, false)?;
+    let mut path = remote_path(&url)?;
     let mut connection = Connection {
         name: url.host_str().unwrap().into(),
         listed: false,
@@ -215,7 +220,17 @@ pub fn parse(text: &str, base: &Location) -> Result<Input> {
 
 /// A canonical, credential-free address. Legacy/unregistered profiles remain usable.
 pub fn address(id: &str, path: &Path) -> String {
-    let legacy = || format!("remote://{id}/{}", crate::remote::display_path(path));
+    let legacy = || {
+        let path = crate::remote::display_path(path)
+            .split('/')
+            .map(|segment| {
+                percent_encoding::utf8_percent_encode(segment, percent_encoding::NON_ALPHANUMERIC)
+                    .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("/");
+        format!("remote://{id}/{path}")
+    };
     let Some(c) = crate::remote::profile(id) else {
         return legacy();
     };

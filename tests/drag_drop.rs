@@ -210,6 +210,114 @@ fn virtual_remote_and_archive_pairs_use_the_existing_storage_guards() {
     );
 }
 #[test]
+fn nested_archive_drops_preserve_native_paths_and_conflict_choices() {
+    let root = tempfile::tempdir().unwrap();
+    let tree = root.path().join("tree");
+    let source = Path::new("tree").join("source");
+    let target = Path::new("tree").join("target").join("inner");
+    fs::create_dir_all(tree.join("source")).unwrap();
+    fs::create_dir_all(tree.join("target/inner")).unwrap();
+    fs::write(tree.join("source/café.txt"), b"move me").unwrap();
+    fs::write(tree.join("target/inner/existing.txt"), b"keep me").unwrap();
+    let file = root.path().join("nested.zip");
+    archive::pack(&[tree], &file, &mut Task::default()).unwrap();
+    let incoming = root.path().join("existing.txt");
+    fs::write(&incoming, b"skip me").unwrap();
+    let destination = Location::Archive {
+        file: file.clone(),
+        prefix: target.clone(),
+    };
+    drag_drop::transfer(
+        &Selection::local(&[incoming]).unwrap(),
+        &destination,
+        false,
+        Default::default(),
+        &BTreeMap::from([(target.join("existing.txt"), ConflictPolicy::Skip)]),
+        &mut Task::default(),
+    )
+    .unwrap();
+    let from = Location::Archive {
+        file: file.clone(),
+        prefix: source.clone(),
+    };
+    let selection = Selection {
+        entries: filesystem::list(&from).unwrap(),
+        from,
+    };
+    drag_drop::transfer(
+        &selection,
+        &destination,
+        true,
+        Default::default(),
+        &Default::default(),
+        &mut Task::default(),
+    )
+    .unwrap();
+    assert!(archive::list(&file, &source).unwrap().is_empty());
+    assert_eq!(
+        archive::read_bytes(&file, &target.join("café.txt"), 100).unwrap(),
+        b"move me"
+    );
+    assert_eq!(
+        archive::read_bytes(&file, &target.join("existing.txt"), 100).unwrap(),
+        b"keep me"
+    );
+}
+
+#[test]
+fn nested_remote_exports_accept_native_listing_paths() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join("nested/source")).unwrap();
+    fs::write(root.path().join("nested/source/café.txt"), b"remote bytes").unwrap();
+    let connection = remote::Connection {
+        service: "fs".into(),
+        root: root.path().display().to_string(),
+        ..Default::default()
+    };
+    remote::connect(&connection, Default::default(), false).unwrap();
+    let from = Location::Remote {
+        connection: connection.id,
+        path: Path::new("nested").join("source"),
+    };
+    let selection = Selection {
+        entries: filesystem::list(&from).unwrap(),
+        from,
+    };
+    let exported = drag_drop::export(&selection, &mut Task::default()).unwrap();
+    assert_eq!(fs::read(&exported.paths[0]).unwrap(), b"remote bytes");
+}
+
+#[test]
+fn virtual_selection_validation_still_rejects_unsafe_paths() {
+    for path in [
+        "../escape",
+        "source/../escape",
+        "/absolute",
+        "C:/escape",
+        "name:stream",
+        "bad\0name",
+    ] {
+        let path = Path::new(path);
+        let selection = Selection {
+            from: Location::Archive {
+                file: "unused.zip".into(),
+                prefix: path.parent().unwrap().into(),
+            },
+            entries: vec![filesystem::Entry {
+                name: path.file_name().unwrap().to_string_lossy().into_owned(),
+                path: path.into(),
+                is_dir: false,
+                is_symlink: false,
+                size_known: true,
+                size: 0,
+                modified: None,
+            }],
+        };
+        assert!(selection.validate().is_err(), "{path:?}");
+    }
+}
+
+#[test]
 fn invalid_recursive_and_read_only_drops_are_rejected_before_writing() {
     let root = tempfile::tempdir().unwrap();
     let folder = root.path().join("folder");
