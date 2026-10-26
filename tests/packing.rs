@@ -9,22 +9,21 @@ use std::{fs, path::Path};
 #[test]
 fn format_switching_replaces_compound_suffixes_and_preserves_dotted_names() {
     let mut options = Options::default();
+    let parent = std::env::temp_dir().join("packing test.v1");
     for (initial, expected) in [
-        ("/tmp/report.v2.tar.gz", "/tmp/report.v2.7z"),
-        ("/tmp/data.TGZ", "/tmp/data.7z"),
-        ("/tmp/data.zip", "/tmp/data.7z"),
-        ("/tmp/report.csv", "/tmp/report.csv.7z"),
+        ("report.v2.tar.gz", "report.v2.7z"),
+        ("data.TGZ", "data.7z"),
+        ("data.zip", "data.7z"),
+        ("report.csv", "report.csv.7z"),
     ] {
-        let mut path = initial.to_owned();
+        let mut path = parent.join(initial).display().to_string();
+        let expected = parent.join(expected);
         options.set_format("7z", &mut path).unwrap();
-        assert_eq!(path, expected);
+        assert_eq!(Path::new(&path), expected);
         options.set_format("TAR.BZ2", &mut path).unwrap();
-        assert_eq!(
-            path,
-            expected.trim_end_matches(".7z").to_owned() + ".tar.bz2"
-        );
+        assert_eq!(Path::new(&path), expected.with_extension("tar.bz2"));
         options.set_format("ZIP", &mut path).unwrap();
-        assert_eq!(path, expected.trim_end_matches(".7z").to_owned() + ".zip");
+        assert_eq!(Path::new(&path), expected.with_extension("zip"));
     }
     let mut empty = String::new();
     options.set_format("7z", &mut empty).unwrap();
