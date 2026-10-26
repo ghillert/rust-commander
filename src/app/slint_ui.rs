@@ -67,6 +67,7 @@ pub(super) struct Adapter {
     invalid_fields: std::collections::BTreeMap<String, (String, String)>,
     last_terminal: String,
     viewer_stamp: Option<(String, usize)>,
+    pdf_marks_stamp: Option<(u64, u64, Option<std::ops::Range<usize>>)>,
     preview_stamp: Option<String>,
     dark: bool,
     window_scheme: Option<crate::appearance::ColorScheme>,
@@ -175,6 +176,7 @@ impl Adapter {
             invalid_fields: Default::default(),
             last_terminal: String::new(),
             viewer_stamp: None,
+            pdf_marks_stamp: None,
             preview_stamp: None,
             dark: false,
             window_scheme: None,
@@ -957,6 +959,13 @@ impl Adapter {
             }
             "pack-progress" => 300.0,
             "open-with" => 300.0,
+            "open-as" => {
+                if spec.fields.len() > 1 {
+                    300.0
+                } else {
+                    240.0
+                }
+            }
             "workspaces" => 480.0,
             "history" => 520.0,
             "archive" => 520.0,
@@ -967,7 +976,14 @@ impl Adapter {
         ui.set_dialog_pack(matches!(spec.kind.as_str(), "pack" | "pack-progress"));
         ui.set_dialog_compact(matches!(
             spec.kind.as_str(),
-            "text-diff" | "comparison" | "search" | "sync" | "history" | "pack" | "pack-progress"
+            "text-diff"
+                | "comparison"
+                | "search"
+                | "sync"
+                | "history"
+                | "pack"
+                | "pack-progress"
+                | "open-as"
         ));
         ui.set_dialog_title(spec.title.into());
         ui.set_dialog_description(spec.description.into());
@@ -1120,9 +1136,69 @@ impl Adapter {
             ui.set_viewer_pdf_document(editor.pdf.is_some());
             ui.set_viewer_locked(editor.pdf.as_ref().is_some_and(|p| p.locked));
             ui.set_viewer_busy(
-                self.app.pending_pdf.is_some() || editor.navigation.pending.is_some(),
+                self.app.pending_pdf.is_some()
+                    || editor.navigation.pending.is_some()
+                    || editor
+                        .pdf
+                        .as_ref()
+                        .is_some_and(|pdf| pdf.search_pending.is_some()),
             );
-            ui.set_viewer_notice(editor.navigation.notice.as_str().into());
+            ui.set_viewer_pdf_text(editor.pdf.as_ref().is_some_and(|pdf| pdf.text_view));
+            ui.set_viewer_pdf_copy(
+                editor
+                    .pdf
+                    .as_ref()
+                    .is_some_and(|pdf| pdf.selection.as_ref().is_some_and(|r| !r.is_empty())),
+            );
+            let mark_stamp = (
+                editor.navigation.id,
+                editor.image_revision,
+                editor.pdf.as_ref().and_then(|p| p.selection.clone()),
+            );
+            if self.pdf_marks_stamp.as_ref() != Some(&mark_stamp) {
+                let marks = editor
+                    .pdf
+                    .as_ref()
+                    .and_then(|pdf| {
+                        pdf.selection
+                            .as_ref()
+                            .map(|r| pdf.text.rectangles(r, pdf.rotation))
+                    })
+                    .unwrap_or_default();
+                ui.set_viewer_pdf_marks(
+                    Rc::new(VecModel::from(
+                        marks
+                            .into_iter()
+                            .map(|[x, y, x1, y1]| PdfMark {
+                                x,
+                                y,
+                                width: x1 - x,
+                                height: y1 - y,
+                            })
+                            .collect::<Vec<_>>(),
+                    ))
+                    .into(),
+                );
+                self.pdf_marks_stamp = Some(mark_stamp);
+            }
+            let notice = editor
+                .pdf
+                .as_ref()
+                .filter(|p| !p.locked)
+                .and_then(|pdf| {
+                    pdf.text.error.as_deref().or_else(|| {
+                        if pdf.text.text.is_empty() {
+                            Some("No selectable text on this page. Scanned pages need OCR.")
+                        } else if pdf.text.unmapped {
+                            Some("Some PDF glyphs have no Unicode mapping.")
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .filter(|_| editor.navigation.notice.is_empty())
+                .unwrap_or(&editor.navigation.notice);
+            ui.set_viewer_notice(tr(notice).into_owned().into());
             ui.set_viewer_fit_width(editor.navigation.fit_width);
             ui.set_viewer_text(editor.text.as_str().into());
             ui.set_viewer_editable(editor.editable);
@@ -1162,15 +1238,23 @@ impl Adapter {
             ui.set_viewer_has_previous(
                 (editor.pdf.as_ref().is_some_and(|pdf| pdf.page > 0)
                     || editor.text_page.as_ref().is_some_and(|p| p.offset > 0))
-                    && self.app.pending_pdf.is_none(),
+                    && self.app.pending_pdf.is_none()
+                    && editor
+                        .pdf
+                        .as_ref()
+                        .is_none_or(|p| p.search_pending.is_none()),
             );
             ui.set_viewer_has_next(
-                editor
+                (editor
                     .pdf
                     .as_ref()
                     .is_some_and(|pdf| pdf.page + 1 < pdf.pages)
-                    || editor.text_page.as_ref().is_some_and(|p| p.next < p.total)
-                        && self.app.pending_pdf.is_none(),
+                    || editor.text_page.as_ref().is_some_and(|p| p.next < p.total))
+                    && self.app.pending_pdf.is_none()
+                    && editor
+                        .pdf
+                        .as_ref()
+                        .is_none_or(|p| p.search_pending.is_none()),
             );
             ui.set_viewer_page(
                 editor
@@ -1192,11 +1276,16 @@ impl Adapter {
             );
             if self.viewer_stamp.as_ref() != Some(&stamp) {
                 ui.set_viewer_zoom(editor.zoom);
-                ui.set_viewer_image(editor.image.as_ref().map(image).unwrap_or_default());
+                ui.set_viewer_image(if editor.pdf.as_ref().is_some_and(|pdf| pdf.text_view) {
+                    Default::default()
+                } else {
+                    editor.image.as_ref().map(image).unwrap_or_default()
+                });
                 self.viewer_stamp = Some(stamp);
             }
         } else {
             self.viewer_stamp = None;
+            self.pdf_marks_stamp = None;
         }
         if let Some(selection) = self
             .app
@@ -1435,6 +1524,7 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                             "navigate" => ui.invoke_navigate(0, value.into()),
                             "action" => ui.invoke_action(value.into()),
                             "dialog" => ui.invoke_dialog_action(value.into()),
+                            "viewer" => ui.invoke_viewer_action(value.into()),
                             "field" => {
                                 let (id, value): (String, String) = serde_json::from_str(&value)
                                     .expect("Screenshot field must be an id/value pair");
@@ -1752,6 +1842,9 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
     callback!(on_viewer_action, |a, w, id| {
         a.viewer_action(&id);
     });
+    callback!(on_viewer_pdf_select, |a, w, x, y, begin| {
+        a.pdf_select(x, y, begin);
+    });
     callback!(on_terminal_key, |a, w, event| { a.terminal_key(event) });
     callback!(on_terminal_resize, |a, w, rows, cols| {
         if let Some(terminal) = &mut a.app.terminal {
@@ -2042,3 +2135,5 @@ fn location_breadcrumbs(location: &Location) -> Vec<(String, Location)> {
 mod packing_tests;
 #[cfg(test)]
 mod parity_tests;
+#[cfg(test)]
+mod viewer_tests;

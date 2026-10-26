@@ -104,6 +104,22 @@ impl Adapter {
             ui.invoke_focus_viewer_search();
             return true;
         }
+        if self
+            .app
+            .editor
+            .as_ref()
+            .is_some_and(|e| e.pdf.as_ref().is_some_and(|p| !p.locked && !p.text_view))
+            && event.modifiers.control
+        {
+            if text.eq_ignore_ascii_case("c") {
+                ui.invoke_copy_viewer();
+                return true;
+            }
+            if text.eq_ignore_ascii_case("a") {
+                ui.invoke_select_all_viewer();
+                return true;
+            }
+        }
         if self.blocked() {
             if key_is(text, slint::platform::Key::Escape) {
                 if self.app.editor.is_some() && !self.app.confirm_exit {

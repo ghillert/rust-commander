@@ -51,10 +51,27 @@ finding compression matches and produces a substantially smaller archive. Choose
 7z level 0 when packing speed matters more than the smallest output.
 
 ZIP output was independently extracted and compared against the original with
-SHA-256. The full Default and Fastest 7z outputs also matched the source through the
-built-in reader. An external-interoperability gap remains: both tested `bsdtar` versions
-reject the generated 7z archives, including small fixtures. Built-in round trips
-are not evidence of full compatibility with external 7z readers.
+SHA-256. The full Default and Fastest 7z outputs also matched the source through
+the built-in reader. Those original 7z files exposed an interoperability issue:
+the writer emitted an empty SubStreamsInfo checksum list rejected by libarchive.
+
+The pinned writer now has a local compatibility patch (see
+[vendor notes](../vendor/sevenz-rust/PATCHES.md)). It omits empty digest/stream
+blocks, retains zero-valued checksums, supplies directory attributes and fixes
+inverted anti-item (deletion record) flags. Independent
+libarchive extraction tests cover single files, nested folders, Unicode names,
+empty files/directories and default/fastest/maximum compression. These tests run
+in the normal CI suite. A separate official 7-Zip 26.05 integrity/extraction check
+also passed for plain and AES-encrypted folders at default, fastest and maximum
+levels. Re-run that optional check with an installed official executable:
+
+```sh
+RUST_COMMANDER_TEST_7Z=/path/to/7zz ./scripts/cargo-local.sh test --locked --all-features --test packing official_sevenzip_checks_plain_and_encrypted_output -- --ignored --exact
+```
+
+The libarchive checks run on every CI platform; the optional official executable
+test is normally ignored because it requires that extra tool. The patch
+affects newly created archives and does not repair older files automatically.
 
 ## Reproducing a benchmark
 

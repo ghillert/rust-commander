@@ -93,6 +93,7 @@ pub(crate) enum Action {
     QuickLook,
     Reveal,
     OpenWith,
+    OpenAs,
     PackageContents,
     Workspaces,
     Queue,
@@ -220,6 +221,7 @@ pub(crate) fn all_actions() -> Vec<Action> {
         Action::QuickLook,
         Action::Reveal,
         Action::OpenWith,
+        Action::OpenAs,
         Action::PackageContents,
         Action::Workspaces,
         Action::Queue,
@@ -351,6 +353,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Edit  F4", Action::Edit),
                 ("Open externally", Action::External),
                 ("Open With…", Action::OpenWith),
+                ("Open As…", Action::OpenAs),
                 ("Edit externally…", Action::ExternalEdit),
                 ("Application associations…", Action::Associations),
                 ("Reveal in file manager", Action::Reveal),
@@ -561,6 +564,15 @@ struct PdfState {
     rotation: usize,
     locked: bool,
     cache: Arc<std::sync::Mutex<crate::viewer::PdfCache>>,
+    text: Arc<crate::pdf_text::PageText>,
+    selection: Option<std::ops::Range<usize>>,
+    anchor: Option<usize>,
+    text_view: bool,
+    search_query: String,
+    search_last: Option<(usize, std::ops::Range<usize>)>,
+    search_pending: Option<Receiver<Result<crate::pdf_text::SearchHit, String>>>,
+    search_cancel: Arc<AtomicBool>,
+    pending_selection: Option<(usize, std::ops::Range<usize>)>,
 }
 impl PdfState {
     fn new(bytes: Arc<Vec<u8>>, pages: usize) -> Self {
@@ -572,10 +584,34 @@ impl PdfState {
             rotation: 0,
             locked: pages == 0,
             cache: Arc::new(std::sync::Mutex::new(Default::default())),
+            text: Arc::new(Default::default()),
+            selection: None,
+            anchor: None,
+            text_view: false,
+            search_query: String::new(),
+            search_last: None,
+            search_pending: None,
+            search_cancel: Arc::new(AtomicBool::new(false)),
+            pending_selection: None,
         }
     }
 }
-type PdfResult = Result<(String, usize, usize, usize, crate::viewer::RasterImage), String>;
+impl Drop for PdfState {
+    fn drop(&mut self) {
+        self.search_cancel.store(true, Ordering::Relaxed);
+    }
+}
+type PdfResult = Result<
+    (
+        String,
+        usize,
+        usize,
+        usize,
+        crate::viewer::RasterImage,
+        Arc<crate::pdf_text::PageText>,
+    ),
+    String,
+>;
 impl Editor {
     fn dirty(&self) -> bool {
         self.editable
@@ -902,11 +938,24 @@ impl Commander {
         }
         if let Some(result) = crate::background::poll(&mut self.pending_pdf) {
             match result {
-                Ok((title, page, rotation, pages, image)) => {
+                Ok((title, page, rotation, pages, image, text)) => {
                     if let Some(editor) = &mut self.editor
                         && format!("{}#{}", editor.title, editor.navigation.id) == title
                         && let Some(pdf) = &mut editor.pdf
                     {
+                        if pdf.page != page {
+                            pdf.selection = None;
+                            pdf.anchor = None;
+                        }
+                        pdf.text = text;
+                        editor.text = pdf.text.text.clone();
+                        if let Some((selected_page, range)) = pdf.pending_selection.take()
+                            && selected_page == page
+                        {
+                            editor.navigation.selection =
+                                Some((range.start as i32, range.end as i32));
+                            pdf.selection = Some(range);
+                        }
                         pdf.page = page;
                         pdf.rotation = rotation;
                         pdf.pages = pages;
@@ -1103,14 +1152,57 @@ impl Commander {
         self.recent_files.insert(0, path);
         self.recent_files.truncate(50);
     }
+    fn open_as(&mut self, form: crate::open_as::Form, ctx: &UiSignal) {
+        match form.kind {
+            crate::open_as::Kind::Viewer(mode) => {
+                self.view_as(form.entry, false, form.location, mode, ctx)
+            }
+            crate::open_as::Kind::Archive(format) => {
+                let (sender, receiver) = mpsc::channel();
+                self.pending_archive = Some(receiver);
+                self.pending_archive_target = Some((self.active, self.tab().id));
+                let ctx = ctx.clone();
+                std::thread::spawn(move || {
+                    let result = crate::archive_tools::materialize_as_with_password(
+                        &form.location,
+                        &form.entry.path,
+                        format,
+                        &form.password,
+                    )
+                    .map(|file| Location::Archive {
+                        file,
+                        prefix: PathBuf::new(),
+                    })
+                    .map_err(|e| format!("{e:#}"));
+                    let _ = sender.send(result);
+                    ctx.request_repaint();
+                });
+            }
+        }
+    }
     fn view(&mut self, entry: Entry, editable: bool, ctx: &UiSignal) {
+        self.view_as(
+            entry,
+            editable,
+            self.tab().location.clone(),
+            crate::viewer::Mode::Auto,
+            ctx,
+        );
+    }
+    fn view_as(
+        &mut self,
+        entry: Entry,
+        editable: bool,
+        location: Location,
+        mode: crate::viewer::Mode,
+        ctx: &UiSignal,
+    ) {
         let editable = editable
-            && !matches!(&self.tab().location,Location::Remote{connection,..} if crate::remote::profile(connection).is_some_and(|c|c.service=="http"));
+            && !matches!(&location,Location::Remote{connection,..} if crate::remote::profile(connection).is_some_and(|c|c.service=="http"));
         if entry.is_dir {
             self.fail("Select a text file to view or edit.");
             return;
         }
-        let location = self.tab().location.clone();
         if location.local().is_some() {
             self.remember_opened_file(entry.path.clone());
         }
@@ -1121,55 +1213,57 @@ impl Commander {
             let result = (|| -> anyhow::Result<Editor> {
                 let mut document = None;
                 let mut text_page = None;
-                let (text, image, kind, pdf) = match crate::viewer::load(&location, &entry.path)? {
-                    crate::viewer::Content::LockedPdf { bytes } => (
-                        String::new(),
-                        Some(crate::viewer::RasterImage {
-                            size: [1, 1],
-                            pixels: vec![[255; 4]],
-                        }),
-                        "PDF viewer",
-                        Some(PdfState::new(bytes, 0)),
-                    ),
-                    crate::viewer::Content::Text(text) => {
-                        document =
-                            crate::text_document::Document::detect(text.as_bytes().to_vec()).ok();
-                        (text, None, "Text viewer", None)
-                    }
-                    crate::viewer::Content::EncodedText(doc) => {
-                        let text = doc.text.clone();
-                        document = Some(doc);
-                        (text, None, "Text viewer", None)
-                    }
-                    crate::viewer::Content::LargeText(page) => {
-                        let text = page.document.text.clone();
-                        text_page = Some(page);
-                        (text, None, "Paged text viewer", None)
-                    }
-                    crate::viewer::Content::Hex { text, truncated } => (
-                        text,
-                        None,
-                        if truncated {
-                            "Hex viewer · first 512 KiB"
-                        } else {
-                            "Hex viewer"
-                        },
-                        None,
-                    ),
-                    crate::viewer::Content::Image(image) => {
-                        (String::new(), Some(image), "Image viewer", None)
-                    }
-                    crate::viewer::Content::Pdf {
-                        bytes,
-                        image,
-                        pages,
-                    } => (
-                        String::new(),
-                        Some(image),
-                        "PDF viewer",
-                        Some(PdfState::new(bytes, pages)),
-                    ),
-                };
+                let (text, image, kind, pdf) =
+                    match crate::viewer::load_as(&location, &entry.path, mode)? {
+                        crate::viewer::Content::LockedPdf { bytes } => (
+                            String::new(),
+                            Some(crate::viewer::RasterImage {
+                                size: [1, 1],
+                                pixels: vec![[255; 4]],
+                            }),
+                            "PDF viewer",
+                            Some(PdfState::new(bytes, 0)),
+                        ),
+                        crate::viewer::Content::Text(text) => {
+                            document =
+                                crate::text_document::Document::detect(text.as_bytes().to_vec())
+                                    .ok();
+                            (text, None, "Text viewer", None)
+                        }
+                        crate::viewer::Content::EncodedText(doc) => {
+                            let text = doc.text.clone();
+                            document = Some(doc);
+                            (text, None, "Text viewer", None)
+                        }
+                        crate::viewer::Content::LargeText(page) => {
+                            let text = page.document.text.clone();
+                            text_page = Some(page);
+                            (text, None, "Paged text viewer", None)
+                        }
+                        crate::viewer::Content::Hex { text, truncated } => (
+                            text,
+                            None,
+                            if truncated {
+                                "Hex viewer · first 512 KiB"
+                            } else {
+                                "Hex viewer"
+                            },
+                            None,
+                        ),
+                        crate::viewer::Content::Image(image) => {
+                            (String::new(), Some(image), "Image viewer", None)
+                        }
+                        crate::viewer::Content::Pdf {
+                            bytes,
+                            image,
+                            pages,
+                            text,
+                        } => {
+                            let mut pdf = PdfState::new(bytes, pages);
+                            pdf.text = text;
+                            (pdf.text.text.clone(), Some(image), "PDF viewer", Some(pdf))
+                        }
+                    };
                 let path = location.local().map(|_| entry.path.clone());
                 let remote = if let Location::Remote { connection, .. } = &location {
                     Some((connection.clone(), entry.path.clone()))
@@ -1358,6 +1452,20 @@ impl Commander {
                     self.features.error = None;
                 } else {
                     self.fail("Select one local file.");
+                }
+                return;
+            }
+            Action::OpenAs => {
+                if chosen.len() == 1 && !chosen[0].is_dir {
+                    self.features.open_as = Some(crate::open_as::Form {
+                        location: self.tab().location.clone(),
+                        entry: chosen[0].clone(),
+                        kind: crate::open_as::Kind::Viewer(crate::viewer::Mode::Text),
+                        password: String::new(),
+                    });
+                    self.features.error = None;
+                } else {
+                    self.fail("Select one file to open.");
                 }
                 return;
             }

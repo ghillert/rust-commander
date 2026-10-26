@@ -44,6 +44,7 @@ pub enum Content {
         bytes: std::sync::Arc<Vec<u8>>,
         image: crate::viewer::RasterImage,
         pages: usize,
+        text: std::sync::Arc<crate::pdf_text::PageText>,
     },
     Text(String),
     EncodedText(crate::text_document::Document),
@@ -54,18 +55,44 @@ pub enum Content {
     },
     Image(crate::viewer::RasterImage),
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mode {
+    #[default]
+    Auto,
+    Text,
+    Hex,
+    Image,
+    Pdf,
+}
 pub fn load(location: &Location, path: &Path) -> Result<Content> {
+    load_as(location, path, Mode::Auto)
+}
+pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> {
     let extension = path
         .extension()
         .unwrap_or_default()
         .to_string_lossy()
         .to_lowercase();
-    let image = [
-        "png", "jpg", "jpeg", "gif", "bmp", "webp", "tif", "tiff", "ico",
-    ]
-    .contains(&extension.as_str());
+    let image = mode == Mode::Image
+        || mode == Mode::Auto
+            && [
+                "png", "jpg", "jpeg", "gif", "bmp", "webp", "tif", "tiff", "ico",
+            ]
+            .contains(&extension.as_str());
+    let pdf = mode == Mode::Pdf || mode == Mode::Auto && extension == "pdf";
+    if mode == Mode::Hex && location.local().is_some() {
+        let mut bytes = Vec::new();
+        File::open(path)?
+            .take(512 * 1024 + 1)
+            .read_to_end(&mut bytes)?;
+        return Ok(Content::Hex {
+            text: hex_dump(&bytes[..bytes.len().min(512 * 1024)]),
+            truncated: bytes.len() > 512 * 1024,
+        });
+    }
     if !image
-        && extension != "pdf"
+        && !pdf
+        && mode != Mode::Hex
         && location.local().is_some()
         && std::fs::metadata(path)?.len() > 2 * 1024 * 1024
     {
@@ -84,6 +111,9 @@ pub fn load(location: &Location, path: &Path) -> Result<Content> {
         }) {
             return Ok(Content::LargeText(page));
         }
+        if mode == Mode::Text {
+            bail!("Cannot decode this file as text; open it as hexadecimal instead.");
+        }
         let mut bytes = Vec::new();
         std::fs::File::open(path)?
             .take(512 * 1024)
@@ -93,13 +123,19 @@ pub fn load(location: &Location, path: &Path) -> Result<Content> {
             truncated: true,
         });
     }
-    let limit = if image || extension == "pdf" {
+    let limit = if image || pdf || mode == Mode::Hex {
         32 * 1024 * 1024
     } else {
         2 * 1024 * 1024
     };
     let bytes = read(location, path, limit)?;
-    if extension == "pdf" {
+    if mode == Mode::Hex {
+        return Ok(Content::Hex {
+            text: hex_dump(&bytes[..bytes.len().min(512 * 1024)]),
+            truncated: bytes.len() > 512 * 1024,
+        });
+    }
+    if pdf {
         if matches!(
             hayro::hayro_syntax::Pdf::new(bytes.clone()),
             Err(hayro::hayro_syntax::LoadPdfError::Decryption(_))
@@ -108,11 +144,12 @@ pub fn load(location: &Location, path: &Path) -> Result<Content> {
                 bytes: std::sync::Arc::new(bytes),
             });
         }
-        let (image, pages) = render_pdf(&bytes, 0)?;
+        let (image, pages, text) = PdfCache::default().render_with_text(&bytes, 0, "")?;
         return Ok(Content::Pdf {
             bytes: std::sync::Arc::new(bytes),
             image,
             pages,
+            text,
         });
     }
     if image {
@@ -128,6 +165,16 @@ pub fn load(location: &Location, path: &Path) -> Result<Content> {
                 [image.width() as usize, image.height() as usize],
                 image.as_raw(),
             ),
+        ));
+    }
+    if mode == Mode::Text {
+        return Ok(Content::EncodedText(
+            crate::text_document::Document::detect(bytes.clone()).or_else(|_| {
+                crate::text_document::Document::decode(
+                    bytes,
+                    crate::text_document::Encoding::Windows1252,
+                )
+            })?,
         ));
     }
     if bytes.starts_with(&[0xff, 0xfe])
@@ -229,8 +276,19 @@ pub fn hex_dump(bytes: &[u8]) -> String {
 #[derive(Default)]
 pub struct PdfCache {
     password: String,
-    pages: std::collections::VecDeque<(usize, RasterImage, usize)>,
+    pages: std::collections::VecDeque<CachedPdfPage>,
 }
+struct CachedPdfPage {
+    page: usize,
+    image: RasterImage,
+    count: usize,
+    text: std::sync::Arc<crate::pdf_text::PageText>,
+}
+pub type PdfPage = (
+    RasterImage,
+    usize,
+    std::sync::Arc<crate::pdf_text::PageText>,
+);
 impl PdfCache {
     pub fn render(
         &mut self,
@@ -238,22 +296,38 @@ impl PdfCache {
         page: usize,
         password: &str,
     ) -> Result<(RasterImage, usize)> {
+        self.render_with_text(bytes, page, password)
+            .map(|(image, count, _)| (image, count))
+    }
+    pub fn render_with_text(
+        &mut self,
+        bytes: &[u8],
+        page: usize,
+        password: &str,
+    ) -> Result<PdfPage> {
         if self.password != password {
             self.pages.clear();
             self.password = password.into();
         }
-        if let Some(index) = self.pages.iter().position(|(p, _, _)| *p == page) {
+        if let Some(index) = self.pages.iter().position(|p| p.page == page) {
             let hit = self.pages.remove(index).unwrap();
-            let result = (hit.1.clone(), hit.2);
+            let result = (hit.image.clone(), hit.count, hit.text.clone());
             self.pages.push_back(hit);
             return Ok(result);
         }
         let (image, count) = render_pdf_password(bytes, page, password)?;
+        let text = std::sync::Arc::new(
+            crate::pdf_text::load_page(bytes, password, page, &crate::operations::Task::default())
+                .unwrap_or_else(|e| crate::pdf_text::PageText {
+                    error: Some(e.to_string()),
+                    ..Default::default()
+                }),
+        );
         while self.pages.len() >= 3
             || self
                 .pages
                 .iter()
-                .map(|(_, i, _)| i.pixels.len() * 4)
+                .map(|p| p.image.pixels.len() * 4)
                 .sum::<usize>()
                 + image.pixels.len() * 4
                 > 24 * 1024 * 1024
@@ -263,9 +337,14 @@ impl PdfCache {
             }
         }
         if image.pixels.len() * 4 <= 24 * 1024 * 1024 {
-            self.pages.push_back((page, image.clone(), count));
+            self.pages.push_back(CachedPdfPage {
+                page,
+                image: image.clone(),
+                count,
+                text: text.clone(),
+            });
         }
-        Ok((image, count))
+        Ok((image, count, text))
     }
 }
 pub fn rotate(image: &RasterImage, turns: usize) -> RasterImage {

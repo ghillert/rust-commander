@@ -480,6 +480,11 @@ impl Adapter {
                         self.app.apply_feature_effect(effect, &self.ctx);
                     }
                 }
+                "open-as" if id == "accept" => {
+                    if let Some(form) = self.app.features.open_as.take() {
+                        self.app.open_as(form, &self.ctx);
+                    }
+                }
                 "open-with" if id == "accept" => {
                     if let Some((path, application)) = &self.app.features.open_with {
                         let rule = crate::associations::Rule {
@@ -569,6 +574,7 @@ impl Adapter {
                 self.app.features.error = None;
             }
             "open-with" => self.app.features.open_with = None,
+            "open-as" => self.app.features.open_as = None,
             "history" => self.app.show_history = false,
             _ => {}
         }

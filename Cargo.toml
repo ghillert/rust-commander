@@ -155,6 +155,7 @@ keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 # legacy helper; retain the native macOS/Windows backends here.
 [patch.crates-io]
 drag = { path = "vendor/drag" }
+sevenz-rust = { path = "vendor/sevenz-rust" }
 
 [build-dependencies]
 winresource = "0.1"

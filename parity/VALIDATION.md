@@ -1,5 +1,43 @@
 # Validation record
 
+## Archive interoperability and viewer tools — 2026-10-25
+
+On the available Apple Silicon Mac, the current source passes 354 tests with
+17 ignored, plus formatting and Clippy for all targets/features with warnings
+denied. One ignored test was run separately with official 7-Zip 26.05 and passed.
+The normal CI matrix still needs to validate this revision on Windows/Linux.
+
+- Generated 7z archives extract with libarchive 3.8.5 through compress-tools;
+  system bsdtar (libarchive 3.7.4) also extracts a generated file. Fixtures cover
+  single files, nested folders, Unicode paths, zero-valued CRCs, empty entries and
+  default/fastest/maximum levels. Ordinary entries are checked for incorrect
+  anti-item flags. The pinned writer patch and its scope are recorded in
+  [vendor notes](../vendor/sevenz-rust/PATCHES.md).
+- Official 7-Zip integrity checks and full extraction preserve plain and
+  AES-encrypted folder contents at all three tested levels, including empty
+  directories. The optional external-tool test is
+  `official_sevenzip_checks_plain_and_encrypted_output`; normal CI always runs
+  the independent libarchive tests without needing a separate CLI installation.
+- Open As domain/UI checks cover misleading extensions, text/image/PDF/hex
+  overrides, bounded large-file handling, nested read-only archive copies,
+  original parent navigation, ZIP/7z password validation and frozen selection.
+  Right-click menu dispatch/cancellation coverage includes the new command.
+- PDF tests cover forward/backward/wrapped searches, encrypted documents,
+  cancellation, UTF-8 offsets for Unicode/ligatures/surrogates, rotated selection,
+  and physical pointer selection at fit-width. Text view remains read-only.
+- Ten isolated macOS previews (software/femtovg; Open As, archive password,
+  highlighted search, text view and rotated dark view) rendered successfully.
+  The development app bundle was rebuilt and ad hoc signed without restarting
+  the user's running app.
+- Windows CI run 40293595998 exposed a receipt-lookup test that compared a native
+  serialized path with a Unix-only string. The lookup now compares paths;
+  `transfer_controls` passes locally (8 passed, 1 ignored), with targeted Clippy
+  and formatting clean. A Windows CI rerun remains necessary.
+
+These are fixture and local desktop results. OCR, forms/annotation editing,
+complex PDF reading order and broad archive/encryption variants remain outside
+this validation. See [viewer limits](../docs/VIEWERS.md).
+
 This record covers versions 0.3–0.6 on the available Apple Silicon Mac,
 including Linux checks in an ARM64 Debian container. The latest interface
 validation is in [Slint migration (0.6.0)](#slint-migration-060); earlier sections

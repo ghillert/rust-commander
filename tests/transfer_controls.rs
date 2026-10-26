@@ -246,12 +246,13 @@ fn checkpoint_merge_preserves_fixed_per_file_decisions_and_originals_across_all_
                 &fs::read(checkpoints.join("batch-merge/manifest.json")).unwrap(),
             )
             .unwrap();
+            let replaced = Path::new("tree").join("replace");
             let index = receipt["items"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .position(|i| i["relative"] == "tree/replace")
-                .unwrap();
+                .position(|i| i["relative"].as_str().map(Path::new) == Some(replaced.as_path()))
+                .expect("receipt must retain the replaced file's original contents");
             assert_eq!(
                 fs::read(checkpoints.join(format!("batch-merge/original-{index}"))).unwrap(),
                 b"old replace"

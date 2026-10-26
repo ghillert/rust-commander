@@ -183,4 +183,9 @@ Encrypted PDFs open with a password prompt. The viewer adds go-to-page,
 clockwise rotation and fit-width, with worker-thread rendering. A per-document
 LRU retains at most three unrotated images and 24 MiB of page pixels; rendered
 resolution and input limits remain bounded. Passwords/cache data stay in memory.
-This adds viewing controls, not PDF text search, annotation editing or forms UI.
+PDFs also support Unicode text selection/copying and cancellable document search,
+with previous/next matches and wrapping. **Text view** offers normal text selection
+alongside direct page selection; highlights track page rotation. **Open As…** can
+force PDF, image, text, hex or archive interpretation without renaming a file.
+See [viewer workflows and limits](VIEWERS.md). OCR, annotation editing and forms
+UI remain unavailable.

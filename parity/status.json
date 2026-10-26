@@ -657,12 +657,15 @@
   },
   "OpenAs": {
     "evidence": [
-      "src/app.rs",
-      "src/associations.rs",
-      "docs/FEATURES_NEXT.md"
+      "src/open_as.rs",
+      "src/viewer.rs",
+      "src/archive_tools.rs",
+      "src/app/slint_ui/viewer_tests.rs",
+      "tests/viewer_formats.rs",
+      "docs/VIEWERS.md"
     ],
-    "note": "No forced-extension/type action is implemented. Upstream opens a file as a specified format (including archive wrapping) without renaming it. The existing Open With application chooser and filename associations are a different feature.",
-    "status": "missing"
+    "note": "File/right-click Open As explicitly interprets local, remote or archive files as text, hex, image, PDF or archive without renaming originals. Archive overrides use validated read-only copies with existing 128 MiB/depth/cache limits. Domain and UI tests cover misnamed files, source stability and cached archive parent navigation; broader native/provider acceptance remains open.",
+    "status": "partial"
   },
   "OpenCommandPrompt": {
     "evidence": [
@@ -737,9 +740,11 @@
       "src/app/slint_ui/packing_tests.rs",
       "tests/packing.rs",
       "examples/pack_benchmark.rs",
-      "docs/PACKING_PERFORMANCE.md"
+      "docs/PACKING_PERFORMANCE.md",
+      "vendor/sevenz-rust/PATCHES.md",
+      "tests/packing.rs::sevenz_output_is_readable_by_independent_libarchive"
     ],
-    "note": "Pack files dialog and right-click action provide destination naming, ZIP/7z/TAR/stream format choices, validated compression levels (also encrypted/queued), ZIP comments, foreground/background packing with cancellation and an expandable source list. 7z multi-file/folder creation and encrypted 7z round trips are tested. Existing archive tools provide ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers. Nested/remote archives remain read-only; links/special files are rejected and broader desktop/format/metadata acceptance remains open. Performance measurements and the observed bsdtar incompatibility of generated 7z archives are recorded in docs/PACKING_PERFORMANCE.md; built-in 7z round trips do not establish external-reader parity.",
+    "note": "Pack files dialog and right-click action provide destination naming, ZIP/7z/TAR/stream format choices, validated compression levels (also encrypted/queued), ZIP comments, foreground/background packing with cancellation and an expandable source list. 7z multi-file/folder creation and encrypted 7z round trips are tested. Existing archive tools provide ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers. Nested/remote archives remain read-only; links/special files are rejected and broader desktop/format/metadata acceptance remains open. Performance measurements are recorded in docs/PACKING_PERFORMANCE.md. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
     "status": "partial"
   },
   "PasteClipboardFiles": {
@@ -1467,9 +1472,13 @@
       "src/viewer.rs",
       "src/viewer_search.rs",
       "src/app/slint_ui/viewer_tools.rs",
-      "tests/features_08.rs"
+      "tests/features_08.rs",
+      "src/pdf_text.rs",
+      "tests/viewer_formats.rs",
+      "src/app/slint_ui/viewer_tests.rs",
+      "docs/VIEWERS.md"
     ],
-    "note": "Encoded text viewing, streaming literal/hex search, local byte navigation, images and Hayro PDF password/page/rotation/fit controls are implemented with bounded rendering/cache. Full format compatibility and desktop integration remain unvalidated.",
+    "note": "Hayro PDF rendering/password unlock, page/rotation/fit controls and bounded cache now include Unicode text extraction, direct page selection/copy, selectable text view and cancellable case-insensitive previous/next document search with wrapping. Glyph limits, missing Unicode maps, complex reading order and OCR/forms/annotations remain documented limits; broader native/PDF compatibility acceptance remains open.",
     "status": "partial"
   },
   "mucommander-format-ar": {
@@ -1550,9 +1559,11 @@
       "tests/desktop_tools.rs",
       "tests/features.rs",
       "tests/features_05.rs",
-      "docs/FILE_OPERATIONS.md"
+      "docs/FILE_OPERATIONS.md",
+      "vendor/sevenz-rust/PATCHES.md",
+      "tests/packing.rs::sevenz_output_is_readable_by_independent_libarchive"
     ],
-    "note": "7z creation/extraction/browsing, AES encryption/unlock and guarded local repacking edits exist. Nested/remote containers are read-only; link/special-file extraction is rejected. Broader variants/metadata and desktop acceptance remain open.",
+    "note": "7z creation/extraction/browsing, AES encryption/unlock and guarded local repacking edits exist. Nested/remote containers are read-only; link/special-file extraction is rejected. Broader variants/metadata and desktop acceptance remain open. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
     "status": "partial"
   },
   "mucommander-format-tar": {
@@ -1728,9 +1739,13 @@
     "evidence": [
       "src/viewer.rs",
       "src/app/slint_ui/viewer_tools.rs",
-      "src/app/slint_ui.rs"
+      "src/app/slint_ui.rs",
+      "src/pdf_text.rs",
+      "tests/viewer_formats.rs",
+      "src/app/slint_ui/viewer_tests.rs",
+      "docs/VIEWERS.md"
     ],
-    "note": "Shared Rust viewer content types, loading and Slint presentation exist. Complete behavior/lifecycle parity with the upstream internal viewer API has not been established; no Java-compatible extension API is claimed.",
+    "note": "Hayro PDF rendering/password unlock, page/rotation/fit controls and bounded cache now include Unicode text extraction, direct page selection/copy, selectable text view and cancellable case-insensitive previous/next document search with wrapping. Glyph limits, missing Unicode maps, complex reading order and OCR/forms/annotations remain documented limits; broader native/PDF compatibility acceptance remains open.",
     "status": "partial"
   },
   "mucommander-viewer-binary": {
@@ -1755,9 +1770,13 @@
     "evidence": [
       "src/viewer.rs",
       "src/app/slint_ui/viewer_tools.rs",
-      "tests/features_08.rs"
+      "tests/features_08.rs",
+      "src/pdf_text.rs",
+      "tests/viewer_formats.rs",
+      "src/app/slint_ui/viewer_tests.rs",
+      "docs/VIEWERS.md"
     ],
-    "note": "Hayro renders encrypted PDFs after password entry, supports page jumps/rotation/fit-width and a bounded image cache. Software/GPU snapshots and callback tests cover the controls; PDF text selection/search, forms and full document compatibility remain open.",
+    "note": "Hayro PDF rendering/password unlock, page/rotation/fit controls and bounded cache now include Unicode text extraction, direct page selection/copy, selectable text view and cancellable case-insensitive previous/next document search with wrapping. Glyph limits, missing Unicode maps, complex reading order and OCR/forms/annotations remain documented limits; broader native/PDF compatibility acceptance remains open.",
     "status": "partial"
   },
   "mucommander-viewer-text": {

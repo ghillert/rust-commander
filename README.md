@@ -231,6 +231,10 @@ from the speed measurement.
 Right-click marked local files and choose **Pack files…** (also in **Operations**)
 to select ZIP, 7z or TAR variants and compression levels, add a ZIP comment, review the selected files,
 and run packing in the foreground or background. See [archive options](docs/FILE_OPERATIONS.md#archives).
+
+**File → Open As…** overrides extensions for text, hex, image, PDF or archive
+viewing without renaming files. PDFs support text selection/copying and document
+search with previous/next matches. See [viewer tools](docs/VIEWERS.md).
 **F5** extracts archive entries into new or existing folders with conflict choices. **File → Archive tools…**
 edits local ZIP/TAR/7z containers or creates/unlocks encrypted ZIP and 7z archives. Nested and
 remote archives open read-only. **Mod+Z / Mod+Shift+Z** undo/redo eligible local operations and

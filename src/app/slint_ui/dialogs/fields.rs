@@ -498,6 +498,21 @@ impl Adapter {
                 "workspaces" if id == "workspace-name" => {
                     self.app.features.workspace_name = value.into()
                 }
+                "open-as" if id == "open-password" => {
+                    if let Some(form) = &mut self.app.features.open_as {
+                        form.password = value.into();
+                    }
+                }
+                "open-as" if id == "open-format" => {
+                    let kind = crate::open_as::CHOICES
+                        .iter()
+                        .find(|(label, _)| *label == value || tr(label).as_ref() == value)
+                        .context("Choose a supported file format.")?
+                        .1;
+                    if let Some(form) = &mut self.app.features.open_as {
+                        form.kind = kind;
+                    }
+                }
                 "open-with" if id == "application-filter" => {
                     self.app.features.application_filter = value.into()
                 }

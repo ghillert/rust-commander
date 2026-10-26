@@ -12,9 +12,11 @@ pub mod folder_tools;
 pub mod model;
 #[cfg(target_os = "macos")]
 mod native_menu;
+pub mod open_as;
 pub mod operations;
 pub mod packing;
 pub mod path_rules;
+pub mod pdf_text;
 pub mod preferences;
 pub mod remote;
 pub mod search;

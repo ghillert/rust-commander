@@ -141,6 +141,159 @@ fn sevenz_packs_multiple_files_and_nested_folders_and_extracts_them() {
 }
 
 #[test]
+fn sevenz_output_is_readable_by_independent_libarchive() {
+    let root = tempfile::tempdir().unwrap();
+    let folder = root.path().join("café folder");
+    fs::create_dir_all(folder.join("empty directory")).unwrap();
+    let payload = "Archive interoperability — 日本語\n".repeat(100);
+    fs::write(folder.join("payload.txt"), payload.as_bytes()).unwrap();
+    fs::write(folder.join("empty.txt"), b"").unwrap();
+    // This nonempty payload has CRC32 zero; zero is a defined checksum.
+    let zero_crc = [0x9d, 0x0a, 0xd9, 0x6d];
+    fs::write(folder.join("zero-crc.bin"), zero_crc).unwrap();
+    for level in [None, Some(0), Some(9)] {
+        for (case, sources) in [
+            ("single", vec![folder.join("payload.txt")]),
+            ("tree", vec![folder.clone()]),
+            ("empty", vec![folder.join("empty.txt")]),
+            ("directory", vec![folder.join("empty directory")]),
+        ] {
+            let destination = root.path().join(format!("{case}-{level:?}.7z"));
+            archive::pack_with_compression(&sources, &destination, "", level, &mut Task::default())
+                .unwrap();
+            let reader =
+                sevenz_rust::SevenZReader::open(&destination, sevenz_rust::Password::empty())
+                    .unwrap();
+            assert!(
+                reader
+                    .archive()
+                    .files
+                    .iter()
+                    .all(|entry| !entry.is_anti_item),
+                "Normal entries must not be 7z deletion records"
+            );
+            let output = root.path().join(format!("out-{case}-{level:?}"));
+            fs::create_dir(&output).unwrap();
+            compress_tools::uncompress_archive(
+                fs::File::open(&destination).unwrap(),
+                &output,
+                compress_tools::Ownership::Ignore,
+            )
+            .unwrap_or_else(|e| panic!("libarchive rejected {case} at {level:?}: {e}"));
+            match case {
+                "single" => assert_eq!(
+                    fs::read(output.join("payload.txt")).unwrap(),
+                    payload.as_bytes()
+                ),
+                "tree" => {
+                    let tree = output.join("café folder");
+                    assert_eq!(
+                        fs::read(tree.join("payload.txt")).unwrap(),
+                        payload.as_bytes()
+                    );
+                    assert_eq!(fs::read(tree.join("zero-crc.bin")).unwrap(), zero_crc);
+                    assert_eq!(fs::read(tree.join("empty.txt")).unwrap(), b"");
+                    assert!(tree.join("empty directory").is_dir());
+                }
+                "empty" => assert_eq!(fs::read(output.join("empty.txt")).unwrap(), b""),
+                _ => assert!(output.join("empty directory").is_dir()),
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn system_bsdtar_extracts_generated_sevenz() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("hello.txt");
+    fs::write(&source, b"Independent system bsdtar extraction\n").unwrap();
+    let destination = root.path().join("archive.7z");
+    archive::pack(&[source], &destination, &mut Task::default()).unwrap();
+    let result = std::process::Command::new("/usr/bin/bsdtar")
+        .args(["-xOf"])
+        .arg(&destination)
+        .arg("hello.txt")
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"Independent system bsdtar extraction\n");
+}
+
+#[test]
+#[ignore = "requires an independent 7-Zip executable in RUST_COMMANDER_TEST_7Z"]
+fn official_sevenzip_checks_plain_and_encrypted_output() {
+    let program =
+        std::env::var_os("RUST_COMMANDER_TEST_7Z").expect("Set RUST_COMMANDER_TEST_7Z to 7zz/7z");
+    let root = tempfile::tempdir().unwrap();
+    let folder = root.path().join("folder");
+    fs::create_dir_all(folder.join("empty directory")).unwrap();
+    let payload = "Independent 7-Zip — café\n".repeat(100);
+    fs::write(folder.join("payload.txt"), payload.as_bytes()).unwrap();
+    fs::write(folder.join("empty.txt"), b"").unwrap();
+    for level in [None, Some(0), Some(9)] {
+        for encrypted in [false, true] {
+            let destination = root
+                .path()
+                .join(format!("archive-{level:?}-{encrypted}.7z"));
+            if encrypted {
+                archive::pack_with_password_and_level(
+                    std::slice::from_ref(&folder),
+                    &destination,
+                    "interoperability-test",
+                    level,
+                    &mut Task::default(),
+                )
+                .unwrap();
+            } else {
+                archive::pack_with_compression(
+                    std::slice::from_ref(&folder),
+                    &destination,
+                    "",
+                    level,
+                    &mut Task::default(),
+                )
+                .unwrap();
+            }
+            let test = std::process::Command::new(&program)
+                .args(["t", "-pinteroperability-test"])
+                .arg(&destination)
+                .output()
+                .unwrap();
+            assert!(
+                test.status.success(),
+                "7-Zip integrity check failed: {} {}",
+                String::from_utf8_lossy(&test.stdout),
+                String::from_utf8_lossy(&test.stderr)
+            );
+            let output = root.path().join(format!("out-{level:?}-{encrypted}"));
+            let extracted = std::process::Command::new(&program)
+                .args(["x", "-y", "-pinteroperability-test"])
+                .arg(format!("-o{}", output.display()))
+                .arg(&destination)
+                .output()
+                .unwrap();
+            assert!(
+                extracted.status.success(),
+                "7-Zip extraction failed: {} {}",
+                String::from_utf8_lossy(&extracted.stdout),
+                String::from_utf8_lossy(&extracted.stderr)
+            );
+            assert_eq!(
+                fs::read(output.join("folder/payload.txt")).unwrap(),
+                payload.as_bytes()
+            );
+            assert_eq!(fs::read(output.join("folder/empty.txt")).unwrap(), b"");
+            assert!(output.join("folder/empty directory").is_dir());
+        }
+    }
+}
+
+#[test]
 fn legacy_pack_recipes_load_and_new_options_survive_queue_persistence() {
     let legacy: Operation =
         serde_json::from_str(r#"{"Pack":{"sources":["one"],"destination":"archive.zip"}}"#)

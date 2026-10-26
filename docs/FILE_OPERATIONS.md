@@ -120,9 +120,16 @@ Stream formats accept one regular file.
 | Text viewer/editor | UTF-8, UTF-16 LE/BE, Windows-1252 and ISO-8859-1, up to 2 MiB |
 | Large local text viewer | Read-only 256 KiB pages, with selectable encoding |
 | Image viewer | Input up to 32 MiB; image dimensions are bounded |
-| PDF viewer | Input up to 32 MiB; password unlock, page navigation, rotation, fit-width and bounded page cache |
+| PDF viewer | Input up to 32 MiB; password unlock, page navigation, rotation, fit-width, text search/selection and bounded page cache |
 | Hex viewer | Initially the first 512 KiB; local byte jumps/search display bounded 64 KiB windows |
 | Checksums | SHA-256, SHA-512, SHA-1, and MD5 |
+
+**File → Open As…** (also in the right-click menu) overrides a file's extension
+for text, hex, image, PDF or archive interpretation without renaming it. PDF
+pages support mouse selection/copying, a selectable Text view, and cancellable
+case-insensitive document search with previous/next and wrapping. See
+[Open As and PDF text tools](VIEWERS.md) for workflows and limits, including
+read-only archive overrides and PDFs that need OCR.
 
 Text saves preserve encoding, BOM and CRLF line endings, atomically replace the
 file and refuse changed contents. The save-encoding choice allows conversion;

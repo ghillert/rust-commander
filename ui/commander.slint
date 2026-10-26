@@ -14,6 +14,7 @@ export struct FileColumn { title: string, width: float }
 export struct FileRow { id: string, name: string, cells: [string], directory: bool, selected: bool, cursor: bool, payload: string, icon: image, native-icon: bool, fallback-icon: string, symlink: bool }
 export struct FormField { id: string, title: string, value: string, kind: int, choices: [string] }
 export struct FormRow { id: string, title: string, detail: string, selected: bool, actions: [Command] }
+export struct PdfMark {x:float,y:float,width:float,height:float}
 export struct TerminalCell { text: string, foreground: color, background: color, bold: bool, cursor: bool }
 export struct TerminalRow { cells: [TerminalCell], text: string }
 
@@ -424,14 +425,27 @@ export component CommanderWindow inherits Window {
     in property <bool> viewer-locked;
     in property <bool> viewer-busy;
     in property <bool> viewer-fit-width;
+    in property <bool> viewer-pdf-text;
+    in property <bool> viewer-pdf-copy;
+    in property <[PdfMark]> viewer-pdf-marks;
+    callback viewer-pdf-select(float,float,bool);
     in property <string> viewer-notice;
     private property <string> viewer-query;
     private property <string> viewer-password;
     private property <string> viewer-jump;
     private property <string> viewer-page-input;
     public function focus-viewer() {viewer-overlay.focus();if root.viewer-image.width==0 {viewer-contents.focus();}}
-    public function select-viewer(start:int,end:int) { viewer-contents.set-selection-offsets(start,end); }
-    public function focus-viewer-search() { viewer-search.focus(); viewer-search.select-all(); }
+    public function select-viewer(start:int,end:int) {
+        viewer-contents.set-selection-offsets(start,end);
+        if root.viewer-pdf-document && !root.viewer-pdf-text && root.viewer-pdf-marks.length>0 {
+            let mark=root.viewer-pdf-marks[0];
+            image-scroll.content-y = -min(max(0px,(mark.y+mark.height/2)*viewer-page.height - image-scroll.visible-height/2),max(0px,viewer-page.height - image-scroll.visible-height));
+            image-scroll.content-x = -min(max(0px,(mark.x+mark.width/2)*viewer-page.width - image-scroll.visible-width/2),max(0px,viewer-page.width - image-scroll.visible-width));
+        }
+    }
+    public function focus-viewer-search() { if root.viewer-pdf-document {pdf-search.focus();pdf-search.select-all();} else {viewer-search.focus(); viewer-search.select-all();} }
+    public function copy-viewer() {if root.viewer-pdf-text {viewer-contents.copy();} else {root.viewer-action("pdf-copy");}}
+    public function select-all-viewer() {if root.viewer-pdf-text {viewer-contents.select-all();} else {root.viewer-action("pdf-select-all");}}
 
     in property <string> viewer-title;
     in-out property <string> viewer-text;
@@ -821,7 +835,15 @@ export component CommanderWindow inherits Window {
                     Button {text:"Go";enabled:!root.viewer-busy;clicked=>{root.viewer-action("page:"+root.viewer-page-input);}}
                     Button {text:"Rotate";enabled:!root.viewer-busy;clicked=>{root.viewer-action("rotate");}}
                     Button {text:"Fit width";clicked=>{root.viewer-action("fit-width");}}
+                    Button {text:Words.translate(root.viewer-pdf-text?"Page view":"Text view",Words.version);clicked=>{root.viewer-action("pdf-text");}}
+                    Button {text:Words.translate("Copy selection",Words.version);enabled:root.viewer-pdf-text || root.viewer-pdf-copy;clicked=>{root.copy-viewer();}}
                     Rectangle {horizontal-stretch:1;}
+                }
+                HorizontalBox {visible:root.viewer-pdf-document && !root.viewer-locked;max-height:self.visible?36px:0px;min-height:0px;
+                    pdf-search := LineEdit {text <=> root.viewer-query;placeholder-text:Words.translate("Find PDF text",Words.version);accessible-label:"Find PDF text";accepted(value)=>{root.viewer-action("pdf-find:"+value);}}
+                    Button {text:Words.translate("Find previous",Words.version);enabled:!root.viewer-busy;clicked=>{root.viewer-action("pdf-find-previous:"+root.viewer-query);}}
+                    Button {text:Words.translate("Find next",Words.version);enabled:!root.viewer-busy;clicked=>{root.viewer-action("pdf-find:"+root.viewer-query);}}
+                    if root.viewer-busy: Button {text:Words.translate("Cancel search",Words.version);clicked=>{root.viewer-action("cancel-search");}}
                 }
                 HorizontalBox {
                     visible:root.viewer-text-controls;max-height:root.viewer-text-controls?40px:0px;min-height:0px;
@@ -832,15 +854,27 @@ export component CommanderWindow inherits Window {
                     Button {text:"Go";clicked=>{root.viewer-action("jump:"+root.viewer-jump);}}
                     if root.viewer-busy: Button {text:"Cancel search";clicked=>{root.viewer-action("cancel-search");}}
                 }
-                if root.viewer-image.width > 0: image-scroll := ScrollView {
+                image-scroll := ScrollView {
+                    visible:root.viewer-image.width>0;max-height:self.visible?100000px:0px;min-height:0px;
                     content-width: max(self.visible-width, viewer-page.width);
                     content-height: max(self.visible-height, viewer-page.height);
-                    viewer-page := Image {
-                        source: root.viewer-image;
+                    viewer-page := Rectangle {
+                        accessible-label:"PDF page";
+                        accessible-role:image;
                         x: max(0px, (image-scroll.visible-width - self.width) / 2);
                         y: 0px;
-                        width: root.viewer-fit-width ? image-scroll.visible-width : self.source.width * root.viewer-zoom * 1px;
-                        height: self.width * self.source.height / max(1, self.source.width);
+                        width: root.viewer-fit-width ? image-scroll.visible-width : root.viewer-image.width * root.viewer-zoom * 1px;
+                        height: self.width * root.viewer-image.height / max(1, root.viewer-image.width);
+                        Image {source:root.viewer-image;width:parent.width;height:parent.height;}
+                        for mark in root.viewer-pdf-marks: Rectangle {
+                            x:mark.x * parent.width;y:mark.y * parent.height;width:mark.width * parent.width;height:mark.height * parent.height;
+                            background:#4096ff60;
+                        }
+                        if root.viewer-pdf-document: TouchArea {
+                            mouse-cursor:text;
+                            pointer-event(event)=>{if event.button==PointerEventButton.left && event.kind==PointerEventKind.down {root.viewer-pdf-select(self.mouse-x/self.width,self.mouse-y/self.height,true);}}
+                            moved=>{if self.pressed {root.viewer-pdf-select(self.mouse-x/self.width,self.mouse-y/self.height,false);}}
+                        }
                     }
                 }
                 viewer-contents := TextEdit {

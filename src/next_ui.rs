@@ -19,6 +19,7 @@ pub struct Features {
     pub workspace_name: String,
     pub workspace_selected: Option<usize>,
     pub open_with: Option<(PathBuf, String)>,
+    pub open_as: Option<crate::open_as::Form>,
     pub applications: Vec<PathBuf>,
     pub application_filter: String,
     pub remember_application: bool,
@@ -41,6 +42,7 @@ impl Features {
             || self.recovery.is_some()
             || self.workspaces
             || self.open_with.is_some()
+            || self.open_as.is_some()
     }
     pub fn sync(&mut self, left: PathBuf, right: PathBuf) {
         self.sync = Some(SyncForm {

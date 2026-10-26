@@ -245,6 +245,29 @@ pub fn origin(file: &Path) -> Option<Location> {
 }
 
 pub fn materialize(location: &Location, path: &Path) -> Result<PathBuf> {
+    materialize_as(location, path, None)
+}
+pub fn materialize_as(
+    location: &Location,
+    path: &Path,
+    format: Option<crate::archive::Format>,
+) -> Result<PathBuf> {
+    materialize_impl(location, path, format, "")
+}
+pub fn materialize_as_with_password(
+    location: &Location,
+    path: &Path,
+    format: crate::archive::Format,
+    password: &str,
+) -> Result<PathBuf> {
+    materialize_impl(location, path, Some(format), password)
+}
+fn materialize_impl(
+    location: &Location,
+    path: &Path,
+    format: Option<crate::archive::Format>,
+    password: &str,
+) -> Result<PathBuf> {
     const LIMIT: u64 = 128 * 1024 * 1024;
     let depth = match location {
         Location::Archive { file, .. } => MATERIALIZED
@@ -273,10 +296,26 @@ pub fn materialize(location: &Location, path: &Path) -> Result<PathBuf> {
     let directory = tempfile::Builder::new()
         .prefix("rust-commander-archive-")
         .tempdir()?;
-    let file = directory
+    let mut file = directory
         .path()
         .join(path.file_name().context("Missing archive name")?);
+    if let Some(format) = format {
+        let suffix = crate::packing::FORMATS
+            .iter()
+            .find(|(kind, _, _)| *kind == format)
+            .map(|(_, _, suffix)| *suffix)
+            .unwrap_or(".rar");
+        let mut name = file.file_name().unwrap().to_os_string();
+        name.push(suffix);
+        file.set_file_name(name);
+    }
     File::create(&file)?.write_all(&bytes)?;
+    if format.is_some() {
+        if !password.is_empty() {
+            crate::archive::unlock(&file, password)?;
+        }
+        crate::archive::list(&file, Path::new(""))?;
+    }
     let mut cache = MATERIALIZED
         .get_or_init(Default::default)
         .lock()

@@ -133,7 +133,14 @@ impl Dialog {
                 "cancel".into(),
                 if matches!(
                     kind,
-                    "prompt" | "pack" | "preferences" | "archive" | "rename" | "sync" | "open-with"
+                    "prompt"
+                        | "pack"
+                        | "preferences"
+                        | "archive"
+                        | "rename"
+                        | "sync"
+                        | "open-with"
+                        | "open-as"
                 ) {
                     "Cancel".into()
                 } else {
@@ -1074,6 +1081,33 @@ impl Adapter {
                 d.rows.push(row);
             }
             d.button("accept", "Save current workspace", true);
+            return d;
+        }
+        if let Some(form) = &self.app.features.open_as {
+            let mut d = Dialog::new("open-as", "Open As");
+            d.description = form.entry.path.display().to_string();
+            d.fields.push(Field::choice(
+                "open-format",
+                "Open as",
+                tr(form.label()),
+                crate::open_as::CHOICES
+                    .iter()
+                    .map(|(label, _)| tr(label).into_owned())
+                    .collect::<Vec<_>>(),
+            ));
+            if matches!(
+                form.kind,
+                crate::open_as::Kind::Archive(
+                    crate::archive::Format::Zip | crate::archive::Format::SevenZ
+                )
+            ) {
+                d.fields.push(Field::password(
+                    "open-password",
+                    "Archive password (if required)",
+                    &form.password,
+                ));
+            }
+            d.button("accept", "Open", true);
             return d;
         }
         if let Some((path, application)) = &self.app.features.open_with {

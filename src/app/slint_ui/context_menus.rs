@@ -236,6 +236,7 @@ fn file_context_dialog_actions_open_and_cancel_without_modifying_files() {
         ("Permissions", "prompt"),
         ("Modified", "prompt"),
         ("OpenWith", "open-with"),
+        ("OpenAs", "open-as"),
         ("Associations", "associations"),
         ("Rename", "prompt"),
         ("Mkdir", "prompt"),

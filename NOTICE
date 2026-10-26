@@ -13,6 +13,10 @@ Third-party Rust dependencies retain their respective licenses. The precise
 dependency versions are recorded in Cargo.lock; their source and license
 notices are available from crates.io and in Cargo's registry source cache.
 
+Vendored sevenz-rust 0.6.1 (vendor/sevenz-rust), by its upstream contributors:
+https://github.com/dyz1990/sevenz-rust
+Licensed under Apache-2.0; see vendor/sevenz-rust/LICENSE and PATCHES.md.
+
 tests/fixtures/tree.rar is from compress-tools 0.16.1
 (https://github.com/OSSystems/compress-tools-rs), licensed MIT OR Apache-2.0.
 The other archive fixtures contain test data generated for this project.

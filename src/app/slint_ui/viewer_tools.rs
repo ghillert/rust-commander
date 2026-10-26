@@ -51,7 +51,7 @@ impl Adapter {
         let Some(pdf) = &mut editor.pdf else {
             return;
         };
-        if self.app.pending_pdf.is_some() {
+        if self.app.pending_pdf.is_some() || pdf.search_pending.is_some() {
             return;
         }
         if let Some(password) = password {
@@ -67,16 +67,17 @@ impl Adapter {
         self.app.pending_pdf = Some(receiver);
         std::thread::spawn(move || {
             let result = (|| -> anyhow::Result<_> {
-                let (image, count) = cache
+                let (image, count, text) = cache
                     .lock()
                     .map_err(|_| anyhow::anyhow!("PDF cache unavailable"))?
-                    .render(&bytes, page, &password)?;
+                    .render_with_text(&bytes, page, &password)?;
                 Ok((
                     title,
                     page,
                     rotation,
                     count,
                     crate::viewer::rotate(&image, rotation),
+                    text,
                 ))
             })()
             .map_err(|e| format!("{e:#}"));
@@ -106,8 +107,37 @@ impl Adapter {
                 Err(e) => editor.navigation.notice = e,
             }
         }
+        let result = editor
+            .pdf
+            .as_mut()
+            .and_then(|pdf| crate::background::poll(&mut pdf.search_pending));
+        if let Some(result) = result {
+            let mut editor = self.app.editor.take().unwrap();
+            match result {
+                Ok(hit) => {
+                    let pdf = editor.pdf.as_mut().unwrap();
+                    pdf.search_last = Some((hit.page, hit.range.clone()));
+                    pdf.pending_selection = Some((hit.page, hit.range));
+                    editor.navigation.notice = format!(
+                        "Match on page {}{}",
+                        hit.page + 1,
+                        if hit.wrapped {
+                            " · Wrapped search"
+                        } else {
+                            ""
+                        }
+                    );
+                    self.render_pdf_page(&mut editor, hit.page, None, None);
+                }
+                Err(error) => editor.navigation.notice = error,
+            }
+            self.app.editor = Some(editor);
+        }
     }
     pub(super) fn viewer_tool_action(&mut self, editor: &mut Editor, action: &str) -> bool {
+        if editor.pdf.is_some() && self.pdf_tool_action(editor, action) {
+            return true;
+        }
         if let Some(password) = action.strip_prefix("unlock:") {
             self.render_pdf_page(editor, 0, Some(password.into()), None);
             return true;
@@ -318,6 +348,114 @@ impl Adapter {
                 })
             })()
             .map_err(|e| format!("{e:#}"));
+            let _ = sender.send(result);
+            ctx.request_repaint();
+        });
+        true
+    }
+}
+
+impl Adapter {
+    pub(super) fn pdf_select(&mut self, x: f32, y: f32, begin: bool) {
+        if !x.is_finite() || !y.is_finite() {
+            return;
+        }
+        if self.app.pending_pdf.is_some() {
+            return;
+        }
+        let Some(editor) = &mut self.app.editor else {
+            return;
+        };
+        let Some(pdf) = &mut editor.pdf else {
+            return;
+        };
+        if pdf.locked || pdf.search_pending.is_some() {
+            return;
+        }
+        if let Some(index) = pdf.text.nearest(x, y, pdf.rotation) {
+            if begin {
+                pdf.anchor = Some(index);
+            }
+            pdf.selection = pdf.text.selection(pdf.anchor.unwrap_or(index), index);
+        }
+    }
+    fn pdf_tool_action(&mut self, editor: &mut Editor, action: &str) -> bool {
+        let pdf = editor.pdf.as_mut().unwrap();
+        match action {
+            "pdf-text" => {
+                pdf.text_view = !pdf.text_view;
+                editor.image_revision += 1;
+                return true;
+            }
+            "pdf-select-all" => {
+                pdf.selection = Some(0..pdf.text.text.len());
+                return true;
+            }
+            "pdf-copy" => {
+                if let Some(text) = pdf
+                    .selection
+                    .as_ref()
+                    .and_then(|range| pdf.text.text.get(range.clone()))
+                {
+                    editor.error = self
+                        .app
+                        .native_files
+                        .copy_text(text.to_owned())
+                        .err()
+                        .map(|e| e.to_string());
+                }
+                return true;
+            }
+            "cancel-search" => {
+                pdf.search_cancel.store(true, Ordering::Relaxed);
+                return true;
+            }
+            _ => {}
+        }
+        let (query, backwards) = if let Some(query) = action
+            .strip_prefix("pdf-find:")
+            .or_else(|| action.strip_prefix("find:"))
+        {
+            (query, false)
+        } else if let Some(query) = action.strip_prefix("pdf-find-previous:") {
+            (query, true)
+        } else {
+            return false;
+        };
+        if pdf.locked || self.app.pending_pdf.is_some() || pdf.search_pending.is_some() {
+            return true;
+        }
+        if query.is_empty() || query.len() > 4096 {
+            editor.error = Some("Enter a search of 1–4096 bytes".into());
+            return true;
+        }
+        if pdf.search_query != query {
+            pdf.search_last = None;
+            pdf.search_query = query.to_owned();
+        }
+        let start = pdf
+            .search_last
+            .as_ref()
+            .map(|(page, range)| (*page, if backwards { range.start } else { range.end }))
+            .unwrap_or((pdf.page, if backwards { usize::MAX } else { 0 }));
+        pdf.search_cancel = Arc::new(AtomicBool::new(false));
+        let task = Task::new(pdf.search_cancel.clone(), |_| {});
+        let bytes = pdf.bytes.clone();
+        let password = pdf.password.clone();
+        let query = query.to_owned();
+        let (sender, receiver) = mpsc::channel();
+        pdf.search_pending = Some(receiver);
+        editor.error = None;
+        editor.navigation.notice = "Searching PDF text…".into();
+        let ctx = self.ctx.clone();
+        std::thread::spawn(move || {
+            let result = crate::pdf_text::find(&bytes, &password, &query, start, backwards, &task)
+                .and_then(|hit| {
+                    hit.ok_or_else(|| {
+                        anyhow::anyhow!("No matching PDF text. Scanned pages need OCR.")
+                    })
+                })
+                .map_err(|e| format!("{e:#}"));
             let _ = sender.send(result);
             ctx.request_repaint();
         });
