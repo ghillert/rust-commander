@@ -60,6 +60,9 @@ save-back; HTTP and format overrides remain read-only. See
 [recovery and archive save-back](RECOVERY_AND_SUPPORT.md). Closing protects an open editor
 session; **Discard working copy** explicitly removes it. A failed save retains
 the working copy for review. Working copies are temporary, not crash recovery.
+Direct remote file save-back still uses the 2 MiB remote text/byte-save limit,
+even though preparing an external working copy accepts up to 32 MiB. The separate
+cached archive publication path supports containers up to 128 MiB.
 
 ## 6. Application associations
 

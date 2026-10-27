@@ -4,6 +4,7 @@ use rust_commander::APP_NAME;
 use std::path::PathBuf;
 
 fn main() -> anyhow::Result<()> {
+    rust_commander::debug_log::record("application", "Rust Commander started");
     #[cfg(target_os = "linux")]
     if std::env::args_os()
         .nth(1)

@@ -130,6 +130,14 @@ pub(crate) enum Action {
     CheckForUpdates,
     Diagnostics,
     ReportBug,
+    BringAllToFront,
+    Email,
+    ExploreBookmarks,
+    GoToDocumentation,
+    GoToForums,
+    GoToWebsite,
+    Donate,
+    ShowDebugConsole,
     RecallWindow1,
     RecallWindow2,
     RecallWindow3,
@@ -273,6 +281,14 @@ pub(crate) fn all_actions() -> Vec<Action> {
         Action::CheckForUpdates,
         Action::Diagnostics,
         Action::ReportBug,
+        Action::BringAllToFront,
+        Action::Email,
+        Action::ExploreBookmarks,
+        Action::GoToDocumentation,
+        Action::GoToForums,
+        Action::GoToWebsite,
+        Action::Donate,
+        Action::ShowDebugConsole,
         Action::RecallWindow1,
         Action::RecallWindow2,
         Action::RecallWindow3,
@@ -385,6 +401,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Open With…", Action::OpenWith),
                 ("Open As…", Action::OpenAs),
                 ("Edit externally…", Action::ExternalEdit),
+                ("Email files…", Action::Email),
                 ("Application associations…", Action::Associations),
                 ("Reveal in file manager", Action::Reveal),
                 ("Show package contents", Action::PackageContents),
@@ -424,6 +441,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("New tab", Action::NewTab),
                 ("Close tab", Action::CloseTab),
                 ("Add bookmark", Action::Bookmark),
+                ("Explore bookmarks…", Action::ExploreBookmarks),
                 ("Refresh", Action::Refresh),
                 ("Swap panes", Action::Swap),
                 ("Same folder in both panes", Action::SameFolder),
@@ -497,6 +515,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
     }
     if let Some((_, items)) = groups.iter_mut().find(|(title, _)| *title == "Window") {
         items.extend([
+            ("Bring all windows forward", Action::BringAllToFront),
             ("Switch to window 1", Action::RecallWindow1),
             ("Switch to window 2", Action::RecallWindow2),
             ("Switch to window 3", Action::RecallWindow3),
@@ -516,6 +535,11 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
             ("Check for updates…", Action::CheckForUpdates),
             ("Diagnostics…", Action::Diagnostics),
             ("Report a bug…", Action::ReportBug),
+            ("Documentation", Action::GoToDocumentation),
+            ("Community support", Action::GoToForums),
+            ("Project website", Action::GoToWebsite),
+            ("Donate…", Action::Donate),
+            ("Debug console…", Action::ShowDebugConsole),
         ],
     ));
     groups
@@ -878,6 +902,10 @@ impl Commander {
         self.panes[self.active].tab_mut()
     }
     fn fail(&mut self, error: impl ToString) {
+        crate::debug_log::record(
+            "error",
+            "Action failed; the status bar contains the detailed error",
+        );
         self.status = error.to_string();
         self.status_error = true;
     }
@@ -1410,6 +1438,14 @@ impl Commander {
             | Action::CheckForUpdates
             | Action::Diagnostics
             | Action::ReportBug
+            | Action::BringAllToFront
+            | Action::Email
+            | Action::ExploreBookmarks
+            | Action::GoToDocumentation
+            | Action::GoToForums
+            | Action::GoToWebsite
+            | Action::Donate
+            | Action::ShowDebugConsole
             | Action::RecallWindow1
             | Action::RecallWindow2
             | Action::RecallWindow3

@@ -9,6 +9,7 @@ pub(super) enum Request {
     Cycle(bool),
     Raise(usize),
     RaiseOrdinal(usize),
+    RaiseAll,
 }
 struct Runtime {
     queue: crate::queue::Queue,
@@ -56,6 +57,8 @@ thread_local! {
     static RUNTIME:RefCell<Option<Runtime>>=const {RefCell::new(None)};
     static SESSIONS:RefCell<Vec<Session>>=const {RefCell::new(Vec::new())};
     static NEXT_ID:std::cell::Cell<usize>=const {std::cell::Cell::new(1)};
+    #[cfg(test)]
+    static RAISED:RefCell<Vec<usize>>=const {RefCell::new(Vec::new())};
 }
 /// UI callbacks are serialized by the event loop. Swapping preserves existing
 /// controller guards while giving every window the same queue/job/history.
@@ -264,7 +267,17 @@ fn persist_sessions() {
         }
     });
 }
+fn raise_all_order(ids: &[usize], current: usize) -> Vec<usize> {
+    ids.iter()
+        .rev()
+        .copied()
+        .filter(|id| *id != current)
+        .chain(ids.iter().copied().filter(|id| *id == current))
+        .collect()
+}
 fn raise(id: usize) {
+    #[cfg(test)]
+    RAISED.with(|raised| raised.borrow_mut().push(id));
     use slint::winit_030::WinitWindowAccessor;
     SESSIONS.with(|sessions| {
         if let Some(s) = sessions.borrow().iter().find(|s| s.id == id) {
@@ -305,6 +318,20 @@ pub(super) fn tick() {
         }
     }
     for (source, request) in requests {
+        if matches!(&request, Request::Quit | Request::ConfirmQuit)
+            && sessions
+                .iter()
+                .any(|(_, _, state)| state.borrow().desktop_commands.email_open())
+        {
+            if let Some((_, ui, state)) = sessions.iter().find(|(id, _, _)| *id == source) {
+                with_state(state, |adapter| {
+                    adapter.app.confirm_exit = false;
+                    adapter.app.fail("Close Email files in all windows before quitting; wait for any pending delivery result");
+                    adapter.sync(ui);
+                });
+            }
+            continue;
+        }
         match request {
             Request::New => {
                 let settings = RUNTIME.with(|r| r.borrow().as_ref().map(|r| r.settings.clone()));
@@ -332,6 +359,14 @@ pub(super) fn tick() {
                 }
             }
             Request::Raise(id) => raise(id),
+            Request::RaiseAll => {
+                for id in raise_all_order(
+                    &sessions.iter().map(|(id, _, _)| *id).collect::<Vec<_>>(),
+                    source,
+                ) {
+                    raise(id);
+                }
+            }
             Request::RaiseOrdinal(index) => {
                 if let Some((id, _, _)) = sessions.get(index) {
                     raise(*id);
@@ -405,6 +440,44 @@ pub(super) fn tick() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bring_all_forward_raises_every_open_window_and_keeps_the_origin_last() {
+        i_slint_backend_testing::init_no_event_loop();
+        let _reset = Reset;
+        let root = tempfile::tempdir().unwrap();
+        for _ in 0..3 {
+            open(&[root.path().into()], Ok(Settings::default())).unwrap();
+        }
+        RUNTIME.with(|runtime| {
+            let mut runtime = runtime.borrow_mut();
+            let runtime = runtime.as_mut().unwrap();
+            runtime.settings_valid = false;
+            runtime.queue = Default::default();
+            runtime.history.clear();
+        });
+        let states = SESSIONS.with(|sessions| {
+            sessions
+                .borrow()
+                .iter()
+                .map(|session| (session.id, session.state.clone()))
+                .collect::<Vec<_>>()
+        });
+        let ids = states.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+        RAISED.with(|raised| raised.borrow_mut().clear());
+        with_state(&states[1].1, |adapter| adapter.action("BringAllToFront"));
+        tick();
+        assert_eq!(
+            RAISED.with(|raised| raised.borrow().clone()),
+            vec![ids[2], ids[0], ids[1]]
+        );
+        assert_eq!(entries().len(), 3);
+        for (_, state) in states {
+            assert_eq!(
+                state.borrow().app.tab().location,
+                Location::Local(root.path().into())
+            );
+        }
+    }
     struct Reset;
     impl Drop for Reset {
         fn drop(&mut self) {

@@ -5,6 +5,7 @@ use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::{cell::RefCell, rc::Rc};
 
 slint::include_modules!();
+mod desktop_commands;
 mod dialogs;
 mod drag;
 mod enhancements;
@@ -36,6 +37,9 @@ pub(super) struct Adapter {
     app: Commander,
     enhancements: enhancements::State,
     management: management::State,
+    desktop_commands: desktop_commands::State,
+    #[cfg(test)]
+    desktop_settings_path: Option<PathBuf>,
     drag: drag::State,
     extra: parity::State,
     ctx: UiSignal,
@@ -146,6 +150,9 @@ impl Adapter {
             app,
             enhancements: Default::default(),
             management: Default::default(),
+            desktop_commands: Default::default(),
+            #[cfg(test)]
+            desktop_settings_path: None,
             drag: Default::default(),
             extra: Default::default(),
             ctx,
@@ -187,7 +194,8 @@ impl Adapter {
     }
 
     fn blocked(&self) -> bool {
-        self.management.active()
+        self.desktop_commands.active()
+            || self.management.active()
             || self.enhancements_modal()
             || self.drag.preparation.is_some()
             || self.extra.dialog.is_some()
@@ -357,6 +365,12 @@ impl Adapter {
                 .fail("This operation is unavailable for a read-only location.");
             return;
         }
+        if action_named(name).is_some() {
+            crate::debug_log::record("command", name);
+        }
+        if self.desktop_command_action(name) {
+            return;
+        }
         if self.management_action(name) {
             return;
         }
@@ -407,6 +421,11 @@ impl Adapter {
     }
 
     fn request_close(&mut self) {
+        if self.desktop_commands.email_open() {
+            self.app
+                .fail("Close Email files before closing this window; wait for any pending delivery result");
+            return;
+        }
         if self
             .app
             .job
@@ -484,6 +503,7 @@ impl Adapter {
         }
         self.app.poll(&self.ctx);
         self.enhancements_tick();
+        self.desktop_commands_tick();
         self.management_tick();
         self.viewer_tools_tick();
         self.parity_tick();
@@ -985,10 +1005,13 @@ impl Adapter {
             "archive" => 520.0,
             "text-diff" => (spec.fields.len() as f32 * 32.0 + 240.0).clamp(300.0, 700.0),
             "updates" | "diagnostics" | "report" => 360.0,
+            "donate" => 300.0,
+            "bookmarks" | "debug-console" => 620.0,
             _ => 700.0,
         });
         ui.set_dialog_diff(spec.kind == "text-diff");
         ui.set_dialog_pack(matches!(spec.kind.as_str(), "pack" | "pack-progress"));
+        ui.set_dialog_input_locked(self.desktop_commands.sending());
         ui.set_dialog_compact(matches!(
             spec.kind.as_str(),
             "text-diff"
@@ -1002,6 +1025,10 @@ impl Adapter {
                 | "updates"
                 | "diagnostics"
                 | "report"
+                | "donate"
+                | "email"
+                | "bookmarks"
+                | "debug-console"
         ));
         ui.set_dialog_title(spec.title.into());
         ui.set_dialog_description(spec.description.into());
@@ -1541,6 +1568,8 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                         match callback.as_str() {
                             "navigate" => ui.invoke_navigate(0, value.into()),
                             "open" => ui.invoke_opened(0, path_id(Path::new(&value)).into()),
+                            "click" => ui.invoke_clicked_file(0, path_id(Path::new(&value)).into()),
+                            "menu" => ui.invoke_show_menu(value.into()),
                             "action" => ui.invoke_action(value.into()),
                             "dialog" => ui.invoke_dialog_action(value.into()),
                             "select" => ui.invoke_dialog_select(value.into()),
@@ -1727,7 +1756,7 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
                 ("Appearance…", Action::Preferences),
             ];
         }
-        if title == "Help" {
+        if title == "Help" && entries.is_empty() {
             entries = vec![("Rust Commander Help", Action::Help)];
         }
         w.set_menu_items(

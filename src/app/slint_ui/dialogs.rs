@@ -25,7 +25,7 @@ impl Field {
             choices: Vec::new(),
         }
     }
-    fn password(id: &str, title: &str, value: &str) -> Self {
+    pub(super) fn password(id: &str, title: &str, value: &str) -> Self {
         Self {
             kind: 1,
             ..Self::text(id, title, value)
@@ -49,7 +49,7 @@ impl Field {
             ..Self::text(id, title, value)
         }
     }
-    fn multiline(id: &str, title: &str, value: impl ToString) -> Self {
+    pub(super) fn multiline(id: &str, title: &str, value: impl ToString) -> Self {
         Self {
             kind: 4,
             ..Self::text(id, title, value)
@@ -177,6 +177,9 @@ fn parse_policy(value: &str) -> crate::transfer::ConflictPolicy {
 
 impl Adapter {
     pub(super) fn dialog(&self) -> Dialog {
+        if let Some(dialog) = self.desktop_commands_dialog() {
+            return dialog;
+        }
         if !self.app.confirm_exit
             && self.app.message.is_none()
             && let Some(dialog) = self.management_dialog()

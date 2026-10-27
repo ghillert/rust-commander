@@ -1,5 +1,38 @@
 # Validation record
 
+## Remaining desktop commands — 2026-10-27
+
+All eight formerly missing Commands entries now have implementations: bring all
+windows forward, Email files, Explore bookmarks, documentation/community/website
+links, Donate and the debug console. The native and in-window Help menus now
+retain the full command list. See [behavior and limits](../docs/DESKTOP_COMMANDS.md).
+
+The Apple Silicon macOS all-target/all-feature run passes **404 tests with 17
+ignored** across 29 suites. Clippy with warnings denied passes on macOS and in
+the Linux container. Formatting and diff whitespace checks pass; the development
+macOS app bundle builds and passes strict code-signature verification. The debug
+linker reports the existing large `__eh_frame` compact-unwind warning.
+New coverage includes eight domain/integration tests, six
+headless dialog tests and a three-window dispatch test. Fixtures check MIME
+attachment bytes and header validation, bounded local/remote/archive preparation,
+cancellation, refusal to downgrade SMTP without STARTTLS, settings persistence
+without passwords, bookmark edits and rollback/stale guards, support-link
+validation, console filtering/privacy, pending-send controls and window order.
+The transport test uses loopback SMTP and never sends an external email.
+
+The six new screenshot cases in `scripts/management-smoke.py` render bookmarks,
+email, SMTP settings, console, donation and the complete Help menu. All twelve
+1240×780 software/light and FemtoVG/dark images were visually reviewed using
+disposable configuration and files. They do not send email or open donation
+pages. The donation default follows the published repository funding declaration
+for GitHub Sponsors (`ghillert`); the URL remains configurable.
+
+This establishes implementation and fixture coverage, not live SMTP delivery,
+system-browser launch or native window-focus acceptance across platforms. These
+eight entries therefore remain partial in the parity inventory. Counts are now
+**4 implemented, 188 partial, 7 missing and 1 inapplicable** across 200 entries;
+the seven missing entries are protocol/format integrations.
+
 ## Windows HTTP and Linux Clippy follow-up — 2026-10-26
 
 [CI run 40407268454](https://github.com/ghillert/rust-commander/actions/runs/40407268454)

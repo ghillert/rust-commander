@@ -108,5 +108,8 @@ to open a prefilled issue in the browser. Review/edit it there before submitting
 the application does not post a report automatically. Additional logs and
 screenshots are attached manually.
 
+The remaining Help links, Donate, Email files, bookmark explorer, bring-all-forward
+and debug console are described in [desktop commands](DESKTOP_COMMANDS.md).
+
 Implementation/fixture evidence and native platform limits are recorded in
 [the validation record](../parity/VALIDATION.md).

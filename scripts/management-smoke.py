@@ -16,12 +16,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, default=project / "target/debug/rust-commander")
     parser.add_argument("--output", type=Path, default=project / "target/management-smoke")
-    parser.add_argument("--case", action="append", choices=["files", "recovery", "archive", "diagnostics", "report"], dest="cases")
+    cases=["files", "recovery", "archive", "diagnostics", "report", "bookmarks", "email", "email-settings", "console", "donate", "help"]
+    parser.add_argument("--case", action="append", choices=cases, dest="cases")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="rust-commander-management-") as directory:
         for renderer in ["software", "femtovg"]:
-            for case in args.cases or ["files", "recovery", "archive", "diagnostics", "report"]:
+            for case in args.cases or cases:
                 root = Path(directory) / f"{renderer}-{case}"
                 config, left, right = [root / name for name in ["config", "left", "right"]]
                 for path in [config, left, right]:
@@ -31,7 +32,9 @@ def main():
                 (config / "settings.json").write_text(json.dumps({"preferences": {
                     "color_scheme": "Dark" if renderer == "femtovg" else "Light",
                     "parent_entry": True,
-                }}))
+                    "donation_url":"https://example.test/support",
+                    "mail":{"host":"smtp.example.test","port":587,"sender":"sender@example.test","username":"sender"},
+                }, "bookmarks":[{"name":"Working files","location":{"Local":str(left)}},{"name":"Other pane","location":{"Local":str(right)}}]}))
                 sequence = []
                 if case == "recovery":
                     backup = left / ".rust-commander-replaced-preview"
@@ -54,6 +57,17 @@ def main():
                                 [2100, "action", "Rename"]]
                 elif case in ["diagnostics", "report"]:
                     sequence = [[500, "action", "Diagnostics" if case == "diagnostics" else "ReportBug"]]
+                elif case == "bookmarks":
+                    sequence=[[500,"action","ExploreBookmarks"],[900,"select","bookmark-item-0"]]
+                elif case in ["email","email-settings"]:
+                    sequence=[[400,"click",str(left/"café notes.txt")],[700,"action","Email"],[1300,"field",json.dumps(["mail-to","recipient@example.test"])],[1400,"field",json.dumps(["mail-subject","Review selected files"])],[1500,"field",json.dumps(["mail-body","Prepared attachments for review. This preview never sends an email."])]]
+                    if case == "email-settings":sequence.append([1800,"dialog","mail-settings"])
+                elif case == "console":
+                    sequence=[[500,"action","ShowDebugConsole"]]
+                elif case == "donate":
+                    sequence=[[500,"action","Donate"]]
+                elif case == "help":
+                    sequence=[[700,"menu","Help"]]
                 target = args.output.resolve() / f"{renderer}-{case}.png"
                 target.unlink(missing_ok=True)
                 env = dict(os.environ, RUST_COMMANDER_CONFIG_DIR=str(config),

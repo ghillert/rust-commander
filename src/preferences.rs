@@ -21,6 +21,8 @@ impl LocationBar {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
+    pub mail: crate::mail::Settings,
+    pub donation_url: String,
     pub transfers: crate::transfer_control::Settings,
     pub folder_tool_presets: Vec<crate::comparison::Preset>,
     pub directory_tree: bool,
@@ -52,6 +54,8 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            mail: Default::default(),
+            donation_url: crate::support::DONATION.into(),
             transfers: Default::default(),
             folder_tool_presets: Vec::new(),
             directory_tree: false,

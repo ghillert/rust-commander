@@ -17,8 +17,15 @@
     "status": "implemented"
   },
   "BringAllToFront": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app.rs",
+      "src/app/slint_ui/desktop_commands.rs",
+      "tests/desktop_commands.rs",
+      "docs/DESKTOP_COMMANDS.md",
+      "src/app/slint_ui/windows.rs::bring_all_forward_raises_every_open_window_and_keeps_the_origin_last"
+    ],
+    "note": "Raises every open window in this process, restoring minimized windows and raising the invoking window last. Runtime dispatch/order and selection-preserving dialog tests pass; native focus/compositor and cross-process behavior remain acceptance limits.",
+    "status": "partial"
   },
   "CalculateChecksum": {
     "evidence": [
@@ -226,8 +233,16 @@
     "status": "partial"
   },
   "Donate": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app.rs",
+      "src/app/slint_ui/desktop_commands.rs",
+      "tests/desktop_commands.rs",
+      "docs/DESKTOP_COMMANDS.md",
+      "src/support.rs",
+      "src/preferences.rs"
+    ],
+    "note": "A reviewable HTTPS donation action defaults to GitHub Sponsors for ghillert, as declared in the repository funding configuration. Users can save a different credential-free HTTPS destination. URL validation, persistence and launch dispatch have tests; no payment is performed and native browser acceptance remains open.",
+    "status": "partial"
   },
   "DuplicateTab": {
     "evidence": [
@@ -242,9 +257,13 @@
       "src/external_edit.rs",
       "src/text_document.rs",
       "src/app/slint_ui/enhancements.rs",
-      "tests/features_08.rs"
+      "tests/features_08.rs",
+      "src/archive_writeback.rs",
+      "tests/archive_writeback.rs",
+      "docs/RECOVERY_AND_SUPPORT.md",
+      "docs/FEATURES_NEXT.md"
     ],
-    "note": "Built-in encoded text editing and guarded local/remote saves are available. External working copies support reviewed save-back to local/remote files and writable local archive entries. Broader editor, provider and desktop compatibility remains open.",
+    "note": "Built-in encoded text editing and guarded local/remote saves are available. External working copies support reviewed save-back to local/remote files and writable local/nested/remote ZIP/TAR/7z archive members. External copies accept up to 32 MiB, but direct remote byte saves still accept only 2 MiB; cached archive publication has a separate 128 MiB container bound. Temporary editor copies are not crash recovery. Broader editor, provider and desktop compatibility remains open.",
     "status": "partial"
   },
   "EditBookmarks": {
@@ -272,8 +291,16 @@
     "status": "partial"
   },
   "Email": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app.rs",
+      "src/app/slint_ui/desktop_commands.rs",
+      "tests/desktop_commands.rs",
+      "docs/DESKTOP_COMMANDS.md",
+      "src/mail.rs",
+      "src/preferences.rs"
+    ],
+    "note": "A reviewed attachment dialog prepares local/remote/archive files, flattens directories, allows per-file selection and sends once over required STARTTLS or implicit TLS with certificate validation. Non-secret SMTP settings persist; passwords/drafts/attachments are not saved or queued. Attachments are bounded to 100 files/25 MiB. MIME, input, downgrade-refusal and headless review/close-protection tests pass. Live SMTP/provider acceptance and OAuth-only accounts remain open.",
+    "status": "partial"
   },
   "EmptyTrash": {
     "evidence": [
@@ -286,8 +313,15 @@
     "status": "partial"
   },
   "ExploreBookmarks": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app.rs",
+      "src/app/slint_ui/desktop_commands.rs",
+      "tests/desktop_commands.rs",
+      "docs/DESKTOP_COMMANDS.md",
+      "src/settings.rs"
+    ],
+    "note": "A dedicated filterable bookmark browser opens saved locations in either pane and supports adding the current folder, rename, remove and reorder. Frozen collection checks and atomic-save rollback protect concurrent/failed edits. Headless persistence/navigation tests pass; broader native/upstream interaction acceptance remains open.",
+    "status": "partial"
   },
   "Find": {
     "evidence": [
@@ -350,12 +384,26 @@
     "status": "partial"
   },
   "GoToDocumentation": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app.rs",
+      "src/app/slint_ui/desktop_commands.rs",
+      "tests/desktop_commands.rs",
+      "docs/DESKTOP_COMMANDS.md",
+      "src/support.rs"
+    ],
+    "note": "Help opens the repository README and linked guides through the system browser. Command registration, actual Help menu contents and URL dispatch are tested; native browser acceptance remains open.",
+    "status": "partial"
   },
   "GoToForums": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app.rs",
+      "src/app/slint_ui/desktop_commands.rs",
+      "tests/desktop_commands.rs",
+      "docs/DESKTOP_COMMANDS.md",
+      "src/support.rs"
+    ],
+    "note": "Help > Community support opens repository Issues; GitHub Discussions is disabled and no separate forum is configured. This is the Rust project support destination for the upstream action. Menu/URL dispatch tests pass; native browser acceptance remains open.",
+    "status": "partial"
   },
   "GoToHome": {
     "evidence": [
@@ -398,8 +446,15 @@
     "status": "partial"
   },
   "GoToWebsite": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app.rs",
+      "src/app/slint_ui/desktop_commands.rs",
+      "tests/desktop_commands.rs",
+      "docs/DESKTOP_COMMANDS.md",
+      "src/support.rs"
+    ],
+    "note": "Help > Project website opens the Rust Commander repository, which has no separate configured homepage. Menu/URL dispatch tests pass; native browser acceptance remains open.",
+    "status": "partial"
   },
   "InternalEdit": {
     "evidence": [
@@ -738,20 +793,20 @@
   "OpenTrash": {
     "evidence": [
       "src/native_actions.rs",
-      "src/operations.rs",
-      "src/queue.rs",
-      "src/app/slint_ui/parity_tests.rs::trash_emptying_requires_confirmation_and_cannot_resume_unattended"
+      "src/app/slint_ui/parity.rs"
     ],
-    "note": "Native platform adapters exist with literal EMPTY confirmation and no unattended replay. Windows adapter cross-Clippy passes; real system Trash emptying has deliberately not been executed and native integration remains unvalidated.",
+    "note": "The Open Trash action delegates to native platform opening and is separate from destructive Empty Trash confirmation. Native launch behavior on all desktops remains to be accepted interactively.",
     "status": "partial"
   },
   "OpenURLInBrowser": {
     "evidence": [
       "src/app/slint_ui/dialogs.rs",
       "src/app/slint_ui/dialogs/commands.rs",
-      "docs/REMOTE_CONNECTIONS.md"
+      "docs/REMOTE_CONNECTIONS.md",
+      "src/support.rs",
+      "src/app/slint_ui/management.rs"
     ],
-    "note": "The URI connection/error dialog has Open in browser for the current address. A general selected-URL command equivalent to upstream is not present; native browser handoff and full action semantics remain unvalidated.",
+    "note": "Address/error, release and bug-report dialogs can open their specific URLs. A general selected-URL command equivalent to upstream is not present; native browser handoff and full action semantics remain unvalidated.",
     "status": "partial"
   },
   "Pack": {
@@ -777,7 +832,7 @@
       "tests/recovery_manager.rs",
       "docs/RECOVERY_AND_SUPPORT.md"
     ],
-    "note": "Pack files dialog and right-click action provide destination naming, ZIP/7z/TAR/stream format choices, validated compression levels (also encrypted/queued), ZIP comments, foreground/background packing with cancellation and an expandable source list. 7z multi-file/folder creation and encrypted 7z round trips are tested. Existing archive tools provide ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers. Writable nested/remote ZIP/TAR/7z sources support guarded outer-container save-back; HTTP and Open As format overrides remain read-only. links/special files are rejected and broader desktop/format/metadata acceptance remains open. Performance measurements are recorded in docs/PACKING_PERFORMANCE.md. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
+    "note": "Pack files dialog and right-click action take local sources and a local output; direct remote/archive-source packing is unavailable. They provide destination naming, ZIP/7z/TAR/stream format choices, validated compression levels (also encrypted/queued), ZIP comments, foreground/background packing with cancellation and an expandable source list. 7z multi-file/folder creation and encrypted 7z round trips are tested. Existing archive tools provide ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers. Writable nested/remote ZIP/TAR/7z sources support guarded outer-container save-back; HTTP and Open As format overrides remain read-only. Links/special files are rejected and broader desktop/format/metadata acceptance remains open. Performance measurements are recorded in docs/PACKING_PERFORMANCE.md. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
     "status": "partial"
   },
   "PasteClipboardFiles": {
@@ -979,9 +1034,11 @@
       "src/remote.rs",
       "src/archive_tools.rs",
       "src/app.rs",
-      "tests/features.rs"
+      "tests/features.rs",
+      "src/archive_writeback.rs",
+      "tests/archive_writeback.rs"
     ],
-    "note": "Local, ZIP and remote rename implemented. Remote copy/check/delete validated through filesystem adapter; live services and full platform behavior pending.",
+    "note": "Local files, remote files and writable local/nested/remote ZIP/TAR/7z members support guarded renaming. Archive save-back checks containing sources and journals the outer local file or retains a remote recovery original. HTTP/Open As archive overrides stay read-only; broader live-service, metadata and native platform acceptance remain open.",
     "status": "partial"
   },
   "ReportBug": {
@@ -1129,8 +1186,16 @@
     "status": "partial"
   },
   "ShowDebugConsole": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/app.rs",
+      "src/app/slint_ui/desktop_commands.rs",
+      "tests/desktop_commands.rs",
+      "docs/DESKTOP_COMMANDS.md",
+      "src/debug_log.rs",
+      "src/operations.rs"
+    ],
+    "note": "A shared in-memory console holds up to 2000 structured application events with UTC times, sequence/category, filtering, paused display, clear and filtered-copy controls. Hooks record command/operation/bookmark/email outcomes while excluding paths, credentials and draft/attachment content. Buffer and UI/privacy tests pass; this does not capture arbitrary library/stdout output, and broader native acceptance remains open.",
+    "status": "partial"
   },
   "ShowFilePopupMenu": {
     "evidence": [
@@ -1673,7 +1738,7 @@
       "tests/recovery_manager.rs",
       "docs/RECOVERY_AND_SUPPORT.md"
     ],
-    "note": "7z creation/extraction/browsing, AES encryption/unlock and guarded local repacking edits exist. Writable nested/remote ZIP/TAR/7z sources support guarded outer-container save-back; HTTP and Open As format overrides remain read-only. link/special-file extraction is rejected. Broader variants/metadata and desktop acceptance remain open. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
+    "note": "7z creation/extraction/browsing, AES encryption/unlock and guarded local repacking edits exist. Writable nested/remote ZIP/TAR/7z sources support guarded outer-container save-back; HTTP and Open As format overrides remain read-only. Link/special-file extraction is rejected. Broader variants/metadata and desktop acceptance remain open. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
     "status": "partial"
   },
   "mucommander-format-tar": {
@@ -1719,7 +1784,10 @@
     "status": "partial"
   },
   "mucommander-protocol-adb": {
-    "evidence": [],
+    "evidence": [
+      "src/remote.rs"
+    ],
+    "note": "Android/ADB device browsing has no adapter.",
     "status": "missing"
   },
   "mucommander-protocol-api": {
@@ -1791,13 +1859,17 @@
       "tests/uri_navigation.rs::http_index_download_direct_file_range_and_errors",
       "tests/uri_navigation.rs::kew_https_directory_smoke",
       "docs/REMOTE_CONNECTIONS.md",
-      "parity/VALIDATION.md"
+      "parity/VALIDATION.md",
+      "tests/uri_navigation.rs::concurrently_created_connections_keep_distinct_profiles_and_sessions"
     ],
-    "note": "Read-only HTTP/HTTPS directory-index browsing recognizes Apache, nginx and Caddy listings, including available size/date metadata. Direct files, redirects, range fallback and unknown-length streaming are implemented; signed queries remain session-only. Fixture tests and the live Kew listing pass on Mac. Arbitrary websites are rejected, not rendered; same-origin child links, 8 MiB index/20,000-link bounds and missing server metadata remain documented limits. Broader index/server compatibility remains open.",
+    "note": "Read-only HTTP/HTTPS directory-index browsing recognizes Apache, nginx and Caddy listings, including available size/date metadata. Direct files, redirects, range fallback and unknown-length streaming are implemented; signed queries remain session-only. Fixture tests and the live Kew listing pass on Mac. Arbitrary websites are rejected, not rendered; same-origin child links, 8 MiB index/20,000-link bounds and missing server metadata remain documented limits. Broader index/server compatibility remains open. The Windows request failure from CI run 40407268454 is not yet confirmed resolved on a hosted runner; timestamp-only connection IDs were replaced and a concurrent connection/profile/download regression passes locally.",
     "status": "partial"
   },
   "mucommander-protocol-nfs": {
-    "evidence": [],
+    "evidence": [
+      "src/remote.rs"
+    ],
+    "note": "NFS has no adapter.",
     "status": "missing"
   },
   "mucommander-protocol-onedrive": {
@@ -1811,11 +1883,17 @@
     "status": "partial"
   },
   "mucommander-protocol-ovirt": {
-    "evidence": [],
+    "evidence": [
+      "src/remote.rs"
+    ],
+    "note": "oVirt has no adapter.",
     "status": "missing"
   },
   "mucommander-protocol-registry": {
-    "evidence": [],
+    "evidence": [
+      "src/remote.rs"
+    ],
+    "note": "Windows Registry browsing has no virtual-filesystem adapter.",
     "status": "missing"
   },
   "mucommander-protocol-s3": {
@@ -1852,7 +1930,10 @@
     "status": "partial"
   },
   "mucommander-protocol-vsphere": {
-    "evidence": [],
+    "evidence": [
+      "src/remote.rs"
+    ],
+    "note": "vSphere has no adapter.",
     "status": "missing"
   },
   "mucommander-viewer-api": {

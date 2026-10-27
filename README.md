@@ -77,7 +77,10 @@ published.
 - **Synchronization and workspaces:** reviewable local/remote folder synchronization
   and named sets of pane locations, tabs and layout.
 - **Multiple windows:** restore all window sessions and independent tabs with a shared transfer queue, recovery
-  history and preferences, plus guarded application-wide quit.
+  history and preferences, guarded application-wide quit and a bring-all-forward command.
+- **Desktop commands:** a bookmark explorer, reviewed file attachments over encrypted
+  SMTP, documentation/community/website/donation links and a bounded application
+  event console. See [desktop commands](docs/DESKTOP_COMMANDS.md).
 - **Migration:** preview and merge supported muCommander XML bookmarks, shortcuts,
   commands and preferences, with a backup before applying.
 - **Embedded terminal:** a PTY-backed shell in the active local folder; hiding
@@ -446,13 +449,20 @@ Outstanding work includes:
 - NFS/ADB and virtualization providers, Bonjour discovery, and Windows registry
   browsing. Direct SMB2/3 access is available; broader NAS/server coverage remains open.
 - Live validation of browser OAuth, keychain prompts, and remote rename/conflicts.
-- Remote archive editing and broader archive format/metadata fixtures.
+- Remaining archive limits: direct remote packing, HTTP/format-override editing,
+  links/special files and broader format/metadata fixtures. Guarded writable
+  nested/remote archive editing is available.
 - Broader live-provider coverage for checkpointed transfers and remote synchronization,
   and Undo/Redo beyond journaled local operations.
-- Additional languages, remaining detailed diagnostics, broader upstream XML
-  compatibility, additional text encodings, and viewer/terminal compatibility.
+- Large-file editing, large remote/archive viewer paging, archive-aware folder
+  comparison and fuller metadata/ACL presentation.
+- Additional languages, broader upstream XML compatibility, additional text
+  encodings and viewer/terminal compatibility. Manual update checks, diagnostics,
+  reviewable bug reports and the application event console are available.
 
 The tracker separates implementation gaps from validation work and includes a
+[complete list of unimplemented entries](parity/PARITY.md#completely-missing-upstream-entries),
+current workflow limits and a
 [drag-and-drop workflow review](parity/PARITY.md#drag-and-drop-parity-partial).
 Update `parity/status.json` and `parity/OVERVIEW.md`, then regenerate the page
 without changing its pinned upstream baseline:

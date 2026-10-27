@@ -2,6 +2,9 @@ use super::*;
 
 impl Adapter {
     pub(in super::super) fn dialog_select(&mut self, id: &str) {
+        if self.desktop_commands_select(id) {
+            return;
+        }
         if self.management_select(id) {
             return;
         }
@@ -24,6 +27,9 @@ impl Adapter {
     }
 
     pub(in super::super) fn dialog_action(&mut self, id: &str) {
+        if self.desktop_commands_dialog_action(id) {
+            return;
+        }
         if self.management_dialog_action(id) {
             return;
         }

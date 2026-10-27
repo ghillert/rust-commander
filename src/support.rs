@@ -4,6 +4,22 @@ use serde::Deserialize;
 use std::{io::Read, time::Duration};
 
 pub const REPOSITORY: &str = "https://github.com/ghillert/rust-commander";
+pub const DOCUMENTATION: &str = "https://github.com/ghillert/rust-commander/blob/main/README.md";
+pub const COMMUNITY: &str = "https://github.com/ghillert/rust-commander/issues";
+/// Repository .github/FUNDING.yml names this GitHub Sponsors account.
+pub const DONATION: &str = "https://github.com/sponsors/ghillert";
+
+pub fn web_link(value: &str) -> Result<url::Url> {
+    let url = url::Url::parse(value)?;
+    ensure!(
+        url.scheme() == "https"
+            && url.host_str().is_some()
+            && url.username().is_empty()
+            && url.password().is_none(),
+        "Use an HTTPS website address without credentials"
+    );
+    Ok(url)
+}
 const LATEST: &str = "https://api.github.com/repos/ghillert/rust-commander/releases/latest";
 const RESPONSE_LIMIT: u64 = 1024 * 1024;
 

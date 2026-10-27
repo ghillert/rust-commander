@@ -19,6 +19,9 @@ fn checked(value: &str) -> bool {
 
 impl Adapter {
     pub(in super::super) fn edit_field(&mut self, id: &str, value: &str) {
+        if self.desktop_commands_edit(id, value) {
+            return;
+        }
         if id == "drop-mode" {
             if let Some(Prompt {
                 kind:

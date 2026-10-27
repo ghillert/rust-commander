@@ -6,9 +6,11 @@ pub mod appearance;
 pub mod archive;
 pub mod background;
 pub mod comparison;
+pub mod debug_log;
 pub mod desktop;
 pub mod filesystem;
 pub mod folder_tools;
+pub mod mail;
 pub mod model;
 #[cfg(target_os = "macos")]
 mod native_menu;

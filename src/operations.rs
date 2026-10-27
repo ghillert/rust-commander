@@ -1086,6 +1086,8 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
 }
 
 pub fn run(operation: Operation, task: &mut Task) -> Result<String> {
+    let label = operation.label();
+    crate::debug_log::record("operation", &format!("Started: {label}"));
     // Other operations may make nested copies without having a whole-job byte
     // budget. Keep those indeterminate rather than reporting one sub-copy as all.
     if !matches!(
@@ -1104,6 +1106,14 @@ pub fn run(operation: Operation, task: &mut Task) -> Result<String> {
     }
     let start = task.notices.len();
     let result = execute(operation, task);
+    crate::debug_log::record(
+        "operation",
+        if result.is_ok() {
+            "Completed successfully"
+        } else {
+            "Failed or cancelled; review the operation result"
+        },
+    );
     let notes = task.notices.drain(start..).collect::<Vec<_>>().join("\n");
     match result {
         Ok(message) if !notes.is_empty() => Ok(format!("{message}\n{notes}")),

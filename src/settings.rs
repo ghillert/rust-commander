@@ -98,6 +98,10 @@ fn load_from_paths(current: &Path, legacy: Option<&Path>) -> Result<Settings> {
 
 pub fn save(settings: &Settings) -> Result<()> {
     let path = path()?;
+    save_to(&path, settings)
+}
+
+pub(crate) fn save_to(path: &Path, settings: &Settings) -> Result<()> {
     let directory = path.parent().context("Missing configuration folder")?;
     fs::create_dir_all(directory)?;
     let mut temporary = tempfile::NamedTempFile::new_in(directory)?;

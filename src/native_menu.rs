@@ -63,10 +63,7 @@ impl NativeMenu {
             ],
         )?;
 
-        for (title, entries) in action_menus()
-            .into_iter()
-            .chain([("Help", vec![("Rust Commander Help", Action::Help)])])
-        {
+        for (title, entries) in action_menus() {
             let submenu = if title == "Window" {
                 window.clone()
             } else {

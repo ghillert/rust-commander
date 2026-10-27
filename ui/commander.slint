@@ -428,6 +428,7 @@ export component CommanderWindow inherits Window {
     in property <bool> dialog-diff;
     in property <bool> dialog-pack;
     in property <bool> dialog-compact;
+    in property <bool> dialog-input-locked;
     in property <[FormRow]> dialog-rows;
     in property <[Command]> dialog-buttons;
     in property <bool> viewer-visible;
@@ -927,6 +928,7 @@ export component CommanderWindow inherits Window {
                             vertical-stretch: root.dialog-compact ? 0 : 1;
                             if field.kind != 2 && field.kind != 7 && field.kind != 8 && field.kind != 9: Text { text: field.title; color: Palette.foreground; font-weight: 600; wrap: word-wrap; }
                             if field.kind == 0 || field.kind == 1 || field.kind == 5: LineEdit {
+                                enabled: !root.dialog-input-locked;
                                 init => { if index == 0 { self.focus(); self.select-all(); } }
                                 text <=> field.value;
                                 input-type: field.kind == 1 ? InputType.password : InputType.text;
@@ -934,9 +936,9 @@ export component CommanderWindow inherits Window {
                                 accepted(value) => { root.dialog-action("accept"); }
                                 edited(value) => { root.dialog-field(field.id, value); }
                             }
-                            if field.kind == 2: CheckBox { text: field.title; checked: field.value == "true"; toggled => { root.dialog-field(field.id, self.checked ? "true" : "false"); } }
-                            if field.kind == 3: ComboBox { accessible-label: field.title; model: field.choices; current-value: field.value; selected(value) => { root.dialog-field(field.id, value); } }
-                            if field.kind == 4: TextEdit { accessible-label:field.title; text <=> field.value; height: 140px; edited => { root.dialog-field(field.id, self.text); } }
+                            if field.kind == 2: CheckBox { enabled: !root.dialog-input-locked; text: field.title; checked: field.value == "true"; toggled => { root.dialog-field(field.id, self.checked ? "true" : "false"); } }
+                            if field.kind == 3: ComboBox { enabled: !root.dialog-input-locked; accessible-label: field.title; model: field.choices; current-value: field.value; selected(value) => { root.dialog-field(field.id, value); } }
+                            if field.kind == 4: TextEdit { enabled: !root.dialog-input-locked; accessible-label:field.title; text <=> field.value; height: 140px; edited => { root.dialog-field(field.id, self.text); } }
                             if field.kind == 6: Text { text: field.value; color: Palette.foreground; wrap: word-wrap; }
                             if field.kind == 8: ChromeButton {
                                 label:field.title;show-label:true;
@@ -965,7 +967,7 @@ export component CommanderWindow inherits Window {
                                 padding: 6px; spacing: 4px;
                                 HorizontalBox {
                                     padding: 0px;
-                                    Button { text: item.title; clicked => { root.dialog-select(item.id); } }
+                                    Button { enabled: !root.dialog-input-locked; text: item.title; clicked => { root.dialog-select(item.id); } }
                                     for command in item.actions: HorizontalLayout {
                                         spacing:0px;
                                         private property <bool> move-up: command.id.starts-with("column-up-") || command.id.starts-with("toolbar-up-") || command.id.starts-with("queue-up-");
