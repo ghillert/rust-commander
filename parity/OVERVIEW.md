@@ -1,4 +1,4 @@
-## Current review — 2026-10-22
+## Current review — 2026-10-26
 
 This overview reflects the current source and the recorded checks in
 [VALIDATION.md](VALIDATION.md). It separates absent behavior from behavior that
@@ -13,12 +13,12 @@ sections describe their original snapshots; later sections supersede older limit
 | --- | --- | --- |
 | Drag and drop | Local/remote/archive selections; guarded copy/move; folder/tab/tree/breadcrumb/sidebar targets; hover navigation and edge scrolling; native X11/Wayland/AppKit/OLE bridges | Native desktop acceptance remains incomplete; virtual exports are Copy. Deferred native providers exist, with preparation available for receivers that require pre-existing local paths. See the detailed matrix below. |
 | Network services | HTTP/HTTPS, FTP/both FTPS modes, SFTP on all three desktop platforms, SMB2/3 and cloud adapters | NFS, Android/ADB, Windows Registry, oVirt/vSphere and Bonjour discovery. WebHDFS does not establish full Hadoop parity. |
-| Archives | Pack dialog with ZIP/7z/TAR/stream formats, compression levels, ZIP comments, foreground/background work and expandable source list; local archive editing; encrypted ZIP/7z; nested/remote browsing | Nested/remote editing, LST and libguestfs; archive links and special files. NRG/CPIO/RPM lack dedicated format fixtures. See [format support](../docs/FILE_OPERATIONS.md#archives). |
+| Archives | Pack dialog with ZIP/7z/TAR/stream formats, compression levels, ZIP comments, foreground/background work and expandable source list; guarded local/nested/remote editing; encrypted ZIP/7z | HTTP/format-override editing, LST and libguestfs; archive links and special files. NRG/CPIO/RPM lack dedicated format fixtures. See [format support](../docs/FILE_OPERATIONS.md#archives). |
 | Search and comparison | Streaming local/remote literal and per-line regex search with size/date/exclusion filters; SHA-256 or explicitly unverified metadata comparison; bounded read-only text diffs; shared presets and filtered local/remote synchronization | Regex lines are bounded to 8 MiB; text differences to 1 MiB per side and bounded line alignment. Comparison excludes archive roots and reports links without following them. Filtered sync refuses directory deletion/type replacement. Broader provider/desktop acceptance remains open. |
 | Viewers and editing | Encoded text editing, large local read-only pages, streaming local text/hex search, image/PDF rendering, PDF Unicode selection/copy and cancellable document search | OCR, PDF forms/annotation editing, additional encodings and animated images; large-file editing and large remote/archive viewing. Editing is bounded to 2 MiB, image/PDF input to 32 MiB. |
 | Metadata | Native local moves; copying macOS ACLs/xattrs/resource forks, Linux user attributes/POSIX ACLs and Windows DACLs | Native ownership names/editing and full ACL presentation; Windows alternate data streams/ownership and privileged Linux namespaces are outside current copy preservation. Remote metadata depends on the provider. |
 | Pane swapping and file marks | Opposing-arrow toolbar button and Navigate > Swap panes move tabs, cursor, marks and keyboard focus together; Space/Insert toggle a mark and advance in visible order, with red marks independent of the cursor highlight | Broader native desktop acceptance remains open. |
-| Commands | Open As for explicit text/hex/image/PDF/archive interpretation, Open With, desktop reveal, searchable windows, configurable shortcuts and native window controls | Copy base names, email, numbered window shortcuts, parent-entry visibility toggle, update checking and remaining help/diagnostic actions. |
+| Commands | Open As for explicit text/hex/image/PDF/archive interpretation, Open With, desktop reveal, searchable windows, configurable shortcuts, copy base names, parent-row toggle, numbered windows, manual release checks, diagnostics and reviewed bug-report links | Email, remaining documentation/forum/website actions and native acceptance. |
 | Localization and migration | English/German/Spanish and reviewed XML import with backup | Additional languages, complete translated coverage and full upstream preference/keymap/command/bookmark import. See [import limits](../docs/FEATURES_0.7.md#12-mucommander-import). |
 
 Upstream [Open As](https://github.com/mucommander/mucommander/blob/3504a51e9af9f69a67dc616db821a320ec780f79/mucommander-core/src/main/java/com/mucommander/ui/action/impl/OpenAsAction.java)
@@ -36,7 +36,7 @@ inventory counts do not include an additional DragDrop entry.
 | --- | --- | --- |
 | Local selection between panes | Immutable multi-file payloads, copy/move confirmation and normal conflict/Undo guards | Broader physical gesture acceptance on Windows/Linux |
 | Finder/Explorer/Linux file manager into a pane | Grouped file lists, frozen coordinates, highlighted folder/tab/tree/breadcrumb/sidebar targets; guarded confirmation | Real Explorer/Nautilus/Dolphin interoperation and compositor coverage |
-| Transfers involving remote panes or local archives | Common transfer engine, per-item conflicts, completed-source-only deletion; atomic same-archive moves | Backend-specific live service acceptance; nested/remote archive mutation remains limited |
+| Transfers involving remote panes or local archives | Common transfer engine, per-item conflicts, completed-source-only deletion; atomic same-archive moves | Backend-specific live service acceptance; nested/remote archive mutation uses guarded outer-source save-back; HTTP/format overrides stay read-only |
 | Local files out to another application | Ordinary gesture handoff on leaving the window; native AppKit/OLE/XDND/Wayland sources without the Linux helper | Native Copy/Move negotiation implemented on all platforms; local delivery into Finder verified, with broader desktop acceptance still needed |
 | Remote/archive entries as drag sources | In-window typed payloads; deferred AppKit/OLE/URI delivery after an accepted drop; shared cancellable exports and retained private files; gestures never fetch contents | Virtual exports are Copy. Private same-process window handoffs avoid preparation and exporting; an archive handoff was verified on Mac. Separate processes/receivers without deferred-format support need preparation; broader desktop acceptance remains open |
 | Folder rows, directory tree, tabs, breadcrumbs and sidebar | Dedicated targets, 650 ms hover navigation/expansion, and file-list edge scrolling | Wider multi-scale/desktop acceptance |
@@ -64,7 +64,8 @@ establish physical Explorer/Nautilus/Dolphin interoperability or every composito
 - **Servers and failure modes:** recorded disposable SFTP/FTP/FTPS/WebDAV/SMB
   workflows do not cover every server, Windows OpenSSH-agent configuration,
   cross-volume failure or provider concurrency/publish behavior. Resumable remote
-  copies currently require new targets without merge/replace choices.
+  copies now retain fixed merge/Skip/Keep both/Replace decisions; recovery manager
+  restoration and verified completed-batch cleanup are implemented.
 - **Archives and viewers:** broader format, metadata, corruption/encryption and
   PDF compatibility fixtures remain necessary. Input/size bounds are deliberate
   current limits, not evidence of complete upstream parity.

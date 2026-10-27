@@ -59,8 +59,14 @@
     "status": "partial"
   },
   "CheckForUpdates": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/support.rs",
+      "tests/support.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Manual worker-based stable GitHub release checking, bounded responses/timeouts, version comparison and validated release-page links are implemented. No downloads, installation or restart is automatic. Loopback HTTP and headless dialog tests pass; native browser handoff and broader platform acceptance remain open.",
+    "status": "partial"
   },
   "CloneTabToOtherPanel": {
     "evidence": [
@@ -157,14 +163,26 @@
       "tests/remote_services.rs",
       "tests/uri_navigation.rs",
       "docs/FEATURES_NEXT.md",
-      "parity/VALIDATION.md"
+      "parity/VALIDATION.md",
+      "src/archive_writeback.rs",
+      "src/recovery.rs",
+      "tests/archive_writeback.rs",
+      "tests/recovery_manager.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
     ],
-    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed remote copies require new targets without merges; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review.",
+    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed copies retain fixed merge/conflict decisions and verified originals; recovery manager restore and completed-batch cleanup are available; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review.",
     "status": "partial"
   },
   "CopyFileBaseNames": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/navigation.rs",
+      "src/app.rs",
+      "tests/support.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Copy names without extensions preserves directory/leading-dot names and removes only the final file extension. Multi-selection command dispatch has headless Slint coverage; broader native clipboard acceptance remains open.",
+    "status": "partial"
   },
   "CopyFileNames": {
     "evidence": [
@@ -427,9 +445,14 @@
       "tests/remote_services.rs",
       "tests/uri_navigation.rs",
       "docs/FEATURES_NEXT.md",
-      "parity/VALIDATION.md"
+      "parity/VALIDATION.md",
+      "src/archive_writeback.rs",
+      "src/recovery.rs",
+      "tests/archive_writeback.rs",
+      "tests/recovery_manager.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
     ],
-    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed remote copies require new targets without merges; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review.",
+    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed copies retain fixed merge/conflict decisions and verified originals; recovery manager restore and completed-batch cleanup are available; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review.",
     "status": "partial"
   },
   "MarkAll": {
@@ -606,9 +629,14 @@
       "tests/remote_services.rs",
       "tests/uri_navigation.rs",
       "docs/FEATURES_NEXT.md",
-      "parity/VALIDATION.md"
+      "parity/VALIDATION.md",
+      "src/archive_writeback.rs",
+      "src/recovery.rs",
+      "tests/archive_writeback.rs",
+      "tests/recovery_manager.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
     ],
-    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed remote copies require new targets without merges; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review.",
+    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed copies retain fixed merge/conflict decisions and verified originals; recovery manager restore and completed-batch cleanup are available; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review.",
     "status": "partial"
   },
   "MoveTabToOtherPanel": {
@@ -742,9 +770,14 @@
       "examples/pack_benchmark.rs",
       "docs/PACKING_PERFORMANCE.md",
       "vendor/sevenz-rust/PATCHES.md",
-      "tests/packing.rs::sevenz_output_is_readable_by_independent_libarchive"
+      "tests/packing.rs::sevenz_output_is_readable_by_independent_libarchive",
+      "src/archive_writeback.rs",
+      "src/recovery.rs",
+      "tests/archive_writeback.rs",
+      "tests/recovery_manager.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
     ],
-    "note": "Pack files dialog and right-click action provide destination naming, ZIP/7z/TAR/stream format choices, validated compression levels (also encrypted/queued), ZIP comments, foreground/background packing with cancellation and an expandable source list. 7z multi-file/folder creation and encrypted 7z round trips are tested. Existing archive tools provide ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers. Nested/remote archives remain read-only; links/special files are rejected and broader desktop/format/metadata acceptance remains open. Performance measurements are recorded in docs/PACKING_PERFORMANCE.md. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
+    "note": "Pack files dialog and right-click action provide destination naming, ZIP/7z/TAR/stream format choices, validated compression levels (also encrypted/queued), ZIP comments, foreground/background packing with cancellation and an expandable source list. 7z multi-file/folder creation and encrypted 7z round trips are tested. Existing archive tools provide ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers. Writable nested/remote ZIP/TAR/7z sources support guarded outer-container save-back; HTTP and Open As format overrides remain read-only. links/special files are rejected and broader desktop/format/metadata acceptance remains open. Performance measurements are recorded in docs/PACKING_PERFORMANCE.md. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
     "status": "partial"
   },
   "PasteClipboardFiles": {
@@ -824,44 +857,104 @@
     "status": "partial"
   },
   "RecallWindow1": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app/slint_ui/windows.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Numbered commands raise slots in current open-window order, with configurable Mod+Alt+1 through Mod+Alt+0 defaults. Missing slots do nothing and preference upgrades preserve custom bindings. Headless dispatch tests pass; native platform focus acceptance remains open.",
+    "status": "partial"
   },
   "RecallWindow10": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app/slint_ui/windows.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Numbered commands raise slots in current open-window order, with configurable Mod+Alt+1 through Mod+Alt+0 defaults. Missing slots do nothing and preference upgrades preserve custom bindings. Headless dispatch tests pass; native platform focus acceptance remains open.",
+    "status": "partial"
   },
   "RecallWindow2": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app/slint_ui/windows.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Numbered commands raise slots in current open-window order, with configurable Mod+Alt+1 through Mod+Alt+0 defaults. Missing slots do nothing and preference upgrades preserve custom bindings. Headless dispatch tests pass; native platform focus acceptance remains open.",
+    "status": "partial"
   },
   "RecallWindow3": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app/slint_ui/windows.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Numbered commands raise slots in current open-window order, with configurable Mod+Alt+1 through Mod+Alt+0 defaults. Missing slots do nothing and preference upgrades preserve custom bindings. Headless dispatch tests pass; native platform focus acceptance remains open.",
+    "status": "partial"
   },
   "RecallWindow4": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app/slint_ui/windows.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Numbered commands raise slots in current open-window order, with configurable Mod+Alt+1 through Mod+Alt+0 defaults. Missing slots do nothing and preference upgrades preserve custom bindings. Headless dispatch tests pass; native platform focus acceptance remains open.",
+    "status": "partial"
   },
   "RecallWindow5": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app/slint_ui/windows.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Numbered commands raise slots in current open-window order, with configurable Mod+Alt+1 through Mod+Alt+0 defaults. Missing slots do nothing and preference upgrades preserve custom bindings. Headless dispatch tests pass; native platform focus acceptance remains open.",
+    "status": "partial"
   },
   "RecallWindow6": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app/slint_ui/windows.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Numbered commands raise slots in current open-window order, with configurable Mod+Alt+1 through Mod+Alt+0 defaults. Missing slots do nothing and preference upgrades preserve custom bindings. Headless dispatch tests pass; native platform focus acceptance remains open.",
+    "status": "partial"
   },
   "RecallWindow7": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app/slint_ui/windows.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Numbered commands raise slots in current open-window order, with configurable Mod+Alt+1 through Mod+Alt+0 defaults. Missing slots do nothing and preference upgrades preserve custom bindings. Headless dispatch tests pass; native platform focus acceptance remains open.",
+    "status": "partial"
   },
   "RecallWindow8": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app/slint_ui/windows.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Numbered commands raise slots in current open-window order, with configurable Mod+Alt+1 through Mod+Alt+0 defaults. Missing slots do nothing and preference upgrades preserve custom bindings. Headless dispatch tests pass; native platform focus acceptance remains open.",
+    "status": "partial"
   },
   "RecallWindow9": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "src/app/slint_ui/windows.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Numbered commands raise slots in current open-window order, with configurable Mod+Alt+1 through Mod+Alt+0 defaults. Missing slots do nothing and preference upgrades preserve custom bindings. Headless dispatch tests pass; native platform focus acceptance remains open.",
+    "status": "partial"
   },
   "Redo": {
     "evidence": [
@@ -892,8 +985,14 @@
     "status": "partial"
   },
   "ReportBug": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/support.rs",
+      "tests/support.rs",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "Diagnostics show a path/credential-free platform summary. Report a bug opens a reviewable dialog and a prefilled issue URL; submission remains in the browser. URL/privacy and callback tests pass; native browser handoff remains unverified.",
+    "status": "partial"
   },
   "RevealInDesktop": {
     "evidence": [
@@ -1370,8 +1469,14 @@
     "status": "partial"
   },
   "ToggleShowParentFolder": {
-    "evidence": [],
-    "status": "missing"
+    "evidence": [
+      "src/preferences.rs",
+      "ui/commander.slint",
+      "src/app/slint_ui/management.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
+    ],
+    "note": "A persisted View toggle controls a dedicated parent navigation row. The row is outside the mark/file-operation model; hiding it preserves marks and list contents. Headless callback coverage passes; broader native keyboard/screen-reader acceptance remains open.",
+    "status": "partial"
   },
   "ToggleSizeColumn": {
     "evidence": [
@@ -1561,9 +1666,14 @@
       "tests/features_05.rs",
       "docs/FILE_OPERATIONS.md",
       "vendor/sevenz-rust/PATCHES.md",
-      "tests/packing.rs::sevenz_output_is_readable_by_independent_libarchive"
+      "tests/packing.rs::sevenz_output_is_readable_by_independent_libarchive",
+      "src/archive_writeback.rs",
+      "src/recovery.rs",
+      "tests/archive_writeback.rs",
+      "tests/recovery_manager.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
     ],
-    "note": "7z creation/extraction/browsing, AES encryption/unlock and guarded local repacking edits exist. Nested/remote containers are read-only; link/special-file extraction is rejected. Broader variants/metadata and desktop acceptance remain open. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
+    "note": "7z creation/extraction/browsing, AES encryption/unlock and guarded local repacking edits exist. Writable nested/remote ZIP/TAR/7z sources support guarded outer-container save-back; HTTP and Open As format overrides remain read-only. link/special-file extraction is rejected. Broader variants/metadata and desktop acceptance remain open. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
     "status": "partial"
   },
   "mucommander-format-tar": {
@@ -1572,9 +1682,14 @@
       "src/archive_tools.rs",
       "tests/file_manager.rs",
       "tests/features_05.rs",
-      "docs/FILE_OPERATIONS.md"
+      "docs/FILE_OPERATIONS.md",
+      "src/archive_writeback.rs",
+      "src/recovery.rs",
+      "tests/archive_writeback.rs",
+      "tests/recovery_manager.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
     ],
-    "note": "TAR and compressed TAR variants can be created, browsed, extracted and edited locally through guarded extraction/repacking. Nested/remote containers remain read-only. Links/special files are rejected; broader metadata/variant fixtures remain open.",
+    "note": "TAR and compressed TAR variants can be created, browsed, extracted and edited locally through guarded extraction/repacking. Writable nested/remote ZIP/TAR/7z sources support guarded outer-container save-back; HTTP and Open As format overrides remain read-only. Links/special files are rejected; broader metadata/variant fixtures remain open.",
     "status": "partial"
   },
   "mucommander-format-xz": {
@@ -1593,9 +1708,14 @@
       "tests/features.rs",
       "tests/features_05.rs",
       "tests/archive_paths.rs",
-      "docs/FILE_OPERATIONS.md"
+      "docs/FILE_OPERATIONS.md",
+      "src/archive_writeback.rs",
+      "src/recovery.rs",
+      "tests/archive_writeback.rs",
+      "tests/recovery_manager.rs",
+      "docs/RECOVERY_AND_SUPPORT.md"
     ],
-    "note": "ZIP creation, extraction, browsing, AES encryption/unlock and local mutation exist; encrypted edits retain encryption. Nested/remote ZIPs are read-only. Link/special-file extraction is rejected; broad metadata, format-variant and desktop acceptance remain open.",
+    "note": "ZIP creation, extraction, browsing, AES encryption/unlock and local mutation exist; encrypted edits retain encryption. Writable nested/remote ZIP/TAR/7z sources support guarded outer-container save-back; HTTP and Open As format overrides remain read-only. Link/special-file extraction is rejected; broad metadata, format-variant and desktop acceptance remain open.",
     "status": "partial"
   },
   "mucommander-protocol-adb": {

@@ -1,5 +1,39 @@
 # Validation record
 
+## Recovery manager, archive save-back and desktop commands — 2026-10-26
+
+The Apple Silicon Mac run passes **388 tests with 17 ignored** across all
+targets/features. Formatting, diff whitespace checks and Clippy with warnings
+denied pass. New fixtures cover:
+
+- Recovery discovery from journals, checkpoints and indexed backups; multi-file
+  Keep-both restoration; cleanup groups and latest/pinned protection; changed or
+  forged snapshots; legacy imports; incomplete/unknown checkpoints and link escapes.
+- Nested ZIP/TAR/7z Add/Remove/Rename, encrypted nested containers, external-editor
+  save-back, local outer-file Undo, changed-source and cancellation guards, and
+  rejection of edits prepared before another save. Remote archive fixtures use a
+  filesystem provider, exceed the text editor's 2 MiB limit and verify retained
+  server originals. Replacement drops retain the actual outer archive rather
+  than a temporary cached copy and do not promise Undo for remote publication.
+- Base-name copying, parent-row preferences and all ten numbered-window shortcut
+  dispatches; diagnostics privacy and report URL construction; asynchronous
+  update results and errors. Loopback release checks cover valid responses,
+  missing releases, refusal/rate limits, redirects, failures and oversized bodies.
+
+`scripts/management-smoke.py` renders the parent row, selected recovery originals,
+the nested archive source/save-back form, diagnostics and report dialogs using
+software/light and FemtoVG/dark rendering. The ten 1240×780 images were visually
+reviewed, including the two-row recovery footer. Screenshot callbacks exercise
+real UI handlers with disposable data; they do not post an issue or install an
+update. The parity audit now records 4 implemented, 180 partial, 15 missing and
+1 inapplicable entry across 200 upstream entries.
+
+These results do not establish Windows/Linux native behavior, physical numbered
+window focus, browser launch/submission or remote-provider concurrency guarantees.
+Provider acceptance beyond the filesystem fixture remains open; services without
+conditional writes cannot atomically exclude external writers. The release
+checker was tested against loopback responses rather than the live GitHub API.
+
 ## Path handling audit — 2026-10-26
 
 The follow-up source audit reviewed native/portable relative-path boundaries,

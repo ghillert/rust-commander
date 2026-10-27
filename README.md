@@ -237,7 +237,7 @@ viewing without renaming files. PDFs support text selection/copying and document
 search with previous/next matches. See [viewer tools](docs/VIEWERS.md).
 **F5** extracts archive entries into new or existing folders with conflict choices. **File → Archive tools…**
 edits local ZIP/TAR/7z containers or creates/unlocks encrypted ZIP and 7z archives. Nested and
-remote archives open read-only. **Mod+Z / Mod+Shift+Z** undo/redo eligible local operations and
+remote ZIP/TAR/7z archives support guarded save-back; HTTP and Open As overrides stay read-only. **Mod+Z / Mod+Shift+Z** undo/redo eligible local operations and
 **Mod+J** opens the queue and history. **Mod+P** toggles preview. Additional tools are available in the **File**, **Operations**,
 **Navigate**, and **Selection** menus.
 
@@ -433,6 +433,8 @@ Build artifacts in `target/`, the optional toolchain/cache in `.tools/`, and
 local test state in `.runtime/` are ignored by Git. Build output can grow to
 several gigabytes; `cargo clean` removes it, including packaged apps under
 `target/`, and the next build recompiles dependencies.
+
+See [recovery, archive save-back and desktop conveniences](docs/RECOVERY_AND_SUPPORT.md) for the recovery manager, nested/remote edits, parent-row/window shortcuts, manual updates and diagnostics.
 
 ## Roadmap
 

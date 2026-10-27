@@ -210,7 +210,9 @@ and speed with both software/light and FemtoVG/dark rendering. Images and logs
 are written under `target/progress-smoke/`. Linux CI runs the same check.
 Screenshot builds also accept `RUST_COMMANDER_SCREENSHOT_SEQUENCE`, a JSON array
 of `[delay_ms, callback, value]` steps; supported callbacks are `navigate`,
-`action`, and `dialog`. This drives the existing UI callbacks for reproducible
+`open`, `action`, `dialog`, `select`, `field` and `viewer`. Open values are native
+file paths. Field values contain an encoded
+JSON `[field_id, value]` pair. This drives the existing UI callbacks for reproducible
 multi-step checks; it is compiled out of normal development and release builds.
 
 See [the validation record](../parity/VALIDATION.md) for checks performed and

@@ -125,6 +125,21 @@ pub(crate) enum Action {
     MarkAll,
     UnmarkAll,
     CopyNames,
+    CopyBaseNames,
+    ToggleParentEntry,
+    CheckForUpdates,
+    Diagnostics,
+    ReportBug,
+    RecallWindow1,
+    RecallWindow2,
+    RecallWindow3,
+    RecallWindow4,
+    RecallWindow5,
+    RecallWindow6,
+    RecallWindow7,
+    RecallWindow8,
+    RecallWindow9,
+    RecallWindow10,
     CopyPaths,
     CopyClipboard,
     CutClipboard,
@@ -253,6 +268,21 @@ pub(crate) fn all_actions() -> Vec<Action> {
         Action::MarkAll,
         Action::UnmarkAll,
         Action::CopyNames,
+        Action::CopyBaseNames,
+        Action::ToggleParentEntry,
+        Action::CheckForUpdates,
+        Action::Diagnostics,
+        Action::ReportBug,
+        Action::RecallWindow1,
+        Action::RecallWindow2,
+        Action::RecallWindow3,
+        Action::RecallWindow4,
+        Action::RecallWindow5,
+        Action::RecallWindow6,
+        Action::RecallWindow7,
+        Action::RecallWindow8,
+        Action::RecallWindow9,
+        Action::RecallWindow10,
         Action::CopyPaths,
         Action::CopyClipboard,
         Action::CutClipboard,
@@ -369,7 +399,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
             vec![
                 ("Undo last operation", Action::Undo),
                 ("Redo last operation", Action::Redo),
-                ("Recovery storage…", Action::Recovery),
+                ("Recovery manager…", Action::Recovery),
                 ("Synchronize folders…", Action::Synchronize),
                 ("Transfer queue and history…", Action::Queue),
                 ("Copy  F5", Action::Copy),
@@ -413,6 +443,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Unmark all", Action::UnmarkAll),
                 ("Invert selection", Action::InvertSelection),
                 ("Copy names", Action::CopyNames),
+                ("Copy names without extensions", Action::CopyBaseNames),
                 ("Copy paths", Action::CopyPaths),
                 ("Copy files", Action::CopyClipboard),
                 ("Cut files", Action::CutClipboard),
@@ -429,6 +460,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
         "View",
         vec![
             ("Show hidden files", Action::ToggleHidden),
+            ("Show parent directory row", Action::ToggleParentEntry),
             ("Toggle sidebar", Action::ToggleSidebar),
             ("Settings…", Action::Preferences),
         ],
@@ -463,6 +495,29 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
             items.push(item);
         }
     }
+    if let Some((_, items)) = groups.iter_mut().find(|(title, _)| *title == "Window") {
+        items.extend([
+            ("Switch to window 1", Action::RecallWindow1),
+            ("Switch to window 2", Action::RecallWindow2),
+            ("Switch to window 3", Action::RecallWindow3),
+            ("Switch to window 4", Action::RecallWindow4),
+            ("Switch to window 5", Action::RecallWindow5),
+            ("Switch to window 6", Action::RecallWindow6),
+            ("Switch to window 7", Action::RecallWindow7),
+            ("Switch to window 8", Action::RecallWindow8),
+            ("Switch to window 9", Action::RecallWindow9),
+            ("Switch to window 10", Action::RecallWindow10),
+        ]);
+    }
+    groups.push((
+        "Help",
+        vec![
+            ("Help", Action::Help),
+            ("Check for updates…", Action::CheckForUpdates),
+            ("Diagnostics…", Action::Diagnostics),
+            ("Report a bug…", Action::ReportBug),
+        ],
+    ));
     groups
 }
 
@@ -1075,7 +1130,7 @@ impl Commander {
             if crate::queue::Queue::requires_input(&operation) {
                 self.queue.push_front(operation);
                 self.queue.paused = true;
-                self.fail("This saved operation needs its password or editor contents again. Open the queue to review it.");
+                self.fail("This saved operation needs renewed input or confirmation. Open the queue to review it.");
             } else {
                 self.start_job(operation, ctx);
             }
@@ -1318,7 +1373,6 @@ impl Commander {
         let mut prompt = None;
         if let Location::Archive { file, .. } = &location
             && crate::archive_tools::editable(file)
-            && crate::archive_tools::origin(file).is_none()
             && matches!(action, Action::Rename | Action::Trash)
         {
             let other = self.panes[1 - self.active].tab();
@@ -1340,7 +1394,6 @@ impl Commander {
             let other = self.panes[1 - self.active].tab();
             if let Location::Archive { file, .. } = &other.location
                 && crate::archive_tools::editable(file)
-                && crate::archive_tools::origin(file).is_none()
             {
                 self.archive_form = Some(crate::feature_ui::ArchiveForm::new(
                     &other.location,
@@ -1352,7 +1405,26 @@ impl Commander {
             }
         }
         match action {
-            Action::ExternalEdit | Action::Associations => return,
+            Action::ExternalEdit
+            | Action::Associations
+            | Action::CheckForUpdates
+            | Action::Diagnostics
+            | Action::ReportBug
+            | Action::RecallWindow1
+            | Action::RecallWindow2
+            | Action::RecallWindow3
+            | Action::RecallWindow4
+            | Action::RecallWindow5
+            | Action::RecallWindow6
+            | Action::RecallWindow7
+            | Action::RecallWindow8
+            | Action::RecallWindow9
+            | Action::RecallWindow10 => return,
+            Action::ToggleParentEntry => {
+                self.preferences.parent_entry = !self.preferences.parent_entry;
+                self.save_settings();
+                return;
+            }
             Action::DirectoryTree => {
                 self.preferences.directory_tree = !self.preferences.directory_tree;
                 self.save_settings();
@@ -1772,13 +1844,15 @@ impl Commander {
                 }
                 return;
             }
-            Action::CopyNames | Action::CopyPaths => {
+            Action::CopyNames | Action::CopyBaseNames | Action::CopyPaths => {
                 ctx.copy_text(
                     chosen
                         .iter()
                         .map(|e| {
                             if matches!(action, Action::CopyNames) {
                                 e.name.clone()
+                            } else if matches!(action, Action::CopyBaseNames) {
+                                crate::navigation::base_name(e)
                             } else {
                                 e.path.display().to_string()
                             }

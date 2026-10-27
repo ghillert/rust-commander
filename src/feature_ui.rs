@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 #[derive(Default)]
 pub struct ArchiveForm {
     pub file: String,
+    pub source_display: Option<String>,
     pub destination: String,
     pub password: String,
     pub compression_level: Option<u8>,
@@ -54,6 +55,12 @@ impl ArchiveForm {
             .display()
             .to_string();
         Self {
+            source_display: match location {
+                Location::Archive { file, .. } if crate::archive_tools::origin(file).is_some() => {
+                    Some(crate::archive_tools::source_label(file))
+                }
+                _ => None,
+            },
             file,
             destination,
             source: if matches!(location, Location::Archive { .. }) {

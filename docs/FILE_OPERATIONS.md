@@ -99,8 +99,10 @@ coverage is incomplete; see the [validation record](../parity/VALIDATION.md).
 Double-click a supported archive to browse it, then use **F5** to extract selected
 entries into a new or existing folder, with normal conflict choices and optional merging. Archive tools edits local ZIP/TAR/7z containers (Add/Remove/Rename),
 creates AES-encrypted ZIP/7z archives, and unlocks existing encrypted archives.
-Nested and remote archives are materialized into a bounded temporary cache and
-remain read-only. ZIP mutation preserves unchanged compressed entries and checks
+Nested and remote archives are materialized into a bounded temporary cache.
+Normally opened writable ZIP/TAR/7z sources support guarded save-back through
+their outer containers; HTTP and Open As overrides remain read-only. See
+[archive save-back and recovery](RECOVERY_AND_SUPPORT.md). ZIP mutation preserves unchanged compressed entries and checks
 the original before replacement. Encrypted ZIP edits repack with encryption after
 unlocking; new files are encrypted too. TAR/7z edits use guarded extraction/repacking.
 See the [feature guide](FEATURES_0.5.md) for limits and local Undo behavior.

@@ -16,6 +16,11 @@ pub(crate) mod totals;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Operation {
+    RecoveryRestore {
+        items: Vec<crate::recovery::Item>,
+        destination: crate::filesystem::Location,
+    },
+    RecoveryCleanup(Vec<crate::recovery::Item>),
     DropTransfer {
         selection: crate::drag_drop::Selection,
         to: crate::filesystem::Location,
@@ -231,6 +236,8 @@ impl Operation {
 
     pub fn label(&self) -> &'static str {
         match self {
+            Self::RecoveryRestore { .. } => "Restore recovery copy",
+            Self::RecoveryCleanup(_) => "Clean recovery copies",
             Self::EmptyTrash => "Empty Trash",
             Self::Undo(_) => "Undo",
             Self::Redo(_) => "Redo",
@@ -381,6 +388,8 @@ impl Progress {
 
 pub struct Task {
     pub undo_blocked: bool,
+    pub notices: Vec<String>,
+    pub(crate) private_roots: Vec<PathBuf>,
     pub before_change: Option<ChangeHook>,
     pub cancel: Arc<AtomicBool>,
     pub control: Option<Arc<crate::transfer_control::Control>>,
@@ -401,6 +410,8 @@ impl Task {
     pub fn new(cancel: Arc<AtomicBool>, report: impl FnMut(Progress) + Send + 'static) -> Self {
         Self {
             undo_blocked: false,
+            notices: Vec::new(),
+            private_roots: Vec::new(),
             before_change: None,
             cancel,
             control: None,
@@ -684,6 +695,10 @@ pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
 pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
     task.check()?;
     match operation {
+        Operation::RecoveryRestore { items, destination } => {
+            crate::recovery::restore_many(&items, &destination, task)
+        }
+        Operation::RecoveryCleanup(items) => crate::recovery::cleanup_many(&items, task),
         Operation::DropTransfer {
             selection,
             to,
@@ -814,9 +829,11 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             Ok("Remote item renamed.".into())
         }
         Operation::ArchiveEdit { archive, edit } => {
-            task.capture(&archive)?;
+            if crate::archive_tools::origin(&archive).is_none() {
+                task.capture(&archive)?;
+            }
             crate::archive_tools::edit_archive(&archive, &edit, task)?;
-            Ok("ZIP archive updated.".into())
+            Ok("Archive updated and saved to its source.".into())
         }
         Operation::PackProtected {
             sources,
@@ -1085,7 +1102,14 @@ pub fn run(operation: Operation, task: &mut Task) -> Result<String> {
     ) {
         task.plan_total(None);
     }
-    execute(operation, task)
+    let start = task.notices.len();
+    let result = execute(operation, task);
+    let notes = task.notices.drain(start..).collect::<Vec<_>>().join("\n");
+    match result {
+        Ok(message) if !notes.is_empty() => Ok(format!("{message}\n{notes}")),
+        Err(error) if !notes.is_empty() => Err(error.context(notes)),
+        result => result,
+    }
 }
 
 fn transfer(

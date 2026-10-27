@@ -214,6 +214,21 @@ impl Execution {
                 }
                 let backup = self.backup_path(&plan.target)?;
                 rename_exclusive(&plan.target, &backup)?;
+                if let Err(error) = crate::recovery::record_backup(
+                    &crate::filesystem::Location::Local(self.destination.clone()),
+                    &backup,
+                    &plan.target,
+                    task,
+                ) {
+                    let restored = rename_exclusive(&backup, &plan.target);
+                    return Err(error).with_context(|| {
+                        format!(
+                            "Could not record recovery copy at {}; original restored: {}",
+                            backup.display(),
+                            restored.is_ok()
+                        )
+                    });
+                }
                 self.replacements += 1;
                 if let Err(error) = rename_exclusive(&incoming, &plan.target) {
                     let restore = rename_exclusive(&backup, &plan.target);

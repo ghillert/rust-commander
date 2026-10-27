@@ -28,6 +28,7 @@ export { Transfers } from "drag-drop.slint";
 import { Transfers } from "drag-drop.slint";
 
 component FilePane inherits Rectangle {
+    in property <bool> parent-visible;
     in property <int> side;
     out property <float> visible-rows:list.visible-height/max(24px,(root.text-size+10)*1px);
     out property <float> first-row:max(0,floor(-list.content-y/max(24px,(root.text-size+10)*1px)));
@@ -203,6 +204,13 @@ component FilePane inherits Rectangle {
                 }
             }
         }
+        if root.parent-visible: Rectangle {
+            height: 26px; background: Chrome.pane;
+            ChromeButton { x: 4px; height: 25px; label: ".."; icon: Glyphs.action("Parent");
+                accessible-label: Words.translate("Parent directory row",Words.version);
+                clicked => {root.action("Parent");}
+            }
+        }
         files-focus := FocusScope {
             focus-on-tab-navigation: true;
             accessible-role: AccessibleRole.list;
@@ -372,6 +380,8 @@ export component CommanderWindow inherits Window {
     }
     in property <[FileColumn]> columns;
     in property <[FileRow]> left-rows;
+    in property <bool> left-parent-visible;
+    in property <bool> right-parent-visible;
     in property <int> left-cursor: -1;
     in property <int> right-cursor: -1;
     in property <string> left-selection-payload;
@@ -657,6 +667,7 @@ export component CommanderWindow inherits Window {
                 pane-area := Rectangle {
                   horizontal-stretch:1; min-width:0px;
                   left := FilePane {
+                    parent-visible: root.left-parent-visible;
                     x:0px;y:0px;
                     width: root.single-pane || root.stacked ? parent.width : (parent.width - 5px)*root.pane-ratio;
                     height: root.single-pane || !root.stacked ? parent.height : (parent.height - 5px)*root.pane-ratio;
@@ -681,6 +692,7 @@ export component CommanderWindow inherits Window {
                     dropped(data) => { return root.dropped(0, data); }
                 }
                   right := FilePane {
+                    parent-visible: root.right-parent-visible;
                     x: root.single-pane || root.stacked ? 0px : left.width + 5px;
                     y: root.single-pane || !root.stacked ? 0px : left.height + 5px;
                     width: root.single-pane || root.stacked ? parent.width : parent.width - left.width - 5px;
@@ -979,7 +991,15 @@ export component CommanderWindow inherits Window {
                 if root.dialog-error != "": Text { text: root.dialog-error; color: #c74343; wrap: word-wrap; }
                 HorizontalBox {
                     Rectangle { horizontal-stretch: 1; }
-                    for command in root.dialog-buttons: Button { text: Words.translate(command.title,Words.version); primary:root.dialog-pack && command.id == "accept"; enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
+                    for command[index] in root.dialog-buttons: HorizontalBox {padding:0px;spacing:0px;horizontal-stretch:0;
+                        if index < 4: Button { text: Words.translate(command.title,Words.version); primary:root.dialog-pack && command.id == "accept"; enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
+                    }
+                }
+                if root.dialog-buttons.length > 4: HorizontalBox {
+                    Rectangle { horizontal-stretch: 1; }
+                    for command[index] in root.dialog-buttons: HorizontalBox {padding:0px;spacing:0px;horizontal-stretch:0;
+                        if index >= 4: Button { text: Words.translate(command.title,Words.version); enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
+                    }
                 }
             }
         }

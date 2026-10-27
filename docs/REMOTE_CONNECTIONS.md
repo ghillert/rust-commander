@@ -127,8 +127,9 @@ Failed remote transfers can leave partial output.
 
 Remote deletion is permanent and requires confirmation. Remote rename
 streams a copy, checks source metadata and removes the original after success.
-Cancellation can keep both copies. Nested remote archives open read-only in a
-bounded temporary cache; remote archive editing is not implemented. For local transfer and
+Cancellation can keep both copies. Nested remote archives use a bounded temporary cache. Writable ZIP/TAR/7z
+containers support guarded save-back with verified server recovery copies;
+HTTP and format overrides remain read-only. See [archive save-back](RECOVERY_AND_SUPPORT.md#nested-and-remote-archive-editing). For local transfer and
 recovery behavior, see [File operations](FILE_OPERATIONS.md).
 
 ## Validation status

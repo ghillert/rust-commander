@@ -30,6 +30,7 @@ mod uri_backend;
 pub mod viewer;
 
 pub mod archive_tools;
+mod archive_writeback;
 pub mod feature_ui;
 pub mod history;
 pub mod i18n;
@@ -67,7 +68,9 @@ pub mod viewer_search;
 pub mod associations;
 pub mod external_edit;
 
+pub mod recovery;
 pub mod storage;
+pub mod support;
 
 pub mod resumable;
 

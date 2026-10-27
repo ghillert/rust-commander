@@ -78,7 +78,9 @@ impl Queue {
         matches!(op,Operation::PackProtected{password,..}|Operation::ExtractProtected{password,..} if password.is_empty())
             || matches!(
                 op,
-                Operation::EmptyTrash
+                Operation::RecoveryRestore { .. }
+                    | Operation::RecoveryCleanup(_)
+                    | Operation::EmptyTrash
                     | Operation::SaveText { .. }
                     | Operation::RemoteSave { .. }
                     | Operation::SaveBytes { .. }

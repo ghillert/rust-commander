@@ -179,6 +179,12 @@ impl Adapter {
     pub(super) fn dialog(&self) -> Dialog {
         if !self.app.confirm_exit
             && self.app.message.is_none()
+            && let Some(dialog) = self.management_dialog()
+        {
+            return dialog;
+        }
+        if !self.app.confirm_exit
+            && self.app.message.is_none()
             && let Some(dialog) = self.enhancements_dialog()
         {
             return dialog;
@@ -741,10 +747,22 @@ impl Adapter {
             let edits = ["Add files", "Remove entries", "Rename entry"];
             let mut d = Dialog::new("archive", "Archive tools");
             d.error = form.error.clone().unwrap_or_default();
-            d.fields.extend([
-                Field::choice("archive-mode", "Action", modes[form.mode.min(2)], modes),
-                Field::text("archive-file", "Archive", &form.file),
-            ]);
+            d.fields.extend([Field::choice(
+                "archive-mode",
+                "Action",
+                modes[form.mode.min(2)],
+                modes,
+            )]);
+            if let Some(source) = &form.source_display {
+                d.fields.push(Field::label("Archive source", source));
+                d.fields.push(Field::label(
+                    "Save-back",
+                    "Edits are checked and saved through the containing archives to this source.",
+                ));
+            } else {
+                d.fields
+                    .push(Field::text("archive-file", "Archive", &form.file));
+            }
             if form.mode == 0 {
                 d.fields.push(Field::choice(
                     "edit-mode",

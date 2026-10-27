@@ -29,8 +29,8 @@ pub fn edit_zip(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> {
     if crate::archive::format(file) != Some(crate::archive::Format::Zip) {
         bail!("Archive editing requires a local ZIP file.");
     }
-    if origin(file).is_some() {
-        bail!("Extract nested or remote archives locally before editing them.");
+    if cached_origin(file).is_some() {
+        return crate::archive_writeback::edit(file, edit, task);
     }
     if fs::symlink_metadata(file)?.file_type().is_symlink() {
         bail!("Edit the archive's actual file, not a symlink.");
@@ -232,6 +232,77 @@ struct Materialized {
     file: PathBuf,
     origin: Location,
     depth: usize,
+    cached: CachedOrigin,
+}
+
+#[derive(Clone)]
+pub(crate) struct CachedOrigin {
+    pub origin: Location,
+    pub source: PathBuf,
+    pub hash: String,
+    pub parent_stamp: Option<String>,
+    pub writable: bool,
+}
+
+pub(crate) fn cached_origin(file: &Path) -> Option<CachedOrigin> {
+    MATERIALIZED
+        .get_or_init(Default::default)
+        .lock()
+        .ok()?
+        .get(file)
+        .map(|m| m.cached.clone())
+}
+
+pub(crate) fn refresh_cached_origins(files: &[PathBuf]) -> Result<()> {
+    let mut updates = Vec::new();
+    for file in files {
+        if let Some(mut cached) = cached_origin(file) {
+            cached.hash =
+                crate::storage::hash(&Location::Local(file.clone()), file, &Task::default())?;
+            cached.parent_stamp = match &cached.origin {
+                Location::Archive { file, .. } => {
+                    crate::history::fingerprint(file, &Task::default())?
+                }
+                Location::Local(_) => {
+                    crate::history::fingerprint(&cached.source, &Task::default())?
+                }
+                _ => None,
+            };
+            updates.push((file.clone(), cached));
+        }
+    }
+    let mut cache = MATERIALIZED
+        .get_or_init(Default::default)
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Archive cache lock failed"))?;
+    for (file, cached) in updates {
+        if let Some(entry) = cache.get_mut(&file) {
+            entry.cached = cached;
+        }
+    }
+    Ok(())
+}
+pub(crate) fn verify_cache_updates(updates: &[(PathBuf, PathBuf)]) -> Result<()> {
+    let cache = MATERIALIZED
+        .get_or_init(Default::default)
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Archive cache lock failed"))?;
+    let mut bytes = 0u64;
+    for (file, entry) in cache.iter() {
+        let path = updates
+            .iter()
+            .find(|(cached, _)| cached == file)
+            .map(|(_, output)| output)
+            .unwrap_or(&entry.file);
+        bytes = bytes
+            .checked_add(fs::metadata(path)?.len())
+            .context("Archive cache size overflow")?;
+    }
+    anyhow::ensure!(
+        bytes <= 512 * 1024 * 1024,
+        "Edited containers would exceed the 512 MiB archive cache limit"
+    );
+    Ok(())
 }
 static MATERIALIZED: OnceLock<Mutex<BTreeMap<PathBuf, Materialized>>> = OnceLock::new();
 
@@ -242,6 +313,51 @@ pub fn origin(file: &Path) -> Option<Location> {
         .ok()?
         .get(file)
         .map(|entry| entry.origin.clone())
+}
+/// Persistent outer source for recovery; never return a private cached parent.
+pub(crate) fn persistent_source(file: &Path) -> Result<(Location, PathBuf)> {
+    let mut file = file.to_owned();
+    for _ in 0..=8 {
+        match cached_origin(&file) {
+            Some(cached) => match cached.origin {
+                Location::Archive { file: parent, .. } => file = parent,
+                origin => return Ok((origin, cached.source)),
+            },
+            None => {
+                let parent = file.parent().context("Missing archive folder")?;
+                return Ok((Location::Local(parent.to_owned()), file));
+            }
+        }
+    }
+    anyhow::bail!("Archive nesting exceeds the recovery limit")
+}
+
+/// Human-facing origin chain, rather than a private materialization path.
+pub fn source_label(file: &Path) -> String {
+    fn label(file: &Path, depth: usize) -> String {
+        if depth > 8 {
+            return file
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+        }
+        match cached_origin(file) {
+            Some(cached) => match cached.origin {
+                Location::Archive { file, .. } => format!(
+                    "{}!/{}",
+                    label(&file, depth + 1),
+                    crate::remote::display_path(&cached.source)
+                ),
+                Location::Remote { connection, .. } => {
+                    crate::uri::address(&connection, &cached.source)
+                }
+                Location::Local(_) => cached.source.display().to_string(),
+            },
+            None => file.display().to_string(),
+        }
+    }
+    label(file, 0)
 }
 
 pub fn materialize(location: &Location, path: &Path) -> Result<PathBuf> {
@@ -269,6 +385,11 @@ fn materialize_impl(
     password: &str,
 ) -> Result<PathBuf> {
     const LIMIT: u64 = 128 * 1024 * 1024;
+    let parent_stamp = match location {
+        Location::Archive { file, .. } => crate::history::fingerprint(file, &Task::default())?,
+        Location::Local(_) => crate::history::fingerprint(path, &Task::default())?,
+        _ => None,
+    };
     let depth = match location {
         Location::Archive { file, .. } => MATERIALIZED
             .get_or_init(Default::default)
@@ -293,6 +414,14 @@ fn materialize_impl(
     if bytes.len() as u64 > LIMIT {
         bail!("Nested/remote archive exceeds 128 MiB.");
     }
+    if let Location::Archive { file, .. } = location {
+        anyhow::ensure!(
+            crate::history::fingerprint(file, &Task::default())? == parent_stamp,
+            "Containing archive changed while opening the nested archive"
+        );
+    }
+    use sha2::Digest;
+    let original_hash = format!("{:x}", sha2::Sha256::digest(&bytes));
     let directory = tempfile::Builder::new()
         .prefix("rust-commander-archive-")
         .tempdir()?;
@@ -316,6 +445,14 @@ fn materialize_impl(
         }
         crate::archive::list(&file, Path::new(""))?;
     }
+    let writable = format.is_none()
+        && match location {
+            Location::Archive { file, .. } => editable(file),
+            Location::Remote { connection, .. } => {
+                crate::remote::profile(connection).is_none_or(|c| c.service != "http")
+            }
+            Location::Local(_) => true,
+        };
     let mut cache = MATERIALIZED
         .get_or_init(Default::default)
         .lock()
@@ -342,6 +479,13 @@ fn materialize_impl(
         Materialized {
             _directory: directory,
             file: file.clone(),
+            cached: CachedOrigin {
+                origin: origin.clone(),
+                source: path.into(),
+                hash: original_hash,
+                parent_stamp,
+                writable,
+            },
             origin,
             depth,
         },
@@ -356,7 +500,7 @@ pub fn clear_cache() {
 }
 
 pub fn editable(file: &Path) -> bool {
-    origin(file).is_none()
+    cached_origin(file).is_none_or(|entry| entry.writable)
         && matches!(
             crate::archive::format(file),
             Some(
@@ -371,6 +515,9 @@ pub fn editable(file: &Path) -> bool {
 }
 /// Rewrite TAR/7z and encrypted ZIP through a private, bounded extraction tree.
 pub fn edit_archive(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> {
+    if cached_origin(file).is_some() {
+        return crate::archive_writeback::edit(file, edit, task);
+    }
     if !editable(file) || fs::symlink_metadata(file)?.file_type().is_symlink() {
         bail!("Choose a local ZIP, TAR or 7z archive; extract cached archives locally first.");
     }
@@ -499,6 +646,25 @@ pub(crate) fn edit_tree<T>(
     task: &mut Task,
     edit: impl FnOnce(&Path, &mut Task) -> Result<T>,
 ) -> Result<T> {
+    if cached_origin(file).is_some() {
+        let (stage, expected) = crate::archive_writeback::working_copy(file)?;
+        let result = crate::drag_drop::transient(task, stage.path(), |task| {
+            edit_tree(
+                &stage
+                    .path()
+                    .join(file.file_name().context("Missing archive name")?),
+                task,
+                edit,
+            )
+        })?;
+        crate::archive_writeback::publish(
+            file,
+            &stage.path().join(file.file_name().unwrap()),
+            &expected,
+            task,
+        )?;
+        return Ok(result);
+    }
     anyhow::ensure!(
         editable(file),
         "This archive is read-only. Extract it locally before editing."

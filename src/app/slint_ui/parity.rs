@@ -92,6 +92,14 @@ pub(super) fn command_catalog() -> Vec<(String, String)> {
 }
 impl Adapter {
     pub(super) fn parity_action(&mut self, name: &str) -> bool {
+        if let Some(index) = name
+            .strip_prefix("RecallWindow")
+            .and_then(|n| n.parse::<usize>().ok())
+            .filter(|n| (1..=10).contains(n))
+        {
+            self.extra.window_request = Some(super::windows::Request::RaiseOrdinal(index - 1));
+            return true;
+        }
         let side = self.app.active;
         let page = self.extra.page_rows[side].max(1) as isize;
         match name {

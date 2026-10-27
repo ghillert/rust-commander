@@ -151,6 +151,8 @@ pub(crate) fn transient<T>(
     let capture = shared.clone();
     let root = root.to_owned();
     let physical = root.canonicalize().unwrap_or_else(|_| root.clone());
+    let private_root = root.clone();
+    let private_physical = physical.clone();
     task.before_change = Some(Box::new(move |path| {
         if !path.starts_with(&root)
             && !path.starts_with(&physical)
@@ -163,7 +165,11 @@ pub(crate) fn transient<T>(
         }
         Ok(())
     }));
+    task.private_roots.push(private_root);
+    task.private_roots.push(private_physical);
     let result = f(task);
+    task.private_roots.pop();
+    task.private_roots.pop();
     task.before_change = shared
         .lock()
         .map_err(|_| anyhow::anyhow!("Undo capture lock failed"))?
@@ -290,9 +296,10 @@ pub fn transfer(
     };
     let staged = transient(task, Path::new(""), |task| export(selection, task))?;
     let same_archive = matches!((&selection.from,to),(Location::Archive{file:a,..},Location::Archive{file:b,..}) if a==b);
-    let durable_undo = task.before_change.is_some();
     let (message, complete) = match to {
         Location::Archive { file, prefix } => {
+            let (source, original) = crate::archive_tools::persistent_source(file)?;
+            let durable_undo = task.before_change.is_some() && source.local().is_some();
             crate::archive_tools::edit_tree(file, task, |tree, task| {
                 let destination = if prefix.as_os_str().is_empty() {
                     tree.to_owned()
@@ -319,19 +326,22 @@ pub fn transfer(
                     // The private tree is discarded after repacking. Preserve replaced
                     // originals through Undo, or a durable whole-archive backup when
                     // a remote move cannot offer a complete Undo transaction.
-                    let suffix = if durable_undo {
+                    let suffix = if source.local().is_none() {
+                        "The server recovery copy is reported after saving.".to_owned()
+                    } else if durable_undo {
                         "Replaced archive entries can be restored with Undo.".to_owned()
                     } else {
                         let mut backup = tempfile::Builder::new()
                             .prefix(".rust-commander-archive-backup-")
                             .suffix(&format!(
                                 ".{}",
-                                file.extension().unwrap_or_default().to_string_lossy()
+                                original.extension().unwrap_or_default().to_string_lossy()
                             ))
-                            .tempfile_in(file.parent().context("Missing archive folder")?)?;
-                        task.stream(&mut fs::File::open(file)?, &mut backup, file)?;
+                            .tempfile_in(original.parent().context("Missing archive folder")?)?;
+                        task.stream(&mut fs::File::open(&original)?, &mut backup, &original)?;
                         backup.as_file().sync_all()?;
                         let (_, path) = backup.keep()?;
+                        crate::recovery::record_backup(&source, &path, &original, task)?;
                         format!("Original archive is kept in {}", path.display())
                     };
                     report.message = format!(

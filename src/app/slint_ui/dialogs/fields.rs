@@ -37,6 +37,9 @@ impl Adapter {
             return;
         }
 
+        if self.management_edit(id, value) {
+            return;
+        }
         if self.enhancements_edit(id, value) {
             return;
         }

@@ -572,6 +572,137 @@ pub fn discard(id: &str, from: &Location, to: &Location) -> Result<()> {
     let root = crate::settings::path()?.with_file_name("transfers");
     discard_in(&root, id, from, to)
 }
+
+fn recovery_manifest(root: &Path, id: &str) -> Result<(fs::File, Manifest)> {
+    filesystem::validate_name(id)?;
+    ensure!(id.starts_with("batch-"), "Invalid checkpoint ID");
+    let directory = root.join(id);
+    ensure!(
+        !fs::symlink_metadata(root)?.file_type().is_symlink()
+            && !fs::symlink_metadata(&directory)?.file_type().is_symlink(),
+        "Checkpoint storage is a link"
+    );
+    let lease = lease(root, id)?;
+    let path = directory.join("manifest.json");
+    ensure!(
+        !fs::symlink_metadata(&path)?.file_type().is_symlink(),
+        "Checkpoint manifest is a link"
+    );
+    let mut bytes = Vec::new();
+    fs::File::open(path)?
+        .take(32 * 1024 * 1024 + 1)
+        .read_to_end(&mut bytes)?;
+    ensure!(
+        bytes.len() <= 32 * 1024 * 1024,
+        "Checkpoint manifest exceeds 32 MiB"
+    );
+    let manifest: Manifest = serde_json::from_slice(&bytes)?;
+    ensure!(
+        manifest.items.len() <= 100_000,
+        "Checkpoint has too many entries"
+    );
+    Ok((lease, manifest))
+}
+pub(crate) fn lock_recovery_in(root: &Path, id: &str) -> Result<fs::File> {
+    Ok(recovery_manifest(root, id)?.0)
+}
+pub(crate) fn recovery_items_in(
+    root: &Path,
+    id: &str,
+    task: &Task,
+) -> Result<Vec<crate::recovery::Item>> {
+    let (_lease, manifest) = recovery_manifest(root, id)?;
+    let directory = root.join(id);
+    let complete = manifest
+        .items
+        .iter()
+        .all(|item| item.done || item.decision == Decision::Skip);
+    let mut result = Vec::new();
+    for (index, item) in manifest.items.iter().enumerate() {
+        let Some(expected) = &item.backup_hash else {
+            continue;
+        };
+        let path = directory.join(format!("original-{index}"));
+        let local = Location::Local(directory.clone());
+        ensure!(
+            conflicts::content(&local, &path, task)? == *expected,
+            "Retained checkpoint original is corrupt: {}",
+            path.display()
+        );
+        let target = crate::directory_tree::path(&manifest.to)
+            .join(filesystem::portable_relative(&item.relative)?);
+        result.push(crate::recovery::Item {
+            key: crate::recovery::Key::Checkpoint {
+                batch: id.into(),
+                item: index,
+            },
+            label: format!("Checkpoint {id}"),
+            destination: crate::directory_tree::at(
+                &manifest.to,
+                target.parent().context("Missing target parent")?,
+            ),
+            name: target
+                .file_name()
+                .context("Missing original name")?
+                .to_str()
+                .context("Recovery names must be UTF-8")?
+                .into(),
+            stamp: storage::stamp(&local, &path, task)?.context("Recovery original missing")?,
+            source: local,
+            path,
+            cleanup: complete,
+            cleanup_group: format!("checkpoint:{id}"),
+            cleanup_scope: "Delete this completed checkpoint and all its retained originals".into(),
+        });
+    }
+    Ok(result)
+}
+pub(crate) fn cleanup_recovery_in(root: &Path, id: &str, task: &Task) -> Result<()> {
+    let (_lease, manifest) = recovery_manifest(root, id)?;
+    ensure!(
+        manifest
+            .items
+            .iter()
+            .all(|item| item.done || item.decision == Decision::Skip),
+        "An incomplete checkpoint cannot be cleaned up"
+    );
+    let directory = root.join(id);
+    for (index, item) in manifest.items.iter().enumerate() {
+        if let Some(expected) = &item.backup_hash {
+            let path = directory.join(format!("original-{index}"));
+            ensure!(
+                conflicts::content(&Location::Local(directory.clone()), &path, task)? == *expected,
+                "Checkpoint original changed; preserved for review"
+            );
+        }
+    }
+    for entry in fs::read_dir(&directory)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_str().context("Unrecognized checkpoint data")?;
+        let known = name == "manifest.json"
+            || name
+                .strip_prefix("original-")
+                .and_then(|s| s.parse::<usize>().ok())
+                .is_some_and(|i| {
+                    manifest
+                        .items
+                        .get(i)
+                        .is_some_and(|item| item.backup_hash.is_some())
+                })
+            || name
+                .strip_suffix(".part")
+                .and_then(|s| s.parse::<usize>().ok())
+                .is_some_and(|i| i < manifest.items.len());
+        ensure!(
+            known && !entry.file_type()?.is_symlink(),
+            "Checkpoint has unrecognized data; preserved for review"
+        );
+    }
+    task.check()?;
+    fs::remove_dir_all(directory)?;
+    Ok(())
+}
 pub fn discard_in(root: &Path, id: &str, from: &Location, to: &Location) -> Result<()> {
     filesystem::validate_name(id)?;
     ensure!(id.starts_with("batch-"), "Invalid checkpoint ID");

@@ -145,3 +145,17 @@ pub fn quick_find(
     }
     false
 }
+
+/// Directories keep their complete names; files lose only the final extension.
+pub fn base_name(entry: &crate::filesystem::Entry) -> String {
+    if entry.is_dir {
+        entry.name.clone()
+    } else {
+        entry
+            .path
+            .file_stem()
+            .unwrap_or(entry.path.as_os_str())
+            .to_string_lossy()
+            .into_owned()
+    }
+}

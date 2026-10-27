@@ -12,6 +12,7 @@ mod enhancements;
 mod icon_smoke;
 mod icons;
 mod keys;
+mod management;
 mod parity;
 pub(in crate::app) mod viewer_tools;
 mod windows;
@@ -34,6 +35,7 @@ struct RowData {
 pub(super) struct Adapter {
     app: Commander,
     enhancements: enhancements::State,
+    management: management::State,
     drag: drag::State,
     extra: parity::State,
     ctx: UiSignal,
@@ -143,6 +145,7 @@ impl Adapter {
         Self {
             app,
             enhancements: Default::default(),
+            management: Default::default(),
             drag: Default::default(),
             extra: Default::default(),
             ctx,
@@ -184,7 +187,8 @@ impl Adapter {
     }
 
     fn blocked(&self) -> bool {
-        self.enhancements_modal()
+        self.management.active()
+            || self.enhancements_modal()
             || self.drag.preparation.is_some()
             || self.extra.dialog.is_some()
             || self.app.features.active()
@@ -353,6 +357,9 @@ impl Adapter {
                 .fail("This operation is unavailable for a read-only location.");
             return;
         }
+        if self.management_action(name) {
+            return;
+        }
         if self.enhancements_action(name) {
             return;
         }
@@ -477,6 +484,7 @@ impl Adapter {
         }
         self.app.poll(&self.ctx);
         self.enhancements_tick();
+        self.management_tick();
         self.viewer_tools_tick();
         self.parity_tick();
         self.app.poll_prompt(&self.ctx);
@@ -889,6 +897,9 @@ impl Adapter {
                 )
             };
             if side == 0 {
+                ui.set_left_parent_visible(
+                    self.app.preferences.parent_entry && tab.location.parent().is_some(),
+                );
                 ui.set_left_rows(self.rows[side].clone().into());
                 ui.set_left_committed_address(tab.location.label().into());
                 ui.set_left_protocol(crate::uri::protocol(&tab.location).into());
@@ -901,6 +912,9 @@ impl Adapter {
                 ui.set_left_busy(tab.loading);
                 ui.set_left_summary(summary.into());
             } else {
+                ui.set_right_parent_visible(
+                    self.app.preferences.parent_entry && tab.location.parent().is_some(),
+                );
                 ui.set_right_rows(self.rows[side].clone().into());
                 ui.set_right_committed_address(tab.location.label().into());
                 ui.set_right_protocol(crate::uri::protocol(&tab.location).into());
@@ -970,6 +984,7 @@ impl Adapter {
             "history" => 520.0,
             "archive" => 520.0,
             "text-diff" => (spec.fields.len() as f32 * 32.0 + 240.0).clamp(300.0, 700.0),
+            "updates" | "diagnostics" | "report" => 360.0,
             _ => 700.0,
         });
         ui.set_dialog_diff(spec.kind == "text-diff");
@@ -984,6 +999,9 @@ impl Adapter {
                 | "pack"
                 | "pack-progress"
                 | "open-as"
+                | "updates"
+                | "diagnostics"
+                | "report"
         ));
         ui.set_dialog_title(spec.title.into());
         ui.set_dialog_description(spec.description.into());
@@ -1522,8 +1540,10 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                     if let Some(ui) = step_ui.upgrade() {
                         match callback.as_str() {
                             "navigate" => ui.invoke_navigate(0, value.into()),
+                            "open" => ui.invoke_opened(0, path_id(Path::new(&value)).into()),
                             "action" => ui.invoke_action(value.into()),
                             "dialog" => ui.invoke_dialog_action(value.into()),
+                            "select" => ui.invoke_dialog_select(value.into()),
                             "viewer" => ui.invoke_viewer_action(value.into()),
                             "field" => {
                                 let (id, value): (String, String) = serde_json::from_str(&value)

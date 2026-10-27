@@ -1328,6 +1328,7 @@ pub fn transfer_resolved(
             ensure_absent(to, &backup)?;
             copy_entry(to, existing, to, &backup, task)?;
             backups.push(backup.clone());
+            crate::recovery::record_backup(to, &backup, &plan.target, task)?;
             anyhow::ensure!(
                 snapshot(to, std::slice::from_ref(existing), task)? == stamp,
                 "Destination changed; recovery retained at {}",
@@ -1424,11 +1425,23 @@ pub fn save_bytes(
     bytes: &[u8],
     task: &mut Task,
 ) -> Result<String> {
-    if original.len() > 2 * 1024 * 1024 || bytes.len() > 2 * 1024 * 1024 {
-        bail!("Remote text editing is limited to 2 MiB");
-    }
+    save_bytes_bounded(id, path, original, bytes, 2 * 1024 * 1024, task)
+}
+pub(crate) fn save_bytes_bounded(
+    id: &str,
+    path: &Path,
+    original: &[u8],
+    bytes: &[u8],
+    limit: u64,
+    task: &mut Task,
+) -> Result<String> {
+    anyhow::ensure!(
+        original.len() as u64 <= limit && bytes.len() as u64 <= limit,
+        "Remote save exceeds the {} MiB limit",
+        limit / (1024 * 1024)
+    );
     task.check()?;
-    if read_bytes(id, path, 2 * 1024 * 1024)? != original {
+    if read_bytes(id, path, limit)? != original {
         bail!("Remote file changed since it was opened. Reload before saving.");
     }
     let session = session(id)?;
@@ -1438,7 +1451,21 @@ pub fn save_bytes(
     ));
     if let Some(smb) = &session.smb {
         smb.write(&backup, &mut std::io::Cursor::new(original), task, true)?;
-        if read_bytes(id, path, 2 * 1024 * 1024)? != original {
+        anyhow::ensure!(
+            read_bytes(id, &backup, limit)? == original,
+            "Remote recovery copy did not verify; source preserved at {}",
+            path.display()
+        );
+        crate::recovery::record_backup(
+            &Location::Remote {
+                connection: id.into(),
+                path: path.parent().unwrap_or(Path::new("")).into(),
+            },
+            &backup,
+            path,
+            task,
+        )?;
+        if read_bytes(id, path, limit)? != original {
             bail!(
                 "Remote file changed before upload. Recovery copy: {}",
                 backup.display()
@@ -1458,7 +1485,21 @@ pub fn save_bytes(
                 },
             )
             .map_err(|e| clean_error(e, &session.secrets))?;
-        if read_bytes(id, path, 2 * 1024 * 1024)? != original {
+        anyhow::ensure!(
+            read_bytes(id, &backup, limit)? == original,
+            "Remote recovery copy did not verify; source preserved at {}",
+            path.display()
+        );
+        crate::recovery::record_backup(
+            &Location::Remote {
+                connection: id.into(),
+                path: path.parent().unwrap_or(Path::new("")).into(),
+            },
+            &backup,
+            path,
+            task,
+        )?;
+        if read_bytes(id, path, limit)? != original {
             bail!(
                 "Remote file changed before upload. Recovery copy: {}",
                 backup.display()
@@ -1476,14 +1517,14 @@ pub fn save_bytes(
             .write_options(&key(path, false)?, bytes.to_vec(), options)
             .map_err(|e| clean_error(e, &session.secrets))?;
     }
-    if read_bytes(id, path, 2 * 1024 * 1024)? != bytes {
+    if read_bytes(id, path, limit)? != bytes {
         bail!(
             "Uploaded content did not verify. Recovery copy: {}",
             backup.display()
         );
     }
     Ok(format!(
-        "Saved remote text. Recovery copy: {}. Services without conditional writes cannot make the external-edit check atomic.",
+        "Saved remote file. Recovery copy: {}. Services without conditional writes cannot make the external-edit check atomic.",
         backup.display()
     ))
 }

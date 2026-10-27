@@ -55,8 +55,9 @@ system default, then choose **Open editor**. Save in the external application,
 return to Rust Commander, **Review changes**, and explicitly **Save back**.
 Local files, remote files and entries in writable local ZIP/TAR/7z archives are
 supported. Save-back refuses changed originals; remote saves keep recovery
-copies and local saves/archive replacements participate in Undo. Nested and
-remote archive containers remain read-only. Closing protects an open editor
+copies and local saves/archive replacements participate in Undo. Nested and remote writable archive containers support guarded outer-source
+save-back; HTTP and format overrides remain read-only. See
+[recovery and archive save-back](RECOVERY_AND_SUPPORT.md). Closing protects an open editor
 session; **Discard working copy** explicitly removes it. A failed save retains
 the working copy for review. Working copies are temporary, not crash recovery.
 
@@ -94,6 +95,8 @@ Originals remain under `original-N` in the batch folder, with the matching targe
 in `manifest.json`. The result reports this folder even after success. Review and
 restore originals manually if needed; queue Discard refuses to delete a batch
 that holds verified originals. These batches do not advertise local Undo.
+The [Recovery manager](RECOVERY_AND_SUPPORT.md#recovery-manager) can restore
+selected copies and explicitly clean completed, verified backup groups.
 Batches without replacements remove local checkpoints after success. Hidden server
 staging files can require explicit cleanup. Failed/cancelled checkpoints and
 replacement originals can occupy the full size of the transferred trees.

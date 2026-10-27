@@ -77,7 +77,7 @@ fn snapshot(location: &Location, root: &Path, task: &Task) -> Result<Vec<Origina
     Ok(out)
 }
 
-fn content(location: &Location, root: &Path, task: &Task) -> Result<String> {
+pub(super) fn content(location: &Location, root: &Path, task: &Task) -> Result<String> {
     fn visit(
         location: &Location,
         path: &Path,

@@ -8,6 +8,7 @@ pub(super) enum Request {
     ConfirmQuit,
     Cycle(bool),
     Raise(usize),
+    RaiseOrdinal(usize),
 }
 struct Runtime {
     queue: crate::queue::Queue,
@@ -331,6 +332,11 @@ pub(super) fn tick() {
                 }
             }
             Request::Raise(id) => raise(id),
+            Request::RaiseOrdinal(index) => {
+                if let Some((id, _, _)) = sessions.get(index) {
+                    raise(*id);
+                }
+            }
             Request::Quit => {
                 let job = RUNTIME.with(|r| r.borrow().as_ref().is_some_and(|r| r.job.is_some()));
                 let dirty = sessions.iter().any(|(_, _, s)| {

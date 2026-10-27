@@ -416,7 +416,7 @@ fn remote_conflict_policies_keep_both_skip_and_retain_replacement_backup() {
 }
 
 #[test]
-fn remote_archives_are_materialized_for_read_only_browsing() {
+fn remote_archives_materialize_and_save_edits_with_recovery() {
     let (_root, source, destination) = fixture();
     fs::write(source.join("data"), "remote archive").unwrap();
     archive::pack(
@@ -435,14 +435,29 @@ fn remote_archives_are_materialized_for_read_only_browsing() {
         archive::read_bytes(&materialized, Path::new("data"), 100).unwrap(),
         b"remote archive"
     );
+    let original = fs::read(destination.join("remote.zip")).unwrap();
+    archive_tools::edit_zip(
+        &materialized,
+        &ZipEdit::Remove(vec!["data".into()]),
+        &mut Task::default(),
+    )
+    .unwrap();
     assert!(
-        archive_tools::edit_zip(
-            &materialized,
-            &ZipEdit::Remove(vec!["data".into()]),
-            &mut Task::default()
-        )
-        .is_err()
+        archive::list(&destination.join("remote.zip"), Path::new(""))
+            .unwrap()
+            .is_empty()
     );
+    let backup = fs::read_dir(&destination)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".rust-commander-edit-")
+        })
+        .unwrap();
+    assert_eq!(fs::read(backup).unwrap(), original);
 }
 
 #[test]

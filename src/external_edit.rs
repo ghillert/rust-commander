@@ -26,9 +26,8 @@ impl Session {
         }
         let archive_stamp = if let Location::Archive { file, .. } = &location {
             ensure!(
-                crate::archive_tools::editable(file)
-                    && crate::archive_tools::origin(file).is_none(),
-                "External save-back requires a writable local ZIP/TAR/7z archive"
+                crate::archive_tools::editable(file),
+                "External save-back requires a writable ZIP/TAR/7z archive source"
             );
             crate::history::fingerprint(file, &Task::default())?
         } else {
@@ -116,9 +115,10 @@ pub fn save_archive(
         "Archive changed since opening the editor; reopen it before saving"
     );
     ensure!(
-        crate::archive_tools::origin(archive).is_none(),
-        "Nested/remote archives are read-only"
+        crate::archive_tools::editable(archive),
+        "This archive source is read-only"
     );
+    let cached = crate::archive_tools::cached_origin(archive);
     let path = crate::filesystem::portable_relative(path)?;
     let stage = tempfile::tempdir()?;
     let working = stage
@@ -134,19 +134,30 @@ pub fn save_archive(
         .join(path.file_name().context("Missing member name")?);
     std::fs::create_dir_all(entry.parent().unwrap())?;
     std::fs::write(&entry, bytes)?;
-    crate::archive_tools::edit_archive(
-        &working,
-        &crate::archive_tools::ZipEdit::Remove(vec![path.clone()]),
-        task,
-    )?;
-    crate::archive_tools::edit_archive(
-        &working,
-        &crate::archive_tools::ZipEdit::Add {
-            sources: vec![entry],
-            prefix: path.parent().unwrap_or(Path::new("")).into(),
-        },
-        task,
-    )?;
+    crate::drag_drop::transient(task, stage.path(), |task| {
+        crate::archive_tools::edit_archive(
+            &working,
+            &crate::archive_tools::ZipEdit::Remove(vec![path.clone()]),
+            task,
+        )?;
+        crate::archive_tools::edit_archive(
+            &working,
+            &crate::archive_tools::ZipEdit::Add {
+                sources: vec![entry],
+                prefix: path.parent().unwrap_or(Path::new("")).into(),
+            },
+            task,
+        )?;
+        Ok(())
+    })?;
+    if let Some(cached) = cached {
+        ensure!(
+            crate::history::fingerprint(archive, task)? == *expected,
+            "Cached archive changed while editing"
+        );
+        crate::archive_writeback::publish(archive, &working, &cached.hash, task)?;
+        return Ok("Saved edited entry through its containing archive source.".into());
+    }
     task.capture(archive)?;
     ensure!(
         crate::history::fingerprint(archive, task)? == *expected,

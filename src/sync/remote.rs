@@ -254,6 +254,7 @@ pub(super) fn apply(plan: &Plan, task: &mut Task) -> Result<String> {
                     entry.name
                 ));
             remote::copy_entry(to, &entry, to, &backup, task)?;
+            crate::recovery::record_backup(to, &backup, &target, task)?;
             anyhow::ensure!(
                 storage::stamp(to, &target, task)? == *target_stamp,
                 "Deletion target changed; recovery retained at {}",
