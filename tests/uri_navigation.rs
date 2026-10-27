@@ -19,6 +19,51 @@ fn target(text: &str) -> Box<uri::Target> {
         _ => panic!("Expected remote URI"),
     }
 }
+
+#[test]
+fn concurrently_created_connections_keep_distinct_profiles_and_sessions() {
+    const WORKERS: usize = 16;
+    let barrier = Arc::new(std::sync::Barrier::new(WORKERS));
+    let connections = thread::scope(|scope| {
+        let handles = (0..WORKERS)
+            .map(|_| {
+                let barrier = barrier.clone();
+                scope.spawn(move || {
+                    let server = Server::new();
+                    barrier.wait();
+                    let connection = server.connection();
+                    let connected = remote::connect(&connection, Secrets::default(), false);
+                    barrier.wait();
+                    connected.unwrap();
+                    assert_eq!(
+                        remote::profile(&connection.id).unwrap().endpoint,
+                        server.url
+                    );
+                    for _ in 0..3 {
+                        assert_eq!(
+                            remote::read_bytes(&connection.id, Path::new("direct.bin"), 100)
+                                .unwrap(),
+                            b"0123456789"
+                        );
+                    }
+                    let restored: Connection =
+                        serde_json::from_slice(&serde_json::to_vec(&connection).unwrap()).unwrap();
+                    assert_eq!(restored.id, connection.id);
+                    connection
+                })
+            })
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    let ids = connections
+        .iter()
+        .map(|connection| &connection.id)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(ids.len(), WORKERS);
+}
 #[test]
 fn schemes_and_authorities() {
     for (uri, service, port, tls) in [

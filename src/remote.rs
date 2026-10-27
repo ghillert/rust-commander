@@ -42,13 +42,9 @@ pub struct Connection {
 impl Default for Connection {
     fn default() -> Self {
         Self {
-            id: format!(
-                "{:x}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos()
-            ),
+            // Wall-clock timestamps can repeat, especially when connections are
+            // created concurrently. IDs key both saved profiles and live sessions.
+            id: format!("{:032x}", rand::random::<u128>()),
             name: "New connection".into(),
             service: if cfg!(unix) { "sftp" } else { "webdav" }.into(),
             endpoint: String::new(),

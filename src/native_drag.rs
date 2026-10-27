@@ -80,6 +80,7 @@ impl Linux {
             _ => None,
         }
     }
+    #[cfg(not(test))]
     pub fn pressed(&self) -> bool {
         match &self.backend {
             Backend::Wayland { device, .. } => device.left_pressed(),

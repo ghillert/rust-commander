@@ -1,5 +1,26 @@
 # Validation record
 
+## Windows HTTP and Linux Clippy follow-up — 2026-10-26
+
+[CI run 40407268454](https://github.com/ghillert/rust-commander/actions/runs/40407268454)
+failed on Windows while downloading an HTTP index member and on Linux because
+the physical drag-button polling method became unused in headless test builds.
+That method now follows its caller's `not(test)` configuration.
+
+Connection defaults previously used only wall-clock timestamps as IDs. Equal
+timestamps could overwrite another connection's profile/session in the shared
+maps. Defaults now use random 128-bit IDs; existing saved IDs remain unchanged.
+A regression creates 16 simultaneous loopback HTTP connections, checks distinct
+profiles and downloads, and verifies serialized IDs round-trip. A separate
+Windows binary run under Wine produced 60,544 duplicate timestamp IDs from
+65,536 attempts. This confirms the collision risk, but does not conclusively
+identify the original Windows request error; hosted Windows verification remains
+pending.
+
+All-target/all-feature tests pass on Apple Silicon macOS: **389 passed, 17
+ignored**. Clippy with warnings denied passes on macOS and in the Linux test
+container; formatting and diff whitespace checks pass as well.
+
 ## Recovery manager, archive save-back and desktop commands — 2026-10-26
 
 The Apple Silicon Mac run passes **388 tests with 17 ignored** across all
