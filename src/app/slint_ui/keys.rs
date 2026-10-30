@@ -76,6 +76,12 @@ impl Adapter {
     ) -> bool {
         // Slint maps macOS Command to `control` and physical Control to `meta`.
         let text = event.text.as_str();
+        if let Some(action) = configured_action(&self.app.preferences, &event)
+            && matches!(action.as_str(), "MinimizeWindow" | "MaximizeWindow")
+        {
+            self.action(&action);
+            return true;
+        }
         if key_is(text, slint::platform::Key::Escape) {
             self.drag.pending = None;
             self.drag.ready = None;

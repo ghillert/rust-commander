@@ -16,7 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, default=project / "target/debug/rust-commander")
     parser.add_argument("--output", type=Path, default=project / "target/management-smoke")
-    cases=["files", "recovery", "archive", "diagnostics", "report", "bookmarks", "email", "email-settings", "console", "donate", "help"]
+    cases=["files", "recovery", "archive", "diagnostics", "report", "bookmarks", "email", "email-settings", "console", "donate", "help", "browser-url", "virtual-pack", "window"]
     parser.add_argument("--case", action="append", choices=cases, dest="cases")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -68,6 +68,15 @@ def main():
                     sequence=[[500,"action","Donate"]]
                 elif case == "help":
                     sequence=[[700,"menu","Help"]]
+                elif case == "browser-url":
+                    sequence=[[500,"action","OpenURLInBrowser"],[900,"field",json.dumps(["browser-url","https://example.test/reports?q=review"])]]
+                elif case == "virtual-pack":
+                    source=left/"source.zip"
+                    with zipfile.ZipFile(source,"w") as archive:
+                        archive.writestr("café notes.txt","Selected virtual contents\n")
+                    sequence=[[400,"open",str(source)],[1000,"click","café notes.txt"],[1500,"action","Pack"],[1900,"dialog","pack-files"],[2200,"field",json.dumps(["pack-format","7z"])]]
+                elif case == "window":
+                    sequence=[[700,"menu","Window"]]
                 target = args.output.resolve() / f"{renderer}-{case}.png"
                 target.unlink(missing_ok=True)
                 env = dict(os.environ, RUST_COMMANDER_CONFIG_DIR=str(config),
@@ -78,7 +87,7 @@ def main():
                 for key in ["RUST_COMMANDER_SCREENSHOT_ACTION", "RUST_COMMANDER_SCREENSHOT_VIEWER_ACTION", "RUST_COMMANDER_SMOKE_KEEP_OPEN"]:
                     env.pop(key, None)
                 result = subprocess.run([str(args.binary.resolve()), str(left), str(right)],
-                                        env=env, capture_output=True, text=True, timeout=30)
+                                        env=env, capture_output=True, text=True, timeout=60)
                 (args.output / f"{renderer}-{case}.log").write_text(result.stdout + result.stderr)
                 if result.returncode:
                     raise RuntimeError(f"{renderer}/{case} failed: {result.stderr}")

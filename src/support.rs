@@ -9,6 +9,23 @@ pub const COMMUNITY: &str = "https://github.com/ghillert/rust-commander/issues";
 /// Repository .github/FUNDING.yml names this GitHub Sponsors account.
 pub const DONATION: &str = "https://github.com/sponsors/ghillert";
 
+pub fn browser_link(value: &str) -> Result<url::Url> {
+    ensure!(
+        value.len() <= 8192 && !value.chars().any(char::is_control),
+        "Invalid browser URL"
+    );
+    let url =
+        url::Url::parse(value).map_err(|_| anyhow::anyhow!("Enter a valid HTTP or HTTPS URL"))?;
+    ensure!(
+        matches!(url.scheme(), "http" | "https")
+            && url.host_str().is_some()
+            && url.username().is_empty()
+            && url.password().is_none(),
+        "Use an HTTP or HTTPS URL without credentials"
+    );
+    Ok(url)
+}
+
 pub fn web_link(value: &str) -> Result<url::Url> {
     let url = url::Url::parse(value)?;
     ensure!(

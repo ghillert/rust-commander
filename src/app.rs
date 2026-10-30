@@ -131,6 +131,9 @@ pub(crate) enum Action {
     Diagnostics,
     ReportBug,
     BringAllToFront,
+    MinimizeWindow,
+    MaximizeWindow,
+    OpenURLInBrowser,
     Email,
     ExploreBookmarks,
     GoToDocumentation,
@@ -282,6 +285,9 @@ pub(crate) fn all_actions() -> Vec<Action> {
         Action::Diagnostics,
         Action::ReportBug,
         Action::BringAllToFront,
+        Action::MinimizeWindow,
+        Action::MaximizeWindow,
+        Action::OpenURLInBrowser,
         Action::Email,
         Action::ExploreBookmarks,
         Action::GoToDocumentation,
@@ -402,6 +408,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Open As…", Action::OpenAs),
                 ("Edit externally…", Action::ExternalEdit),
                 ("Email files…", Action::Email),
+                ("Open URL in browser…", Action::OpenURLInBrowser),
                 ("Application associations…", Action::Associations),
                 ("Reveal in file manager", Action::Reveal),
                 ("Show package contents", Action::PackageContents),
@@ -516,6 +523,8 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
     if let Some((_, items)) = groups.iter_mut().find(|(title, _)| *title == "Window") {
         items.extend([
             ("Bring all windows forward", Action::BringAllToFront),
+            ("Minimize window", Action::MinimizeWindow),
+            ("Maximize / restore window", Action::MaximizeWindow),
             ("Switch to window 1", Action::RecallWindow1),
             ("Switch to window 2", Action::RecallWindow2),
             ("Switch to window 3", Action::RecallWindow3),
@@ -604,6 +613,7 @@ enum PromptKind {
     Trash(Vec<PathBuf>),
     Pack {
         sources: Vec<PathBuf>,
+        selection: Option<crate::drag_drop::Selection>,
         base: PathBuf,
         options: crate::packing::Options,
     },
@@ -787,7 +797,6 @@ impl Commander {
             _ => true,
         };
         match id {
-            "Pack" => self.tab().location.local().is_some(),
             "Move" => {
                 writable(&self.tab().location)
                     && writable(&self.panes[1 - self.active].tab().location)
@@ -941,6 +950,9 @@ impl Commander {
         let foreground = matches!(
             &operation,
             Operation::Pack {
+                background: false,
+                ..
+            } | Operation::PackSelection {
                 background: false,
                 ..
             }
@@ -1439,6 +1451,9 @@ impl Commander {
             | Action::Diagnostics
             | Action::ReportBug
             | Action::BringAllToFront
+            | Action::MinimizeWindow
+            | Action::MaximizeWindow
+            | Action::OpenURLInBrowser
             | Action::Email
             | Action::ExploreBookmarks
             | Action::GoToDocumentation
@@ -2110,31 +2125,41 @@ impl Commander {
                 }
             }
             Action::Pack => {
-                if let Some(base) = local.clone() {
-                    let name = if chosen.len() == 1 {
-                        if chosen[0].is_dir {
-                            sources[0].file_name()
-                        } else {
-                            sources[0].file_stem()
-                        }
+                let base = local
+                    .clone()
+                    .or_else(|| other.clone())
+                    .unwrap_or_else(filesystem::home);
+                let name = if chosen.len() == 1 {
+                    if chosen[0].is_dir {
+                        sources[0].file_name()
                     } else {
-                        base.file_name()
+                        sources[0].file_stem()
                     }
-                    .unwrap_or(std::ffi::OsStr::new("Archive"));
-                    let mut name = name.to_os_string();
-                    name.push(".zip");
-                    let target = other.clone().unwrap_or_else(|| base.clone()).join(name);
-                    prompt = Some((
-                        "Pack files",
-                        String::new(),
-                        target.display().to_string(),
-                        PromptKind::Pack {
-                            sources,
-                            base,
-                            options: Default::default(),
-                        },
-                    ));
+                } else {
+                    base.file_name()
                 }
+                .unwrap_or(std::ffi::OsStr::new("Archive"));
+                let mut name = name.to_os_string();
+                name.push(".zip");
+                let target = other.clone().unwrap_or_else(|| base.clone()).join(name);
+                prompt = Some((
+                    "Pack files",
+                    String::new(),
+                    target.display().to_string(),
+                    PromptKind::Pack {
+                        sources,
+                        selection: if local.is_none() {
+                            Some(crate::drag_drop::Selection {
+                                from: location.clone(),
+                                entries: chosen.clone(),
+                            })
+                        } else {
+                            None
+                        },
+                        base,
+                        options: Default::default(),
+                    },
+                ));
             }
             Action::Extract => {
                 let (archive, prefix, selected) = match location.clone() {
@@ -2471,10 +2496,15 @@ impl Commander {
                 PromptKind::Trash(sources) => Operation::Trash(sources.clone()),
                 PromptKind::Pack {
                     sources,
+                    selection,
                     base,
                     options,
                 } => {
-                    options.validate(sources)?;
+                    if let Some(selection) = selection {
+                        options.validate_selection(selection)?;
+                    } else {
+                        options.validate(sources)?;
+                    }
                     anyhow::ensure!(
                         !prompt.value.trim().is_empty(),
                         "Enter an archive destination."
@@ -2485,12 +2515,22 @@ impl Commander {
                         !crate::operations::exists(&destination),
                         "Archive already exists. Choose a different name."
                     );
-                    Operation::Pack {
-                        sources: sources.clone(),
-                        destination,
-                        compression_level: options.compression_level,
-                        comment: options.comment().to_owned(),
-                        background: options.background,
+                    if let Some(selection) = selection {
+                        Operation::PackSelection {
+                            selection: selection.clone(),
+                            destination,
+                            compression_level: options.compression_level,
+                            comment: options.comment().to_owned(),
+                            background: options.background,
+                        }
+                    } else {
+                        Operation::Pack {
+                            sources: sources.clone(),
+                            destination,
+                            compression_level: options.compression_level,
+                            comment: options.comment().to_owned(),
+                            background: options.background,
+                        }
                     }
                 }
                 PromptKind::Extract {

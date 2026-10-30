@@ -110,6 +110,64 @@ impl Options {
         }
         Ok(())
     }
+    pub fn validate_selection(&self, selection: &crate::drag_drop::Selection) -> Result<()> {
+        selection.validate()?;
+        validate_comment(self.format, self.comment())?;
+        validate_level(self.format, self.compression_level)?;
+        if matches!(self.format, Format::Gzip | Format::Bzip2 | Format::Xz) {
+            ensure!(
+                selection.entries.len() == 1
+                    && !selection.entries[0].is_dir
+                    && !selection.entries[0].is_symlink,
+                "Stream compression requires one regular file; use a TAR archive for folders or multiple files."
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Materialize a verified virtual selection privately, then pack to a local
+/// destination. Only the finished destination participates in durable Undo.
+pub fn pack_selection(
+    selection: &crate::drag_drop::Selection,
+    destination: &Path,
+    comment: &str,
+    compression_level: Option<u8>,
+    task: &mut crate::operations::Task,
+) -> Result<()> {
+    let options = Options {
+        format: archive::format(destination).context("Choose a supported archive format")?,
+        compression_level,
+        comment: comment.into(),
+        ..Default::default()
+    };
+    options.validate_selection(selection)?;
+    validate_comment(options.format, comment)?;
+    ensure!(
+        destination.is_absolute(),
+        "Choose a local archive destination"
+    );
+    ensure!(
+        !crate::operations::exists(destination),
+        "Archive already exists. Choose a different name."
+    );
+    task.check()?;
+    let stage = tempfile::Builder::new()
+        .prefix("rust-commander-pack-")
+        .tempdir()?;
+    let exported = crate::drag_drop::transient(task, stage.path(), |task| {
+        crate::drag_drop::export_in(selection, task, Some(stage.path()))
+    })?;
+    task.check()?;
+    options.validate(&exported.paths)?;
+    task.capture(destination)?;
+    archive::pack_with_compression(
+        &exported.paths,
+        destination,
+        comment,
+        compression_level,
+        task,
+    )
 }
 
 /// Zero means storage for ZIP, no deflate for GZip, and the fastest preset

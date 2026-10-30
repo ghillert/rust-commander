@@ -14,6 +14,7 @@ pub(super) struct State {
     filter: String,
     name: String,
     donation: String,
+    browser_url: String,
     error: String,
     events: Vec<crate::debug_log::Event>,
     paused: bool,
@@ -64,6 +65,10 @@ impl Adapter {
     }
     fn launch_website(&mut self, value: &str) -> anyhow::Result<()> {
         let url = crate::support::web_link(value)?;
+        self.launch_browser(url.as_str())
+    }
+    fn launch_browser(&mut self, value: &str) -> anyhow::Result<()> {
+        let url = crate::support::browser_link(value)?;
         #[cfg(test)]
         {
             self.desktop_commands.opened_urls.push(url.to_string());
@@ -76,6 +81,29 @@ impl Adapter {
     }
     pub(super) fn desktop_command_action(&mut self, name: &str) -> bool {
         match name {
+            "MinimizeWindow" => self.extra.window_request = Some(super::windows::Request::Minimize),
+            "MaximizeWindow" => self.extra.window_request = Some(super::windows::Request::Maximize),
+            "OpenURLInBrowser" => {
+                let browser_url = if let Location::Remote { connection, path } =
+                    &self.app.tab().location
+                    && crate::remote::profile(connection).is_some_and(|p| p.service == "http")
+                {
+                    let chosen = self.app.tab().chosen(self.app.show_hidden);
+                    let path = if chosen.len() == 1 {
+                        &chosen[0].path
+                    } else {
+                        path
+                    };
+                    crate::uri::address(connection, path)
+                } else {
+                    String::new()
+                };
+                self.desktop_commands = State {
+                    kind: Some("browser-url"),
+                    browser_url,
+                    ..Default::default()
+                };
+            }
             "BringAllToFront" => {
                 self.extra.window_request = Some(super::windows::Request::RaiseAll)
             }
@@ -199,11 +227,23 @@ impl Adapter {
                 "bookmarks" => "Explore bookmarks",
                 "email" => "Email files",
                 "donate" => "Donate",
+                "browser-url" => "Open URL in browser",
                 _ => "Debug console",
             },
         );
         dialog.error = state.error.clone();
         match kind {
+            "browser-url" => {
+                dialog.description = "Enter or paste a URL, review it, then open it in your system browser. A selected HTTP entry is filled in automatically.".into();
+                dialog
+                    .fields
+                    .push(Field::text("browser-url", "URL", &state.browser_url));
+                dialog.button(
+                    "browser-open",
+                    "Open in browser",
+                    !state.browser_url.trim().is_empty(),
+                );
+            }
             "bookmarks" => {
                 dialog.description="Browse saved bookmarks, open them in either pane, rename, reorder or remove them. Removing a bookmark keeps its files.".into();
                 dialog.fields.push(Field::text(
@@ -446,6 +486,7 @@ impl Adapter {
             }
             "bookmark-name" => state.name = value.into(),
             "donation-url" => state.donation = value.into(),
+            "browser-url" => state.browser_url = value.into(),
             "console-filter" => state.filter = value.into(),
             "console-pause" => state.paused = value == "true",
             _ => {
@@ -498,6 +539,17 @@ impl Adapter {
                 return Ok(());
             }
             match id {
+                "browser-open" | "accept" if self.desktop_commands.kind == Some("browser-url") => {
+                    let value = self.desktop_commands.browser_url.trim().to_owned();
+                    self.launch_browser(&value)?;
+                    #[cfg(test)]
+                    let opened_urls = std::mem::take(&mut self.desktop_commands.opened_urls);
+                    self.desktop_commands = Default::default();
+                    #[cfg(test)]
+                    {
+                        self.desktop_commands.opened_urls = opened_urls;
+                    }
+                }
                 "console-copy" => self.ctx.copy_text(crate::debug_log::format(
                     &self.desktop_commands.events,
                     &self.desktop_commands.filter,
@@ -755,6 +807,9 @@ mod tests {
         }
         for command in [
             "BringAllToFront",
+            "MinimizeWindow",
+            "MaximizeWindow",
+            "OpenURLInBrowser",
             "Email",
             "ExploreBookmarks",
             "GoToDocumentation",
@@ -791,6 +846,98 @@ mod tests {
             state.borrow().extra.window_request,
             Some(super::super::windows::Request::RaiseAll)
         ));
+    }
+    #[test]
+    fn browser_url_is_reviewed_and_window_commands_use_configured_shortcuts() {
+        let (_root, ui, state, _, _) = setup();
+        for (command, request) in [
+            ("MinimizeWindow", "minimize"),
+            ("MaximizeWindow", "maximize"),
+        ] {
+            state
+                .borrow_mut()
+                .app
+                .preferences
+                .shortcuts
+                .insert(command.into(), "Command+Alt+M".into());
+            let mut event = slint::language::KeyEvent::default();
+            event.text = "m".into();
+            event.modifiers.control = true;
+            event.modifiers.alt = true;
+            assert!(state.borrow_mut().global_key(&ui, event));
+            let result = state.borrow_mut().extra.window_request.take();
+            assert!(matches!(
+                (&result, request),
+                (Some(super::super::windows::Request::Minimize), "minimize")
+                    | (Some(super::super::windows::Request::Maximize), "maximize")
+            ));
+            state.borrow_mut().app.preferences.shortcuts.remove(command);
+        }
+        ui.invoke_action("OpenURLInBrowser".into());
+        assert_eq!(ui.get_dialog_title(), "Open URL in browser");
+        ui.invoke_action("MinimizeWindow".into());
+        assert!(matches!(
+            state.borrow_mut().extra.window_request.take(),
+            Some(super::super::windows::Request::Minimize)
+        ));
+        assert_eq!(state.borrow().desktop_commands.kind, Some("browser-url"));
+        assert!(state.borrow().desktop_commands.opened_urls.is_empty());
+        for value in [
+            "file:///tmp/report",
+            "javascript:alert(1)",
+            "https://user:secret@example.test/",
+        ] {
+            ui.invoke_dialog_field("browser-url".into(), value.into());
+            ui.invoke_dialog_action("browser-open".into());
+            assert!(!ui.get_dialog_error().is_empty());
+            assert!(state.borrow().desktop_commands.opened_urls.is_empty());
+        }
+        ui.invoke_dialog_field(
+            "browser-url".into(),
+            "http://example.test/report?q=hello%20world".into(),
+        );
+        ui.invoke_dialog_action("browser-open".into());
+        assert!(!state.borrow().desktop_commands.active());
+        assert_eq!(
+            state.borrow().desktop_commands.opened_urls,
+            vec!["http://example.test/report?q=hello%20world"]
+        );
+        let profile = crate::remote::Connection {
+            service: "http".into(),
+            endpoint: "https://example.test".into(),
+            ..Default::default()
+        };
+        crate::remote::register_profiles(std::slice::from_ref(&profile));
+        let mut selected = state.borrow().app.tab().entries[0].clone();
+        selected.path = "docs/report.html".into();
+        selected.name = "report.html".into();
+        selected.is_dir = false;
+        {
+            let mut adapter = state.borrow_mut();
+            adapter.app.tab_mut().location = Location::Remote {
+                connection: profile.id,
+                path: "docs".into(),
+            };
+            adapter.app.tab_mut().entries.clear();
+            adapter.app.tab_mut().selected.clear();
+            adapter.app.tab_mut().cursor = None;
+        }
+        ui.invoke_action("OpenURLInBrowser".into());
+        assert_eq!(
+            state.borrow().desktop_commands.browser_url,
+            "https://example.test/docs"
+        );
+        ui.invoke_dialog_action("cancel".into());
+        {
+            let mut adapter = state.borrow_mut();
+            adapter.app.tab_mut().cursor = Some(selected.path.clone());
+            adapter.app.tab_mut().entries = vec![selected];
+        }
+        ui.invoke_action("OpenURLInBrowser".into());
+        assert_eq!(
+            state.borrow().desktop_commands.browser_url,
+            "https://example.test/docs/report.html"
+        );
     }
     #[test]
     fn donation_link_is_validated_saved_and_opened_only_after_review() {

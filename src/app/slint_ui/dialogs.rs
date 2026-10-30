@@ -280,10 +280,16 @@ impl Adapter {
         }
         if let Some(prompt) = &self.app.prompt {
             if let PromptKind::Pack {
-                sources, options, ..
+                sources,
+                selection,
+                options,
+                ..
             } = &prompt.kind
             {
                 let mut d = Dialog::new("pack", "Pack files");
+                if selection.is_some() {
+                    d.description = "Create a local archive from the selected remote or archive files. Temporary disk space is required; originals are unchanged.".into();
+                }
                 d.error = prompt.error.clone().unwrap_or_default();
                 d.fields.push(Field::text(
                     "prompt",
@@ -333,10 +339,20 @@ impl Adapter {
                     )
                 });
                 if options.expanded {
-                    for source in sources {
+                    for (index, source) in sources.iter().enumerate() {
                         d.fields.push(Field {
                             kind: 9,
-                            choices: vec![if source.is_dir() { "folder" } else { "file" }.into()],
+                            choices: vec![
+                                if selection
+                                    .as_ref()
+                                    .map_or_else(|| source.is_dir(), |s| s.entries[index].is_dir)
+                                {
+                                    "folder"
+                                } else {
+                                    "file"
+                                }
+                                .into(),
+                            ],
                             ..Field::text("", "", source.display())
                         });
                     }

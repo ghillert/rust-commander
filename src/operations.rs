@@ -69,6 +69,14 @@ pub enum Operation {
         #[serde(skip)]
         bytes: Vec<u8>,
     },
+    RemoteExternalSave {
+        connection: String,
+        path: PathBuf,
+        #[serde(skip)]
+        original: Vec<u8>,
+        #[serde(skip)]
+        bytes: Vec<u8>,
+    },
     RemoteTransferResolved {
         from: crate::filesystem::Location,
         entries: Vec<crate::filesystem::Entry>,
@@ -198,6 +206,16 @@ pub enum Operation {
     },
     Trash(Vec<PathBuf>),
     Mkdir(PathBuf),
+    PackSelection {
+        selection: crate::drag_drop::Selection,
+        destination: PathBuf,
+        #[serde(default)]
+        compression_level: Option<u8>,
+        #[serde(default)]
+        comment: String,
+        #[serde(default)]
+        background: bool,
+    },
     Pack {
         sources: Vec<PathBuf>,
         destination: PathBuf,
@@ -244,7 +262,8 @@ impl Operation {
             Self::SaveText { .. }
             | Self::RemoteSave { .. }
             | Self::SaveBytes { .. }
-            | Self::RemoteSaveBytes { .. } => "Save text",
+            | Self::RemoteSaveBytes { .. }
+            | Self::RemoteExternalSave { .. } => "Save text",
             Self::ResumeRemote { .. } => "Checkpointed copy",
             Self::ResumeLocal { .. } => "Resumable transfer",
             Self::Sync(_) => "Synchronize folders",
@@ -260,7 +279,9 @@ impl Operation {
             Self::Mkfile(_) => "New file",
             Self::Trash(_) => "Move to Trash",
             Self::PermanentDelete(_) | Self::RemoteDelete { .. } => "Delete",
-            Self::Pack { .. } | Self::PackProtected { .. } => "Create archive",
+            Self::Pack { .. } | Self::PackSelection { .. } | Self::PackProtected { .. } => {
+                "Create archive"
+            }
             Self::Extract { .. } | Self::ExtractProtected { .. } | Self::ExtractResolved { .. } => {
                 "Extract archive"
             }
@@ -279,6 +300,21 @@ impl Operation {
     /// Recipe details exclude passwords and editor buffers.
     pub fn description(&self) -> String {
         match self {
+            Self::PackSelection {
+                selection,
+                destination,
+                ..
+            } => format!(
+                "{}\n{}\n→ {}",
+                selection.from.label(),
+                selection
+                    .entries
+                    .iter()
+                    .map(|entry| entry.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                destination.display()
+            ),
             Self::DropTransfer { selection, to, .. } => format!(
                 "{}\n{}\n→ {}",
                 selection.from.label(),
@@ -347,7 +383,8 @@ impl Operation {
             Self::SaveText { path, .. }
             | Self::RemoteSave { path, .. }
             | Self::SaveBytes { path, .. }
-            | Self::RemoteSaveBytes { path, .. } => path.display().to_string(),
+            | Self::RemoteSaveBytes { path, .. }
+            | Self::RemoteExternalSave { path, .. } => path.display().to_string(),
             _ => self.label().into(),
         }
     }
@@ -761,6 +798,19 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             save_bytes(&path, &original, &bytes)?;
             Ok("Saved text.".into())
         }
+        Operation::RemoteExternalSave {
+            connection,
+            path,
+            original,
+            bytes,
+        } => crate::remote::save_bytes_bounded(
+            &connection,
+            &path,
+            &original,
+            &bytes,
+            crate::external_edit::LIMIT,
+            task,
+        ),
         Operation::RemoteSaveBytes {
             connection,
             path,
@@ -1025,6 +1075,22 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             task.capture(&path)?;
             fs::create_dir(&path)?;
             Ok(format!("Created {}", path.display()))
+        }
+        Operation::PackSelection {
+            selection,
+            destination,
+            comment,
+            compression_level,
+            ..
+        } => {
+            crate::packing::pack_selection(
+                &selection,
+                &destination,
+                &comment,
+                compression_level,
+                task,
+            )?;
+            Ok(format!("Created {}", destination.display()))
         }
         Operation::Pack {
             sources,

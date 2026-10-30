@@ -10,6 +10,8 @@ pub(super) enum Request {
     Raise(usize),
     RaiseOrdinal(usize),
     RaiseAll,
+    Minimize,
+    Maximize,
 }
 struct Runtime {
     queue: crate::queue::Queue,
@@ -333,6 +335,15 @@ pub(super) fn tick() {
             continue;
         }
         match request {
+            Request::Minimize | Request::Maximize => {
+                if let Some((_, ui, _)) = sessions.iter().find(|(id, _, _)| *id == source) {
+                    use slint::winit_030::WinitWindowAccessor;
+                    ui.window().with_winit_window(|window| match request {
+                        Request::Minimize => window.set_minimized(true),
+                        _ => window.set_maximized(!window.is_maximized()),
+                    });
+                }
+            }
             Request::New => {
                 let settings = RUNTIME.with(|r| r.borrow().as_ref().map(|r| r.settings.clone()));
                 if let Some(settings) = settings

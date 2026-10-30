@@ -261,9 +261,11 @@
       "src/archive_writeback.rs",
       "tests/archive_writeback.rs",
       "docs/RECOVERY_AND_SUPPORT.md",
-      "docs/FEATURES_NEXT.md"
+      "docs/FEATURES_NEXT.md",
+      "tests/external_save.rs",
+      "src/external_edit.rs"
     ],
-    "note": "Built-in encoded text editing and guarded local/remote saves are available. External working copies support reviewed save-back to local/remote files and writable local/nested/remote ZIP/TAR/7z archive members. External copies accept up to 32 MiB, but direct remote byte saves still accept only 2 MiB; cached archive publication has a separate 128 MiB container bound. Temporary editor copies are not crash recovery. Broader editor, provider and desktop compatibility remains open.",
+    "note": "Built-in encoded text editing and guarded local/remote saves are available. External working copies support reviewed save-back to local/remote files and writable local/nested/remote ZIP/TAR/7z archive members. External copies and direct remote external-editor saves accept up to 32 MiB; built-in remote text saves retain their 2 MiB limit; cached archive publication has a separate 128 MiB container bound. Temporary editor copies are not crash recovery. Broader editor, provider and desktop compatibility remains open.",
     "status": "partial"
   },
   "EditBookmarks": {
@@ -639,9 +641,12 @@
       "src/native_menu.rs",
       "ui/commander.slint",
       "src/app.rs",
-      "docs/SLINT_UI.md"
+      "docs/SLINT_UI.md",
+      "src/app/slint_ui/desktop_commands.rs",
+      "src/app/slint_ui/windows.rs",
+      "docs/DESKTOP_COMMANDS.md"
     ],
-    "note": "macOS provides native AppKit Window-menu commands and window controls; Windows/Linux retain their platform decorations. These are existing capabilities, but dedicated shared shortcut actions and complete native cross-platform validation are absent.",
+    "note": "Dedicated shared menu/shortcut actions target the invoking window, including while a dialog/editor is open. Minimize requests native minimization; Maximize toggles maximized/restored state. Registration and configured-shortcut dispatch are tested; native desktop/window-manager acceptance remains open.",
     "status": "partial"
   },
   "MinimizeWindow": {
@@ -649,9 +654,12 @@
       "src/native_menu.rs",
       "ui/commander.slint",
       "src/app.rs",
-      "docs/SLINT_UI.md"
+      "docs/SLINT_UI.md",
+      "src/app/slint_ui/desktop_commands.rs",
+      "src/app/slint_ui/windows.rs",
+      "docs/DESKTOP_COMMANDS.md"
     ],
-    "note": "macOS provides native AppKit Window-menu commands and window controls; Windows/Linux retain their platform decorations. These are existing capabilities, but dedicated shared shortcut actions and complete native cross-platform validation are absent.",
+    "note": "Dedicated shared menu/shortcut actions target the invoking window, including while a dialog/editor is open. Minimize requests native minimization; Maximize toggles maximized/restored state. Registration and configured-shortcut dispatch are tested; native desktop/window-manager acceptance remains open.",
     "status": "partial"
   },
   "Mkdir": {
@@ -804,9 +812,11 @@
       "src/app/slint_ui/dialogs/commands.rs",
       "docs/REMOTE_CONNECTIONS.md",
       "src/support.rs",
-      "src/app/slint_ui/management.rs"
+      "src/app/slint_ui/management.rs",
+      "src/app/slint_ui/desktop_commands.rs",
+      "docs/DESKTOP_COMMANDS.md"
     ],
-    "note": "Address/error, release and bug-report dialogs can open their specific URLs. A general selected-URL command equivalent to upstream is not present; native browser handoff and full action semantics remain unvalidated.",
+    "note": "A general reviewable HTTP/HTTPS URL dialog opens the system browser; a selected HTTP entry (or current HTTP folder) prefills the URL. The action is in File/context menus and configurable shortcuts. Credentials/non-web schemes are rejected. Validation, review/dispatch and HTTP prefill have fixtures; native browser handoff and wider upstream parameterized integration remain acceptance work.",
     "status": "partial"
   },
   "Pack": {
@@ -830,9 +840,10 @@
       "src/recovery.rs",
       "tests/archive_writeback.rs",
       "tests/recovery_manager.rs",
-      "docs/RECOVERY_AND_SUPPORT.md"
+      "docs/RECOVERY_AND_SUPPORT.md",
+      "tests/virtual_packing.rs"
     ],
-    "note": "Pack files dialog and right-click action take local sources and a local output; direct remote/archive-source packing is unavailable. They provide destination naming, ZIP/7z/TAR/stream format choices, validated compression levels (also encrypted/queued), ZIP comments, foreground/background packing with cancellation and an expandable source list. 7z multi-file/folder creation and encrypted 7z round trips are tested. Existing archive tools provide ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers. Writable nested/remote ZIP/TAR/7z sources support guarded outer-container save-back; HTTP and Open As format overrides remain read-only. Links/special files are rejected and broader desktop/format/metadata acceptance remains open. Performance measurements are recorded in docs/PACKING_PERFORMANCE.md. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
+    "note": "Pack files dialog and right-click action take local, remote or archive sources and a local output. Virtual sources are staged privately with source verification, cancellation and destination-only Undo; queue recipes retain selection identities. Direct remote output and encrypted packing of virtual sources are unavailable. They provide destination naming, ZIP/7z/TAR/stream format choices, validated compression levels (also encrypted/queued), ZIP comments, foreground/background packing with cancellation and an expandable source list. 7z multi-file/folder creation and encrypted 7z round trips are tested. Existing archive tools provide ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers. Writable nested/remote ZIP/TAR/7z sources support guarded outer-container save-back; HTTP and Open As format overrides remain read-only. Links/special files are rejected and broader desktop/format/metadata acceptance remains open. Performance measurements are recorded in docs/PACKING_PERFORMANCE.md. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
     "status": "partial"
   },
   "PasteClipboardFiles": {

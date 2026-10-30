@@ -285,6 +285,10 @@ impl Adapter {
             self.extra.window_request = Some(windows::Request::Quit);
             return;
         }
+        if matches!(name, "MinimizeWindow" | "MaximizeWindow") {
+            self.desktop_command_action(name);
+            return;
+        }
         if name == "PauseTransfer" {
             if let Some(control) = self.app.job.as_ref().and_then(|j| j.control.as_ref()) {
                 control.toggle_pause();
@@ -1005,7 +1009,7 @@ impl Adapter {
             "archive" => 520.0,
             "text-diff" => (spec.fields.len() as f32 * 32.0 + 240.0).clamp(300.0, 700.0),
             "updates" | "diagnostics" | "report" => 360.0,
-            "donate" => 300.0,
+            "donate" | "browser-url" => 300.0,
             "bookmarks" | "debug-console" => 620.0,
             _ => 700.0,
         });
@@ -1026,6 +1030,7 @@ impl Adapter {
                 | "diagnostics"
                 | "report"
                 | "donate"
+                | "browser-url"
                 | "email"
                 | "bookmarks"
                 | "debug-console"

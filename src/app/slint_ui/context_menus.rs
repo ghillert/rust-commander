@@ -41,6 +41,23 @@ fn choose(ui: &CommanderWindow, id: &str) {
         .find(|c| c.id == id)
         .unwrap_or_else(|| panic!("Missing menu action: {id}"));
     assert!(command.enabled, "Disabled action: {id}");
+    // Long menus need the same wheel scrolling as a physical user. Searching
+    // visible accessibility elements must not assume every row fits at once.
+    for _ in 0..20 {
+        if ElementHandle::find_by_accessible_label(ui, &command.title)
+            .next()
+            .is_some()
+        {
+            break;
+        }
+        let visible = ui
+            .get_menu_items()
+            .iter()
+            .find_map(|item| ElementHandle::find_by_accessible_label(ui, &item.title).next())
+            .expect("No visible menu rows to scroll");
+        visible.scroll(0.0, -140.0);
+        slint::platform::update_timers_and_animations();
+    }
     element(ui, &command.title).mock_single_click(Left);
 }
 

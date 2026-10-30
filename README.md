@@ -231,7 +231,7 @@ stays below 100% while the operation is still flushing, publishing or verifying.
 During transfers, the progress area shows the byte count and a live recent speed
 in B/s, KiB/s, or MiB/s. Resuming a transfer excludes previously copied bytes
 from the speed measurement.
-Right-click marked local files and choose **Pack files…** (also in **Operations**)
+Right-click marked local, remote or archive files and choose **Pack files…** (also in **Operations**)
 to select ZIP, 7z or TAR variants and compression levels, add a ZIP comment, review the selected files,
 and run packing in the foreground or background. See [archive options](docs/FILE_OPERATIONS.md#archives).
 
@@ -449,7 +449,7 @@ Outstanding work includes:
 - NFS/ADB and virtualization providers, Bonjour discovery, and Windows registry
   browsing. Direct SMB2/3 access is available; broader NAS/server coverage remains open.
 - Live validation of browser OAuth, keychain prompts, and remote rename/conflicts.
-- Remaining archive limits: direct remote packing, HTTP/format-override editing,
+- Remaining archive limits: packing directly to a remote output, HTTP/format-override editing,
   links/special files and broader format/metadata fixtures. Guarded writable
   nested/remote archive editing is available.
 - Broader live-provider coverage for checkpointed transfers and remote synchronization,

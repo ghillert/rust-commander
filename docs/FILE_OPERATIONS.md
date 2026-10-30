@@ -66,11 +66,12 @@ provider limits](FEATURES_NEXT.md#7-checkpointed-copies-and-live-transfer-contro
 | AR / DEB | Yes, through libarchive | No |
 | CPIO / RPM | Yes, through libarchive | No |
 
-Mark local files/folders with Space, then choose **Pack files…** from the right-click
+Mark local, remote or archive files/folders with Space, then choose **Pack files…** from the right-click
 menu or **Operations → Pack files…**. The dialog mirrors the muCommander workflow:
 
 - **Add selected files to** suggests a name in the opposite local pane (or the
-  current folder when the opposite pane is remote). Edit it to choose another path.
+  current local folder, or Home if neither pane is local). Edit it to choose
+  another local path. Uploading the output directly to remote storage is not offered.
 - **Archive format** selects ZIP, 7z, TAR, compressed TAR, or a single-file stream.
   Changing format replaces the complete archive suffix, including `.tar.gz`.
 - **Compression level** offers the encoder default or an explicit level: ZIP/GZip
@@ -92,6 +93,17 @@ menu or **Operations → Pack files…**. The dialog mirrors the muCommander wor
 The selected format determines the output suffix; a missing/different suffix is
 corrected before packing. For password-protected ZIP or 7z, use **File → Archive
 tools… → Create encrypted archive**.
+
+Remote/archive selections are frozen when the dialog opens. A worker stages
+their contents privately, verifies source snapshots, then packs the staged files.
+Source files are unchanged; only the output archive enters local Undo. Staging
+uses temporary disk space and the existing transfer/extraction limits. Links and
+special entries retain the existing export/writer restrictions. Progress is a
+byte count across stages rather than a whole-job percentage. Cancelling or a
+failed source verification prevents output publication; temporary files are
+removed. Queued jobs retain source identities, not staged temporary paths; an
+archive cache that is unavailable after restart must be reopened and selected
+again. Encrypted archive creation still requires local sources.
 
 NRG, CPIO, and RPM still need dedicated format fixtures. Format-edge-case
 coverage is incomplete; see the [validation record](../parity/VALIDATION.md).

@@ -1,4 +1,4 @@
-## Current review — 2026-10-27
+## Current review — 2026-10-30
 
 This overview reflects the current source and the recorded checks in
 [VALIDATION.md](VALIDATION.md). It separates absent behavior from behavior that
@@ -7,14 +7,15 @@ includes the new checks recorded there; the other areas below remain source
 reviews without new live-account acceptance. Historical validation
 sections describe their original snapshots; later sections supersede older limits.
 
-The reviewed source includes commit `6f78123`. The pinned inventory contains
+The reviewed source includes commit `d1e87f2` and the current command,
+virtual-packing and external-save changes. The pinned inventory contains
 **200 entries: 4 implemented, 188 partial, 7 missing and 1 inapplicable**.
 These are 166 upstream actions and 34 modules, not 200 equally sized features.
 In particular, **partial does not mean absent**: many entries have working
 behavior and fixture coverage but lack complete upstream/native acceptance.
 The inapplicable entry is the JVM garbage-collection command.
 
-The latest full local run records **404 passing tests and 17 ignored**; macOS
+The latest full local run records **411 passing tests and 17 ignored**; macOS
 and Linux-container Clippy pass. The connection-ID and Linux test-build fixes
 are committed, but hosted Windows confirmation remains open. These checks do
 not close the native/live-provider acceptance gaps below.
@@ -27,6 +28,8 @@ The following are implemented and should no longer appear as missing features:
   advance and marks preserved when clicking another row.
 - Pack dialog with ZIP/7z/TAR/stream formats, compression levels, ZIP comments,
   foreground/background work, cancellation and expandable selected-file lists.
+  Local, remote and archive selections can be packed to a local output; virtual
+  sources are staged privately and verified before packing.
   The earlier generated-7z compatibility defect has a writer fix and independent
   extraction/integrity evidence; broader format compatibility remains open.
 - Recovery manager with multi-selection restore, filtering, legacy backup import
@@ -38,6 +41,8 @@ The following are implemented and should no longer appear as missing features:
   documentation/community/website/donation links and an application event console.
   See [behavior and limits](../docs/DESKTOP_COMMANDS.md). Their partial statuses
   retain the remaining native/live-service acceptance work.
+- A general reviewed browser URL dialog, shared Minimize/Maximize shortcut
+  actions and remote external-editor save-back through 32 MiB.
 
 ### Completely missing upstream entries
 
@@ -60,13 +65,13 @@ It excludes limitations in working features and validation-only gaps.
 | --- | --- | --- |
 | Drag and drop | Local/remote/archive selections; guarded copy/move; folder/tab/tree/breadcrumb/sidebar targets; hover navigation and edge scrolling; native X11/Wayland/AppKit/OLE bridges | Native desktop acceptance remains incomplete; virtual exports are Copy. Deferred native providers exist, with preparation available for receivers that require pre-existing local paths. See the detailed matrix below. |
 | Network services | HTTP/HTTPS, FTP/both FTPS modes, SFTP on all three desktop platforms, SMB2/3 and cloud adapters | The five missing adapters above and Bonjour discovery. WebHDFS does not establish full Hadoop parity. The Rust SSH transport does not interpret OpenSSH aliases or host certificates. |
-| Archives | Pack dialog with ZIP/7z/TAR/stream formats, compression levels, ZIP comments, foreground/background work and expandable source list; guarded local/nested/remote editing; encrypted ZIP/7z | Packing takes local sources and a local output; direct remote/archive-source packing is absent. HTTP/format-override editing, LST/libguestfs and archive links/special files are unsupported. RAR/ISO/NRG/AR/DEB/CPIO/RPM creation/mutation is unavailable. Edited cached containers are limited to 128 MiB each, eight levels and a 512 MiB cache; cached edit recipes require reopening after restart. NRG/CPIO/RPM lack dedicated fixtures. See [format support](../docs/FILE_OPERATIONS.md#archives). |
+| Archives | Pack dialog with ZIP/7z/TAR/stream formats, compression levels, ZIP comments, foreground/background work and expandable source list; guarded local/nested/remote editing; encrypted ZIP/7z | Packing takes local, remote or archive sources and a local output; virtual sources are staged and verified privately. Direct remote output and encrypted packing from virtual sources are absent. HTTP/format-override editing, LST/libguestfs and archive links/special files are unsupported. RAR/ISO/NRG/AR/DEB/CPIO/RPM creation/mutation is unavailable. Edited cached containers are limited to 128 MiB each, eight levels and a 512 MiB cache; cached edit recipes require reopening after restart. NRG/CPIO/RPM lack dedicated fixtures. See [format support](../docs/FILE_OPERATIONS.md#archives). |
 | Search and comparison | Streaming local/remote literal and per-line regex search with size/date/exclusion filters; SHA-256 or explicitly unverified metadata comparison; bounded read-only text diffs; shared presets and filtered local/remote synchronization | Regex lines are bounded to 8 MiB; text differences to 1 MiB per side and bounded line alignment. Comparison excludes archive roots and reports links without following them. Synchronization refuses links/special files; filtered sync refuses directory deletion/type replacement. Broader provider/desktop acceptance remains open. |
-| Viewers and editing | Encoded text editing, large local read-only pages, streaming local text/hex search, image/PDF rendering, PDF Unicode selection/copy and cancellable document search; reviewed external save-back to local/remote files and writable archive members | Built-in editing is limited to 2 MiB and does not edit archive members or symlinks; large local files are read-only. External working copies accept 32 MiB, but direct remote save-back still accepts only 2 MiB. Image/PDF input is limited to 32 MiB; large remote/archive paging, more encodings and image animation remain absent. OCR and PDF forms/annotation editing are also absent viewer enhancements, not additional missing inventory entries. |
+| Viewers and editing | Encoded text editing, large local read-only pages, streaming local text/hex search, image/PDF rendering, PDF Unicode selection/copy and cancellable document search; reviewed external save-back to local/remote files and writable archive members | Built-in editing is limited to 2 MiB and does not edit archive members or symlinks; large local files are read-only. External working copies and direct remote external-editor save-back accept 32 MiB; built-in remote text saves retain their 2 MiB limit. Image/PDF input is limited to 32 MiB; large remote/archive paging, more encodings and image animation remain absent. OCR and PDF forms/annotation editing are also absent viewer enhancements, not additional missing inventory entries. |
 | Recovery and publication | Journaled local Undo/Redo, retained remote originals, checkpointed copies and a restore/cleanup manager | Universal/remote Undo/Redo, crash recovery for temporary editor drafts and uninterrupted save-back sessions after restart are absent. Checkpointed copies refuse links; interrupted remote publication and concurrent writers remain provider-dependent, with no atomic guarantee on backends lacking conditional writes. Recovery restore selects at most 100 originals per operation. |
 | Metadata | Native local moves; copying macOS ACLs/xattrs/resource forks, Linux user attributes/POSIX ACLs and Windows DACLs | Native ownership names/editing and full ACL presentation; Windows alternate data streams/ownership and privileged Linux namespaces are outside current copy preservation. Remote metadata depends on the provider. |
 | Pane swapping and file marks | Opposing-arrow toolbar button and Navigate > Swap panes move tabs, cursor, marks and keyboard focus together; Space/Insert toggle a mark and advance in visible order, with red marks independent of the cursor highlight | Broader native desktop acceptance remains open. |
-| Commands | Open As for explicit text/hex/image/PDF/archive interpretation, Open With, desktop reveal, searchable windows, configurable shortcuts, copy base names, parent-row toggle, numbered windows, manual release checks, diagnostics, reviewed bug-report links, bookmark explorer, bring-all-forward, Email files, support/donation links and event console | General selected-URL opening, dedicated shared Minimize/Maximize shortcut actions and complete upstream preference/shortcut coverage. Linux Reveal opens the parent folder rather than selecting the item. Native acceptance remains open. |
+| Commands | Open As for explicit text/hex/image/PDF/archive interpretation, Open With, desktop reveal, searchable windows, configurable shortcuts, copy base names, parent-row toggle, numbered windows, manual release checks, diagnostics, reviewed bug-report links, bookmark explorer, bring-all-forward, Email files, support/donation links, reviewed general HTTP/HTTPS browser opening, shared Minimize/Maximize actions and event console | Complete upstream preference/shortcut coverage and broader parameterized URL integration. Linux Reveal opens the parent folder rather than selecting the item. Native acceptance remains open. |
 | Localization and migration | English/German/Spanish and reviewed XML import with backup | Additional languages, complete translated coverage and full upstream preference/keymap/command/bookmark import. See [import limits](../docs/FEATURES_0.7.md#12-mucommander-import). |
 
 The size, link and publication guards above are deliberate current limits.

@@ -47,6 +47,82 @@ fn wait_for_job(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
 }
 
 #[test]
+fn pack_from_a_virtual_pane_freezes_selection_and_uses_the_normal_worker() {
+    let (root, ui, state, left, right) = setup();
+    let archive = root.path().join("original.zip");
+    crate::archive::pack(
+        &[left.join("alpha.txt"), left.join("café.txt")],
+        &archive,
+        &mut Task::default(),
+    )
+    .unwrap();
+    let profile = crate::remote::Connection {
+        service: "fs".into(),
+        root: left.display().to_string(),
+        ..Default::default()
+    };
+    crate::remote::connect(&profile, Default::default(), false).unwrap();
+    for (index, location) in [
+        Location::Archive {
+            file: archive,
+            prefix: PathBuf::new(),
+        },
+        Location::Remote {
+            connection: profile.id,
+            path: PathBuf::new(),
+        },
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let entries = filesystem::list(&location)
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.name == "alpha.txt" || e.name == "café.txt")
+            .collect::<Vec<_>>();
+        {
+            let mut adapter = state.borrow_mut();
+            let tab = adapter.app.tab_mut();
+            tab.location = location.clone();
+            tab.entries = entries.clone();
+            tab.loading = false;
+            tab.selected = entries.iter().map(|e| e.path.clone()).collect();
+            tab.cursor = None;
+            tab.revision += 1;
+            adapter.sync(&ui);
+        }
+        ui.invoke_action("Pack".into());
+        assert_eq!(ui.get_dialog_title(), "Pack files");
+        ui.invoke_dialog_action("pack-files".into());
+        assert_eq!(
+            ui.get_dialog_fields()
+                .iter()
+                .filter(|f| f.kind == 9)
+                .count(),
+            2
+        );
+        let output = right.join(format!("virtual-{index}.zip"));
+        ui.invoke_dialog_field("prompt".into(), output.display().to_string().into());
+        ui.invoke_dialog_field("pack-level".into(), "0 — Store only".into());
+        ui.invoke_dialog_field("pack-background".into(), (index == 1).to_string().into());
+        ui.invoke_dialog_action("accept".into());
+        assert!(state.borrow().app.prompt.is_none());
+        assert!(
+            matches!(&state.borrow().app.queue.active, Some(Operation::PackSelection { selection, .. }) if selection.from == location && selection.entries.len() == 2)
+        );
+        assert_eq!(
+            state.borrow().app.job.as_ref().unwrap().foreground,
+            index == 0
+        );
+        wait_for_job(&state, &ui);
+        assert_eq!(
+            crate::archive::list(&output, Path::new("")).unwrap().len(),
+            2
+        );
+    }
+}
+
+#[test]
 fn pack_dialog_tracks_format_comment_selection_and_validation() {
     let (_root, ui, state, left, right) = setup();
     ui.invoke_action("Pack".into());

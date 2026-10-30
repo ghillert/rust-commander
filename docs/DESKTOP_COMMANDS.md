@@ -10,6 +10,24 @@ that invoked the command is raised last and retains focus. Pane contents, marks,
 tabs and window geometry are unchanged. Window managers/compositors can restrict
 focus requests; separate application processes are not included.
 
+## Minimize and maximize
+
+**Window → Minimize window** minimizes the invoking window.
+**Window → Maximize / restore window** toggles that window between maximized and
+restored geometry. Both commands are available in the shortcut editor and also
+work while a dialog or editor is open. They use desktop window requests; actual
+behavior depends on the window manager. macOS fullscreen remains a separate
+native command.
+
+## Open URL in browser
+
+**File → Open URL in browser…** opens a reviewable URL field. Paste an HTTP or
+HTTPS URL and choose **Open in browser**. When browsing HTTP/HTTPS, a selected
+entry's URL is filled in automatically; without a single selected entry, the
+current folder URL is used. The action is available to configurable shortcuts
+and the file context menu. URLs with credentials and non-web schemes are refused.
+Closing the form opens nothing; browser errors keep the form available for retry.
+
 ## Explore bookmarks
 
 **Navigate → Explore bookmarks…** opens a dedicated bookmark browser. Filter the

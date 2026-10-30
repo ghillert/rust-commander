@@ -8,6 +8,7 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
+pub const LIMIT: u64 = 32 * 1024 * 1024;
 pub struct Session {
     directory: tempfile::TempDir,
     pub file: PathBuf,
@@ -33,7 +34,7 @@ impl Session {
         } else {
             None
         };
-        let original = crate::viewer::read(&location, &source, 32 * 1024 * 1024)?;
+        let original = crate::viewer::read(&location, &source, LIMIT)?;
         let directory = tempfile::Builder::new()
             .prefix("rust-commander-editor-")
             .tempdir()?;
@@ -71,12 +72,9 @@ impl Session {
         );
         let mut bytes = Vec::new();
         std::fs::File::open(&self.file)?
-            .take(32 * 1024 * 1024 + 1)
+            .take(LIMIT + 1)
             .read_to_end(&mut bytes)?;
-        ensure!(
-            bytes.len() <= 32 * 1024 * 1024,
-            "Edited file exceeds 32 MiB"
-        );
+        ensure!(bytes.len() as u64 <= LIMIT, "Edited file exceeds 32 MiB");
         Ok(bytes)
     }
     pub fn save_operation(&self) -> Result<Operation> {
@@ -88,7 +86,7 @@ impl Session {
                 original: self.original.clone(),
                 bytes,
             },
-            Location::Remote { connection, .. } => Operation::RemoteSaveBytes {
+            Location::Remote { connection, .. } => Operation::RemoteExternalSave {
                 connection: connection.clone(),
                 path: self.source.clone(),
                 original: self.original.clone(),

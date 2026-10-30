@@ -56,11 +56,7 @@ impl NativeMenu {
         let window = Submenu::with_items(
             crate::i18n::text("Window").as_ref(),
             true,
-            &[
-                &PredefinedMenuItem::minimize(None),
-                &PredefinedMenuItem::maximize(None),
-                &PredefinedMenuItem::fullscreen(None),
-            ],
+            &[&PredefinedMenuItem::fullscreen(None)],
         )?;
 
         for (title, entries) in action_menus() {

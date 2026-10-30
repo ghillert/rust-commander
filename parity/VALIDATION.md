@@ -1,5 +1,43 @@
 # Validation record
 
+## URL/window commands, virtual packing and external remote saves — 2026-10-30
+
+The Apple Silicon macOS all-target/all-feature suite passes **411 tests with 17
+ignored** across 31 suites. The additional selected-HTTP-entry URL assertion also
+passes in the targeted dialog fixture. Clippy with warnings denied passes on
+macOS and in the Linux container; formatting and diff whitespace checks pass.
+The macOS development app builds and passes strict code-signature verification;
+the existing debug-linker compact-unwind warning remains.
+
+New coverage verifies:
+
+- General HTTP/HTTPS URL review, scheme/credential refusal, selected/current HTTP
+  prefill, menu/shortcut registration and Minimize/Maximize shortcut dispatch.
+  Window actions remain available while a dialog is open.
+- Remote filesystem-provider and archive-prefix packing to local ZIP/7z/TAR.GZ/
+  GZip outputs, Unicode names, selected folder trees, compression/comment options,
+  serialized queue recipes, cancellation, unsafe-path/conflict/stream-folder
+  refusal, unchanged sources and destination-only local Undo. Headless callbacks
+  exercise marked virtual selections with actual foreground/background workers.
+- Direct remote external-editor save-back at the exact 32 MiB boundary, retained
+  verified recovery bytes, changed-source/oversize/cancellation refusal and buffer
+  exclusion from queue JSON. Built-in remote saves retain their 2 MiB bound.
+
+The longer File popup exposed a fixture assumption that every entry was visible.
+Context-menu tests now scroll with pointer events before clicking off-screen
+commands; all six context-menu tests pass, including every action in both panes.
+
+The URL form, archive-source Pack form and Window menu were rendered using
+software/light and FemtoVG/dark. All six screenshots were visually reviewed with
+disposable files/configuration; the screenshot workflow never opens the browser
+or packs into user folders. Rendering allows 60 seconds for debug-app startup.
+
+Remote fixtures use the filesystem provider, not live storage accounts. Native
+browser/window-manager acceptance and broader provider concurrency remain open.
+Packing output remains local, and encrypted creation still requires local sources.
+These changes preserve the inventory counts: **4 implemented, 188 partial,
+7 missing and 1 inapplicable** across 200 entries.
+
 ## Remaining desktop commands — 2026-10-27
 
 All eight formerly missing Commands entries now have implementations: bring all

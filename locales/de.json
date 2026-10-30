@@ -500,5 +500,9 @@
   "Sender email address": "E-Mail-Adresse des Absenders",
   "Subject": "Betreff",
   "TLS on connection (otherwise required STARTTLS)": "TLS beim Verbindungsaufbau (sonst STARTTLS erforderlich)",
-  "To (comma-separated addresses)": "An (Adressen durch Kommas trennen)"
+  "To (comma-separated addresses)": "An (Adressen durch Kommas trennen)",
+  "Open URL in browser…": "URL im Browser öffnen…",
+  "Open URL in browser": "URL im Browser öffnen",
+  "Minimize window": "Fenster minimieren",
+  "Maximize / restore window": "Fenster maximieren / wiederherstellen"
 }
