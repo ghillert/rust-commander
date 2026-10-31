@@ -67,8 +67,10 @@ export global IconCatalog {
         if id == "ui-copy" { return @image-url("vendor/ui-copy-default.svg"); }
         if id == "ui-document" { return @image-url("vendor/ui-document-default.svg"); }
         if id == "ui-down" { return @image-url("vendor/ui-down-default.svg"); }
+        if id == "ui-edit" { return @image-url("vendor/ui-edit-default.svg"); }
         if id == "ui-eye" { return @image-url("vendor/ui-eye-default.svg"); }
         if id == "ui-forward" { return @image-url("vendor/ui-forward-default.svg"); }
+        if id == "ui-help" { return @image-url("vendor/ui-help-default.svg"); }
         if id == "ui-history" { return @image-url("vendor/ui-history-default.svg"); }
         if id == "ui-link" { return @image-url("vendor/ui-link-default.svg"); }
         if id == "ui-move" { return @image-url("vendor/ui-move-default.svg"); }
@@ -80,6 +82,7 @@ export global IconCatalog {
         if id == "ui-settings" { return @image-url("vendor/ui-settings-default.svg"); }
         if id == "ui-sidebar" { return @image-url("vendor/ui-sidebar-default.svg"); }
         if id == "ui-terminal" { return @image-url("vendor/ui-terminal-default.svg"); }
+        if id == "ui-trash" { return @image-url("vendor/ui-trash-default.svg"); }
         if id == "ui-undo" { return @image-url("vendor/ui-undo-default.svg"); }
         if id == "ui-up" { return @image-url("vendor/ui-up-default.svg"); }
         if id == "video" { return @image-url("vendor/video-default.svg"); }
@@ -99,8 +102,10 @@ export global IconCatalog {
         if id == "ui-copy" { return true; }
         if id == "ui-document" { return true; }
         if id == "ui-down" { return true; }
+        if id == "ui-edit" { return true; }
         if id == "ui-eye" { return true; }
         if id == "ui-forward" { return true; }
+        if id == "ui-help" { return true; }
         if id == "ui-history" { return true; }
         if id == "ui-link" { return true; }
         if id == "ui-move" { return true; }
@@ -112,6 +117,7 @@ export global IconCatalog {
         if id == "ui-settings" { return true; }
         if id == "ui-sidebar" { return true; }
         if id == "ui-terminal" { return true; }
+        if id == "ui-trash" { return true; }
         if id == "ui-undo" { return true; }
         if id == "ui-up" { return true; }
         return false;
@@ -141,6 +147,10 @@ export global IconCatalog {
         if id == "ReorderUp" { return "ui-up"; }
         if id == "ReorderDown" { return "ui-down"; }
         if id == "Link" { return "ui-link"; }
+        if id == "Help" { return "ui-help"; }
+        if id == "View" { return "ui-search"; }
+        if id == "Edit" { return "ui-edit"; }
+        if id == "Trash" { return "ui-trash"; }
         return "ui-document";
     }
     public pure function place(id: string) -> string {

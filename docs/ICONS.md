@@ -149,3 +149,17 @@ the sidebar and 3x gallery were visually inspected in dark mode.
 Measure release binary size using the same target, locked dependencies, feature
 flags, environment, and release profile before and after importing new assets.
 The size comparison for this migration is recorded in `docs/RELEASE_SIZE.md`.
+
+## Bottom command buttons
+
+The command bar uses the same Fluent control catalog: Question Circle for Help,
+Search for View, Edit for the editor, Copy for copying, Folder Arrow Right for
+moving, Folder Add for New folder, and Delete for Move to Trash. The help, pencil
+and bin glyphs are imported from the existing pinned Fluent revision with their
+checksums. No additional icon library or runtime download is required.
+
+Buttons have persistent bordered surfaces, 14 px semibold labels, 20 px icons and
+shortcut badges. Hover, pressed, focus and disabled states remain distinct.
+Customized dense bars keep icons and shortcut badges, with full action labels in
+tooltips and accessibility names when space is too limited for visible text.
+The catalog now has 88 semantic icons and 89 selected SVG files.

@@ -896,6 +896,39 @@
           "output_sha256": "792288eef5f09289da24c34f08df6cf09a48d75d4a06732c15f7231c24b9aa44"
         }
       }
+    },
+    "ui-help": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Question Circle/SVG/ic_fluent_question_circle_20_regular.svg",
+          "sha256": "2a74ef3c4c4fe762581ba7339c01be2129b7e646a8f399703f1426558275a639",
+          "output_sha256": "2a74ef3c4c4fe762581ba7339c01be2129b7e646a8f399703f1426558275a639"
+        }
+      }
+    },
+    "ui-edit": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Edit/SVG/ic_fluent_edit_20_regular.svg",
+          "sha256": "f14fdc76c0e3953d273e99394e724003bebd8779a55e30df6130455841f237c6",
+          "output_sha256": "f14fdc76c0e3953d273e99394e724003bebd8779a55e30df6130455841f237c6"
+        }
+      }
+    },
+    "ui-trash": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Delete/SVG/ic_fluent_delete_20_regular.svg",
+          "sha256": "c3ce6fcb04fa1564fc50e00677d763ddf5cafa0ade58604df4c478268ef54452",
+          "output_sha256": "c3ce6fcb04fa1564fc50e00677d763ddf5cafa0ade58604df4c478268ef54452"
+        }
+      }
     }
   },
   "actions": {
@@ -922,7 +955,11 @@
     "Collapse": "ui-chevron-down",
     "ReorderUp": "ui-up",
     "ReorderDown": "ui-down",
-    "Link": "ui-link"
+    "Link": "ui-link",
+    "Help": "ui-help",
+    "View": "ui-search",
+    "Edit": "ui-edit",
+    "Trash": "ui-trash"
   },
   "places": [
     {

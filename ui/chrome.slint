@@ -28,6 +28,9 @@ export global Glyphs {
     public pure function action(id: string) -> image {
         return IconCatalog.image(IconCatalog.action(id), Chrome.dark);
     }
+    public pure function action-monochrome(id: string) -> bool {
+        return IconCatalog.monochrome(IconCatalog.action(id));
+    }
     public pure function place(id: string) -> image {
         return IconCatalog.image(IconCatalog.place(id), Chrome.dark);
     }
@@ -212,8 +215,13 @@ export component ShortcutButton inherits Rectangle {
     forward-focus: keyboard;
     in property <string> key-label;
     in property <string> label;
+    in property <image> icon;
+    in property <bool> icon-monochrome: true;
     callback clicked();
-    preferred-height: 28px; min-height: 28px; vertical-stretch: 0;
+    preferred-height: 38px; min-height: 38px; vertical-stretch: 0;
+    // Equal columns keep customized bars aligned; labels can elide in narrow
+    // windows while shortcuts and icons remain visible.
+    min-width: 0px; preferred-width: 0px; max-width: 100000px;
     horizontal-stretch: 1;
     accessible-role: button;
     accessible-label: root.key-label + " " + root.label;
@@ -228,23 +236,34 @@ export component ShortcutButton inherits Rectangle {
         }
     }
     Rectangle {
-        height: min(parent.height,28px); y: (parent.height - self.height) / 2;
-        border-radius: 5px;
-        background: touch.pressed ? Chrome.pressed : touch.has-hover ? Chrome.hover : transparent;
-        border-width: root.has-focus ? 1px : 0px;
-        border-color: Chrome.accent.with-alpha(0.65);
+        border-radius: 6px;
+        background: touch.pressed ? (Chrome.dark ? #26262a : #dce8fa)
+            : touch.has-hover ? (Chrome.dark ? #48484d : #eef4fc)
+            : (Chrome.dark ? #3a3a3e : white);
+        border-width: root.has-focus ? 2px : 1px;
+        border-color: root.has-focus ? Chrome.accent : Chrome.dark ? #ffffff30 : #00000030;
         HorizontalLayout {
-            alignment: center; spacing: 7px;
-            Rectangle {
-                width: 24px;
+            alignment: center; spacing: 4px; padding-left: 4px; padding-right: 4px;
+            if root.key-label != "": Rectangle {
+                width: 26px;
                 Rectangle {
-                    height: 18px; y: (parent.height - self.height) / 2; border-radius: 4px;
-                    border-width: 1px; border-color: Chrome.separator;
-                    Text { text: root.key-label; width: parent.width; height: parent.height; color: Chrome.secondary; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; accessible-role: none; }
+                    height: 22px; y: (parent.height - self.height) / 2; border-radius: 4px;
+                    background: Chrome.dark ? #ffffff0a : #f1f2f5;
+                    border-width: 1px; border-color: Chrome.dark ? #ffffff24 : #00000020;
+                    key-text := Text { text: root.key-label; width: parent.width; height: parent.height; color: root.enabled ? Chrome.secondary : Chrome.disabled; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; overflow: elide; accessible-role: none; }
                 }
             }
-            Text { text: root.label; color: Chrome.secondary; font-size: 11px; vertical-alignment: center; overflow: elide; accessible-role: none; }
+            if root.icon.width > 0: Rectangle {
+                width: 20px;
+                IconView {
+                    source: root.icon; monochrome: root.icon-monochrome;
+                    width: parent.width; height: self.width; y: (parent.height - self.height) / 2;
+                    enabled: root.enabled;
+                }
+            }
+            Text { min-width: 0px; text: root.label; color: root.enabled ? Chrome.foreground : Chrome.disabled; font-size: 14px; font-weight: 600; opacity: root.width < 90px ? 0 : 1; vertical-alignment: center; overflow: elide; accessible-role: none; }
         }
     }
     touch := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+    Tooltip { text: @markdown("\{root.key-label} \{root.label}"); }
 }

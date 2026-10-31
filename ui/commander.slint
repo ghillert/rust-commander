@@ -793,10 +793,13 @@ export component CommanderWindow inherits Window {
                 }
             }
             if root.command-bar-visible: Rectangle {
-                height: 34px; background: Chrome.toolbar;
+                height: 50px; background: Chrome.toolbar;
+                Rectangle { height: 1px; background: Chrome.separator; }
                 HorizontalLayout {
-                    padding-left:8px;padding-right:8px;spacing:4px;
+                    padding-left:8px;padding-right:8px;padding-top:6px;padding-bottom:6px;spacing:6px;
                     for command in root.command-buttons: ShortcutButton {
+                        icon: Glyphs.action(command.id);
+                        icon-monochrome: Glyphs.action-monochrome(command.id);
                         key-label:command.key;label:Words.translate(command.title,Words.version);enabled:command.enabled;clicked=>{root.action(command.id);}
                     }
                 }
