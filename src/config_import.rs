@@ -281,6 +281,7 @@ fn action(id: &str) -> Option<&'static str> {
         "Move" => "Move",
         "Rename" => "Rename",
         "NewTab" => "NewTab",
+        "DuplicateTab" => "DuplicateTab",
         "CloseTab" => "CloseTab",
         "Undo" => "Undo",
         "Redo" => "Redo",

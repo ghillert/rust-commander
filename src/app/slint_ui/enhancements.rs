@@ -307,8 +307,12 @@ impl Adapter {
                 if self.enhancements.external_pending.is_some() {
                     return true;
                 }
-                let entries = self.app.tab().chosen(self.app.show_hidden);
-                let Some(entry) = entries.first().filter(|e| !e.is_dir) else {
+                let Some(entry) = self
+                    .app
+                    .tab()
+                    .focused(self.app.show_hidden)
+                    .filter(|e| !e.is_dir)
+                else {
                     self.app.fail("Select a file to edit externally");
                     return true;
                 };

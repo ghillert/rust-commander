@@ -76,6 +76,8 @@ export component ChromeButton inherits Rectangle {
     in property <bool> muted;
     in property <bool> emphasized;
     callback clicked();
+    callback context-menu(float,float);
+    callback middle-clicked();
     min-width: 28px;
     preferred-width: max(28px,content.preferred-width);
     min-height: 24px;
@@ -125,7 +127,16 @@ export component ChromeButton inherits Rectangle {
             }
         }
     }
-    touch := TouchArea { enabled: root.enabled; clicked => { root.activate(); } }
+    touch := TouchArea {
+        enabled: root.enabled; clicked => { root.activate(); }
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                root.context-menu((self.absolute-position.x+self.mouse-x)/1px,(self.absolute-position.y+self.mouse-y)/1px);
+            } else if event.kind == PointerEventKind.down && event.button == PointerEventButton.middle {
+                root.middle-clicked();
+            }
+        }
+    }
     Tooltip { text: @markdown("\{root.label}"); }
 }
 

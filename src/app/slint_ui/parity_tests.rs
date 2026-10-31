@@ -56,6 +56,7 @@ fn sort_indicators_follow_each_pane_tab_and_configured_columns() {
         .collect();
     assert_eq!(file_names, ["café.txt", "alpha.txt"]);
     headers("Size")[1].mock_single_click(slint::platform::PointerEventButton::Left);
+    assert_eq!(state.borrow().app.active, 1);
     assert_eq!(ui.get_right_sort_column(), 1);
     assert!(!ui.get_right_sort_descending());
     headers("Size")[1].invoke_accessible_default_action();
@@ -73,6 +74,7 @@ fn sort_indicators_follow_each_pane_tab_and_configured_columns() {
     }
     assert_eq!(ui.get_left_sort_column(), 2);
     assert_eq!(ui.get_right_sort_column(), 1);
+    ui.invoke_tab(0, 0);
     ui.invoke_action("NewTab".into());
     assert_eq!(ui.get_left_sort_column(), 2);
     assert!(!ui.get_left_sort_descending());
@@ -423,6 +425,7 @@ fn five_row_block_commands_match_upstream_increments() {
     filesystem::sort_entries(&mut entries, Default::default(), false);
     let first = entries[0].path.clone();
     let fifth = entries[5].path.clone();
+    let fourth = entries[4].path.clone();
     let tenth = entries[10].path.clone();
     {
         let mut a = state.borrow_mut();
@@ -437,6 +440,12 @@ fn five_row_block_commands_match_upstream_increments() {
     ui.invoke_action("MarkNextBlock".into());
     assert_eq!(state.borrow().app.tab().cursor, Some(tenth));
     assert_eq!(state.borrow().app.tab().selected.len(), 5);
+    ui.invoke_action("UnmarkAll".into());
+    ui.invoke_action("SelectFirstRow".into());
+    assert!(ui.get_left_parent_selected());
+    ui.invoke_action("MarkNextBlock".into());
+    assert_eq!(state.borrow().app.tab().selected.len(), 4);
+    assert_eq!(state.borrow().app.tab().cursor, Some(fourth));
 }
 
 fn press(ui: &CommanderWindow, text: impl Into<SharedString>) {

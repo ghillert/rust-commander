@@ -12,6 +12,7 @@ mod enhancements;
 #[cfg(feature = "screenshot")]
 mod icon_smoke;
 mod icons;
+mod interaction;
 mod keys;
 mod management;
 mod parity;
@@ -50,6 +51,7 @@ pub(super) struct Adapter {
     desktop_settings_path: Option<PathBuf>,
     drag: drag::State,
     extra: parity::State,
+    interaction: interaction::State,
     ctx: UiSignal,
     rows: [Rc<VecModel<FileRow>>; 2],
     row_cache: [Vec<RowData>; 2],
@@ -171,6 +173,7 @@ impl Adapter {
             desktop_settings_path: None,
             drag: Default::default(),
             extra: Default::default(),
+            interaction: Default::default(),
             ctx,
             rows: std::array::from_fn(|_| Rc::new(VecModel::default())),
             row_cache: Default::default(),
@@ -303,6 +306,12 @@ impl Adapter {
     }
 
     fn action(&mut self, id: &str) {
+        if id.starts_with("Column:") {
+            if !self.blocked() {
+                self.interaction_action(id);
+            }
+            return;
+        }
         let (name, side) = id.split_once(':').map_or((id, None), |(name, side)| {
             (name, side.parse::<usize>().ok())
         });
@@ -1924,22 +1933,25 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
         let commands = if a.blocked() {
             Vec::new()
         } else if let Some(index) = id.strip_prefix("bookmark:") {
-            vec![Command {
+            vec![MenuEntry {
                 id: format!("RemoveBookmark:{index}").into(),
                 title: tr("Remove bookmark").into_owned().into(),
                 enabled: true,
+                ..Default::default()
             }]
         } else if let Some(index) = id.strip_prefix("connection:") {
             vec![
-                Command {
+                MenuEntry {
                     id: format!("EditConnection:{index}").into(),
                     title: tr("Edit").into_owned().into(),
                     enabled: true,
+                    ..Default::default()
                 },
-                Command {
+                MenuEntry {
                     id: format!("ForgetCredentials:{index}").into(),
                     title: tr("Forget credentials").into_owned().into(),
                     enabled: true,
+                    ..Default::default()
                 },
             ]
         } else {
@@ -1950,6 +1962,10 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
         show
     });
     callback!(on_menu, |a, w, title| {
+        if let Some(items) = a.context_commands(&title) {
+            w.set_menu_items(Rc::new(VecModel::from(items)).into());
+            return;
+        }
         let mut entries = action_menus()
             .into_iter()
             .find(|(name, _)| *name == title.as_str())
@@ -1968,11 +1984,12 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
             Rc::new(VecModel::from(
                 entries
                     .into_iter()
-                    .map(|(title, action)| Command {
+                    .map(|(title, action)| MenuEntry {
                         id: format!("{action:?}").into(),
                         title: parity::caption(&format!("{action:?}"), title, &a.app.preferences)
                             .into(),
                         enabled: !a.blocked() && a.action_available(&format!("{action:?}")),
+                        ..Default::default()
                     })
                     .collect::<Vec<_>>(),
             ))
@@ -1987,6 +2004,36 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
         {
             a.app.active = side as usize;
             a.app.panes[side as usize].active = index as usize;
+            w.invoke_focus_files(side);
+        }
+    });
+    callback!(on_context_target, |a, w, side, kind| {
+        if !a.blocked() && (0..2).contains(&side) {
+            a.context_target(side as usize, &kind);
+            w.invoke_focus_files(side);
+        }
+    });
+    callback!(on_close_tab, |a, w, side, index| {
+        if !a.blocked()
+            && (0..2).contains(&side)
+            && index >= 0
+            && (index as usize) < a.app.panes[side as usize].tabs.len()
+        {
+            a.app.panes[side as usize].close_tab(index as usize);
+        }
+    });
+    callback!(on_menu_key, |a, w, event| { a.menu_key(&w, &event) });
+    ui.on_menu_start({
+        let weak = ui.as_weak();
+        move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_menu_index(
+                    ui.get_menu_items()
+                        .iter()
+                        .position(|item| item.enabled)
+                        .map_or(-1, |index| index as i32),
+                );
+            }
         }
     });
     callback!(on_address_edited, |a, w, side, text| {
@@ -2054,6 +2101,8 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
             && let Some(column) = a.app.preferences.columns.get(index as usize)
             && let Some(sort) = column.kind.sort()
         {
+            a.app.active = side as usize;
+            w.invoke_focus_files(side);
             let tab = a.app.panes[side as usize].tab_mut();
             tab.descending = tab.sort == sort && !tab.descending;
             tab.sort = sort;
@@ -2305,6 +2354,8 @@ fn sync_modifiers(
 
 #[cfg(all(test, debug_assertions))]
 mod context_menus;
+#[cfg(test)]
+mod interaction_tests;
 #[cfg(test)]
 mod tests;
 

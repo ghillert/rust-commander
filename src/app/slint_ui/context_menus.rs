@@ -3,7 +3,7 @@ use super::*;
 use i_slint_backend_testing::ElementHandle;
 use slint::platform::PointerEventButton::{Left, Right};
 
-fn setup() -> (
+pub(super) fn setup() -> (
     tempfile::TempDir,
     CommanderWindow,
     Rc<RefCell<Adapter>>,
@@ -25,22 +25,34 @@ fn setup() -> (
     (root, ui, state, left, right)
 }
 
-fn element(ui: &CommanderWindow, label: &str) -> ElementHandle {
+pub(super) fn element(ui: &CommanderWindow, label: &str) -> ElementHandle {
     ElementHandle::find_by_accessible_label(ui, label)
         .next()
         .unwrap_or_else(|| panic!("Missing visible element: {label}"))
 }
-fn open(ui: &CommanderWindow, label: &str) {
+pub(super) fn open(ui: &CommanderWindow, label: &str) {
     element(ui, label).mock_single_click(Right);
     slint::platform::update_timers_and_animations();
 }
-fn choose(ui: &CommanderWindow, id: &str) {
+pub(super) fn choose(ui: &CommanderWindow, id: &str) {
     let command = ui
         .get_menu_items()
         .iter()
         .find(|c| c.id == id)
         .unwrap_or_else(|| panic!("Missing menu action: {id}"));
     assert!(command.enabled, "Disabled action: {id}");
+    menu_element(ui, id).mock_single_click(Left);
+}
+pub(super) fn press(ui: &CommanderWindow, text: impl Into<SharedString>) {
+    let text = text.into();
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: text.clone() });
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyReleased { text });
+    slint::platform::update_timers_and_animations();
+}
+fn menu_element(ui: &CommanderWindow, id: &str) -> ElementHandle {
+    let command = ui.get_menu_items().iter().find(|c| c.id == id).unwrap();
     // Long menus need the same wheel scrolling as a physical user. Searching
     // visible accessibility elements must not assume every row fits at once.
     for _ in 0..20 {
@@ -58,7 +70,7 @@ fn choose(ui: &CommanderWindow, id: &str) {
         visible.scroll(0.0, -140.0);
         slint::platform::update_timers_and_animations();
     }
-    element(ui, &command.title).mock_single_click(Left);
+    element(ui, &command.title)
 }
 
 #[test]
@@ -103,14 +115,14 @@ fn every_file_context_action_dispatches_once_from_either_pane() {
     let dispatched = Rc::new(RefCell::new(Vec::new()));
     let calls = dispatched.clone();
     ui.on_action(move |id| calls.borrow_mut().push(id.to_string()));
-    let expected: Vec<_> = action_menus()
-        .into_iter()
-        .find(|(name, _)| *name == "File")
-        .unwrap()
-        .1
-        .into_iter()
-        .map(|(_, action)| format!("{action:?}"))
+    open(&ui, "alpha.txt");
+    let expected: Vec<_> = ui
+        .get_menu_items()
+        .iter()
+        .filter(|item| item.enabled)
+        .map(|item| item.id.to_string())
         .collect();
+    press(&ui, slint::platform::Key::Escape);
     for (side, row) in [(0, "alpha.txt"), (1, "right.txt")] {
         for id in &expected {
             open(&ui, row);
@@ -207,10 +219,19 @@ fn disabled_read_only_actions_and_clicking_outside_do_not_dispatch() {
     let calls = dispatched.clone();
     ui.on_action(move |id| calls.borrow_mut().push(id.to_string()));
     open(&ui, "alpha.txt");
-    for id in ["Trash", "Rename", "Mkdir", "ExternalEdit"] {
+    for id in [
+        "Trash",
+        "Rename",
+        "Mkdir",
+        "Edit",
+        "Permissions",
+        "Modified",
+        "CutClipboard",
+        "PasteClipboard",
+    ] {
         let command = ui.get_menu_items().iter().find(|c| c.id == id).unwrap();
         assert!(!command.enabled, "{id}");
-        element(&ui, &command.title).mock_single_click(Left);
+        menu_element(&ui, id).mock_single_click(Left);
         assert!(dispatched.borrow().is_empty());
         open(&ui, "alpha.txt");
     }
@@ -246,22 +267,14 @@ fn disabled_read_only_actions_and_clicking_outside_do_not_dispatch() {
 fn file_context_dialog_actions_open_and_cancel_without_modifying_files() {
     let (_root, ui, state, left, _right) = setup();
     for (id, dialog) in [
-        ("Connections", "connections"),
-        ("ArchiveTools", "archive"),
         ("Mkfile", "prompt"),
-        ("BatchRename", "rename"),
         ("Permissions", "prompt"),
         ("Modified", "prompt"),
         ("OpenWith", "open-with"),
         ("OpenAs", "open-as"),
-        ("Associations", "associations"),
         ("Rename", "prompt"),
         ("Mkdir", "prompt"),
         ("Trash", "prompt"),
-        ("PermanentDelete", "prompt"),
-        ("EmptyTrash", "empty-trash"),
-        ("ImportSettings", "import"),
-        ("ImportedCommands", "quick-list"),
     ] {
         open(&ui, "alpha.txt");
         choose(&ui, id);

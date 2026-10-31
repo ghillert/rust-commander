@@ -509,5 +509,14 @@
   "Maximize / restore window": "Fenster maximieren / wiederherstellen",
   "Cut": "Ausschneiden",
   "Paste": "Einfügen",
-  "Select all": "Alles auswählen"
+  "Select all": "Alles auswählen",
+  "Duplicate tab": "Tab duplizieren",
+  "Lock tab": "Tab sperren",
+  "Name tab…": "Tab benennen…",
+  "Mark / unmark": "Markieren / abwählen",
+  "Copy names without extensions": "Namen ohne Erweiterungen kopieren",
+  "Fit columns to content": "Spalten an Inhalt anpassen",
+  "Move tab left": "Tab nach links verschieben",
+  "Move tab right": "Tab nach rechts verschieben",
+  "Move tab to other pane": "Tab in anderen Bereich verschieben"
 }

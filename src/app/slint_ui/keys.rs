@@ -189,17 +189,26 @@ impl Adapter {
         }
         self.app.active = side as usize;
         if key_is(event.text.as_str(), slint::platform::Key::Tab)
-            && !event.modifiers.control
-            && !event.modifiers.alt
-            && !event.modifiers.meta
-            && self
-                .app
-                .preferences
-                .shortcuts
-                .get("SwitchPane")
-                .is_some_and(|value| value == "Tab")
+            && configured_action(&self.app.preferences, &event).as_deref() == Some("SwitchPane")
         {
             self.action("SwitchPane");
+            return true;
+        }
+        if configured_action(&self.app.preferences, &event).as_deref() == Some("MarkSelectedFile") {
+            let target = self
+                .app
+                .tab()
+                .cursor
+                .clone()
+                .map(|path| (self.app.tab().id, path));
+            if event.repeat
+                && target.is_some()
+                && self.interaction.last_mark[side as usize] == target
+            {
+                return true;
+            }
+            self.action("MarkSelectedFile");
+            self.interaction.last_mark[side as usize] = target;
             return true;
         }
         if self.quick_find_consumes(side as usize, &event) && self.parity_key(side as usize, &event)

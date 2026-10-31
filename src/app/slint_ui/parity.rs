@@ -103,6 +103,7 @@ impl Adapter {
         let side = self.app.active;
         let page = self.extra.page_rows[side].max(1) as isize;
         match name {
+            "ActivatePane" => {}
             "FocusAddress" => self.extra.focus_request = Some(side * 3 + 1),
             "FocusFilter" => self.extra.focus_request = Some(side * 3 + 2),
             "SelectNextRow" | "SelectPreviousRow" | "SelectNextPage" | "SelectPreviousPage"
@@ -117,9 +118,13 @@ impl Adapter {
                     _ => isize::MAX,
                 };
                 let hidden = self.app.show_hidden;
-                self.app
-                    .tab_mut()
-                    .move_cursor(delta, name.starts_with("Mark"), hidden);
+                let parent = self.app.preferences.parent_entry;
+                self.app.tab_mut().move_cursor_with_parent(
+                    delta,
+                    name.starts_with("Mark"),
+                    hidden,
+                    parent,
+                );
             }
             "MarkSelectedFile" => {
                 let hidden = self.app.show_hidden;
@@ -162,6 +167,9 @@ impl Adapter {
                 self.extra.dialog = Some(form);
             }
             "SelectExtension" => {
+                if self.app.tab().focused(self.app.show_hidden).is_none() {
+                    return true;
+                }
                 let extension = self
                     .app
                     .tab()
@@ -184,25 +192,36 @@ impl Adapter {
             }
             "SelectNextBlock" | "SelectPreviousBlock" | "MarkNextBlock" | "MarkPreviousBlock" => {
                 let hidden = self.app.show_hidden;
+                let parent = self.app.preferences.parent_entry;
                 let tab = self.app.tab_mut();
                 let visible = tab.visible(hidden);
-                let current = visible
-                    .iter()
-                    .position(|&i| Some(&tab.entries[i].path) == tab.cursor.as_ref())
-                    .unwrap_or(0);
+                let offset = usize::from(parent && tab.location.parent().is_some());
+                let current = if tab.parent_focused() {
+                    0
+                } else {
+                    visible
+                        .iter()
+                        .position(|&i| Some(&tab.entries[i].path) == tab.cursor.as_ref())
+                        .map_or(offset, |index| index + offset)
+                };
                 let backwards = name.contains("Previous");
                 let delta = if backwards { -5 } else { 5 };
                 if name.starts_with("Mark") {
-                    let selected = visible
-                        .get(current)
+                    let selected = current
+                        .checked_sub(offset)
+                        .and_then(|index| visible.get(index))
                         .is_none_or(|&i| !tab.selected.contains(&tab.entries[i].path));
                     let indices = if backwards {
                         (current.saturating_sub(4)..=current).collect::<Vec<_>>()
                     } else {
-                        (current..current.saturating_add(5).min(visible.len())).collect::<Vec<_>>()
+                        (current..current.saturating_add(5).min(visible.len() + offset))
+                            .collect::<Vec<_>>()
                     };
                     for index in indices {
-                        if let Some(&i) = visible.get(index) {
+                        if let Some(&i) = index
+                            .checked_sub(offset)
+                            .and_then(|index| visible.get(index))
+                        {
                             let path = tab.entries[i].path.clone();
                             if selected {
                                 tab.selected.insert(path);
@@ -212,7 +231,7 @@ impl Adapter {
                         }
                     }
                 }
-                tab.move_cursor(delta, false, hidden);
+                tab.move_cursor_with_parent(delta, false, hidden, parent);
             }
             "LockTab" => {
                 let tab = self.app.tab_mut();
@@ -245,6 +264,8 @@ impl Adapter {
                 other.tabs.push(tab);
                 other.active = other.tabs.len() - 1;
                 self.app.active = 1 - side;
+                self.extra.focus_index = self.app.active * 3;
+                self.extra.focus_request = Some(self.extra.focus_index);
                 self.app.save_settings();
             }
             "MoveTabLeft" | "MoveTabRight" => {
@@ -297,8 +318,8 @@ impl Adapter {
                 self.app.save_settings();
             }
             "OpenBoth" => {
-                if let Some(entry) = self.app.tab().chosen(self.app.show_hidden).first()
-                    && let Some(location) = self.app.tab().location.enter(entry)
+                if let Some(entry) = self.app.tab().focused(self.app.show_hidden)
+                    && let Some(location) = self.app.tab().location.enter(&entry)
                 {
                     for pane in &mut self.app.panes {
                         pane.tab_mut().navigate(location.clone(), &self.ctx);
@@ -354,9 +375,7 @@ impl Adapter {
             "Open" => {
                 if self.app.preferences.parent_entry && self.app.tab().parent_focused() {
                     self.app.act(Action::Parent, &self.ctx);
-                } else if let Some(entry) =
-                    self.app.tab().chosen(self.app.show_hidden).first().cloned()
-                {
+                } else if let Some(entry) = self.app.tab().focused(self.app.show_hidden) {
                     self.app.open_entry(entry, &self.ctx);
                 }
             }
@@ -497,7 +516,12 @@ impl Adapter {
             }
         }
         if std::mem::take(&mut self.extra.context_request) {
-            ui.invoke_show_file_menu();
+            let weak = ui.as_weak();
+            slint::Timer::single_shot(Duration::ZERO, move || {
+                if let Some(ui) = weak.upgrade() {
+                    ui.invoke_show_file_menu();
+                }
+            });
         }
         let catalog = command_catalog();
         let buttons = self

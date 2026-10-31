@@ -10,6 +10,7 @@ export { IconCatalog } from "icons/catalog.slint";
 
 export struct CommandButton {id:string,title:string,key:string,enabled:bool}
 export struct Command { id: string, title: string, enabled: bool }
+export struct MenuEntry {id:string,title:string,enabled:bool,checkable:bool,checked:bool}
 export struct TreeRow { index:int, title:string, depth:int, expanded:bool, selected:bool, detail:string }
 export struct Place { id: string, title: string, detail: string, heading: bool, section: string, expanded: bool }
 export struct FileColumn { title: string, width: float }
@@ -70,6 +71,7 @@ component FilePane inherits Rectangle {
     in property <float> text-size;
     callback action(string);
     callback tab(int);
+    callback close-tab(int);
     callback breadcrumb(int);
     callback navigate(string);
     callback address-edited(string);
@@ -80,7 +82,7 @@ component FilePane inherits Rectangle {
     callback parent-entry(bool);
     callback sort(int);
     callback resize-column(int,float,bool);
-    callback context-menu(float,float);
+    callback context-menu(string,float,float);
     callback key-event(KeyEvent) -> bool;
     callback dropped(data-transfer) -> bool;
     public function scroll-to-cursor() {
@@ -96,6 +98,12 @@ component FilePane inherits Rectangle {
     public function focus-files() { files-focus.focus(); }
     public function focus-address() { root.editing-address=true; location.focus(); location.select-all(); }
     public function focus-filter() { filter-input.focus(); filter-input.select-all(); }
+    public function show-file-menu() {
+        files-focus.focus();
+        let row-height=max(24px,(root.text-size+10)*1px);
+        let row-y=root.parent-selected ? parent-row.absolute-position.y : list.absolute-position.y+max(0,root.cursor-index)*row-height+list.content-y;
+        root.context-menu(root.parent-selected ? "ParentContext" : root.cursor-index < 0 ? "BackgroundContext" : "FileContext", root.absolute-position.x/1px+32, max(root.absolute-position.y,min(row-y,root.absolute-position.y+root.height - row-height))/1px);
+    }
 
     background: Chrome.pane;
     VerticalLayout {
@@ -116,6 +124,8 @@ component FilePane inherits Rectangle {
                     muted: index != root.active-tab;
                     max-width: 170px; min-width: 50px; height: 26px;
                     clicked => { root.tab(index); }
+                    context-menu(x,y) => {root.context-menu("TabContext:"+index,x,y);}
+                    middle-clicked => {root.close-tab(index);}
                     FileDropZone {side:root.side;target:"tab:"+index;priority:60;}
                 }
                 Rectangle { horizontal-stretch: 1; }
@@ -209,7 +219,12 @@ component FilePane inherits Rectangle {
                         LineTo {x: 10; y: root.sort-descending ? 4 : 8;}
                         accessible-role: none;
                     }
-                    TouchArea { clicked => { root.sort(index); } }
+                    TouchArea {
+                        clicked => {files-focus.focus(); root.sort(index);}
+                        pointer-event(event) => {if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                            files-focus.focus(); root.context-menu("ColumnContext",(self.absolute-position.x+self.mouse-x)/1px,(self.absolute-position.y+self.mouse-y)/1px);
+                        }}
+                    }
                     TouchArea {
                         x: parent.width - 5px; width: 5px;
                         mouse-cursor: ew-resize;
@@ -224,8 +239,9 @@ component FilePane inherits Rectangle {
                 }
             }
         }
-        if root.parent-visible: Rectangle {
-            height: max(24px, (root.text-size + 10) * 1px);
+        parent-row := Rectangle {
+            visible: root.parent-visible;
+            height: root.parent-visible ? max(24px, (root.text-size + 10) * 1px) : 0px;
             background: root.parent-selected ? (root.active ? root.selection-color : root.inactive-selection) : Chrome.pane;
             accessible-role: list-item;
             accessible-label: Words.translate("Parent directory row",Words.version);
@@ -247,6 +263,9 @@ component FilePane inherits Rectangle {
             }
             TouchArea {
                 clicked => {files-focus.focus(); root.parent-entry(false);}
+                pointer-event(event) => {if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                    files-focus.focus(); root.context-menu("ParentContext",(self.absolute-position.x+self.mouse-x)/1px,(self.absolute-position.y+self.mouse-y)/1px);
+                }}
             }
         }
         files-focus := FocusScope {
@@ -257,6 +276,12 @@ component FilePane inherits Rectangle {
             accessible-delegate-focus: root.cursor-index;
             key-pressed(event) => { return root.key-event(event) ? EventResult.accept : EventResult.reject; }
             FileDropZone {side:root.side;priority:5;
+            TouchArea {
+                clicked => {files-focus.focus(); root.action("ActivatePane");}
+                pointer-event(event) => {if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                    files-focus.focus(); root.context-menu("BackgroundContext",(self.absolute-position.x+self.mouse-x)/1px,(self.absolute-position.y+self.mouse-y)/1px);
+                }}
+            }
             list := ListView {
                 for row[index] in root.rows: Rectangle {
                     height: max(24px, (root.text-size + 10) * 1px);
@@ -314,7 +339,9 @@ component FilePane inherits Rectangle {
                             pointer-event(event) => {
                                 if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
                                     files-focus.focus(); root.selected(row.id,false,false);
-                                    root.context-menu((self.absolute-position.x+self.mouse-x)/1px,(self.absolute-position.y+self.mouse-y)/1px);
+                                    root.context-menu("FileContext",(self.absolute-position.x+self.mouse-x)/1px,(self.absolute-position.y+self.mouse-y)/1px);
+                                } else if event.kind == PointerEventKind.down && event.button == PointerEventButton.middle {
+                                    files-focus.focus(); root.selected(row.id,true,false);
                                 } else if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {
                                     self.modified-press=event.modifiers.control || event.modifiers.meta || event.modifiers.shift || event.modifiers.alt;
                                     files-focus.focus();
@@ -460,9 +487,11 @@ export component CommanderWindow inherits Window {
     in-out property <bool> terminal-focused;
     in property <string> terminal-status;
     in property <[TerminalRow]> terminal-rows;
-    in property <[Command]> menu-items;
+    in property <[MenuEntry]> menu-items;
+    in-out property <int> menu-index: -1;
+    private property <int> menu-origin-focus: -1;
     private property <float> menu-x: 8;
-    private property <float> menu-y: 32;
+    out property <float> menu-y: 32;
     in property <string> dialog-title;
     in property <float> dialog-preferred-height: 650;
     in property <string> dialog-description;
@@ -522,6 +551,10 @@ export component CommanderWindow inherits Window {
     callback place(string);
     callback place-menu(string)->bool;
     callback tab(int, int);
+    callback close-tab(int,int);
+    callback context-target(int,string);
+    callback menu-key(KeyEvent)->int;
+    callback menu-start();
     callback breadcrumb(int,int);
     callback navigate(int, string);
     callback address-edited(int, string);
@@ -555,8 +588,20 @@ export component CommanderWindow inherits Window {
         if right.visible && x*1px>=right.absolute-position.x && x*1px<right.absolute-position.x+right.width && y*1px>=right.absolute-position.y && y*1px<right.absolute-position.y+right.height {return 1;}
         return -1;
     }
-    public function show-menu(title: string) {root.menu-x=8;root.menu-y=30;root.menu(title);app-menu.show();}
-    public function show-file-menu() {root.menu-x=(root.active-pane==0 ? left.absolute-position.x : right.absolute-position.x)/1px + 24;root.menu-y=(root.active-pane==0 ? left.absolute-position.y : right.absolute-position.y)/1px + 150;root.menu("File");app-menu.show();}
+    public function open-menu() {root.menu-origin-focus=root.focused-control;root.menu-start();app-menu.show();}
+    public function show-menu(title: string) {root.menu-x=8;root.menu-y=30;root.menu(title);root.open-menu();}
+    public function show-file-menu() {if root.active-pane==0 {left.show-file-menu();}else{right.show-file-menu();}}
+    public function restore-menu-focus() {
+        if root.menu-origin-focus==1 || root.menu-origin-focus==4 {root.focus-address(root.active-pane);}
+        else if root.menu-origin-focus==2 || root.menu-origin-focus==5 {root.focus-filter(root.active-pane);}
+        else {root.focus-files(root.active-pane);}
+    }
+    public function activate-menu(index:int) {
+        if index>=0 && index<root.menu-items.length && root.menu-items[index].enabled {
+            root.action(root.menu-items[index].id);app-menu.close();
+            if root.dialog-title=="" && !root.viewer-visible {root.restore-menu-focus();}
+        }
+    }
     public function focus-files(side: int) { if side == 0 { left.focus-files(); } else { right.focus-files(); } }
     public function focus-address(side: int) { if side == 0 { left.focus-address(); } else { right.focus-address(); } }
     out property <int> focused-control: left.focused-control >= 0 ? left.focused-control : right.focused-control >= 0 ? right.focused-control + 3 : -1;
@@ -651,7 +696,7 @@ export component CommanderWindow inherits Window {
                                 clicked=>{place-focus.focus();if place.heading {root.toggle-place-section(place.section);} else {root.place(place.id);}}
                                 pointer-event(event)=>{
                                     if !place.heading && event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
-                                        if root.place-menu(place.id) {root.menu-x=(self.absolute-position.x+self.mouse-x)/1px;root.menu-y=(self.absolute-position.y+self.mouse-y)/1px;app-menu.show();}
+                                        if root.place-menu(place.id) {root.menu-x=(self.absolute-position.x+self.mouse-x)/1px;root.menu-y=(self.absolute-position.y+self.mouse-y)/1px;root.open-menu();}
                                     }
                                 }
                             }
@@ -731,7 +776,7 @@ export component CommanderWindow inherits Window {
                     address <=> root.left-address; filter <=> root.left-filter; error: root.left-error; busy: root.left-busy; summary: root.left-summary;
                     breadcrumbs-mode:root.breadcrumbs-mode;committed-address:root.left-committed-address;protocol:root.left-protocol;
                     accent: root.accent; selection-color: root.selection-color; selection-text: root.selection-text; marked-text:root.marked-text; marked-cursor-color:root.marked-cursor-color; inactive-selection: root.inactive-selection; dark: root.dark; text-size: root.text-size;
-                    action(id) => { root.action(id + ":0"); } tab(index) => { root.tab(0, index); }
+                    action(id) => { root.action(id + ":0"); } tab(index) => { root.tab(0, index); } close-tab(index)=>{root.close-tab(0,index);}
                     address-edited(text) => { root.address-edited(0,text); }
                     navigate(text) => { root.navigate(0, text); } filter-edited(text) => { root.filter(0, text); }
                     selected(id, toggle, range) => { root.selected(0, id, toggle, range); }
@@ -739,7 +784,7 @@ export component CommanderWindow inherits Window {
                     parent-entry(open) => {root.parent-entry(0,open);}
                     sort(index) => { root.sort(0, index); }
                     resize-column(index,width,finished) => {root.resize-column(index,width,finished);}
-                    context-menu(x,y) => {root.menu-x=x;root.menu-y=y;root.menu("File");app-menu.show();} key-event(event) => { return root.pane-key(0, event); }
+                    context-menu(kind,x,y) => {root.context-target(0,kind);root.menu-x=x;root.menu-y=y;root.menu(kind);root.open-menu();} key-event(event) => { return root.pane-key(0, event); }
                     dropped(data) => { return root.dropped(0, data); }
                 }
                   right := FilePane {
@@ -760,7 +805,7 @@ export component CommanderWindow inherits Window {
                     address <=> root.right-address; filter <=> root.right-filter; error: root.right-error; busy: root.right-busy; summary: root.right-summary;
                     breadcrumbs-mode:root.breadcrumbs-mode;committed-address:root.right-committed-address;protocol:root.right-protocol;
                     accent: root.accent; selection-color: root.selection-color; selection-text: root.selection-text; marked-text:root.marked-text; marked-cursor-color:root.marked-cursor-color; inactive-selection: root.inactive-selection; dark: root.dark; text-size: root.text-size;
-                    action(id) => { root.action(id + ":1"); } tab(index) => { root.tab(1, index); }
+                    action(id) => { root.action(id + ":1"); } tab(index) => { root.tab(1, index); } close-tab(index)=>{root.close-tab(1,index);}
                     address-edited(text) => { root.address-edited(1,text); }
                     navigate(text) => { root.navigate(1, text); } filter-edited(text) => { root.filter(1, text); }
                     selected(id, toggle, range) => { root.selected(1, id, toggle, range); }
@@ -768,7 +813,7 @@ export component CommanderWindow inherits Window {
                     parent-entry(open) => {root.parent-entry(1,open);}
                     sort(index) => { root.sort(1, index); }
                     resize-column(index,width,finished) => {root.resize-column(index,width,finished);}
-                    context-menu(x,y) => {root.menu-x=x;root.menu-y=y;root.menu("File");app-menu.show();} key-event(event) => { return root.pane-key(1, event); }
+                    context-menu(kind,x,y) => {root.context-target(1,kind);root.menu-x=x;root.menu-y=y;root.menu(kind);root.open-menu();} key-event(event) => { return root.pane-key(1, event); }
                     dropped(data) => { return root.dropped(1, data); }
                 }
                   if !root.single-pane: Rectangle {
@@ -857,25 +902,44 @@ export component CommanderWindow inherits Window {
     }
 
     app-menu := PopupWindow {
+        forward-focus: menu-keys;
         x: max(8px,min(root.menu-x*1px,root.width - 292px)); y: max(8px,min(root.menu-y*1px,root.height - self.height - 8px)); width: 280px;
-        height: min(root.height - 40px,(root.menu-items.length*28+12)*1px);
-        Rectangle {
+        height: min(root.height - 40px,(root.menu-items.length*28+16)*1px);
+        menu-keys := FocusScope {
+          key-pressed(event) => {
+            let result=root.menu-key(event);
+            if result==2 {root.activate-menu(root.menu-index);}
+            else if result==3 {app-menu.close();root.restore-menu-focus();}
+            else if root.menu-index>=0 {
+                let top=root.menu-index*28px+menu-scroll.content-y;
+                if top<0px {menu-scroll.content-y -= top;}
+                if top+28px>menu-scroll.visible-height {menu-scroll.content-y -= top+28px-menu-scroll.visible-height;}
+            }
+            return EventResult.accept;
+          }
+          Rectangle {
             background: Chrome.pane;
             border-width: 1px; border-color: Chrome.separator; border-radius: 6px;
-            ScrollView {
+            menu-scroll := ScrollView {
                 x: 6px; y: 6px; width: parent.width - 12px; height: parent.height - 12px;
+                horizontal-scrollbar-policy: always-off;
+                vertical-scrollbar-policy: as-needed;
                 VerticalLayout {
                     spacing: 0px;
-                    for command in root.menu-items: ChromeButton {
-                        height: 28px; horizontal-stretch: 1;
-                        label: Words.translate(command.title,Words.version); show-label: true;
-                        enabled: command.enabled;
-                        // Closing destroys the row and its callback context; dispatch first.
-                        clicked => { root.action(command.id); app-menu.close(); }
+                    for command[index] in root.menu-items: Rectangle {
+                        height: 28px; background:index==root.menu-index?Chrome.hover:transparent;
+                        ChromeButton {
+                            width:parent.width;height:28px;
+                            label: (command.checkable ? (command.checked ? "✓  " : "    ") : "") + Words.translate(command.title,Words.version); show-label: true;
+                            accessible-label:command.title; checkable:command.checkable; accessible-checked:command.checked;
+                            enabled: command.enabled;
+                            clicked => {root.activate-menu(index);}
+                        }
                     }
                 }
             }
         }
+       }
     }
 
     viewer-overlay := Overlay {

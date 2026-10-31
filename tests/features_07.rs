@@ -76,6 +76,52 @@ fn keyboard_range_selection_marks_every_intermediate_row() {
     tab.move_cursor(-15, true, false);
     assert_eq!(tab.selected.len(), 16);
 }
+
+#[test]
+fn parent_navigation_restores_the_child_and_same_folder_navigation_preserves_marks() {
+    let root = tempfile::tempdir().unwrap();
+    let child = root.path().join("child");
+    fs::create_dir(&child).unwrap();
+    fs::write(root.path().join("other.txt"), b"other").unwrap();
+    let mut tab = tab(root.path());
+    let ctx = UiSignal::default();
+    let wait = |tab: &mut Tab| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while tab.loading {
+            tab.poll(false);
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    };
+    tab.navigate(Location::Local(child.clone()), &ctx);
+    wait(&mut tab);
+    tab.navigate(tab.location.parent().unwrap(), &ctx);
+    wait(&mut tab);
+    assert_eq!(tab.cursor, Some(child.clone()));
+    tab.selected.insert(root.path().join("other.txt"));
+    tab.navigate(tab.location.clone(), &ctx);
+    wait(&mut tab);
+    assert_eq!(tab.cursor, Some(child));
+    assert_eq!(tab.selected.len(), 1);
+    let archive = root.path().join("example.zip");
+    rust_commander::archive::pack(
+        &[root.path().join("other.txt")],
+        &archive,
+        &mut Task::default(),
+    )
+    .unwrap();
+    tab.navigate(
+        Location::Archive {
+            file: archive.clone(),
+            prefix: Default::default(),
+        },
+        &ctx,
+    );
+    wait(&mut tab);
+    tab.navigate(tab.location.parent().unwrap(), &ctx);
+    wait(&mut tab);
+    assert_eq!(tab.cursor, Some(archive));
+}
 #[test]
 fn parent_cursor_survives_refresh_without_becoming_an_operation_source() {
     let root = tempfile::tempdir().unwrap();

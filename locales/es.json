@@ -509,5 +509,14 @@
   "Maximize / restore window": "Maximizar / restaurar ventana",
   "Cut": "Cortar",
   "Paste": "Pegar",
-  "Select all": "Seleccionar todo"
+  "Select all": "Seleccionar todo",
+  "Duplicate tab": "Duplicar pestaña",
+  "Lock tab": "Bloquear pestaña",
+  "Name tab…": "Nombrar pestaña…",
+  "Mark / unmark": "Marcar / desmarcar",
+  "Copy names without extensions": "Copiar nombres sin extensiones",
+  "Fit columns to content": "Ajustar columnas al contenido",
+  "Move tab left": "Mover pestaña a la izquierda",
+  "Move tab right": "Mover pestaña a la derecha",
+  "Move tab to other pane": "Mover pestaña al otro panel"
 }

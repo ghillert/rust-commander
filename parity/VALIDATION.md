@@ -1,5 +1,33 @@
 # Validation record
 
+## Pane, keyboard and context-menu comparison — 2026-10-30
+
+The comparison against the pinned upstream FileTable/header, table/tab popup,
+selection and cloned-tab sources is recorded in [OVERVIEW.md](OVERVIEW.md).
+Fixes include focused-file versus marked-selection commands; keyboard parent
+rows and child-cursor restoration; preserving marks on same-location refresh;
+revealing explicitly addressed files outside the current filter; held-Space
+repeat protection; middle-click marks/tab closing; distinct file, empty-space,
+parent, header and tab menus; popup keyboard routing/scrolling; duplicate/clone
+metadata; read-only action guards; tab limits and destination-pane focus.
+
+The complete macOS unit/UI run passed **166 tests**, followed by **19** navigation
+integration tests. Final focused coverage passes **eight interaction fixtures**
+on macOS and in the Linux container, including the subsequently added direct-file
+filter regression and final popup sizing/checked-state changes. The existing six
+context-menu fixtures also pass; they exercise physical dispatch and disabled
+actions instead of invoking only controller callbacks. macOS and Linux-container
+all-target/all-feature Clippy pass with warnings denied. The Linux image used
+Clippy and `libdbus-1-dev` installed inside the disposable container.
+
+Six software/light and FemtoVG/dark previews cover file, column and tab menus.
+Inspection corrected checked-state tinting and the four-pixel scroll-view inset
+that made short menus scroll. Previews/logs are under
+`/private/tmp/rc-interaction-preview/`; suite and build logs are
+`/private/tmp/rc-interaction-*.log`. The final development app is rebuilt and
+strictly signature-checked. These checks do not establish native Windows or
+Linux desktop/input-method/screen-reader acceptance, or full upstream parity.
+
 ## Parent-row selection and activation — 2026-10-30
 
 The `..` entry is now a full-width selectable row. Its first click highlights it;

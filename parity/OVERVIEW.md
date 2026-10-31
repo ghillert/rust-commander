@@ -7,15 +7,15 @@ includes the new checks recorded there; the other areas below remain source
 reviews without new live-account acceptance. Historical validation
 sections describe their original snapshots; later sections supersede older limits.
 
-The reviewed source includes commit `3aaac1e` and the current desktop styling
-and UX review changes, including the native macOS Extract sheet. The pinned inventory contains
+The reviewed source includes commit `2905be8` and the current pane, keyboard and
+context-menu comparison, including the native macOS Extract sheet. The pinned inventory contains
 **200 entries: 4 implemented, 188 partial, 7 missing and 1 inapplicable**.
 These are 166 upstream actions and 34 modules, not 200 equally sized features.
 In particular, **partial does not mean absent**: many entries have working
 behavior and fixture coverage but lack complete upstream/native acceptance.
 The inapplicable entry is the JVM garbage-collection command.
 
-The latest full local run records **414 passing tests and 17 ignored**; macOS
+The latest recorded all-target local run records **414 passing tests and 17 ignored**; macOS
 and Linux-container Clippy pass. The connection-ID and Linux test-build fixes
 are committed, but hosted Windows confirmation remains open. These checks do
 not close the native/live-provider acceptance gaps below.
@@ -43,6 +43,44 @@ The following are implemented and should no longer appear as missing features:
   retain the remaining native/live-service acceptance work.
 - A general reviewed browser URL dialog, shared Minimize/Maximize shortcut
   actions and remote external-editor save-back through 32 MiB.
+- Active sort indicators, a selectable `..` row, keyboard access to that row,
+  focused-file actions independent of marks, dedicated file/background/parent,
+  column and tab context menus, and a Duplicate tab command. See the interaction
+  comparison below and the latest targeted checks in [VALIDATION.md](VALIDATION.md).
+
+### Pane, keyboard and context-menu comparison — 2026-10-30
+
+This behavioral review uses the pinned upstream source, rather than inferring
+completion from action names. Reference points are
+[FileTable](https://github.com/mucommander/mucommander/blob/3504a51e9af9f69a67dc616db821a320ec780f79/mucommander-core/src/main/java/com/mucommander/ui/main/table/FileTable.java),
+[FileTableHeader](https://github.com/mucommander/mucommander/blob/3504a51e9af9f69a67dc616db821a320ec780f79/mucommander-core/src/main/java/com/mucommander/ui/main/table/FileTableHeader.java),
+[TablePopupMenu](https://github.com/mucommander/mucommander/blob/3504a51e9af9f69a67dc616db821a320ec780f79/mucommander-core/src/main/java/com/mucommander/ui/main/menu/TablePopupMenu.java),
+[ShowFilePopupMenuAction](https://github.com/mucommander/mucommander/blob/3504a51e9af9f69a67dc616db821a320ec780f79/mucommander-core/src/main/java/com/mucommander/ui/action/impl/ShowFilePopupMenuAction.java)
+and the upstream tab popup and cloned-tab factory.
+
+| Interaction | Review result |
+| --- | --- |
+| Cursor versus marks | Fixed Open, Open As/With, View/Edit, external edit, Rename and folder-opening actions to use the focused row. Copy/Move/Trash/Pack retain the persistent marked selection. |
+| Parent row | Up/Home and page/block/range movement can reach `..` when enabled. Space advances without marking it; Enter opens it. The parent never becomes a file-operation source. |
+| Returning to a parent | The child folder/archive is selected after going up, including cached archive source identities. |
+| Re-entering the same location | Refresh preserves cursor, marks and filter rather than clearing them. |
+| Selection gestures | Ordinary clicks retain marks; modifier-click/range selection and middle-click marking remain independent of opening. Held Space no longer repeatedly toggles the final row. |
+| Sorting | Header clicks focus and activate the clicked pane. Sort direction remains specific to each pane/tab. Resizing uses its separate handle. |
+| File context | Added focused-file Open and clipboard/name/path/marking actions, while retaining transfer, packing and metadata workflows. Global connection/settings/import commands remain in the main menus. |
+| Parent/background contexts | Right-clicking `..` highlights it without navigating. Empty-space menus activate the clicked pane and clear stale cursor targets; explicit file marks remain usable. |
+| Column context | Right-click a header to toggle columns and automatic sizing, with checked states. Name stays mandatory. |
+| Tab context | Right-click targets the clicked tab and exposes duplicate, clone, name, lock, move and close actions. Duplicating/cloning retains the custom title and lock. Middle-click closes a tab while retaining at least one per pane. |
+| Tab creation/focus | New, duplicate, clone and open-in-new-tab honor the existing 32-tab limit. Moving a tab to the other pane also moves keyboard focus. |
+| Keyboard context menus | Shift+F10 anchors to the cursor row. Opening is deferred outside controller borrows. Arrows/Home/End, item-name jumps, scrolling, Enter/Space and Escape are handled inside the popup; disabled entries are skipped. |
+| Read-only locations | Mutating commands are disabled for HTTP locations; local-only file creation/metadata/permanent-delete commands are disabled for remote locations. |
+| Text fields and customization | Existing address/filter editing, their context menus, configured shortcuts, quick find and Space/Insert marking retain their own focus rules. Pane switching respects its configured Tab binding. |
+
+Regression coverage is in `src/app/slint_ui/interaction_tests.rs`, the existing
+context-menu/parity tests and `tests/features_07.rs`. Rename and metadata edits
+continue through the existing form dialogs; this is a functional interaction
+comparison, not a claim of identical Swing widget presentation. Native
+Windows/Linux pointer, input-method and assistive-technology acceptance remains
+open. The broader feature limits below still apply.
 
 ### Completely missing upstream entries
 

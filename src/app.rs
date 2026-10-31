@@ -172,6 +172,7 @@ pub(crate) enum Action {
     Help,
     Bookmark,
     NewTab,
+    DuplicateTab,
     CloseTab,
     Parent,
 }
@@ -326,6 +327,7 @@ pub(crate) fn all_actions() -> Vec<Action> {
         Action::Help,
         Action::Bookmark,
         Action::NewTab,
+        Action::DuplicateTab,
         Action::CloseTab,
         Action::Parent,
     ]
@@ -446,6 +448,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Workspaces…", Action::Workspaces),
                 ("Parent folder", Action::Parent),
                 ("New tab", Action::NewTab),
+                ("Duplicate tab", Action::DuplicateTab),
                 ("Close tab", Action::CloseTab),
                 ("Add bookmark", Action::Bookmark),
                 ("Explore bookmarks…", Action::ExploreBookmarks),
@@ -802,9 +805,11 @@ impl Commander {
                     && writable(&self.panes[1 - self.active].tab().location)
             }
             "Copy" => writable(&self.panes[1 - self.active].tab().location),
-            "Mkdir" | "Rename" | "Trash" | "CutClipboard" | "PasteClipboard" | "ExternalEdit" => {
-                writable(&self.tab().location)
+            "Mkfile" | "PermanentDelete" | "Permissions" | "Modified" => {
+                self.tab().location.local().is_some() && writable(&self.tab().location)
             }
+            "Mkdir" | "Rename" | "BatchRename" | "Trash" | "Edit" | "CutClipboard"
+            | "PasteClipboard" | "ExternalEdit" => writable(&self.tab().location),
             _ => true,
         }
     }
@@ -1397,11 +1402,36 @@ impl Commander {
         });
     }
     fn act(&mut self, action: Action, ctx: &UiSignal) {
+        let tab_target = match action {
+            Action::CloneTab => Some(1 - self.active),
+            Action::NewTab | Action::DuplicateTab | Action::OpenNewTab => Some(self.active),
+            _ => None,
+        };
+        if tab_target.is_some_and(|side| self.panes[side].tabs.len() >= 32) {
+            self.fail("At most 32 tabs per pane are supported.");
+            return;
+        }
         if !self.action_available(&format!("{action:?}")) {
             self.fail("This operation is unavailable for a read-only location.");
             return;
         }
-        let chosen = self.tab().chosen(self.show_hidden);
+        let chosen = if matches!(
+            action,
+            Action::View
+                | Action::Edit
+                | Action::Rename
+                | Action::OpenWith
+                | Action::OpenAs
+                | Action::External
+                | Action::OpenOther
+                | Action::OpenNewTab
+                | Action::PackageContents
+                | Action::Reveal
+        ) {
+            self.tab().focused(self.show_hidden).into_iter().collect()
+        } else {
+            self.tab().chosen(self.show_hidden)
+        };
         let location = self.tab().location.clone();
         let sources: Vec<_> = chosen.iter().map(|e| e.path.clone()).collect();
         let other = self.panes[1 - self.active]
@@ -1411,9 +1441,22 @@ impl Commander {
             .map(Path::to_owned);
         let local = location.local().map(Path::to_owned);
         let mut prompt = None;
+        if matches!(action, Action::OpenOther | Action::OpenNewTab) && self.tab().parent_focused() {
+            if let Some(parent) = location.parent() {
+                if matches!(action, Action::OpenOther) {
+                    self.panes[1 - self.active].tab_mut().navigate(parent, ctx);
+                } else {
+                    let pane = &mut self.panes[self.active];
+                    pane.tabs.push(Tab::new(parent, ctx));
+                    pane.active = pane.tabs.len() - 1;
+                }
+            }
+            return;
+        }
         if let Location::Archive { file, .. } = &location
             && crate::archive_tools::editable(file)
             && matches!(action, Action::Rename | Action::Trash)
+            && !chosen.is_empty()
         {
             let other = self.panes[1 - self.active].tab();
             let mut form = crate::feature_ui::ArchiveForm::new(
@@ -1671,8 +1714,11 @@ impl Commander {
                 return;
             }
             Action::CloneTab => {
+                let state = self.tab().state.clone();
                 let pane = &mut self.panes[1 - self.active];
-                pane.tabs.push(Tab::new(location, ctx));
+                let mut cloned = Tab::new(location, ctx);
+                cloned.state = state;
+                pane.tabs.push(cloned);
                 pane.active = pane.tabs.len() - 1;
                 return;
             }
@@ -1818,8 +1864,13 @@ impl Commander {
                 self.help = true;
                 return;
             }
-            Action::NewTab => {
+            Action::NewTab | Action::DuplicateTab => {
+                let state =
+                    matches!(action, Action::DuplicateTab).then(|| self.tab().state.clone());
                 self.panes[self.active].add_tab(ctx);
+                if let Some(state) = state {
+                    self.tab_mut().state = state;
+                }
                 return;
             }
             Action::CloseTab => {
@@ -1933,9 +1984,10 @@ impl Commander {
                 return;
             }
             Action::OpenOther | Action::OpenNewTab => {
-                let target = location
-                    .enter(&chosen[0])
-                    .unwrap_or_else(|| location.clone());
+                let Some(target) = location.enter(&chosen[0]) else {
+                    self.fail("Select a folder or archive to open.");
+                    return;
+                };
                 if matches!(action, Action::OpenOther) {
                     self.panes[1 - self.active].tab_mut().navigate(target, ctx);
                 } else {

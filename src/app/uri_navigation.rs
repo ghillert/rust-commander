@@ -72,6 +72,7 @@ impl Commander {
                 };
                 self.tab_mut().navigate(location, ctx);
                 if cursor.is_some() {
+                    self.tab_mut().filter.clear();
                     self.tab_mut().cursor = cursor;
                 }
             }

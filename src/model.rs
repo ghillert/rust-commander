@@ -184,7 +184,9 @@ impl Tab {
             ctx.request_repaint();
             return;
         }
-        self.assign_location(location);
+        if self.location != location {
+            self.assign_location(location);
+        }
         self.watcher = None;
         self.watch_path = None;
         self.changed.store(false, Ordering::Relaxed);
@@ -197,14 +199,30 @@ impl Tab {
             self.descending,
             self.folders_first,
         );
-        self.cursor = cursor.or_else(|| entries.first().map(|e| e.path.clone()));
+        self.cursor = cursor
+            .or_else(|| self.cursor.clone())
+            .filter(|path| entries.iter().any(|entry| &entry.path == path))
+            .or_else(|| {
+                if self.parent_focused() {
+                    None
+                } else {
+                    entries.first().map(|e| e.path.clone())
+                }
+            });
         self.entries = entries;
+        self.selected
+            .retain(|path| self.entries.iter().any(|entry| &entry.path == path));
         self.revision = self.revision.wrapping_add(1);
     }
 
     pub fn navigate(&mut self, location: Location, ctx: &crate::ui_signal::UiSignal) {
         if self.prepare_navigation(&location) {
-            self.set_location(location, ctx);
+            if self.location == location {
+                self.address = location.label();
+                self.refresh(ctx);
+            } else {
+                self.set_location(location, ctx);
+            }
         }
     }
 
@@ -232,12 +250,21 @@ impl Tab {
         self.refresh(ctx);
     }
     fn assign_location(&mut self, location: Location) {
+        let returning = self.location.parent().as_ref() == Some(&location);
+        let return_cursor = returning.then(|| match &self.location {
+            Location::Local(path) | Location::Remote { path, .. } => path.clone(),
+            Location::Archive { file, prefix } if prefix.as_os_str().is_empty() => {
+                crate::archive_tools::cached_origin(file)
+                    .map_or_else(|| file.clone(), |origin| origin.source)
+            }
+            Location::Archive { prefix, .. } => prefix.clone(),
+        });
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
         self.address = location.label();
         self.location = location;
         self.entries.clear();
         self.selected.clear();
-        self.cursor = None;
+        self.cursor = return_cursor;
         self.parent_cursor = false;
         self.filter.clear();
     }
@@ -278,6 +305,18 @@ impl Tab {
 
     pub fn parent_focused(&self) -> bool {
         self.parent_cursor && self.cursor.is_none()
+    }
+
+    pub fn focused(&self, hidden: bool) -> Option<Entry> {
+        self.visible(hidden).into_iter().find_map(|index| {
+            let entry = &self.entries[index];
+            (self.cursor.as_ref() == Some(&entry.path)).then(|| entry.clone())
+        })
+    }
+
+    pub fn clear_cursor(&mut self) {
+        self.cursor = None;
+        self.parent_cursor = false;
     }
 
     pub fn focus_parent(&mut self) {
@@ -328,33 +367,59 @@ impl Tab {
     }
 
     pub fn move_cursor(&mut self, delta: isize, extend: bool, hidden: bool) {
+        self.move_cursor_with_parent(delta, extend, hidden, false);
+    }
+
+    pub fn move_cursor_with_parent(
+        &mut self,
+        delta: isize,
+        extend: bool,
+        hidden: bool,
+        include_parent: bool,
+    ) {
         let visible = self.visible(hidden);
-        if visible.is_empty() {
+        let offset = usize::from(
+            self.parent_focused() || (include_parent && self.location.parent().is_some()),
+        );
+        if visible.len() + offset == 0 {
             return;
         }
-        let parent = self.parent_focused();
-        if parent && delta <= 0 {
-            return;
-        }
-        let position = visible
+        let focused_position = visible
             .iter()
-            .position(|&i| Some(&self.entries[i].path) == self.cursor.as_ref())
-            .unwrap_or(0);
-        if extend && !parent {
-            self.selected
-                .insert(self.entries[visible[position]].path.clone());
-        }
-        let next = if parent {
-            (delta as usize - 1).min(visible.len() - 1)
+            .position(|&i| Some(&self.entries[i].path) == self.cursor.as_ref());
+        let position = if self.parent_focused() {
+            0
         } else {
-            position.saturating_add_signed(delta).min(visible.len() - 1)
+            focused_position.map_or(offset, |index| index + offset)
         };
-        self.parent_cursor = false;
-        self.cursor = Some(self.entries[visible[next]].path.clone());
-        if extend {
-            for &index in &visible[position.min(next)..=position.max(next)] {
-                self.selected.insert(self.entries[index].path.clone());
+        let next = if focused_position.is_none() && !self.parent_focused() {
+            if delta > 0 {
+                (delta as usize - 1)
+                    .saturating_add(offset)
+                    .min(visible.len() + offset - 1)
+            } else {
+                0
             }
+        } else {
+            position
+                .saturating_add_signed(delta)
+                .min(visible.len() + offset - 1)
+        };
+        if extend {
+            for index in position.min(next)..=position.max(next) {
+                if let Some(&entry) = index
+                    .checked_sub(offset)
+                    .and_then(|index| visible.get(index))
+                {
+                    self.selected.insert(self.entries[entry].path.clone());
+                }
+            }
+        }
+        if offset == 1 && next == 0 {
+            self.focus_parent();
+        } else {
+            self.parent_cursor = false;
+            self.cursor = Some(self.entries[visible[next - offset]].path.clone());
         }
         self.scroll_to_cursor = true;
     }

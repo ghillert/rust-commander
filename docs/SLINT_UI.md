@@ -121,6 +121,19 @@ are preserved when highlighting the parent row.
 The [0.7 guide](FEATURES_0.7.md) covers quick find, advanced selection, locked tabs,
 stacked panes, quick lists, encoding choices, Trash, multiple windows and XML import.
 
+Open, Rename and viewer/editor actions use the focused row even when other files
+are marked. Transfers, packing and deletion continue to use marked files. Up/Home
+can reach `..`; going up selects the folder/archive you just left. Re-entering
+the same location preserves marks and the cursor.
+
+Right-click menus distinguish files, the parent row, empty space, column headers
+and tabs. Headers offer checked column choices; tabs offer duplicate, clone,
+lock, name, move and close actions. Duplicate/clone retain tab titles and locks.
+Middle-click marks a file or closes a tab, keeping one tab per pane. Shift+F10
+opens the file context menu at the cursor; menu arrow keys, Home/End, Enter,
+Space and Escape stay inside the popup. See the
+[interaction comparison](../parity/OVERVIEW.md#pane-keyboard-and-context-menu-comparison--2026-10-30).
+
 Its dialogs expose the existing file operations and conflict choices, archive
 editing/encryption/unlocking, connections and OAuth, batch rename, recursive
 search, synchronization, recovery storage, workspaces and transfer history.

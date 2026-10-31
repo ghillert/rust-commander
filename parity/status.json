@@ -247,9 +247,11 @@
   "DuplicateTab": {
     "evidence": [
       "src/app.rs",
-      "src/model.rs"
+      "src/model.rs",
+      "src/app/slint_ui/interaction.rs",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "note": "An explicit Duplicate tab command is available in Navigate, configurable shortcuts and the tab context menu; the clone retains its title and lock. New/duplicate/clone/open-in-new-tab paths enforce 32 tabs per pane. Pointer and keyboard regression fixtures cover tab context targeting, duplication, closing and focus. Broader native desktop acceptance remains open.",
     "status": "partial"
   },
   "Edit": {
@@ -263,9 +265,10 @@
       "docs/RECOVERY_AND_SUPPORT.md",
       "docs/FEATURES_NEXT.md",
       "tests/external_save.rs",
-      "src/external_edit.rs"
+      "src/external_edit.rs",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Built-in encoded text editing and guarded local/remote saves are available. External working copies support reviewed save-back to local/remote files and writable local/nested/remote ZIP/TAR/7z archive members. External copies and direct remote external-editor saves accept up to 32 MiB; built-in remote text saves retain their 2 MiB limit; cached archive publication has a separate 128 MiB container bound. Temporary editor copies are not crash recovery. Broader editor, provider and desktop compatibility remains open.",
+    "note": "Built-in encoded text editing and guarded local/remote saves are available. External working copies support reviewed save-back to local/remote files and writable local/nested/remote ZIP/TAR/7z archive members. External copies and direct remote external-editor saves accept up to 32 MiB; built-in remote text saves retain their 2 MiB limit; cached archive publication has a separate 128 MiB container bound. Temporary editor copies are not crash recovery. Broader editor, provider and desktop compatibility remains open. Built-in/external edit use the focused row independently of marks.",
     "status": "partial"
   },
   "EditBookmarks": {
@@ -418,9 +421,10 @@
   "GoToParent": {
     "evidence": [
       "src/app.rs",
-      "src/model.rs"
+      "src/model.rs",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. Going up restores the child folder/archive cursor, including cached source identities.",
     "status": "partial"
   },
   "GoToParentInBothPanels": {
@@ -609,9 +613,11 @@
       "ui/commander.slint",
       "src/app/slint_ui/parity_tests.rs",
       "tests/features_07.rs",
-      "tests/appearance.rs"
+      "tests/appearance.rs",
+      "src/app/slint_ui/interaction.rs",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Space/Insert toggle the current visible row and advance without wrapping; marks stay red independently of the cursor highlight. Keyboard/pointer tests cover quick-find precedence, spaces in text fields, and persistent marks when clicking marked/unmarked rows or the other pane; domain tests cover filtering, hidden files, sort order and marked operation targets. Broader native desktop acceptance remains open.",
+    "note": "Space/Insert toggle a file mark and advance in visible order; the synthetic parent is never marked. Repeated key events no longer toggle the final row back and forth. Middle-click toggles a row without opening it. Persistent marks survive ordinary clicks and pane changes. Local pointer/keyboard regressions pass; broader native input acceptance remains open.",
     "status": "partial"
   },
   "MarkToFirstRow": {
@@ -708,9 +714,10 @@
       "src/model.rs",
       "src/app/slint_ui/parity.rs",
       "src/workspaces.rs",
-      "src/app/slint_ui/parity_tests.rs::locked_named_tabs_move_between_panes_and_defer_navigation_to_a_new_tab"
+      "src/app/slint_ui/parity_tests.rs::locked_named_tabs_move_between_panes_and_defer_navigation_to_a_new_tab",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Named/locked tabs persist across sessions/workspaces and move between panes. Locked navigation opens an unlocked tab, verified on Mac; broader platform and upstream edge cases remain.",
+    "note": "Named/locked tabs persist across sessions/workspaces and move between panes. Locked navigation opens an unlocked tab, verified on Mac; broader platform and upstream edge cases remain. Moving a tab also transfers keyboard focus to its destination pane.",
     "status": "partial"
   },
   "NewTab": {
@@ -741,9 +748,10 @@
   "Open": {
     "evidence": [
       "src/app.rs",
-      "parity/VALIDATION.md"
+      "parity/VALIDATION.md",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Core local navigation/open workflow exists; full upstream action semantics and cross-platform behavior remain incomplete.",
+    "note": "Core local navigation/open workflow exists; full upstream action semantics and cross-platform behavior remain incomplete. Open uses the focused row independently of file marks; Enter on the parent entry navigates up.",
     "status": "partial"
   },
   "OpenAs": {
@@ -777,17 +785,19 @@
   "OpenInNewTab": {
     "evidence": [
       "src/app.rs",
-      "src/model.rs"
+      "src/model.rs",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. Opening in a new tab uses the focused folder/archive or parent row and respects the 32-tab limit.",
     "status": "partial"
   },
   "OpenInOtherPanel": {
     "evidence": [
       "src/app.rs",
-      "src/model.rs"
+      "src/model.rs",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. Opening in the other pane uses the focused folder/archive or the parent row independently of marks.",
     "status": "partial"
   },
   "OpenNatively": {
@@ -1047,9 +1057,10 @@
       "src/app.rs",
       "tests/features.rs",
       "src/archive_writeback.rs",
-      "tests/archive_writeback.rs"
+      "tests/archive_writeback.rs",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Local files, remote files and writable local/nested/remote ZIP/TAR/7z members support guarded renaming. Archive save-back checks containing sources and journals the outer local file or retains a remote recovery original. HTTP/Open As archive overrides stay read-only; broader live-service, metadata and native platform acceptance remain open.",
+    "note": "Local files, remote files and writable local/nested/remote ZIP/TAR/7z members support guarded renaming. Archive save-back checks containing sources and journals the outer local file or retains a remote recovery original. HTTP/Open As archive overrides stay read-only; broader live-service, metadata and native platform acceptance remain open. Rename uses the focused row even when other files remain marked; archive rename guards retain the same focused target.",
     "status": "partial"
   },
   "ReportBug": {
@@ -1093,9 +1104,10 @@
   "SelectFirstRow": {
     "evidence": [
       "src/app.rs",
-      "src/model.rs"
+      "src/model.rs",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. Home reaches the parent row when shown; it never adds the parent to file marks.",
     "status": "partial"
   },
   "SelectLastRow": {
@@ -1155,9 +1167,10 @@
   "SelectPreviousRow": {
     "evidence": [
       "src/app.rs",
-      "src/model.rs"
+      "src/model.rs",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated.",
+    "note": "Core workflow implemented; exact upstream behavior and full keyboard coverage remain to be validated. Up can reach the parent row when shown.",
     "status": "partial"
   },
   "SetSameFolder": {
@@ -1214,9 +1227,11 @@
       "ui/commander.slint",
       "ui/chrome.slint",
       "src/app/slint_ui/enhancements.rs::accessibility_actions_select_files_and_expose_tree_expansion",
-      "src/app/slint_ui/enhancements.rs::tab_switches_file_panes_but_fields_keep_natural_focus_traversal"
+      "src/app/slint_ui/enhancements.rs::tab_switches_file_panes_but_fields_keep_natural_focus_traversal",
+      "src/app/slint_ui/interaction.rs",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Pane focus commands use the actual focused control; Tab/Shift-Tab preserve pane switching in lists and normal traversal elsewhere. Toolbar/Places entries are keyboard reachable and file/tree accessibility actions and states have real Slint tree tests. Native screen-reader and complete platform validation remain open.",
+    "note": "Dedicated file, parent and background menus use the clicked pane/cursor and preserve file marks. Shift+F10 opens at the cursor after leaving controller borrows. Popup arrows/Home/End, item-name jumps, scrolling, Enter/Space and Escape are handled locally with disabled entries skipped. Header and tab menus expose their own checked/targeted controls. Physical pointer and keyboard fixtures cover dispatch, cancellation and read-only rules; native Windows/Linux and assistive-technology acceptance remain open.",
     "status": "partial"
   },
   "ShowFileProperties": {
@@ -1663,9 +1678,10 @@
       "src/pdf_text.rs",
       "tests/viewer_formats.rs",
       "src/app/slint_ui/viewer_tests.rs",
-      "docs/VIEWERS.md"
+      "docs/VIEWERS.md",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Hayro PDF rendering/password unlock, page/rotation/fit controls and bounded cache now include Unicode text extraction, direct page selection/copy, selectable text view and cancellable case-insensitive previous/next document search with wrapping. Glyph limits, missing Unicode maps, complex reading order and OCR/forms/annotations remain documented limits; broader native/PDF compatibility acceptance remains open.",
+    "note": "Hayro PDF rendering/password unlock, page/rotation/fit controls and bounded cache now include Unicode text extraction, direct page selection/copy, selectable text view and cancellable case-insensitive previous/next document search with wrapping. Glyph limits, missing Unicode maps, complex reading order and OCR/forms/annotations remain documented limits; broader native/PDF compatibility acceptance remains open. View uses the focused row independently of marks.",
     "status": "partial"
   },
   "mucommander-format-ar": {
