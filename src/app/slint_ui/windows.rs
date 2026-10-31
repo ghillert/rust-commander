@@ -65,7 +65,7 @@ thread_local! {
 /// UI callbacks are serialized by the event loop. Swapping preserves existing
 /// controller guards while giving every window the same queue/job/history.
 pub(super) fn with_state<T>(state: &Rc<RefCell<Adapter>>, f: impl FnOnce(&mut Adapter) -> T) -> T {
-    RUNTIME.with(|runtime| {
+    let result = RUNTIME.with(|runtime| {
         let mut runtime = runtime.borrow_mut();
         let mut adapter = state.borrow_mut();
         if let Some(runtime) = runtime.as_mut() {
@@ -78,7 +78,82 @@ pub(super) fn with_state<T>(state: &Rc<RefCell<Adapter>>, f: impl FnOnce(&mut Ad
         } else {
             f(&mut adapter)
         }
-    })
+    });
+    #[cfg(target_os = "macos")]
+    schedule_native_extract(state);
+    result
+}
+// Sheet attachment, resize and dismissal may synchronously dispatch Cocoa
+// focus notifications AND pump its run loop. Run them from a posted winit event,
+// outside adapter/runtime borrows and outside Slint's non-reentrant timer driver.
+#[cfg(target_os = "macos")]
+thread_local! {
+    static NATIVE_PENDING: RefCell<Vec<Rc<RefCell<Adapter>>>> = const { RefCell::new(Vec::new()) };
+    static NATIVE_POSTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static NATIVE_DISPATCHING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+#[cfg(target_os = "macos")]
+fn schedule_native_extract(state: &Rc<RefCell<Adapter>>) {
+    let mut adapter = state.borrow_mut();
+    let needed = adapter.native_extract.active()
+        || adapter.native_extract_inflight
+        || adapter.native_extract_request.as_ref().is_some_and(|r| {
+            r.spec.is_some()
+                && r.ui
+                    .upgrade()
+                    .is_some_and(|ui| dialogs::native_extract::Host::available(&ui))
+        });
+    if !needed {
+        adapter.native_extract_request = None;
+        return;
+    }
+    drop(adapter);
+    NATIVE_PENDING.with(|pending| {
+        let mut pending = pending.borrow_mut();
+        if !pending.iter().any(|a| Rc::ptr_eq(a, state)) {
+            pending.push(state.clone());
+        }
+    });
+    post_native_extract();
+}
+#[cfg(target_os = "macos")]
+fn post_native_extract() {
+    if NATIVE_DISPATCHING.get() || NATIVE_POSTED.replace(true) {
+        return;
+    }
+    if slint::invoke_from_event_loop(dispatch_native_extract).is_err() {
+        NATIVE_POSTED.set(false);
+        NATIVE_PENDING.with(|pending| pending.borrow_mut().clear());
+    }
+}
+#[cfg(target_os = "macos")]
+fn dispatch_native_extract() {
+    NATIVE_POSTED.set(false);
+    NATIVE_DISPATCHING.set(true);
+    let states = NATIVE_PENDING.with(|pending| std::mem::take(&mut *pending.borrow_mut()));
+    for state in states {
+        let request = state.borrow_mut().native_extract_request.take();
+        if let Some(request) = request {
+            let mut host = {
+                let mut adapter = state.borrow_mut();
+                adapter.native_extract_inflight = true;
+                std::mem::take(&mut adapter.native_extract)
+            };
+            if let Some(ui) = request.ui.upgrade() {
+                let native = host.sync(&ui, request.spec.as_ref(), request.scheme);
+                if !native && let Some(spec) = request.spec {
+                    ui.set_dialog_title(spec.title.into());
+                }
+            }
+            let mut adapter = state.borrow_mut();
+            adapter.native_extract = host;
+            adapter.native_extract_inflight = false;
+        }
+    }
+    NATIVE_DISPATCHING.set(false);
+    if NATIVE_PENDING.with(|pending| !pending.borrow().is_empty()) {
+        post_native_extract();
+    }
 }
 #[cfg(target_os = "linux")]
 pub(super) fn x11_windows() -> Vec<u32> {
@@ -111,6 +186,37 @@ pub(super) fn entries() -> Vec<(usize, String)> {
             .iter()
             .map(|s| (s.id, format!("Window {} · {}", s.id, s.title)))
             .collect()
+    })
+}
+#[cfg(all(target_os = "macos", feature = "screenshot"))]
+pub(super) fn native_extract_smoke(command: &str, value: &str) {
+    SESSIONS.with(|sessions| {
+        let sessions = sessions.borrow();
+        let session = sessions
+            .iter()
+            .find(|s| s.state.borrow().native_extract.active())
+            .expect("Native Extract owner must exist");
+        assert!(
+            session.ui.get_dialog_title().is_empty(),
+            "Slint overlay must be hidden"
+        );
+        let state = session.state.borrow();
+        if command == "native-field-return" {
+            // One Cocoa turn: edit, then Return before the 50 ms controller tick.
+            state.native_extract.smoke("native-field", value);
+            state.native_extract.smoke("native-action", "return");
+        } else {
+            state.native_extract.smoke(command, value);
+        }
+    });
+}
+#[cfg(all(target_os = "macos", feature = "screenshot"))]
+pub(super) fn native_extract_snapshot(path: &std::path::Path) -> bool {
+    SESSIONS.with(|sessions| {
+        sessions
+            .borrow()
+            .iter()
+            .any(|s| s.state.borrow().native_extract.snapshot(path))
     })
 }
 pub(super) fn open(paths: &[PathBuf], loaded: Result<Settings>) -> Result<CommanderWindow> {

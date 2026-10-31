@@ -2,6 +2,8 @@ use super::*;
 mod commands;
 mod fields;
 mod folders;
+#[cfg(target_os = "macos")]
+pub(super) mod native_extract;
 
 #[derive(Clone, PartialEq)]
 pub(super) struct Field {
@@ -113,7 +115,7 @@ impl Row {
         }
     }
 }
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(super) struct Dialog {
     pub kind: String,
     pub title: String,
@@ -373,10 +375,14 @@ impl Adapter {
             ) {
                 d.fields.push(Field::text(
                     "prompt",
-                    if matches!(prompt.kind, PromptKind::DropTransfer { .. }) {
-                        "Destination"
-                    } else {
-                        "Value"
+                    match prompt.kind {
+                        PromptKind::DropTransfer { .. }
+                        | PromptKind::Transfer { .. }
+                        | PromptKind::RemoteTransfer { .. }
+                        | PromptKind::Extract { .. } => "Destination",
+                        PromptKind::Rename(_) | PromptKind::RemoteRename { .. } => "New name",
+                        PromptKind::Mkdir(_) | PromptKind::RemoteMkdir { .. } => "Folder name",
+                        _ => "Value",
                     },
                     &prompt.value,
                 ));
@@ -458,10 +464,19 @@ impl Adapter {
             }
             d.button(
                 "accept",
-                if matches!(prompt.kind, PromptKind::Trash(_)) {
-                    "Move to Trash"
-                } else {
-                    "Confirm"
+                match prompt.kind {
+                    PromptKind::Trash(_) => "Move to Trash",
+                    PromptKind::Extract { .. } => "Extract",
+                    PromptKind::Transfer { moving: true, .. }
+                    | PromptKind::RemoteTransfer { moving: true, .. }
+                    | PromptKind::DropTransfer { moving: true, .. } => "Move",
+                    PromptKind::Transfer { .. }
+                    | PromptKind::RemoteTransfer { .. }
+                    | PromptKind::DropTransfer { .. } => "Copy",
+                    PromptKind::Rename(_) | PromptKind::RemoteRename { .. } => "Rename",
+                    PromptKind::Mkdir(_) | PromptKind::RemoteMkdir { .. } => "Create",
+                    PromptKind::PermanentDelete(_) | PromptKind::RemoteDelete { .. } => "Delete",
+                    _ => "Confirm",
                 },
                 !d.busy,
             );

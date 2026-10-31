@@ -80,9 +80,33 @@ Escape returns to the file list. Text fields retain selection, clipboard,
 Undo/Redo and context-menu editing. Toolbar controls have labels for assistive
 technology, tooltips, keyboard focus and Enter/Space activation.
 
-`ui/chrome.slint` contains the shared chrome components and colors. Standard
-Slint widgets remain in forms and dialogs and follow the compiled platform
-style. The monochrome SVG glyphs are original project assets.
+`ui/chrome.slint` contains the shared chrome components and colors. Dialogs keep
+form rows at their natural height, align content at the top and reserve space
+around focus rings. Short confirmations use compact widths and content-based
+height estimates; large forms keep a scrolling body and fixed action footer.
+
+`ui/dialog-controls.slint` supplies rounded macOS text fields and push buttons
+when the compiled style is Cupertino. Fields retain the shared text editor's
+selection, clipboard, Undo/Redo and context menu; password values are masked and
+excluded from their accessibility value. Buttons have disabled, focus and press
+states. Non-destructive confirmation actions use the accent color; destructive
+actions do not receive default emphasis. The other widgets, including pop-up
+choices, retain Cupertino styling at their normal control height. Fluent and
+Cosmic builds keep their standard Slint fields and buttons and use their larger
+control metrics. Windows places dismissal after the action buttons; macOS and
+GNOME-style layouts place it before them. Footer spacing is 8 logical pixels.
+The main chrome also uses the compiled family's neutral surfaces and corner
+radii instead of applying the same macOS-like tint everywhere. A runtime
+color-profile change does not switch widget skins.
+
+These are Slint-rendered controls, not embedded AppKit/WinUI/GTK controls. The
+layout follows Apple's guidance on [text fields](https://developer.apple.com/design/human-interface-guidelines/text-fields),
+[buttons](https://developer.apple.com/design/human-interface-guidelines/buttons)
+and [sheets](https://developer.apple.com/design/human-interface-guidelines/sheets).
+The monochrome SVG glyphs are original project assets.
+
+See the [desktop UX review](DESKTOP_UX_REVIEW.md) for the Windows/Linux review,
+source guidelines and remaining native acceptance work.
 
 ## Workflows
 
@@ -214,6 +238,11 @@ of `[delay_ms, callback, value]` steps; supported callbacks are `navigate`,
 file paths. Field values contain an encoded
 JSON `[field_id, value]` pair. This drives the existing UI callbacks for reproducible
 multi-step checks; it is compiled out of normal development and release builds.
+On macOS, `native-field`, `native-field-return`, `native-action` and `native-check` exercise the real
+Extract sheet. Use `scripts/native-extract-smoke.py` for its disposable fixtures;
+the script freezes its executable before running, so a separate development
+build cannot replace the binary between scenarios. Run desktop keyboard
+inspection separately from GUI smoke tests to keep their focus independent.
 
 See [the validation record](../parity/VALIDATION.md) for checks performed and
 remaining platform/runtime limits. Headless tests and a cross-target compile
@@ -235,3 +264,30 @@ and explicitly quits after the final protected session closes.
 
 References: [Slint widget styles](https://docs.slint.dev/latest/docs/slint/reference/std-widgets/style/),
 [Slint Rust API](https://docs.slint.dev/latest/docs/rust/slint/).
+
+### Native Extract sheet on macOS
+
+Extract uses AppKit text fields, pop-up buttons, checkboxes and push buttons in a
+sheet attached to its file window. Its fields and actions use the same dialog
+model, controller, conflict scan and operation guards as the Slint fallback.
+Other forms continue to use Slint. See [native forms](NATIVE_FORMS.md) for the
+adapter boundary, cross-platform integration findings and acceptance limits.
+
+### Bottom command buttons
+
+The command bar is visible by default on every platform, including macOS.
+Existing macOS preferences from before this default change are migrated once to
+show the bar. After migration, an explicit choice to hide it in Settings is
+preserved. Native dialog styling does not remove the Commander action buttons.
+Unit tests use a private process-wide configuration directory, shared with their
+operation workers, so adapter autosaves cannot overwrite desktop preferences and
+worker recovery data remains available for Undo.
+
+### macOS dropdown indicators
+
+Slint-rendered form and viewer dropdowns use a neutral face with unboxed up/down
+chevrons on macOS. `DialogChoice` keeps the standard ComboBox as its interactive
+and accessible control, including its popup, focus ring, keyboard navigation and
+selection callback. The macOS face has no input handlers, so clicks over the
+indicator still reach the underlying control. Fluent/Cosmic visuals are retained;
+the actual AppKit Extract sheet continues to use its system NSPopUpButton.

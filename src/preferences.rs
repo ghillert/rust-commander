@@ -36,6 +36,8 @@ pub struct Preferences {
     pub toolbar: bool,
     pub sidebar: bool,
     pub command_bar: bool,
+    #[serde(default)]
+    pub command_bar_defaults_version: u8,
     pub status_bar: bool,
     pub single_pane: bool,
     pub auto_refresh: bool,
@@ -78,7 +80,8 @@ impl Default for Preferences {
             command_actions: ["Help", "View", "Edit", "Copy", "Move", "Mkdir", "Trash"]
                 .map(str::to_owned)
                 .to_vec(),
-            command_bar: !cfg!(target_os = "macos"),
+            command_bar: true,
+            command_bar_defaults_version: 1,
             status_bar: true,
             single_pane: false,
             auto_refresh: true,
@@ -500,6 +503,14 @@ impl ToolbarAction {
 impl Preferences {
     /// Add new bindings to legacy settings without stealing an existing custom shortcut.
     pub fn upgrade(&mut self) {
+        if self.command_bar_defaults_version == 0 {
+            // Older macOS defaults hid the Commander function buttons. Restore
+            // them once; subsequent explicit choices to hide them are retained.
+            if cfg!(target_os = "macos") {
+                self.command_bar = true;
+            }
+            self.command_bar_defaults_version = 1;
+        }
         for (name, binding) in Self::default().alternate_shortcuts {
             if self.alternate_shortcuts.get(&name) == Some(&binding)
                 && self

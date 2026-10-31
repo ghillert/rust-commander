@@ -1,5 +1,111 @@
 # Validation record
 
+## macOS dropdown indicators — 2026-10-30
+
+Removed the older Cupertino blue arrow tile from Slint-rendered macOS choices,
+including forms and viewer encoding selectors. The neutral chevron face retains
+the stock ComboBox for its popup, keys, focus and accessibility; native AppKit
+controls are unchanged. The existing form fixture passes with an added physical
+click over the arrow followed by keyboard selection and a controller-policy
+assertion. Four Copy/Settings previews are reviewed in software/light and
+FemtoVG/dark, without binding-loop or rendering warnings. macOS and Linux
+all-target/all-feature Clippy pass with warnings denied. The normal macOS
+development bundle builds and passes strict signature verification.
+
+## Bottom command buttons and isolated test settings — 2026-10-30
+
+The bottom command bar is enabled by default on macOS as well as Windows/Linux.
+A versioned migration restores it once in legacy macOS preferences; subsequent
+explicit hide choices survive saving and reloading. The existing shortcut-label
+fixture now also checks default visibility. Light/software and dark/FemtoVG
+1240×780 previews show all seven standard action buttons at the bottom.
+
+The full unit/UI suite passes **156 tests**. Settings tests cover migration,
+explicit hide preferences and a private configuration shared by UI and worker
+threads. Unit-test configuration resolution bypasses real desktop settings and
+user environment overrides, preventing adapter autosaves from replacing a user's
+preferences with disposable fixture paths. Workers keep the same private history
+and recovery directory, preserving Undo after worker completion. Production
+configuration overrides retain their normal behavior.
+
+macOS and Linux all-target/all-feature Clippy pass with warnings denied. Formatting
+and whitespace checks pass. The normal macOS development bundle builds and passes
+strict code-signature verification. Saved desktop configuration was backed up
+before enabling its command bar and repairing the deleted test-folder locations;
+these configuration repairs are separate from the source changes.
+
+## Native macOS Extract sheet and integration review — 2026-10-30
+
+Extract now uses an AppKit sheet attached to its owning file window, consuming the
+shared field/action model and the existing guarded extraction controller. The
+Slint form remains the fallback. Native callbacks enqueue edits and actions;
+presentation runs from posted event-loop events outside controller borrows and
+Slint timer callbacks. The dispatcher handles synchronous Cocoa focus events and
+nested presentation without reentering those borrows or timer callbacks.
+
+Validation includes the **414 passing / 17 ignored** all-target/all-feature run,
+**88 passing affected UI tests** after the dispatcher change, and a final focused
+fallback/input-change fixture after adding deferred native submission. macOS and
+Linux-container Clippy pass with all targets/features and warnings denied.
+Formatting, whitespace, catalog JSON, local documentation links and parity
+references pass. The normal development bundle builds and passes strict
+code-signature verification; the existing debug-linker compact-unwind warning
+remains.
+
+**26 native AppKit scenarios pass** across software/light and FemtoVG/dark:
+form display, actual extraction, Cancel, native window close, per-file choices,
+inline preflight errors, long conflict lists, reopening, global Skip, Apply to all,
+Return after scanning, application quit with the sheet open, and an atomic edit
+plus immediate Return before the controller tick. Outputs and retained originals
+are checked in disposable directories. The fixture freezes its executable to
+avoid changes from a concurrent development build.
+
+An isolated desktop app also verifies native accessibility roles/labels, actual
+Command+A, Paste, text Undo, Escape and Return. The extracted keyboard fixture's
+contents are checked independently. AppKit cached-view PNGs omit some composited
+backgrounds, so desktop appearance is checked separately. Native text editing is
+supported by responder-chain Edit menu actions; it does not invoke filesystem
+Undo while the native field is focused. An early Return binds the operation
+inputs and is cancelled if they change while preflight is pending.
+
+The [native-form integration review](../docs/NATIVE_FORMS.md) records the Windows
+Reactor owning event loop, preview/runtime requirements, and the Linux GTK thread
+ownership and foreign-parent requirements. The Linux development image has GTK
+4.8.3, Xvfb and Weston, but no libadwaita package. Linux compilation confirms the
+fallback; no WinUI/GTK form runtime or physical Windows/Linux desktop acceptance
+is claimed. VoiceOver speech, Full Keyboard Access variants and mixed-DPI native
+checks remain open. The upstream inventory counts are unchanged.
+
+## Platform-aware desktop dialogs and UX review — 2026-10-30
+
+The default macOS all-target/all-feature suite passes **413 tests with 17
+ignored** across 31 suites. Clippy with warnings denied passes on macOS and in
+the Linux container, including all features and test targets. Formatting and
+diff whitespace checks pass. The normal macOS development bundle builds and
+passes strict code-signature verification; the existing debug-linker
+compact-unwind warning remains.
+
+New headless coverage checks normal text-field/drop-down/button heights, compiled
+platform dismissal order, initial text editing, Tab/Space traversal, cancellation,
+non-destructive default emphasis, secure accessibility values and disabled input.
+The form sizing/editing fixture also passes with Fluent and Cosmic compilation.
+Existing context-menu, selection, dialog callback, password, preference and
+transfer tests pass in the full run.
+
+The final visual matrix contains **26 reviewed 1240×780 screenshots**: seven
+macOS cases (main window, Extract, Settings, Pack, email settings, recovery and
+bookmarks), plus main window/Extract/Settings in each of Fluent and Cosmic, all
+using software/light and FemtoVG/dark. Disposable files/configuration drive the
+real screenshot callbacks; previews do not execute transfers, delete originals,
+send email or open external websites.
+
+The [desktop UX review](../docs/DESKTOP_UX_REVIEW.md) records the Apple, Microsoft
+and GNOME guidance, fixes and remaining limits. Fluent/Cosmic screenshots are
+style previews rendered on the Mac, not native Windows/Linux acceptance. Linux
+Clippy confirms compilation only. High-contrast integration, installed Linux
+theme matching, full menu mnemonics and native screen-reader/mixed-DPI checks
+remain open. These changes do not alter the upstream inventory status counts.
+
 ## URL/window commands, virtual packing and external remote saves — 2026-10-30
 
 The Apple Silicon macOS all-target/all-feature suite passes **411 tests with 17

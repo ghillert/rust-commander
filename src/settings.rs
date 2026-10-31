@@ -57,6 +57,18 @@ pub fn path() -> Result<PathBuf> {
     Ok(configuration_paths()?.0)
 }
 
+#[cfg(test)]
+fn configuration_paths() -> Result<(PathBuf, Option<PathBuf>)> {
+    // Unit tests construct and drop real adapters, which can autosave. Never
+    // resolve the user's configuration, even if an app override is exported.
+    // Workers must share the same private directory so recovery data survives
+    // their completion and remains available to the UI's Undo/history logic.
+    static CONFIG: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    let directory = CONFIG.get_or_init(|| tempfile::tempdir().expect("private test configuration"));
+    Ok((directory.path().join("settings.json"), None))
+}
+
+#[cfg(not(test))]
 fn configuration_paths() -> Result<(PathBuf, Option<PathBuf>)> {
     // Existing launch scripts may still use the preview's environment variable.
     if let Some(path) = std::env::var_os("RUST_COMMANDER_CONFIG_DIR")
@@ -114,6 +126,45 @@ pub(crate) fn save_to(path: &Path, settings: &Settings) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unit_test_autosaves_and_workers_share_private_configuration() {
+        let current = path().unwrap();
+        let other = std::thread::spawn(|| {
+            let other = path().unwrap();
+            save(&Settings::default()).unwrap();
+            assert!(other.is_file());
+            other
+        })
+        .join()
+        .unwrap();
+        assert_eq!(
+            current, other,
+            "Workers must retain the UI's recovery directory"
+        );
+        assert!(current.starts_with(std::env::temp_dir()));
+        assert_eq!(current.file_name().unwrap(), "settings.json");
+        save(&Settings::default()).unwrap();
+        assert!(load().unwrap().preferences.command_bar);
+    }
+
+    #[test]
+    fn command_bar_defaults_migrate_once_and_preserve_later_explicit_choices() {
+        let mut preferences: crate::preferences::Preferences =
+            serde_json::from_str(r#"{"command_bar":false}"#).unwrap();
+        preferences.upgrade();
+        assert_eq!(preferences.command_bar, cfg!(target_os = "macos"));
+        assert_eq!(preferences.command_bar_defaults_version, 1);
+        preferences.command_bar = false;
+        let saved = serde_json::to_string(&preferences).unwrap();
+        let mut loaded: crate::preferences::Preferences = serde_json::from_str(&saved).unwrap();
+        loaded.upgrade();
+        assert!(
+            !loaded.command_bar,
+            "An explicit hide choice after migration must survive"
+        );
+        assert!(crate::preferences::Preferences::default().command_bar);
+    }
 
     #[test]
     fn legacy_preferences_are_loaded_without_moving_or_modifying_the_file() {

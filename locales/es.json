@@ -504,5 +504,8 @@
   "Open URL in browser…": "Abrir URL en el navegador…",
   "Open URL in browser": "Abrir URL en el navegador",
   "Minimize window": "Minimizar ventana",
-  "Maximize / restore window": "Maximizar / restaurar ventana"
+  "Maximize / restore window": "Maximizar / restaurar ventana",
+  "Cut": "Cortar",
+  "Paste": "Pegar",
+  "Select all": "Seleccionar todo"
 }

@@ -38,6 +38,14 @@ pub(super) struct Adapter {
     enhancements: enhancements::State,
     management: management::State,
     desktop_commands: desktop_commands::State,
+    #[cfg(target_os = "macos")]
+    native_extract: dialogs::native_extract::Host,
+    #[cfg(target_os = "macos")]
+    native_extract_request: Option<dialogs::native_extract::Request>,
+    #[cfg(target_os = "macos")]
+    native_extract_inflight: bool,
+    #[cfg(target_os = "macos")]
+    native_extract_accept: Option<dialogs::native_extract::Intent>,
     #[cfg(test)]
     desktop_settings_path: Option<PathBuf>,
     drag: drag::State,
@@ -151,6 +159,14 @@ impl Adapter {
             enhancements: Default::default(),
             management: Default::default(),
             desktop_commands: Default::default(),
+            #[cfg(target_os = "macos")]
+            native_extract: Default::default(),
+            #[cfg(target_os = "macos")]
+            native_extract_request: None,
+            #[cfg(target_os = "macos")]
+            native_extract_inflight: false,
+            #[cfg(target_os = "macos")]
+            native_extract_accept: None,
             #[cfg(test)]
             desktop_settings_path: None,
             drag: Default::default(),
@@ -463,10 +479,11 @@ impl Adapter {
             }
         }
         #[cfg(target_os = "macos")]
-        if ui
+        if (ui
             .window()
             .with_winit_window(|window| window.has_focus())
             .unwrap_or(false)
+            || self.native_extract.focused())
             && let Some(menu) = &self.app.native_menu
         {
             menu.update_bindings(&self.app.preferences);
@@ -542,8 +559,49 @@ impl Adapter {
     }
 
     fn sync(&mut self, ui: &CommanderWindow) {
+        #[cfg(target_os = "macos")]
+        for event in self.native_extract.events() {
+            match event {
+                dialogs::native_extract::Event::Field(id, value) => self.edit_field(&id, &value),
+                dialogs::native_extract::Event::Action(id) => {
+                    self.native_extract_accept = None;
+                    self.dialog_action(&id);
+                    if id == "accept"
+                        && self
+                            .app
+                            .prompt
+                            .as_ref()
+                            .is_some_and(|p| p.pending_conflicts.is_some())
+                    {
+                        self.native_extract_accept = dialogs::native_extract::Intent::capture(self);
+                    }
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
+        if self.native_extract_accept.is_some() {
+            if self.app.exiting
+                || self.app.confirm_exit
+                || self.app.message.is_some()
+                || self.native_extract_accept != dialogs::native_extract::Intent::capture(self)
+            {
+                self.native_extract_accept = None;
+            } else if self
+                .app
+                .prompt
+                .as_ref()
+                .is_some_and(|p| p.pending_conflicts.is_none())
+            {
+                self.native_extract_accept = None;
+                if self.app.prompt.as_ref().is_some_and(|p| p.error.is_none()) {
+                    self.dialog_action("accept");
+                }
+            }
+        }
         self.sync_tree(ui);
         let was_modal = !ui.get_dialog_title().is_empty() || ui.get_viewer_visible();
+        #[cfg(target_os = "macos")]
+        let was_modal = was_modal || self.native_extract.active();
         use slint::winit_030::WinitWindowAccessor;
         if self.window_scheme != Some(self.app.preferences.color_scheme) {
             let theme = match self.app.preferences.color_scheme {
@@ -581,6 +639,12 @@ impl Adapter {
             .set_version(self.app.preferences.language as i32);
         ui.set_dark(self.dark);
         ui.global::<Chrome>().set_dark(self.dark);
+        ui.global::<Chrome>()
+            .set_platform(match env!("RUST_COMMANDER_WIDGET_STYLE") {
+                "fluent" => 1,
+                "cosmic" => 2,
+                _ => 0,
+            });
         ui.global::<Palette>()
             .set_color_scheme(match self.app.preferences.color_scheme {
                 crate::appearance::ColorScheme::System => slint::language::ColorScheme::Unknown,
@@ -602,6 +666,10 @@ impl Adapter {
         ui.set_marked_cursor_color(palette.marked_cursor);
         ui.set_inactive_selection(palette.inactive_selection);
         ui.set_text_size(self.app.preferences.font_size);
+        ui.global::<DialogTheme>()
+            .set_macos(env!("RUST_COMMANDER_WIDGET_STYLE") == "cupertino");
+        ui.global::<DialogTheme>()
+            .set_font_size((self.app.preferences.font_size - 1.0).max(13.0));
         ui.set_toolbar_visible(self.app.preferences.toolbar);
         ui.set_sidebar_visible(self.app.preferences.sidebar);
         ui.set_breadcrumbs_mode(
@@ -969,6 +1037,11 @@ impl Adapter {
         self.sync_viewer(ui);
         self.sync_terminal(ui);
         let mut spec = self.dialog();
+        if env!("RUST_COMMANDER_WIDGET_STYLE") == "fluent" {
+            // Windows ContentDialog places the safe dismissal after actions;
+            // macOS and GNOME put cancellation before the affirmative action.
+            spec.buttons.sort_by_key(|(id, _, _)| id == "cancel");
+        }
         if self.dialog_kind != spec.kind {
             self.field_error = None;
             self.invalid_fields.clear();
@@ -979,9 +1052,55 @@ impl Adapter {
                 field.value = value.clone();
             }
         }
+        #[cfg(target_os = "macos")]
+        let native_extract = {
+            let extract = !self.app.exiting
+                && spec.kind == "prompt"
+                && self
+                    .app
+                    .prompt
+                    .as_ref()
+                    .is_some_and(|prompt| matches!(prompt.kind, PromptKind::Extract { .. }));
+            self.native_extract_request = Some(dialogs::native_extract::Request {
+                ui: ui.as_weak(),
+                spec: extract.then(|| spec.clone()),
+                scheme: self.app.preferences.color_scheme,
+            });
+            extract
+                && (self.native_extract.active()
+                    || self.native_extract_inflight
+                    || dialogs::native_extract::Host::available(ui))
+        };
+        #[cfg(not(target_os = "macos"))]
+        let native_extract = false;
         ui.set_dialog_preferred_height(match spec.kind.as_str() {
             "exit" => 240.0,
-            "prompt" => (spec.fields.len() as f32 * 64.0 + 180.0).clamp(260.0, 700.0),
+            "prompt" => {
+                let macos = env!("RUST_COMMANDER_WIDGET_STYLE") == "cupertino";
+                let fields: f32 = spec
+                    .fields
+                    .iter()
+                    .map(|field| match field.kind {
+                        2 => {
+                            if macos {
+                                26.0
+                            } else {
+                                36.0
+                            }
+                        }
+                        4 => 174.0,
+                        _ => {
+                            if macos {
+                                52.0
+                            } else {
+                                64.0
+                            }
+                        }
+                    })
+                    .sum();
+                (fields + 180.0 + if spec.error.is_empty() { 0.0 } else { 40.0 })
+                    .clamp(240.0, 700.0)
+            }
             "pack" => {
                 if spec.fields.iter().any(|f| f.kind == 9) {
                     if spec.fields.iter().any(|f| f.kind == 4) {
@@ -1015,6 +1134,25 @@ impl Adapter {
         });
         ui.set_dialog_diff(spec.kind == "text-diff");
         ui.set_dialog_pack(matches!(spec.kind.as_str(), "pack" | "pack-progress"));
+        ui.set_dialog_simple(matches!(
+            spec.kind.as_str(),
+            "prompt" | "exit" | "open-with" | "open-as" | "donate" | "browser-url"
+        ));
+        ui.set_dialog_primary(
+            spec.buttons.iter().any(|(id, _, _)| id == "accept")
+                && matches!(
+                    spec.kind.as_str(),
+                    "pack" | "prompt" | "preferences" | "open-with" | "open-as"
+                )
+                && !self.app.prompt.as_ref().is_some_and(|prompt| {
+                    matches!(
+                        prompt.kind,
+                        PromptKind::Trash(_)
+                            | PromptKind::PermanentDelete(_)
+                            | PromptKind::RemoteDelete { .. }
+                    )
+                }),
+        );
         ui.set_dialog_input_locked(self.desktop_commands.sending());
         ui.set_dialog_compact(matches!(
             spec.kind.as_str(),
@@ -1035,7 +1173,11 @@ impl Adapter {
                 | "bookmarks"
                 | "debug-console"
         ));
-        ui.set_dialog_title(spec.title.into());
+        ui.set_dialog_title(if native_extract {
+            "".into()
+        } else {
+            spec.title.into()
+        });
         ui.set_dialog_description(spec.description.into());
         ui.set_dialog_error(
             self.invalid_fields
@@ -1579,6 +1721,13 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                             "dialog" => ui.invoke_dialog_action(value.into()),
                             "select" => ui.invoke_dialog_select(value.into()),
                             "viewer" => ui.invoke_viewer_action(value.into()),
+                            #[cfg(target_os = "macos")]
+                            "native-field"
+                            | "native-field-return"
+                            | "native-action"
+                            | "native-check" => {
+                                windows::native_extract_smoke(&callback, &value);
+                            }
                             "field" => {
                                 let (id, value): (String, String) = serde_json::from_str(&value)
                                     .expect("Screenshot field must be an id/value pair");
@@ -1637,6 +1786,14 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                             rows.row_count(),
                             ui.get_tree_scroll_position()
                         );
+                    }
+                    #[cfg(target_os = "macos")]
+                    if windows::native_extract_snapshot(Path::new(&path)) {
+                        eprintln!("Native Extract sheet snapshot saved");
+                        if std::env::var_os("RUST_COMMANDER_SMOKE_KEEP_OPEN").is_none() {
+                            let _ = slint::quit_event_loop();
+                        }
+                        return;
                     }
                     let result = ui
                         .window()

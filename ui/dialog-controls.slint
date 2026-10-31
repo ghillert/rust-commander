@@ -1,0 +1,130 @@
+import { Button, ComboBox, Palette } from "std-widgets.slint";
+import { Chrome, ChromeField } from "chrome.slint";
+
+// macOS form controls share the application's text editor behavior. Other
+// platforms retain the compiled Fluent/Cosmic widgets and their metrics.
+export global DialogTheme {
+    in property <bool> macos;
+    in property <length> font-size: 13px;
+    out property <color> surface: Chrome.dark ? #28282a : #f6f6f6;
+    out property <color> field: Chrome.dark ? #1e1e20 : white;
+}
+
+export component MacDialogField inherits ChromeField {
+    font-size: DialogTheme.font-size;
+    min-height: max(26px, root.font-size + 12px);
+    preferred-height: self.min-height;
+    max-height: self.preferred-height;
+    vertical-stretch: 0;
+    background: DialogTheme.field;
+    border-radius: 5px;
+    border-color: Chrome.dark ? #ffffff28 : #00000030;
+    opacity: root.enabled ? 1 : 0.5;
+    Rectangle {
+        x: -3px; y: -3px;
+        width: parent.width + 6px; height: parent.height + 6px;
+        border-radius: 8px;
+        border-width: root.has-focus ? 3px : 0px;
+        border-color: Chrome.accent.with-alpha(0.5);
+    }
+}
+
+// Retain the standard ComboBox's popup, focus, keys and accessibility. Only the
+// macOS face is redrawn: Cupertino's blue arrow tile predates current AppKit.
+export component DialogChoice inherits Rectangle {
+    in property <[string]> model <=> standard.model;
+    in property <bool> enabled <=> standard.enabled;
+    out property <bool> has-focus <=> standard.has-focus;
+    in-out property <int> current-index <=> standard.current-index;
+    in-out property <string> current-value <=> standard.current-value;
+    callback selected <=> standard.selected;
+    forward-focus: standard;
+    min-width: standard.min-width;
+    min-height: standard.min-height;
+    horizontal-stretch: 1; vertical-stretch: 0;
+    accessible-role: none;
+    standard := ComboBox {
+        width: parent.width; height: parent.height;
+        accessible-label: root.accessible-label;
+    }
+    if DialogTheme.macos: Rectangle {
+        accessible-role: none;
+        border-radius: 5px;
+        background: Chrome.dark ? #363638 : #ededee;
+        border-width: 1px;
+        border-color: Chrome.dark ? #ffffff14 : #00000008;
+        opacity: root.enabled ? 1 : 0.5;
+        Text {
+            x: 9px; width: max(0px, parent.width - 37px); height: parent.height;
+            text: root.current-value;
+            font-size: DialogTheme.font-size;
+            vertical-alignment: center; overflow: elide;
+            color: Chrome.foreground;
+            accessible-role: none;
+        }
+        Image {
+            x: parent.width - 21px; y: (parent.height - self.height) / 2;
+            width: 9px; height: 13px;
+            source: @image-url("icons/ui-pop-up-indicator.svg");
+            colorize: Chrome.foreground;
+            accessible-role: none;
+        }
+    }
+}
+
+export component DialogButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> primary;
+    callback clicked();
+    min-width: DialogTheme.macos ? max(72px, label.preferred-width + 28px) : standard.min-width;
+    preferred-width: self.min-width;
+    min-height: DialogTheme.macos ? max(26px, label.preferred-height + 10px) : standard.min-height;
+    preferred-height: self.min-height;
+    max-height: self.preferred-height;
+    horizontal-stretch: 0; vertical-stretch: 0;
+    accessible-role: none;
+    if DialogTheme.macos: Rectangle {
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-enabled: root.enabled;
+        accessible-action-default => {if root.enabled {root.clicked();}}
+        border-radius: 6px;
+        background: root.primary && root.enabled ? (touch.pressed ? Chrome.accent.darker(0.15) : Chrome.accent) : touch.pressed ? (Chrome.dark ? #646466 : #e3e3e3) : (Chrome.dark ? #4b4b4e : white);
+        border-width: 1px;
+        border-color: Chrome.dark ? #ffffff16 : #00000022;
+        opacity: root.enabled ? 1 : 0.45;
+        Rectangle {
+            x: -3px; y: -3px; width: parent.width + 6px; height: parent.height + 6px;
+            border-radius: 9px;
+            border-width: keyboard.has-focus ? 3px : 0px;
+            border-color: Chrome.accent.with-alpha(0.5);
+        }
+    }
+    label := Text {
+        visible: DialogTheme.macos;
+        text: root.text;
+        font-size: DialogTheme.font-size;
+        color: root.primary && root.enabled ? white : Chrome.foreground;
+        opacity: root.enabled ? 1 : 0.45;
+        horizontal-alignment: center; vertical-alignment: center;
+        accessible-role: none;
+    }
+    touch := TouchArea {
+        enabled: DialogTheme.macos && root.enabled;
+        clicked => {keyboard.focus(); root.clicked();}
+    }
+    keyboard := FocusScope {
+        enabled: DialogTheme.macos && root.enabled;
+        focus-on-tab-navigation: true;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {root.clicked(); return EventResult.accept;}
+            return EventResult.reject;
+        }
+    }
+    standard := Button {
+        visible: !DialogTheme.macos;
+        text: root.text; enabled: root.enabled; primary: root.primary;
+        clicked => {root.clicked();}
+    }
+}

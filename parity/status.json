@@ -1261,9 +1261,11 @@
       "tests/appearance.rs",
       "src/app/slint_ui/icons.rs",
       "docs/ICONS.md",
-      "docs/SLINT_UI.md"
+      "docs/SLINT_UI.md",
+      "ui/dialog-controls.slint",
+      "docs/DESKTOP_UX_REVIEW.md"
     ],
-    "note": "Settings include persistent language, desktop style/light-dark appearance, file-icon source, address/breadcrumb mode, columns, toolbar/command bar, shortcuts, recovery and layout choices. File icons support system icons with specific built-in fallback or built-in-only mode. Apply/Cancel and shared-window/workspace behavior have tests; full upstream settings/theme coverage, additional languages and native acceptance remain open.",
+    "note": "Settings include persistent language, desktop style/light-dark appearance, file-icon source, address/breadcrumb mode, columns, toolbar/command bar, shortcuts, recovery and layout choices. File icons support system icons with specific built-in fallback or built-in-only mode. Apply/Cancel and shared-window/workspace behavior have tests. Shared forms now keep normal control heights, platform-specific button/chrome styling and Windows versus macOS/GNOME dismissal order. Visual style previews and keyboard/field fixtures cover these changes; high-contrast integration, full upstream settings/theme coverage, additional languages and native acceptance remain open.",
     "status": "partial"
   },
   "ShowRecentExecutedFilesQL": {
@@ -1643,9 +1645,13 @@
       "src/archive.rs",
       "src/app.rs",
       "tests/features_08.rs",
-      "tests/file_manager.rs"
+      "tests/file_manager.rs",
+      "src/app/slint_ui/dialogs/native_extract.rs",
+      "scripts/native-extract-smoke.py",
+      "docs/NATIVE_FORMS.md",
+      "src/native_menu.rs"
     ],
-    "note": "Extraction into new/existing folders offers per-file conflicts and merging through staged local transfers and Undo. Traversal/link/size guards remain; broader format metadata fixtures and provider behavior remain open.",
+    "note": "Extraction into new/existing folders offers per-file conflicts and merging through staged local transfers and Undo. macOS uses a native AppKit sheet with shared fields, conflict rules and controller actions; Windows/Linux retain Slint forms pending event-loop, ownership and runtime integration acceptance. Traversal/link/size guards remain; broader format metadata fixtures and provider behavior remain open.",
     "status": "partial"
   },
   "View": {

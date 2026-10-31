@@ -1,8 +1,10 @@
-import { Button, CheckBox, ComboBox, LineEdit, TextEdit, ScrollView, ListView, HorizontalBox, VerticalBox, Slider, ProgressIndicator, Palette } from "std-widgets.slint";
+import { Button, CheckBox, LineEdit, TextEdit, ScrollView, ListView, HorizontalBox, VerticalBox, Slider, ProgressIndicator, Palette } from "std-widgets.slint";
 
 export { Palette } from "std-widgets.slint";
 import { Chrome, Glyphs, ChromeButton, ChromeField, ShortcutButton, IconView } from "chrome.slint";
 export { Chrome } from "chrome.slint";
+import { DialogTheme, MacDialogField, DialogButton, DialogChoice } from "dialog-controls.slint";
+export { DialogTheme } from "dialog-controls.slint";
 export { IconGallery } from "icon-gallery.slint";
 export { IconCatalog } from "icons/catalog.slint";
 
@@ -429,6 +431,8 @@ export component CommanderWindow inherits Window {
     in property <bool> dialog-pack;
     in property <bool> dialog-compact;
     in property <bool> dialog-input-locked;
+    in property <bool> dialog-primary;
+    in property <bool> dialog-simple;
     in property <[FormRow]> dialog-rows;
     in property <[Command]> dialog-buttons;
     in property <bool> viewer-visible;
@@ -832,8 +836,8 @@ export component CommanderWindow inherits Window {
                 HorizontalBox {
                     max-height:32px;
                     Text { text: root.viewer-title; font-weight: 600; color: Palette.foreground; overflow: elide; }
-                    if root.viewer-text-controls: ComboBox {accessible-label:"Text encoding";model:["UTF-8","UTF-16 LE","UTF-16 BE","Windows-1252","ISO-8859-1"];current-value:root.viewer-encoding;selected(value)=>{root.viewer-action("encoding:"+value);}}
-                    if root.viewer-editable: ComboBox {accessible-label:"Save text encoding";model:["UTF-8","UTF-16 LE","UTF-16 BE","Windows-1252","ISO-8859-1"];current-value:root.viewer-save-encoding;selected(value)=>{root.viewer-action("save-encoding:"+value);}}
+                    if root.viewer-text-controls: DialogChoice {accessible-label:"Text encoding";model:["UTF-8","UTF-16 LE","UTF-16 BE","Windows-1252","ISO-8859-1"];current-value:root.viewer-encoding;selected(value)=>{root.viewer-action("encoding:"+value);}}
+                    if root.viewer-editable: DialogChoice {accessible-label:"Save text encoding";model:["UTF-8","UTF-16 LE","UTF-16 BE","Windows-1252","ISO-8859-1"];current-value:root.viewer-save-encoding;selected(value)=>{root.viewer-action("save-encoding:"+value);}}
                     if root.viewer-pdf: Button { width:32px; enabled: root.viewer-has-previous; text: Words.translate("‹", Words.version); clicked => { root.viewer-action("previous"); } }
                     if root.viewer-pdf: Text { text: root.viewer-page; color: Palette.foreground; }
                     if root.viewer-pdf: Button { width:32px; enabled: root.viewer-has-next; text: Words.translate("›", Words.version); clicked => { root.viewer-action("next"); } }
@@ -915,19 +919,35 @@ export component CommanderWindow inherits Window {
         key-event(event) => { return root.global-key(event); }
         Rectangle {
             x: max(16px, (parent.width - self.width) / 2); y: (parent.height - self.height) / 2;
-            width: min(root.dialog-diff ? 1080px : root.dialog-pack ? 620px : 760px, parent.width - 32px); height: min(parent.height - 56px,root.dialog-preferred-height * 1px);
-            background: Palette.background; border-radius: 10px;
+            width: min(root.dialog-diff ? 1080px : root.dialog-pack || root.dialog-simple ? 620px : 760px, parent.width - 32px); height: min(parent.height - 56px,root.dialog-preferred-height * 1px);
+            background: DialogTheme.macos ? DialogTheme.surface : Palette.background;
+            border-radius: DialogTheme.macos ? 12px : 8px;
+            border-width: DialogTheme.macos ? 1px : 0px;
+            border-color: root.dark ? #ffffff18 : #00000018;
+            drop-shadow-blur: 16px;
+            drop-shadow-offset-y: 4px;
+            drop-shadow-color: root.dark ? #00000060 : #00000030;
             VerticalBox {
-                Text { text: root.dialog-title; font-size: 20px; font-weight: 600; color: Palette.foreground; }
+                padding: DialogTheme.macos ? 20px : 16px; spacing: 12px;
+                Text { text: root.dialog-title; font-size: DialogTheme.macos ? max(17px, DialogTheme.font-size + 3px) : 20px; font-weight: 600; color: Palette.foreground; }
                 if root.dialog-description != "": Text { text: root.dialog-description; color: Palette.foreground; wrap: word-wrap; }
                 ScrollView {
                     VerticalBox {
-                        padding: 0px; spacing: root.dialog-diff ? 0px : 12px;
+                        padding: 4px; spacing: root.dialog-diff ? 0px : 12px; alignment: start;
                         for field[index] in root.dialog-fields: VerticalBox {
                             padding: 0px; spacing: 4px;
-                            vertical-stretch: root.dialog-compact ? 0 : 1;
-                            if field.kind != 2 && field.kind != 7 && field.kind != 8 && field.kind != 9: Text { text: field.title; color: Palette.foreground; font-weight: 600; wrap: word-wrap; }
-                            if field.kind == 0 || field.kind == 1 || field.kind == 5: LineEdit {
+                            vertical-stretch: 0;
+                            if field.kind != 2 && field.kind != 7 && field.kind != 8 && field.kind != 9: Text { text: field.title; color: Palette.foreground; font-weight: DialogTheme.macos ? 400 : 600; wrap: word-wrap; }
+                            if DialogTheme.macos && (field.kind == 0 || field.kind == 1 || field.kind == 5): MacDialogField {
+                                enabled: !root.dialog-input-locked;
+                                init => { if index == 0 { self.focus(); self.select-all(); } }
+                                text <=> field.value;
+                                input-type: field.kind == 1 ? InputType.password : InputType.text;
+                                label: field.title;
+                                accepted(value) => { root.dialog-action("accept"); }
+                                edited(value) => { root.dialog-field(field.id, value); }
+                            }
+                            if !DialogTheme.macos && (field.kind == 0 || field.kind == 1 || field.kind == 5): LineEdit {
                                 enabled: !root.dialog-input-locked;
                                 init => { if index == 0 { self.focus(); self.select-all(); } }
                                 text <=> field.value;
@@ -937,7 +957,7 @@ export component CommanderWindow inherits Window {
                                 edited(value) => { root.dialog-field(field.id, value); }
                             }
                             if field.kind == 2: CheckBox { enabled: !root.dialog-input-locked; text: field.title; checked: field.value == "true"; toggled => { root.dialog-field(field.id, self.checked ? "true" : "false"); } }
-                            if field.kind == 3: ComboBox { enabled: !root.dialog-input-locked; accessible-label: field.title; model: field.choices; current-value: field.value; selected(value) => { root.dialog-field(field.id, value); } }
+                            if field.kind == 3: DialogChoice { enabled: !root.dialog-input-locked; accessible-label: field.title; model: field.choices; current-value: field.value; selected(value) => { root.dialog-field(field.id, value); } }
                             if field.kind == 4: TextEdit { enabled: !root.dialog-input-locked; accessible-label:field.title; text <=> field.value; height: 140px; edited => { root.dialog-field(field.id, self.text); } }
                             if field.kind == 6: Text { text: field.value; color: Palette.foreground; wrap: word-wrap; }
                             if field.kind == 8: ChromeButton {
@@ -960,14 +980,14 @@ export component CommanderWindow inherits Window {
                             }
                         }
                         for item in root.dialog-rows: Rectangle {
-                            vertical-stretch: root.dialog-compact ? 0 : 1;
+                            vertical-stretch: 0;
                             background: item.selected ? (root.dark ? #30435e : #dfebff) : Palette.background;
                             min-height: 54px;
                             VerticalBox {
                                 padding: 6px; spacing: 4px;
                                 HorizontalBox {
                                     padding: 0px;
-                                    Button { enabled: !root.dialog-input-locked; text: item.title; clicked => { root.dialog-select(item.id); } }
+                                    DialogButton { enabled: !root.dialog-input-locked; text: item.title; clicked => { root.dialog-select(item.id); } }
                                     for command in item.actions: HorizontalLayout {
                                         spacing:0px;
                                         private property <bool> move-up: command.id.starts-with("column-up-") || command.id.starts-with("toolbar-up-") || command.id.starts-with("queue-up-");
@@ -977,7 +997,7 @@ export component CommanderWindow inherits Window {
                                             icon:Glyphs.action(move-up ? "ReorderUp" : "ReorderDown");
                                             enabled:command.enabled; clicked => {root.dialog-action(command.id);}
                                         }
-                                        if !move-up && !move-down: Button {
+                                        if !move-up && !move-down: DialogButton {
                                             text:Words.translate(command.title,Words.version); enabled:command.enabled;
                                             clicked => {root.dialog-action(command.id);}
                                         }
@@ -986,21 +1006,22 @@ export component CommanderWindow inherits Window {
                                 if item.detail != "": Text { text: item.detail; color: Palette.foreground; wrap: word-wrap; }
                             }
                         }
-                        if root.dialog-compact: Rectangle { vertical-stretch: 1; min-height: 0px; }
                     }
                 }
                 if root.dialog-busy: ProgressIndicator { indeterminate: true; }
                 if root.dialog-error != "": Text { text: root.dialog-error; color: #c74343; wrap: word-wrap; }
                 HorizontalBox {
+                    padding: 0px; spacing: 8px; vertical-stretch: 0;
                     Rectangle { horizontal-stretch: 1; }
                     for command[index] in root.dialog-buttons: HorizontalBox {padding:0px;spacing:0px;horizontal-stretch:0;
-                        if index < 4: Button { text: Words.translate(command.title,Words.version); primary:root.dialog-pack && command.id == "accept"; enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
+                        if index < 4: DialogButton { text: Words.translate(command.title,Words.version); primary:root.dialog-primary && command.id == "accept"; enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
                     }
                 }
                 if root.dialog-buttons.length > 4: HorizontalBox {
+                    padding: 0px; spacing: 8px; vertical-stretch: 0;
                     Rectangle { horizontal-stretch: 1; }
                     for command[index] in root.dialog-buttons: HorizontalBox {padding:0px;spacing:0px;horizontal-stretch:0;
-                        if index >= 4: Button { text: Words.translate(command.title,Words.version); enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
+                        if index >= 4: DialogButton { text: Words.translate(command.title,Words.version); enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
                     }
                 }
             }

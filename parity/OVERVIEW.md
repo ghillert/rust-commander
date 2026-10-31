@@ -7,15 +7,15 @@ includes the new checks recorded there; the other areas below remain source
 reviews without new live-account acceptance. Historical validation
 sections describe their original snapshots; later sections supersede older limits.
 
-The reviewed source includes commit `d1e87f2` and the current command,
-virtual-packing and external-save changes. The pinned inventory contains
+The reviewed source includes commit `3aaac1e` and the current desktop styling
+and UX review changes, including the native macOS Extract sheet. The pinned inventory contains
 **200 entries: 4 implemented, 188 partial, 7 missing and 1 inapplicable**.
 These are 166 upstream actions and 34 modules, not 200 equally sized features.
 In particular, **partial does not mean absent**: many entries have working
 behavior and fixture coverage but lack complete upstream/native acceptance.
 The inapplicable entry is the JVM garbage-collection command.
 
-The latest full local run records **411 passing tests and 17 ignored**; macOS
+The latest full local run records **414 passing tests and 17 ignored**; macOS
 and Linux-container Clippy pass. The connection-ID and Linux test-build fixes
 are committed, but hosted Windows confirmation remains open. These checks do
 not close the native/live-provider acceptance gaps below.
@@ -73,6 +73,7 @@ It excludes limitations in working features and validation-only gaps.
 | Pane swapping and file marks | Opposing-arrow toolbar button and Navigate > Swap panes move tabs, cursor, marks and keyboard focus together; Space/Insert toggle a mark and advance in visible order, with red marks independent of the cursor highlight | Broader native desktop acceptance remains open. |
 | Commands | Open As for explicit text/hex/image/PDF/archive interpretation, Open With, desktop reveal, searchable windows, configurable shortcuts, copy base names, parent-row toggle, numbered windows, manual release checks, diagnostics, reviewed bug-report links, bookmark explorer, bring-all-forward, Email files, support/donation links, reviewed general HTTP/HTTPS browser opening, shared Minimize/Maximize actions and event console | Complete upstream preference/shortcut coverage and broader parameterized URL integration. Linux Reveal opens the parent folder rather than selecting the item. Native acceptance remains open. |
 | Localization and migration | English/German/Spanish and reviewed XML import with backup | Additional languages, complete translated coverage and full upstream preference/keymap/command/bookmark import. See [import limits](../docs/FEATURES_0.7.md#12-mucommander-import). |
+| Desktop appearance and interaction | Native macOS Extract sheet with shared operation logic; platform-specific Cupertino/Fluent/Cosmic controls and chrome, compact form sizing, focus states, explicit action labels and Windows versus macOS/GNOME dismissal order | Native Windows/Linux screen-reader, mixed-DPI and high-contrast acceptance; installed Linux theme matching and full menu mnemonics remain open. Native Windows/Linux forms require event-loop/parenting prototypes and additional runtimes; see [native forms](../docs/NATIVE_FORMS.md). See the [desktop UX review](../docs/DESKTOP_UX_REVIEW.md). |
 
 The size, link and publication guards above are deliberate current limits.
 Removing them requires an appropriate streaming, recovery or filesystem design;

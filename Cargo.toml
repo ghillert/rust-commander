@@ -135,7 +135,7 @@ path = "src/main.rs"
 [target.'cfg(target_os = "macos")'.dependencies]
 # Disable Slint's default AppKit menu in favor of our localized command menus.
 i-slint-backend-winit = { version = "=1.18.1", default-features = false }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSView", "NSEvent", "NSResponder", "NSButton", "NSControl", "NSWorkspace", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "objc2-core-graphics", "objc2-uniform-type-identifiers"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSView", "NSEvent", "NSResponder", "NSButton", "NSButtonCell", "NSControl", "NSWorkspace", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "NSApplication", "NSAccessibilityProtocols", "NSAppearance", "NSColor", "NSFont", "NSScrollView", "NSClipView", "NSText", "NSTextField", "NSTextFieldCell", "NSPopUpButton", "block2", "objc2-core-graphics", "objc2-uniform-type-identifiers"] }
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSDictionary", "NSArray", "NSBundle", "NSGeometry"] }
 objc2-uniform-type-identifiers = { version = "0.3", default-features = false, features = ["std", "UTType", "UTCoreTypes"] }

@@ -14,6 +14,7 @@ pub struct NativeMenu {
     _menu: Menu,
     items: Vec<(MenuItem, Action, &'static str)>,
     submenu_labels: Vec<(Submenu, &'static str)>,
+    edit_items: Vec<(PredefinedMenuItem, &'static str)>,
     receiver: Receiver<muda::MenuId>,
     binding_cache: std::cell::RefCell<std::collections::BTreeMap<String, String>>,
 }
@@ -22,6 +23,7 @@ impl NativeMenu {
         let menu = Menu::new();
         let mut items = Vec::new();
         let mut submenu_labels = Vec::new();
+        let mut edit_items = Vec::new();
         let app = Submenu::new(APP_NAME, true);
         app.append(&PredefinedMenuItem::about(
             None,
@@ -60,6 +62,28 @@ impl NativeMenu {
         )?;
 
         for (title, entries) in action_menus() {
+            if title == "Operations" {
+                // AppKit text editors route Command shortcuts through the
+                // responder chain, including while a native sheet is modal.
+                let edit = Submenu::new(crate::i18n::text("Edit").as_ref(), true);
+                for (label, item) in [
+                    ("Undo", PredefinedMenuItem::undo(None)),
+                    ("Redo", PredefinedMenuItem::redo(None)),
+                    ("Cut", PredefinedMenuItem::cut(None)),
+                    ("Copy", PredefinedMenuItem::copy(None)),
+                    ("Paste", PredefinedMenuItem::paste(None)),
+                    ("Select all", PredefinedMenuItem::select_all(None)),
+                ] {
+                    if matches!(label, "Cut" | "Select all") {
+                        edit.append(&PredefinedMenuItem::separator())?;
+                    }
+                    item.set_text(crate::i18n::text(label).as_ref());
+                    edit.append(&item)?;
+                    edit_items.push((item, label));
+                }
+                submenu_labels.push((edit.clone(), "Edit"));
+                menu.append(&edit)?;
+            }
             let submenu = if title == "Window" {
                 window.clone()
             } else {
@@ -93,6 +117,7 @@ impl NativeMenu {
             _menu: menu,
             items,
             submenu_labels,
+            edit_items,
             receiver,
             binding_cache: Default::default(),
         })
@@ -106,6 +131,9 @@ impl NativeMenu {
         }
         for (submenu, label) in &self.submenu_labels {
             submenu.set_text(crate::i18n::text(label).as_ref());
+        }
+        for (item, label) in &self.edit_items {
+            item.set_text(crate::i18n::text(label).as_ref());
         }
     }
 

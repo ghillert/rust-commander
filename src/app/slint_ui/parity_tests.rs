@@ -138,6 +138,10 @@ fn searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_pa
 #[test]
 fn command_bar_and_shortcut_labels_follow_custom_bindings() {
     let (_root, ui, state, left, _right) = setup();
+    assert!(
+        ui.get_command_bar_visible(),
+        "Commander action buttons should be visible by default on every OS"
+    );
     state.borrow_mut().app.preferences.command_actions = vec!["Copy".into(), "Stacked".into()];
     state
         .borrow_mut()

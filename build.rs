@@ -24,6 +24,7 @@ fn main() {
         }
         .into()
     });
+    println!("cargo:rustc-env=RUST_COMMANDER_WIDGET_STYLE={style}");
     slint_build::compile_with_config(
         "ui/commander.slint",
         slint_build::CompilerConfiguration::new()

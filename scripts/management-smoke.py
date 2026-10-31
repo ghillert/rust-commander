@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render recovery, archive save-back, support and parent navigation using disposable data."""
+"""Render desktop forms, recovery and support dialogs using disposable data."""
 import argparse
 import io
 import json
@@ -16,7 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, default=project / "target/debug/rust-commander")
     parser.add_argument("--output", type=Path, default=project / "target/management-smoke")
-    cases=["files", "recovery", "archive", "diagnostics", "report", "bookmarks", "email", "email-settings", "console", "donate", "help", "browser-url", "virtual-pack", "window"]
+    cases=["files", "recovery", "archive", "diagnostics", "report", "bookmarks", "email", "email-settings", "console", "donate", "help", "browser-url", "virtual-pack", "window", "extract", "copy", "settings"]
     parser.add_argument("--case", action="append", choices=cases, dest="cases")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -77,6 +77,15 @@ def main():
                     sequence=[[400,"open",str(source)],[1000,"click","café notes.txt"],[1500,"action","Pack"],[1900,"dialog","pack-files"],[2200,"field",json.dumps(["pack-format","7z"])]]
                 elif case == "window":
                     sequence=[[700,"menu","Window"]]
+                elif case == "extract":
+                    source=left/"source.zip"
+                    with zipfile.ZipFile(source,"w") as archive:
+                        archive.writestr("report.txt","Disposable extraction fixture\n")
+                    sequence=[[400,"open",str(source)],[1100,"action","Extract"]]
+                elif case == "copy":
+                    sequence=[[400,"click",str(left/"café notes.txt")],[900,"action","Copy"]]
+                elif case == "settings":
+                    sequence=[[500,"action","Preferences"]]
                 target = args.output.resolve() / f"{renderer}-{case}.png"
                 target.unlink(missing_ok=True)
                 env = dict(os.environ, RUST_COMMANDER_CONFIG_DIR=str(config),
@@ -95,7 +104,8 @@ def main():
                 if data[:8] != b"\x89PNG\r\n\x1a\n" or len(data) < 1000:
                     raise RuntimeError(f"Missing rendered image: {target}")
                 width, height = struct.unpack(">II", data[16:24])
-                if width < 800 or height < 400:
+                native_extract = case == "extract" and "Native Extract sheet snapshot saved" in result.stderr
+                if width < (500 if native_extract else 800) or height < (250 if native_extract else 400):
                     raise RuntimeError(f"Unexpected dimensions: {width}x{height}")
                 print(f"{renderer}/{case}: {width}x{height}", flush=True)
 

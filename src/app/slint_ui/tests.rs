@@ -1,6 +1,250 @@
 use super::*;
 
 #[test]
+fn extract_uses_the_shared_form_and_keeps_a_fallback_without_a_native_parent() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, left, right) = fixture();
+    let archive = left.join("source.zip");
+    crate::archive::pack(&[left.join("alpha.txt")], &archive, &mut Task::default()).unwrap();
+    adapter.app.tab_mut().entries = filesystem::list(&Location::Local(left.clone())).unwrap();
+    adapter.app.tab_mut().cursor = Some(archive);
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    ui.invoke_action("Extract".into());
+    assert_eq!(ui.get_dialog_title(), "Extract archive");
+    assert!(state.borrow().blocked());
+    #[cfg(target_os = "macos")]
+    assert!(!state.borrow().native_extract.active());
+    let fields = ui.get_dialog_fields();
+    assert!(
+        fields
+            .iter()
+            .any(|field| field.id == "prompt" && field.kind == 0)
+    );
+    assert!(
+        fields
+            .iter()
+            .any(|field| field.id == "policy" && field.kind == 3)
+    );
+    assert!(
+        fields
+            .iter()
+            .any(|field| field.id == "merge" && field.kind == 2)
+    );
+    ui.invoke_dialog_field("policy".into(), "Skip".into());
+    ui.invoke_dialog_field("merge".into(), "true".into());
+    assert_eq!(
+        state
+            .borrow()
+            .app
+            .prompt
+            .as_ref()
+            .unwrap()
+            .transfer_options
+            .conflicts,
+        crate::transfer::ConflictPolicy::Skip
+    );
+    assert!(
+        state
+            .borrow()
+            .app
+            .prompt
+            .as_ref()
+            .unwrap()
+            .transfer_options
+            .merge_folders
+    );
+    #[cfg(target_os = "macos")]
+    {
+        let intent = dialogs::native_extract::Intent::capture(&state.borrow()).unwrap();
+        state.borrow_mut().native_extract_accept = Some(intent);
+        ui.invoke_dialog_field(
+            "prompt".into(),
+            right
+                .join("changed destination")
+                .display()
+                .to_string()
+                .into(),
+        );
+        assert!(
+            state.borrow().native_extract_accept.is_none(),
+            "Editing an input must cancel a deferred native submission"
+        );
+        assert!(state.borrow().app.job.is_none());
+    }
+    ui.invoke_dialog_action("cancel".into());
+    assert!(state.borrow().app.prompt.is_none());
+    assert!(!right.join("source").exists());
+    assert!(left.join("alpha.txt").exists());
+}
+
+#[test]
+fn dialog_fields_keep_control_height_and_standard_text_editing() {
+    use i_slint_backend_testing::{AccessibleRole, ElementHandle};
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, left, _right) = fixture();
+    adapter.app.tab_mut().cursor = Some(left.join("alpha.txt"));
+    let ui = CommanderWindow::new().unwrap();
+    ui.window().set_size(slint::LogicalSize::new(1240.0, 780.0));
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    ui.show().unwrap();
+    ui.invoke_action("Copy".into());
+    slint::platform::update_timers_and_animations();
+    let input = ElementHandle::find_by_accessible_label(&ui, "Destination")
+        .find(|e| e.accessible_role() == Some(AccessibleRole::TextInput))
+        .unwrap();
+    assert!(
+        input.size().height >= 20.0 && input.size().height <= 40.0,
+        "Single-line fields must not fill the form: {:?}",
+        input.size()
+    );
+    let choice = ElementHandle::find_by_accessible_label(&ui, "When a target exists")
+        .find(|e| e.accessible_role() == Some(AccessibleRole::Combobox))
+        .unwrap();
+    assert!(
+        choice.size().height >= 20.0 && choice.size().height <= 40.0,
+        "Pop-up controls must keep their platform height: {:?}",
+        choice.size()
+    );
+    assert!(ui.get_dialog_primary());
+    let buttons = ui.get_dialog_buttons();
+    let dismissal = if env!("RUST_COMMANDER_WIDGET_STYLE") == "fluent" {
+        buttons.row_count() - 1
+    } else {
+        0
+    };
+    assert_eq!(buttons.row_data(dismissal).unwrap().id, "cancel");
+    let button = ElementHandle::find_by_accessible_label(&ui, "Copy")
+        .filter(|e| e.accessible_role() == Some(AccessibleRole::Button))
+        .last()
+        .unwrap();
+    assert!(
+        button.size().height <= 40.0,
+        "Dialog button bounds: {:?} at {:?}",
+        button.size(),
+        button.absolute_position()
+    );
+    // Tab leaves the destination field for the next control; Space operates
+    // that checkbox instead of leaking into the file pane's marking action.
+    for text in [SharedString::from(slint::platform::Key::Tab), " ".into()] {
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: text.clone() });
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyReleased { text });
+    }
+    assert!(state.borrow().app.prompt.as_ref().unwrap().resumable);
+    // The macOS face must not intercept clicks over the indicator or replace
+    // the standard popup's keyboard navigation and selected-value callback.
+    let bounds = choice.absolute_position();
+    let position = slint::LogicalPosition::new(
+        bounds.x + choice.size().width - 13.0,
+        bounds.y + choice.size().height / 2.0,
+    );
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::PointerMoved { position });
+    for pressed in [true, false] {
+        ui.window().dispatch_event(if pressed {
+            slint::platform::WindowEvent::PointerPressed {
+                position,
+                button: slint::platform::PointerEventButton::Left,
+            }
+        } else {
+            slint::platform::WindowEvent::PointerReleased {
+                position,
+                button: slint::platform::PointerEventButton::Left,
+            }
+        });
+    }
+    for key in [
+        slint::platform::Key::DownArrow,
+        slint::platform::Key::Return,
+    ] {
+        let text: SharedString = key.into();
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: text.clone() });
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyReleased { text });
+    }
+    assert_eq!(
+        state
+            .borrow()
+            .app
+            .prompt
+            .as_ref()
+            .unwrap()
+            .transfer_options
+            .conflicts,
+        crate::transfer::ConflictPolicy::Skip
+    );
+    ui.invoke_dialog_action("cancel".into());
+    ui.invoke_action("Rename".into());
+    for character in "renamed.txt".chars() {
+        let text: SharedString = character.to_string().into();
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: text.clone() });
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyReleased { text });
+    }
+    assert_eq!(
+        state.borrow().app.prompt.as_ref().unwrap().value,
+        "renamed.txt"
+    );
+    ui.invoke_dialog_action("cancel".into());
+    ui.invoke_action("Trash".into());
+    assert!(
+        !ui.get_dialog_primary(),
+        "A destructive action must not get default accent styling"
+    );
+    ui.invoke_dialog_action("cancel".into());
+    assert_eq!(std::fs::read(left.join("alpha.txt")).unwrap(), b"alpha");
+}
+
+#[test]
+fn macos_password_fields_hide_accessibility_values_and_respect_disabled_input() {
+    use i_slint_backend_testing::{AccessibleRole, ElementHandle};
+    i_slint_backend_testing::init_no_event_loop();
+    let ui = CommanderWindow::new().unwrap();
+    ui.global::<DialogTheme>().set_macos(true);
+    ui.set_dialog_title("Credentials".into());
+    ui.set_dialog_fields(
+        Rc::new(VecModel::from(vec![FormField {
+            id: "password".into(),
+            title: "Password".into(),
+            value: "disposable-secret".into(),
+            kind: 1,
+            ..Default::default()
+        }]))
+        .into(),
+    );
+    let edits = Rc::new(RefCell::new(Vec::new()));
+    let captured = edits.clone();
+    ui.on_dialog_field(move |id, value| {
+        captured
+            .borrow_mut()
+            .push((id.to_string(), value.to_string()))
+    });
+    ui.show().unwrap();
+    slint::platform::update_timers_and_animations();
+    let password = ElementHandle::find_by_accessible_label(&ui, "Password")
+        .find(|e| e.accessible_role() == Some(AccessibleRole::TextInput))
+        .unwrap();
+    assert_eq!(password.accessible_value().unwrap_or_default(), "");
+    password.set_accessible_value("updated-secret");
+    assert_eq!(
+        &*edits.borrow(),
+        &[("password".to_string(), "updated-secret".to_string())]
+    );
+    ui.set_dialog_input_locked(true);
+    password.set_accessible_value("must-not-be-applied");
+    assert_eq!(edits.borrow().len(), 1);
+    assert_eq!(password.accessible_value().unwrap_or_default(), "");
+}
+
+#[test]
 fn active_transfer_controls_work_with_queue_dialog_and_validate_live_settings() {
     i_slint_backend_testing::init_no_event_loop();
     let (_root, mut adapter, _left, _right) = fixture();
