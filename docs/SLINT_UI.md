@@ -113,6 +113,11 @@ source guidelines and remaining native acceptance work.
 The Slint frontend includes both file panes, tabs, breadcrumbs, editable paths,
 filtering, sorting, multiple selection, configurable columns and toolbar,
 favorites, devices, connections, the configurable command bar and progress display.
+The active sort column shows an up chevron for ascending order or a down chevron
+for descending order, independently for each pane and tab. Parent-directory rows
+show an up-arrow icon followed by `..`. Clicking anywhere on this row highlights
+it; a second click, double-click or Enter opens the parent directory. File marks
+are preserved when highlighting the parent row.
 The [0.7 guide](FEATURES_0.7.md) covers quick find, advanced selection, locked tabs,
 stacked panes, quick lists, encoding choices, Trash, multiple windows and XML import.
 
@@ -234,8 +239,11 @@ and speed with both software/light and FemtoVG/dark rendering. Images and logs
 are written under `target/progress-smoke/`. Linux CI runs the same check.
 Screenshot builds also accept `RUST_COMMANDER_SCREENSHOT_SEQUENCE`, a JSON array
 of `[delay_ms, callback, value]` steps; supported callbacks are `navigate`,
-`open`, `click`, `menu`, `action`, `dialog`, `select`, `field` and `viewer`. Open/click values are native
-file paths. Field values contain an encoded
+`open`, `click`, `menu`, `action`, `dialog`, `select`, `field`, `sort`, `parent` and `viewer`.
+Sort values contain an encoded JSON `[pane, column]` pair with zero-based indices.
+Parent values contain an encoded JSON `[pane, open]` pair; `false` clicks the row
+and `true` opens it directly.
+Open/click values are native file paths. Field values contain an encoded
 JSON `[field_id, value]` pair. This drives the existing UI callbacks for reproducible
 multi-step checks; it is compiled out of normal development and release builds.
 On macOS, `native-field`, `native-field-return`, `native-action` and `native-check` exercise the real

@@ -29,6 +29,8 @@ pub struct Tab {
     pub entries: Vec<Entry>,
     pub selected: BTreeSet<PathBuf>,
     pub cursor: Option<PathBuf>,
+    // The synthetic parent entry must never become a file-operation source.
+    parent_cursor: bool,
     pub sort: Sort,
     pub descending: bool,
     pub loading: bool,
@@ -62,6 +64,7 @@ impl Tab {
             entries: Vec::new(),
             selected: BTreeSet::new(),
             cursor: None,
+            parent_cursor: false,
             sort: Sort::Name,
             descending: false,
             loading: false,
@@ -130,6 +133,7 @@ impl Tab {
 
     pub fn poll(&mut self, hidden: bool) {
         if let Some(result) = crate::background::poll(&mut self.pending) {
+            self.parent_cursor = self.parent_focused();
             self.revision = self.revision.wrapping_add(1);
             self.loading = false;
             match result {
@@ -143,10 +147,11 @@ impl Tab {
                     self.entries = entries;
                     self.selected
                         .retain(|path| self.entries.iter().any(|e| &e.path == path));
-                    if !self
-                        .entries
-                        .iter()
-                        .any(|e| Some(&e.path) == self.cursor.as_ref())
+                    if !self.parent_focused()
+                        && !self
+                            .entries
+                            .iter()
+                            .any(|e| Some(&e.path) == self.cursor.as_ref())
                     {
                         self.cursor = self
                             .visible(hidden)
@@ -233,6 +238,7 @@ impl Tab {
         self.entries.clear();
         self.selected.clear();
         self.cursor = None;
+        self.parent_cursor = false;
         self.filter.clear();
     }
 
@@ -270,6 +276,17 @@ impl Tab {
             .collect()
     }
 
+    pub fn parent_focused(&self) -> bool {
+        self.parent_cursor && self.cursor.is_none()
+    }
+
+    pub fn focus_parent(&mut self) {
+        if self.location.parent().is_some() {
+            self.cursor = None;
+            self.parent_cursor = true;
+        }
+    }
+
     pub fn chosen(&self, hidden: bool) -> Vec<Entry> {
         let visible = self.visible(hidden);
         let selected: Vec<_> = visible
@@ -292,6 +309,10 @@ impl Tab {
 
     /// Toggle the current visible row's mark, then advance without marking the next row.
     pub fn toggle_mark_and_advance(&mut self, hidden: bool) {
+        if self.parent_focused() {
+            self.move_cursor(1, false, hidden);
+            return;
+        }
         let visible = self.visible(hidden);
         let Some(position) = visible
             .iter()
@@ -311,15 +332,24 @@ impl Tab {
         if visible.is_empty() {
             return;
         }
+        let parent = self.parent_focused();
+        if parent && delta <= 0 {
+            return;
+        }
         let position = visible
             .iter()
             .position(|&i| Some(&self.entries[i].path) == self.cursor.as_ref())
             .unwrap_or(0);
-        if extend {
+        if extend && !parent {
             self.selected
                 .insert(self.entries[visible[position]].path.clone());
         }
-        let next = position.saturating_add_signed(delta).min(visible.len() - 1);
+        let next = if parent {
+            (delta as usize - 1).min(visible.len() - 1)
+        } else {
+            position.saturating_add_signed(delta).min(visible.len() - 1)
+        };
+        self.parent_cursor = false;
         self.cursor = Some(self.entries[visible[next]].path.clone());
         if extend {
             for &index in &visible[position.min(next)..=position.max(next)] {

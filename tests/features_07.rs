@@ -77,6 +77,34 @@ fn keyboard_range_selection_marks_every_intermediate_row() {
     assert_eq!(tab.selected.len(), 16);
 }
 #[test]
+fn parent_cursor_survives_refresh_without_becoming_an_operation_source() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("marked.txt");
+    fs::write(&file, b"marked").unwrap();
+    let mut tab = tab(root.path());
+    tab.cursor = Some(file.clone());
+    tab.focus_parent();
+    assert!(tab.parent_focused());
+    assert!(tab.chosen(false).is_empty());
+    tab.selected.insert(file.clone());
+    let ctx = UiSignal::default();
+    tab.refresh(&ctx);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while tab.loading {
+        tab.poll(false);
+        assert!(std::time::Instant::now() < deadline, "Refresh timed out");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(tab.parent_focused());
+    assert!(tab.cursor.is_none());
+    let chosen = tab.chosen(false);
+    assert_eq!(chosen.len(), 1);
+    assert_eq!(chosen[0].path, file);
+    tab.navigate(Location::Local(root.path().parent().unwrap().into()), &ctx);
+    assert!(!tab.parent_focused());
+    assert!(tab.selected.is_empty());
+}
+#[test]
 fn locked_tabs_request_an_unlocked_navigation_and_metadata_survives_settings() {
     let root = tempfile::tempdir().unwrap();
     let mut tab = tab(root.path());

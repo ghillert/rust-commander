@@ -352,7 +352,11 @@ impl Adapter {
                 self.extra.dialog = Some(form);
             }
             "Open" => {
-                if let Some(entry) = self.app.tab().chosen(self.app.show_hidden).first().cloned() {
+                if self.app.preferences.parent_entry && self.app.tab().parent_focused() {
+                    self.app.act(Action::Parent, &self.ctx);
+                } else if let Some(entry) =
+                    self.app.tab().chosen(self.app.show_hidden).first().cloned()
+                {
                     self.app.open_entry(entry, &self.ctx);
                 }
             }

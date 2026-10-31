@@ -1,5 +1,37 @@
 # Validation record
 
+## Parent-row selection and activation — 2026-10-30
+
+The `..` entry is now a full-width selectable row. Its first click highlights it;
+a second click or double-click opens exactly one parent level. Enter opens the
+highlighted parent, while Down and Space move to the first file without marking
+the parent. File marks remain intact. The parent cursor survives refreshes and
+never becomes a file-operation source.
+
+The full macOS unit/UI suite passes **159 tests**, and the navigation/selection
+integration suite passes **18 tests**, including parent-cursor refresh coverage.
+Physical-click tests cover delayed second clicks, double-clicks, correct-pane
+navigation, file clicks and keyboard operation with existing marks.
+Software/light and FemtoVG/dark previews show the full-row highlight and selected
+icon/text colors. macOS all-target/all-feature Clippy with warnings denied,
+formatting and `git diff --check` pass. The rebuilt development app passes strict
+signature verification. Previews are under `/private/tmp/rc-parent-row-preview/`.
+
+## Sort indicators and parent-directory labels — 2026-10-30
+
+Both panes show a chevron on the active sort column and an up arrow followed by
+`..` on the parent-directory row. Two targeted Slint regression tests pass:
+physical header clicks and accessible activation update sort direction; indicators
+follow pane swaps, tab switches, reordered columns and hidden sort columns;
+parent-row clicks navigate only the clicked pane. The sort state is also exposed
+as a localized accessibility description.
+
+Software/light and FemtoVG/dark macOS previews were inspected with different sort
+columns and directions in each pane. Both show the parent labels and unobscured
+header text, with no binding-loop or rendering warnings. Formatting,
+`git diff --check` and macOS all-target/all-feature Clippy with warnings denied
+pass. Preview images and logs are under `/private/tmp/rc-sort-preview/`.
+
 ## macOS dropdown indicators — 2026-10-30
 
 Removed the older Cupertino blue arrow tile from Slint-rendered macOS choices,

@@ -285,6 +285,23 @@ impl Adapter {
         }
     }
 
+    fn parent_entry(&mut self, side: usize, open: bool) {
+        if self.blocked()
+            || side > 1
+            || !self.app.preferences.parent_entry
+            || self.app.panes[side].tab().location.parent().is_none()
+        {
+            return;
+        }
+        let open = open || (self.app.active == side && self.app.panes[side].tab().parent_focused());
+        self.app.active = side;
+        if open {
+            self.app.act(Action::Parent, &self.ctx);
+        } else {
+            self.app.tab_mut().focus_parent();
+        }
+    }
+
     fn action(&mut self, id: &str) {
         let (name, side) = id.split_once(':').map_or((id, None), |(name, side)| {
             (name, side.parse::<usize>().ok())
@@ -812,6 +829,20 @@ impl Adapter {
         ui.set_columns(self.columns.clone().into());
         for side in 0..2 {
             let tab = self.app.panes[side].tab();
+            let sort_column = self
+                .app
+                .preferences
+                .columns
+                .iter()
+                .position(|column| column.kind.sort() == Some(tab.sort))
+                .map_or(-1, |index| index as i32);
+            if side == 0 {
+                ui.set_left_sort_column(sort_column);
+                ui.set_left_sort_descending(tab.descending);
+            } else {
+                ui.set_right_sort_column(sort_column);
+                ui.set_right_sort_descending(tab.descending);
+            }
             if self.breadcrumb_stamp[side] != tab.location.label() {
                 let crumbs = location_breadcrumbs(&tab.location);
                 let model = Rc::new(VecModel::from(
@@ -989,6 +1020,7 @@ impl Adapter {
                 )
             };
             if side == 0 {
+                ui.set_left_parent_selected(tab.parent_focused());
                 ui.set_left_parent_visible(
                     self.app.preferences.parent_entry && tab.location.parent().is_some(),
                 );
@@ -1004,6 +1036,7 @@ impl Adapter {
                 ui.set_left_busy(tab.loading);
                 ui.set_left_summary(summary.into());
             } else {
+                ui.set_right_parent_selected(tab.parent_focused());
                 ui.set_right_parent_visible(
                     self.app.preferences.parent_entry && tab.location.parent().is_some(),
                 );
@@ -1721,6 +1754,16 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                             "dialog" => ui.invoke_dialog_action(value.into()),
                             "select" => ui.invoke_dialog_select(value.into()),
                             "viewer" => ui.invoke_viewer_action(value.into()),
+                            "sort" => {
+                                let (side, column): (i32, i32) = serde_json::from_str(&value)
+                                    .expect("Screenshot sort must be a pane/column pair");
+                                ui.invoke_sort(side, column);
+                            }
+                            "parent" => {
+                                let (side, open): (i32, bool) = serde_json::from_str(&value)
+                                    .expect("Screenshot parent must be a pane/open pair");
+                                ui.invoke_parent_entry(side, open);
+                            }
                             #[cfg(target_os = "macos")]
                             "native-field"
                             | "native-field-return"
@@ -1984,6 +2027,11 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
     callback!(on_opened, |a, w, side, id| {
         if side >= 0 {
             a.open(side as usize, &id);
+        }
+    });
+    callback!(on_parent_entry, |a, w, side, open| {
+        if side >= 0 {
+            a.parent_entry(side as usize, open);
         }
     });
     callback!(on_resize_column, |a, w, index, width, finished| {

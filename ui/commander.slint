@@ -31,6 +31,7 @@ import { Transfers } from "drag-drop.slint";
 
 component FilePane inherits Rectangle {
     in property <bool> parent-visible;
+    in property <bool> parent-selected;
     in property <int> side;
     out property <float> visible-rows:list.visible-height/max(24px,(root.text-size+10)*1px);
     out property <float> first-row:max(0,floor(-list.content-y/max(24px,(root.text-size+10)*1px)));
@@ -46,6 +47,8 @@ component FilePane inherits Rectangle {
     in property <string> protocol;
     changed committed-address => {root.editing-address=false;}
     in property <[FileColumn]> columns;
+    in property <int> sort-column: -1;
+    in property <bool> sort-descending;
     in property <bool> auto-size-columns;
     in property <float> column-total:1;
     private property <float> column-scale:root.auto-size-columns ? root.width/1px/max(root.column-total,1):1;
@@ -74,6 +77,7 @@ component FilePane inherits Rectangle {
     callback selected(string, bool, bool);
     callback clicked-file(string);
     callback opened(string);
+    callback parent-entry(bool);
     callback sort(int);
     callback resize-column(int,float,bool);
     callback context-menu(float,float);
@@ -190,7 +194,21 @@ component FilePane inherits Rectangle {
                 for column[index] in root.columns: Rectangle {
                     preferred-width: column.width * root.column-scale * 1px; min-width: index == 0 ? 80px : 40px;
                     horizontal-stretch: index == 0 ? 1 : 0;
-                    Text { text: column.title; x: 8px; width: parent.width - 12px; height: parent.height; vertical-alignment: center; font-size: 11px; font-weight: 600; color: Chrome.secondary; horizontal-alignment: column.title == Words.translate("Size",Words.version) ? right : left; overflow: elide; }
+                    accessible-role: button;
+                    accessible-label: column.title;
+                    accessible-description: index == root.sort-column ? Words.translate(root.sort-descending ? "Sort descending" : "Sort ascending",Words.version) : "";
+                    accessible-action-default => {root.sort(index);}
+                    Text { text: column.title; x: 8px; width: max(0px, parent.width - (index == root.sort-column ? 30px : 12px)); height: parent.height; vertical-alignment: center; font-size: 11px; font-weight: 600; color: index == root.sort-column ? Chrome.foreground : Chrome.secondary; horizontal-alignment: column.title == Words.translate("Size",Words.version) ? right : left; overflow: elide; accessible-role: none; }
+                    if index == root.sort-column: Path {
+                        x: parent.width - 20px; y: (parent.height - self.height) / 2;
+                        width: 12px; height: 12px;
+                        viewbox-width: 12; viewbox-height: 12;
+                        stroke: Chrome.foreground; stroke-width: 1.5px; fill: transparent;
+                        MoveTo {x: 2; y: root.sort-descending ? 4 : 8;}
+                        LineTo {x: 6; y: root.sort-descending ? 8 : 4;}
+                        LineTo {x: 10; y: root.sort-descending ? 4 : 8;}
+                        accessible-role: none;
+                    }
                     TouchArea { clicked => { root.sort(index); } }
                     TouchArea {
                         x: parent.width - 5px; width: 5px;
@@ -207,10 +225,28 @@ component FilePane inherits Rectangle {
             }
         }
         if root.parent-visible: Rectangle {
-            height: 26px; background: Chrome.pane;
-            ChromeButton { x: 4px; height: 25px; label: ".."; icon: Glyphs.action("Parent");
-                accessible-label: Words.translate("Parent directory row",Words.version);
-                clicked => {root.action("Parent");}
+            height: max(24px, (root.text-size + 10) * 1px);
+            background: root.parent-selected ? (root.active ? root.selection-color : root.inactive-selection) : Chrome.pane;
+            accessible-role: list-item;
+            accessible-label: Words.translate("Parent directory row",Words.version);
+            accessible-item-selectable: true;
+            accessible-item-selected: root.parent-selected;
+            accessible-expandable: true;
+            accessible-action-default => {files-focus.focus(); root.parent-entry(false);}
+            accessible-action-expand => {files-focus.focus(); root.parent-entry(true);}
+            IconView {
+                source: Glyphs.action("Parent"); x: 8px;
+                y: (parent.height - self.height) / 2; width: 18px; height: 18px;
+                tint: root.parent-selected && root.active ? root.selection-text : Chrome.foreground;
+            }
+            Text {
+                text: ".."; x: 32px; width: max(0px, parent.width - 38px); height: parent.height;
+                font-size: root.text-size * 1px; vertical-alignment: center;
+                color: root.parent-selected && root.active ? root.selection-text : Chrome.foreground;
+                accessible-role: none;
+            }
+            TouchArea {
+                clicked => {files-focus.focus(); root.parent-entry(false);}
             }
         }
         files-focus := FocusScope {
@@ -381,9 +417,15 @@ export component CommanderWindow inherits Window {
         if top+28px>tree-list.visible-height {tree-list.content-y -= top + 28px - tree-list.visible-height;}
     }
     in property <[FileColumn]> columns;
+    in property <int> left-sort-column: -1;
+    in property <int> right-sort-column: -1;
+    in property <bool> left-sort-descending;
+    in property <bool> right-sort-descending;
     in property <[FileRow]> left-rows;
     in property <bool> left-parent-visible;
     in property <bool> right-parent-visible;
+    in property <bool> left-parent-selected;
+    in property <bool> right-parent-selected;
     in property <int> left-cursor: -1;
     in property <int> right-cursor: -1;
     in property <string> left-selection-payload;
@@ -487,6 +529,7 @@ export component CommanderWindow inherits Window {
     callback selected(int, string, bool, bool);
     callback clicked-file(int,string);
     callback opened(int, string);
+    callback parent-entry(int,bool);
     callback sort(int, int);
     callback resize-column(int,float,bool);
     callback pane-key(int, KeyEvent) -> bool;
@@ -673,6 +716,8 @@ export component CommanderWindow inherits Window {
                   horizontal-stretch:1; min-width:0px;
                   left := FilePane {
                     parent-visible: root.left-parent-visible;
+                    parent-selected: root.left-parent-selected;
+                    sort-column: root.left-sort-column; sort-descending: root.left-sort-descending;
                     x:0px;y:0px;
                     width: root.single-pane || root.stacked ? parent.width : (parent.width - 5px)*root.pane-ratio;
                     height: root.single-pane || !root.stacked ? parent.height : (parent.height - 5px)*root.pane-ratio;
@@ -691,6 +736,7 @@ export component CommanderWindow inherits Window {
                     navigate(text) => { root.navigate(0, text); } filter-edited(text) => { root.filter(0, text); }
                     selected(id, toggle, range) => { root.selected(0, id, toggle, range); }
                     clicked-file(id) => {root.clicked-file(0,id);} opened(id) => { root.opened(0, id); }
+                    parent-entry(open) => {root.parent-entry(0,open);}
                     sort(index) => { root.sort(0, index); }
                     resize-column(index,width,finished) => {root.resize-column(index,width,finished);}
                     context-menu(x,y) => {root.menu-x=x;root.menu-y=y;root.menu("File");app-menu.show();} key-event(event) => { return root.pane-key(0, event); }
@@ -698,6 +744,8 @@ export component CommanderWindow inherits Window {
                 }
                   right := FilePane {
                     parent-visible: root.right-parent-visible;
+                    parent-selected: root.right-parent-selected;
+                    sort-column: root.right-sort-column; sort-descending: root.right-sort-descending;
                     x: root.single-pane || root.stacked ? 0px : left.width + 5px;
                     y: root.single-pane || !root.stacked ? 0px : left.height + 5px;
                     width: root.single-pane || root.stacked ? parent.width : parent.width - left.width - 5px;
@@ -717,6 +765,7 @@ export component CommanderWindow inherits Window {
                     navigate(text) => { root.navigate(1, text); } filter-edited(text) => { root.filter(1, text); }
                     selected(id, toggle, range) => { root.selected(1, id, toggle, range); }
                     clicked-file(id) => {root.clicked-file(1,id);} opened(id) => { root.opened(1, id); }
+                    parent-entry(open) => {root.parent-entry(1,open);}
                     sort(index) => { root.sort(1, index); }
                     resize-column(index,width,finished) => {root.resize-column(index,width,finished);}
                     context-menu(x,y) => {root.menu-x=x;root.menu-y=y;root.menu("File");app-menu.show();} key-event(event) => { return root.pane-key(1, event); }

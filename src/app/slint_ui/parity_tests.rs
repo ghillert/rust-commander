@@ -22,6 +22,173 @@ fn key(text: impl Into<SharedString>) -> slint::language::KeyEvent {
     event
 }
 #[test]
+fn sort_indicators_follow_each_pane_tab_and_configured_columns() {
+    use i_slint_backend_testing::{AccessibleRole, ElementHandle};
+    let (_root, ui, state, _left, _right) = setup();
+    let headers = |title| {
+        let mut elements: Vec<_> = ElementHandle::find_by_accessible_label(&ui, title)
+            .filter(|element| element.accessible_role() == Some(AccessibleRole::Button))
+            .collect();
+        elements.sort_by(|a, b| a.absolute_position().x.total_cmp(&b.absolute_position().x));
+        elements
+    };
+    assert_eq!(ui.get_left_sort_column(), 0);
+    assert_eq!(ui.get_right_sort_column(), 0);
+    assert!(!ui.get_left_sort_descending());
+    assert!(!ui.get_right_sort_descending());
+    assert_eq!(
+        headers("Name")[0].accessible_description().unwrap(),
+        "Sort ascending"
+    );
+    headers("Name")[0].mock_single_click(slint::platform::PointerEventButton::Left);
+    assert!(ui.get_left_sort_descending());
+    assert!(!ui.get_right_sort_descending());
+    assert_eq!(
+        headers("Name")[0].accessible_description().unwrap(),
+        "Sort descending"
+    );
+    let file_names: Vec<_> = state.borrow().app.panes[0]
+        .tab()
+        .entries
+        .iter()
+        .filter(|entry| !entry.is_dir)
+        .map(|entry| entry.name.clone())
+        .collect();
+    assert_eq!(file_names, ["café.txt", "alpha.txt"]);
+    headers("Size")[1].mock_single_click(slint::platform::PointerEventButton::Left);
+    assert_eq!(ui.get_right_sort_column(), 1);
+    assert!(!ui.get_right_sort_descending());
+    headers("Size")[1].invoke_accessible_default_action();
+    assert!(ui.get_right_sort_descending());
+    assert_eq!(
+        headers("Name")[1]
+            .accessible_description()
+            .unwrap_or_default(),
+        ""
+    );
+    {
+        let mut a = state.borrow_mut();
+        a.app.preferences.columns.swap(0, 2);
+        a.sync(&ui);
+    }
+    assert_eq!(ui.get_left_sort_column(), 2);
+    assert_eq!(ui.get_right_sort_column(), 1);
+    ui.invoke_action("NewTab".into());
+    assert_eq!(ui.get_left_sort_column(), 2);
+    assert!(!ui.get_left_sort_descending());
+    ui.invoke_tab(0, 0);
+    assert!(ui.get_left_sort_descending());
+    ui.invoke_action("Swap".into());
+    assert_eq!(ui.get_left_sort_column(), 1);
+    assert_eq!(ui.get_right_sort_column(), 2);
+    assert!(ui.get_left_sort_descending());
+    assert!(ui.get_right_sort_descending());
+    {
+        let mut a = state.borrow_mut();
+        a.app
+            .preferences
+            .columns
+            .retain(|column| column.kind != crate::preferences::Column::Size);
+        a.sync(&ui);
+    }
+    assert_eq!(ui.get_left_sort_column(), -1);
+    assert_eq!(ui.get_right_sort_column(), 1);
+}
+#[test]
+fn parent_rows_highlight_before_opening_for_separate_and_double_clicks() {
+    use i_slint_backend_testing::ElementHandle;
+    let (root, ui, state, left, right) = setup();
+    for delay in [1000, 0] {
+        {
+            let mut a = state.borrow_mut();
+            let ctx = a.ctx.clone();
+            a.app.panes[1]
+                .tab_mut()
+                .navigate(Location::Local(right.clone()), &ctx);
+            a.sync(&ui);
+        }
+        let mut parents: Vec<_> =
+            ElementHandle::find_by_accessible_label(&ui, "Parent directory row").collect();
+        parents.sort_by(|a, b| a.absolute_position().x.total_cmp(&b.absolute_position().x));
+        assert_eq!(parents.len(), 2);
+        assert!(
+            parents.iter().all(|parent| parent.size().width > 400.0),
+            "The parent entry must span the full file-list row"
+        );
+        parents[1].mock_single_click(slint::platform::PointerEventButton::Left);
+        assert_eq!(state.borrow().app.active, 1);
+        assert!(ui.get_right_parent_selected());
+        assert_eq!(parents[1].accessible_item_selected(), Some(true));
+        assert_eq!(
+            state.borrow().app.panes[1].tab().location,
+            Location::Local(right.clone())
+        );
+        assert!(state.borrow().app.panes[1].tab().chosen(false).is_empty());
+        assert_eq!(ui.get_right_cursor(), -1);
+        i_slint_backend_testing::mock_elapsed_time(Duration::from_millis(delay));
+        parents[1].mock_single_click(slint::platform::PointerEventButton::Left);
+        assert_eq!(
+            state.borrow().app.panes[0].tab().location,
+            Location::Local(left.clone())
+        );
+        assert_eq!(
+            state.borrow().app.panes[1].tab().location,
+            Location::Local(root.path().to_path_buf())
+        );
+        assert!(!ui.get_right_parent_selected());
+    }
+}
+#[test]
+fn parent_row_preserves_marks_and_supports_file_focus_and_keyboard_navigation() {
+    use i_slint_backend_testing::ElementHandle;
+    let (root, ui, state, left, _right) = setup();
+    {
+        let mut a = state.borrow_mut();
+        filesystem::sort_entries(&mut a.app.tab_mut().entries, Default::default(), false);
+        a.app.tab_mut().selected.insert(left.join("alpha.txt"));
+        a.app.tab_mut().cursor = Some(left.join("alpha.txt"));
+        a.sync(&ui);
+    }
+    let parent = || {
+        ElementHandle::find_by_accessible_label(&ui, "Parent directory row")
+            .min_by(|a, b| a.absolute_position().x.total_cmp(&b.absolute_position().x))
+            .unwrap()
+    };
+    parent().mock_single_click(slint::platform::PointerEventButton::Left);
+    assert!(ui.get_left_parent_selected());
+    assert!(
+        state
+            .borrow()
+            .app
+            .tab()
+            .selected
+            .contains(&left.join("alpha.txt"))
+    );
+    assert!(ui.get_left_rows().iter().all(|row| !row.cursor));
+    ui.invoke_pane_key(0, key(SharedString::from(slint::platform::Key::DownArrow)));
+    assert!(!ui.get_left_parent_selected());
+    assert_eq!(state.borrow().app.tab().cursor, Some(left.join("folder")));
+    parent().mock_single_click(slint::platform::PointerEventButton::Left);
+    press(&ui, " ");
+    assert!(!ui.get_left_parent_selected());
+    assert_eq!(state.borrow().app.tab().cursor, Some(left.join("folder")));
+    assert_eq!(state.borrow().app.tab().selected.len(), 1);
+    parent().mock_single_click(slint::platform::PointerEventButton::Left);
+    ElementHandle::find_by_accessible_label(&ui, "café.txt")
+        .next()
+        .unwrap()
+        .mock_single_click(slint::platform::PointerEventButton::Left);
+    assert!(!ui.get_left_parent_selected());
+    parent().mock_single_click(slint::platform::PointerEventButton::Left);
+    // Enter opens the parent even when other files remain marked.
+    press(&ui, slint::platform::Key::Return);
+    assert_eq!(
+        state.borrow().app.tab().location,
+        Location::Local(root.path().to_path_buf())
+    );
+    assert!(!ui.get_left_parent_selected());
+}
+#[test]
 fn quick_find_and_pattern_selection_use_the_real_slint_callbacks() {
     let (_root, ui, state, left, _right) = setup();
     slint::platform::update_timers_and_animations();
