@@ -92,6 +92,26 @@ export global IconCatalog {
         if id == "zip" { return @image-url("vendor/zip-default.svg"); }
         return @image-url("vendor/file-default.svg");
     }
+    public pure function color-image(id: string, dark: bool) -> image {
+        if id == "ui-copy" { return @image-url("vendor/ui-copy-color.svg"); }
+        if id == "ui-edit" { return @image-url("vendor/ui-edit-color.svg"); }
+        if id == "ui-help" { return @image-url("vendor/ui-help-color.svg"); }
+        if id == "ui-move" { return @image-url("vendor/ui-move-color.svg"); }
+        if id == "ui-new-folder" { return @image-url("vendor/ui-new-folder-color.svg"); }
+        if id == "ui-search" { return @image-url("vendor/ui-search-color.svg"); }
+        if id == "ui-trash" { return @image-url("vendor/ui-trash-color.svg"); }
+        return self.image(id, dark);
+    }
+    public pure function has-color(id: string) -> bool {
+        if id == "ui-copy" { return true; }
+        if id == "ui-edit" { return true; }
+        if id == "ui-help" { return true; }
+        if id == "ui-move" { return true; }
+        if id == "ui-new-folder" { return true; }
+        if id == "ui-search" { return true; }
+        if id == "ui-trash" { return true; }
+        return false;
+    }
     public pure function monochrome(id: string) -> bool {
         if id == "ui-add" { return true; }
         if id == "ui-archive" { return true; }

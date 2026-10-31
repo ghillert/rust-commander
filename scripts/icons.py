@@ -121,6 +121,16 @@ def generated(catalog):
             slint.append(f'        if id == {quote(icon_id)} && !dark {{ return @image-url("vendor/{icon_id}-light.svg"); }}\n')
         slint.append(f'        if id == {quote(icon_id)} {{ return @image-url("vendor/{icon_id}-default.svg"); }}\n')
     slint.append(f'        return @image-url("vendor/{catalog["file_default"]}-default.svg");\n    }}\n')
+    slint.append("    public pure function color-image(id: string, dark: bool) -> image {\n")
+    for icon_id, icon in sorted(catalog["assets"].items()):
+        if "color" in icon["variants"]:
+            slint.append(f'        if id == {quote(icon_id)} {{ return @image-url("vendor/{icon_id}-color.svg"); }}\n')
+    slint.append("        return self.image(id, dark);\n    }\n")
+    slint.append("    public pure function has-color(id: string) -> bool {\n")
+    for icon_id, icon in sorted(catalog["assets"].items()):
+        if "color" in icon["variants"]:
+            slint.append(f'        if id == {quote(icon_id)} {{ return true; }}\n')
+    slint.append("        return false;\n    }\n")
     slint.append("    public pure function monochrome(id: string) -> bool {\n")
     for icon_id, icon in sorted(catalog["assets"].items()):
         if icon["treatment"] == "monochrome":

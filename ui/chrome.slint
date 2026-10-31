@@ -28,8 +28,11 @@ export global Glyphs {
     public pure function action(id: string) -> image {
         return IconCatalog.image(IconCatalog.action(id), Chrome.dark);
     }
-    public pure function action-monochrome(id: string) -> bool {
-        return IconCatalog.monochrome(IconCatalog.action(id));
+    public pure function command(id: string) -> image {
+        return IconCatalog.color-image(IconCatalog.action(id), Chrome.dark);
+    }
+    public pure function command-monochrome(id: string) -> bool {
+        return !IconCatalog.has-color(IconCatalog.action(id)) && IconCatalog.monochrome(IconCatalog.action(id));
     }
     public pure function place(id: string) -> image {
         return IconCatalog.image(IconCatalog.place(id), Chrome.dark);
@@ -255,15 +258,6 @@ export component ShortcutButton inherits Rectangle {
         border-color: root.has-focus ? Chrome.accent : Chrome.dark ? #ffffff30 : #00000030;
         HorizontalLayout {
             alignment: center; spacing: 4px; padding-left: 4px; padding-right: 4px;
-            if root.key-label != "": Rectangle {
-                width: 26px;
-                Rectangle {
-                    height: 22px; y: (parent.height - self.height) / 2; border-radius: 4px;
-                    background: Chrome.dark ? #ffffff0a : #f1f2f5;
-                    border-width: 1px; border-color: Chrome.dark ? #ffffff24 : #00000020;
-                    key-text := Text { text: root.key-label; width: parent.width; height: parent.height; color: root.enabled ? Chrome.secondary : Chrome.disabled; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; overflow: elide; accessible-role: none; }
-                }
-            }
             if root.icon.width > 0: Rectangle {
                 width: 20px;
                 IconView {
@@ -273,6 +267,15 @@ export component ShortcutButton inherits Rectangle {
                 }
             }
             Text { min-width: 0px; text: root.label; color: root.enabled ? Chrome.foreground : Chrome.disabled; font-size: 14px; font-weight: 600; opacity: root.width < 90px ? 0 : 1; vertical-alignment: center; overflow: elide; accessible-role: none; }
+            if root.key-label != "": Rectangle {
+                width: 26px;
+                Rectangle {
+                    height: 22px; y: (parent.height - self.height) / 2; border-radius: 4px;
+                    background: Chrome.dark ? #ffffff0a : #f1f2f5;
+                    border-width: 1px; border-color: Chrome.dark ? #ffffff24 : #00000020;
+                    key-text := Text { text: root.key-label; width: parent.width; height: parent.height; color: root.enabled ? Chrome.secondary : Chrome.disabled; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; overflow: elide; accessible-role: none; }
+                }
+            }
         }
     }
     touch := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }

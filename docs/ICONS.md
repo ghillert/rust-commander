@@ -45,7 +45,13 @@ associations and desktop themes to be picked up.
 
 ## Artwork and coverage
 
-Application controls use Fluent regular icons. Sidebar entries use colorful
+Application controls use Fluent regular icons. The bottom command bar places
+shortcut badges after their labels and uses color variants for Help, View, Edit,
+Copy, Move, New folder and Move to Trash. Help and Edit use upstream color artwork;
+the other five use Fluent filled geometry with recorded blue, teal, gold and red
+gradient palettes. The color variants are specific to the command bar; customized
+actions without a color variant retain their normal icon treatment.
+Sidebar entries use colorful
 Fluent artwork: Home, Document Folder, Arrow Square Down, Laptop, and Globe.
 Desktop and hard drives use Fluent filled geometry with recorded blue/teal
 gradient palettes where an upstream color variant is unavailable. These
@@ -95,8 +101,9 @@ The importer generates the Slint asset mapping, Rust filename tables, and the
 marked icon-license section of `NOTICE`. It validates SVGs, pinned checksums,
 references, and unused assets. The generic Material folder derives from the
 upstream folder template by removing its optional motive, a recorded deterministic
-transformation. The desktop and drive variants use the recorded `tint-gradient`
-transformation and two RGB palette colors; their shapes remain unchanged.
+transformation. The desktop, drive and adapted command-bar variants use the
+recorded `tint-gradient` transformation and two RGB palette colors; their shapes
+remain unchanged.
 Generic file artwork uses Material's document icon. Other SVGs retain their
 upstream bytes. `.gitattributes` preserves vendored bytes across
 Windows and Unix checkouts. Full upstream MIT texts are retained in

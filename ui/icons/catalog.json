@@ -66,6 +66,18 @@
         "default": {
           "path": "assets/Folder Add/SVG/ic_fluent_folder_add_20_regular.svg",
           "sha256": "cd3f4b271eb744513906a76684d7a3993e6fba41d5a594c92fd88ae84b975436"
+        },
+        "color": {
+          "path": "assets/Folder Add/SVG/ic_fluent_folder_add_20_filled.svg",
+          "transforms": [
+            "tint-gradient"
+          ],
+          "palette": [
+            "#FFD76A",
+            "#DB8A16"
+          ],
+          "sha256": "9f8790ae636b1b5c8b98fca903b85a305ce19bbc977b75f8077a72e3de8cff3b",
+          "output_sha256": "349881873da1b8433c72521c92e28fbf4c66be929b2aed69469186a5424c9aaa"
         }
       }
     },
@@ -76,6 +88,18 @@
         "default": {
           "path": "assets/Copy/SVG/ic_fluent_copy_20_regular.svg",
           "sha256": "28d4219225956b89a119beb82167b4ebb593707d4e61e42be28259ee6775e28b"
+        },
+        "color": {
+          "path": "assets/Copy/SVG/ic_fluent_copy_20_filled.svg",
+          "transforms": [
+            "tint-gradient"
+          ],
+          "palette": [
+            "#55B8FF",
+            "#2864E7"
+          ],
+          "sha256": "9e5ab00ef0638122b2dab29f584c3f6d0dd0dff1a160218ba31ba626ddc16de2",
+          "output_sha256": "728efd7a95076e3c084f9ab6c817caafe45372f33abf3e7ab5a027775e666839"
         }
       }
     },
@@ -86,6 +110,18 @@
         "default": {
           "path": "assets/Folder Arrow Right/SVG/ic_fluent_folder_arrow_right_20_regular.svg",
           "sha256": "6fc571fd38a4084ec83171befe5f250d9684b9a8e92d0c433cacd65824e6b728"
+        },
+        "color": {
+          "path": "assets/Folder Arrow Right/SVG/ic_fluent_folder_arrow_right_20_filled.svg",
+          "transforms": [
+            "tint-gradient"
+          ],
+          "palette": [
+            "#35C6AF",
+            "#087E8B"
+          ],
+          "sha256": "c360742d83239bd8270953a98c329d5c452f2a3f2ce03d6e6d67c2638ddde1b3",
+          "output_sha256": "2b202def1ee92e6c74ea817eb36d7563a5493690d2e03bab07b27ae253383a64"
         }
       }
     },
@@ -106,6 +142,18 @@
         "default": {
           "path": "assets/Search/SVG/ic_fluent_search_20_regular.svg",
           "sha256": "5ac1eac82df532662cd1bad2c8e55763846e1b258740bcbb0612a48d22630d40"
+        },
+        "color": {
+          "path": "assets/Search/SVG/ic_fluent_search_20_filled.svg",
+          "transforms": [
+            "tint-gradient"
+          ],
+          "palette": [
+            "#55B8FF",
+            "#2864E7"
+          ],
+          "sha256": "74cae4ef265fc7208213154ba221741834bc6f911dd8082ef68224e0e29c24d3",
+          "output_sha256": "1542447852ac866e9e76c849f6954e190091c851730b421a92f352ca2b18fec9"
         }
       }
     },
@@ -905,6 +953,11 @@
           "path": "assets/Question Circle/SVG/ic_fluent_question_circle_20_regular.svg",
           "sha256": "2a74ef3c4c4fe762581ba7339c01be2129b7e646a8f399703f1426558275a639",
           "output_sha256": "2a74ef3c4c4fe762581ba7339c01be2129b7e646a8f399703f1426558275a639"
+        },
+        "color": {
+          "path": "assets/Question Circle/SVG/ic_fluent_question_circle_20_color.svg",
+          "sha256": "55c35db7f653d7c6877710f1da0a458e0fddb901d59ddc36f54f0947f7752fa2",
+          "output_sha256": "55c35db7f653d7c6877710f1da0a458e0fddb901d59ddc36f54f0947f7752fa2"
         }
       }
     },
@@ -916,6 +969,11 @@
           "path": "assets/Edit/SVG/ic_fluent_edit_20_regular.svg",
           "sha256": "f14fdc76c0e3953d273e99394e724003bebd8779a55e30df6130455841f237c6",
           "output_sha256": "f14fdc76c0e3953d273e99394e724003bebd8779a55e30df6130455841f237c6"
+        },
+        "color": {
+          "path": "assets/Edit/SVG/ic_fluent_edit_20_color.svg",
+          "sha256": "83d76a2a39cb8da768d925b5f300d6c0457d1d4bbc04de8715913d55b87e5beb",
+          "output_sha256": "83d76a2a39cb8da768d925b5f300d6c0457d1d4bbc04de8715913d55b87e5beb"
         }
       }
     },
@@ -927,6 +985,18 @@
           "path": "assets/Delete/SVG/ic_fluent_delete_20_regular.svg",
           "sha256": "c3ce6fcb04fa1564fc50e00677d763ddf5cafa0ade58604df4c478268ef54452",
           "output_sha256": "c3ce6fcb04fa1564fc50e00677d763ddf5cafa0ade58604df4c478268ef54452"
+        },
+        "color": {
+          "path": "assets/Delete/SVG/ic_fluent_delete_20_filled.svg",
+          "transforms": [
+            "tint-gradient"
+          ],
+          "palette": [
+            "#F77979",
+            "#C42B40"
+          ],
+          "sha256": "99f4d7020338d17ad3322401c95a569539fa9dced2c373c9c8d7178b421c352d",
+          "output_sha256": "5fb29a1b55dd9000347722a152ce09ada0f1f07264585fbf544e66574df59775"
         }
       }
     }

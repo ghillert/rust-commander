@@ -892,8 +892,8 @@ export component CommanderWindow inherits Window {
                 HorizontalLayout {
                     padding-left:8px;padding-right:8px;padding-top:6px;padding-bottom:6px;spacing:6px;
                     for command in root.command-buttons: ShortcutButton {
-                        icon: Glyphs.action(command.id);
-                        icon-monochrome: Glyphs.action-monochrome(command.id);
+                        icon: Glyphs.command(command.id);
+                        icon-monochrome: Glyphs.command-monochrome(command.id);
                         key-label:command.key;label:Words.translate(command.title,Words.version);enabled:command.enabled;clicked=>{root.action(command.id);}
                     }
                 }

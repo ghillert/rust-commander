@@ -1,5 +1,16 @@
 # Validation record
 
+## Command-bar icon color and shortcut placement — 2026-10-31
+
+Bottom buttons show icon, action label, then shortcut badge. The seven default
+actions use color variants from the pinned Fluent library: original Help/Edit
+color artwork and reproducibly colored filled shapes for the other five.
+Toolbar icons retain their existing treatment, and customized command actions
+without color variants retain the catalog fallback. All nine offline icon tests
+and 12 software/FemtoVG light/dark rendering checks pass. File-window previews
+were visually reviewed in both appearances; output is under
+`/private/tmp/rc-color-command-preview/`.
+
 ## Native operation forms, remote packing and metadata — 2026-10-31
 
 macOS Copy, Move, Rename and Pack now share the asynchronous AppKit renderer
