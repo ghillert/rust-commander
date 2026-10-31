@@ -7,10 +7,10 @@ use objc2::{
 };
 use objc2_app_kit::{
     NSAccessibility, NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
-    NSBackingStoreType, NSBezelStyle, NSButton, NSButtonCell, NSColor, NSControl,
-    NSControlTextEditingDelegate, NSFont, NSPopUpButton, NSScrollView, NSTextField,
-    NSTextFieldBezelStyle, NSTextFieldDelegate, NSView, NSWindow, NSWindowDelegate,
-    NSWindowStyleMask,
+    NSBackingStoreType, NSBezelStyle, NSButton, NSButtonCell, NSButtonType, NSColor, NSControl,
+    NSControlTextEditingDelegate, NSFont, NSPopUpButton, NSScrollView, NSSecureTextField,
+    NSTextDelegate, NSTextField, NSTextFieldBezelStyle, NSTextFieldDelegate, NSTextView,
+    NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
 };
 use objc2_foundation::{
     MainThreadMarker, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -23,32 +23,45 @@ type Events = Rc<RefCell<Vec<Event>>>;
 /// invalidates that intent. It cannot approve a later, different extraction.
 #[derive(PartialEq)]
 pub(in super::super) struct Intent {
-    archive: std::path::PathBuf,
-    selected: Vec<std::path::PathBuf>,
-    prefix: std::path::PathBuf,
-    base: std::path::PathBuf,
+    identity: String,
     destination: String,
+    resumable: bool,
     options: crate::transfer::TransferOptions,
     overrides: std::collections::BTreeMap<std::path::PathBuf, crate::transfer::ConflictPolicy>,
 }
 impl Intent {
     pub fn capture(adapter: &super::super::Adapter) -> Option<Self> {
         let prompt = adapter.app.prompt.as_ref()?;
-        let crate::app::PromptKind::Extract {
-            archive,
-            selected,
-            prefix,
-            base,
-        } = &prompt.kind
-        else {
-            return None;
+        use crate::app::PromptKind;
+        let identity = match &prompt.kind {
+            PromptKind::Extract {
+                archive,
+                selected,
+                prefix,
+                base,
+            } => serde_json::to_string(&("extract", archive, selected, prefix, base)),
+            PromptKind::Transfer {
+                sources,
+                base,
+                moving,
+            } => serde_json::to_string(&("transfer", sources, base, moving)),
+            PromptKind::RemoteTransfer {
+                from,
+                entries,
+                to,
+                moving,
+            } => serde_json::to_string(&("remote-transfer", from, entries, to, moving)),
+            PromptKind::DropTransfer {
+                selection,
+                to,
+                moving,
+            } => serde_json::to_string(&("drop-transfer", selection, to, moving)),
+            _ => return None,
         };
         Some(Self {
-            archive: archive.clone(),
-            selected: selected.clone(),
-            prefix: prefix.clone(),
-            base: base.clone(),
+            identity: identity.ok()?,
             destination: prompt.value.clone(),
+            resumable: prompt.resumable,
             options: prompt.transfer_options,
             overrides: prompt.overrides.clone(),
         })
@@ -68,13 +81,23 @@ enum Widget {
     Text(Retained<NSTextField>),
     Choice(Retained<NSPopUpButton>, Vec<String>),
     Check(Retained<NSButton>),
+    Multiline(Retained<NSTextView>, Retained<NSScrollView>),
 }
 impl Widget {
-    fn control(&self) -> &NSControl {
+    fn control(&self) -> Option<&NSControl> {
+        match self {
+            Self::Text(w) => Some(w),
+            Self::Choice(w, _) => Some(w),
+            Self::Check(w) => Some(w),
+            Self::Multiline(..) => None,
+        }
+    }
+    fn view(&self) -> &NSView {
         match self {
             Self::Text(w) => w,
             Self::Choice(w, _) => w,
             Self::Check(w) => w,
+            Self::Multiline(_, scroll) => scroll,
         }
     }
     fn value(&self) -> String {
@@ -86,6 +109,7 @@ impl Widget {
                 .cloned()
                 .unwrap_or_default(),
             Self::Check(w) => (w.state() != 0).to_string(),
+            Self::Multiline(w, _) => w.string().to_string(),
         }
     }
     fn update(&self, value: &str) {
@@ -100,6 +124,7 @@ impl Widget {
                 }
             }
             Self::Check(w) => w.setState(isize::from(value == "true")),
+            Self::Multiline(w, _) => w.setString(&NSString::from_str(value)),
         }
     }
 }
@@ -128,6 +153,16 @@ define_class!(
         }
     }
     unsafe impl NSTextFieldDelegate for Target {}
+    unsafe impl NSTextDelegate for Target {
+        #[unsafe(method(textDidChange:))]
+        fn multiline_changed(&self, notification:&NSNotification) {
+            if let Some(text)=notification.object().and_then(|object|object.downcast::<NSTextView>().ok())
+                && let Some((id,widget))=self.ivars().fields.borrow().iter().find(|(_,widget)|matches!(widget,Widget::Multiline(view,_) if std::ptr::eq(&**view,&*text))) {
+                self.ivars().events.borrow_mut().push(Event::Field(id.clone(),widget.value()));
+            }
+        }
+    }
+    unsafe impl NSTextViewDelegate for Target {}
     unsafe impl NSWindowDelegate for Target {
         #[unsafe(method(windowShouldClose:))]
         fn should_close(&self, _window: &NSWindow) -> bool {
@@ -161,13 +196,11 @@ impl Target {
         unsafe { msg_send![super(this), init] }
     }
     fn collect_field(&self, sender: &NSControl) {
-        if let Some((id, widget)) = self
-            .ivars()
-            .fields
-            .borrow()
-            .iter()
-            .find(|(_, widget)| std::ptr::eq(widget.control(), sender))
-        {
+        if let Some((id, widget)) = self.ivars().fields.borrow().iter().find(|(_, widget)| {
+            widget
+                .control()
+                .is_some_and(|control| std::ptr::eq(control, sender))
+        }) {
             self.ivars()
                 .events
                 .borrow_mut()
@@ -227,12 +260,17 @@ impl Host {
                     .find(|(key, _)| key == &id)
                     .expect("Native field must exist");
                 widget.update(&value);
-                sheet.target.collect_field(widget.control());
+                sheet
+                    .target
+                    .ivars()
+                    .events
+                    .borrow_mut()
+                    .push(Event::Field(id, widget.value()));
             }
             "native-action" if value == "close" => sheet.window.performClose(None),
             "native-action" if value == "return" => {
                 let fields = sheet.target.ivars().fields.borrow();
-                let control = fields.first().unwrap().1.control();
+                let control = fields.first().unwrap().1.control().unwrap();
                 unsafe {
                     control.sendAction_to(control.action(), control.target().as_deref());
                 }
@@ -315,6 +353,23 @@ impl Host {
             self.sheet = None;
             return false;
         };
+        if self.sheet.as_ref().is_some_and(|sheet| {
+            sheet.kind != spec.kind
+                || sheet.title != spec.title
+                || sheet
+                    .buttons
+                    .iter()
+                    .map(|(id, _)| id)
+                    .collect::<std::collections::BTreeSet<_>>()
+                    != spec
+                        .buttons
+                        .iter()
+                        .map(|(id, _, _)| id)
+                        .filter(|id| matches!(id.as_str(), "accept" | "cancel" | "apply-all"))
+                        .collect::<std::collections::BTreeSet<_>>()
+        }) {
+            self.sheet = None;
+        }
         if self.sheet.is_none() {
             let Some(mtm) = MainThreadMarker::new() else {
                 return false;
@@ -344,6 +399,8 @@ impl Host {
 }
 
 struct Sheet {
+    kind: String,
+    title: String,
     parent: Retained<NSWindow>,
     window: Retained<NSWindow>,
     target: Retained<Target>,
@@ -367,6 +424,9 @@ fn translated(value: &str) -> Retained<NSString> {
 fn field_height(field: &Field) -> f64 {
     match field.kind {
         2 => 34.0,
+        4 => 124.0,
+        8 => 34.0,
+        9 => 28.0,
         6 => 68.0,
         _ => 62.0 + (field.title.chars().count() / 80).min(3) as f64 * 16.0,
     }
@@ -432,6 +492,8 @@ impl Sheet {
             }
         }
         let mut sheet = Self {
+            kind: spec.kind.clone(),
+            title: spec.title.clone(),
             parent,
             window,
             target,
@@ -459,11 +521,21 @@ impl Sheet {
             .fields
             .borrow()
             .iter()
-            .find_map(|(id, widget)| {
-                widget
+            .find_map(|(id, widget)| match widget {
+                Widget::Multiline(view, _)
+                    if self.window.firstResponder().is_some_and(|r| {
+                        std::ptr::eq(
+                            &*r as *const _ as *const (),
+                            &**view as *const _ as *const (),
+                        )
+                    }) =>
+                {
+                    Some((id.clone(), view.selectedRange()))
+                }
+                _ => widget
                     .control()
-                    .currentEditor()
-                    .map(|editor| (id.clone(), editor.selectedRange()))
+                    .and_then(|control| control.currentEditor())
+                    .map(|editor| (id.clone(), editor.selectedRange())),
             });
         let mtm = self.window.mtm();
         let description_height = 74.0;
@@ -488,8 +560,15 @@ impl Sheet {
             let height = field_height(field);
             y -= height;
             let title = translated(&field.title);
-            if field.kind != 2 {
-                let title_height = height - if field.kind == 6 { 42.0 } else { 34.0 };
+            if !matches!(field.kind, 2 | 8 | 9) {
+                let title_height = height
+                    - if field.kind == 6 {
+                        42.0
+                    } else if field.kind == 4 {
+                        100.0
+                    } else {
+                        34.0
+                    };
                 let heading = label(
                     mtm,
                     &title.to_string(),
@@ -498,11 +577,19 @@ impl Sheet {
                 doc.addSubview(&heading);
             }
             let widget = match field.kind {
-                0 => {
-                    let text = NSTextField::initWithFrame(
-                        NSTextField::alloc(mtm),
-                        rect(8.0, y + 6.0, 552.0, 24.0),
-                    );
+                0 | 1 => {
+                    let text: Retained<NSTextField> = if field.kind == 1 {
+                        NSSecureTextField::initWithFrame(
+                            NSSecureTextField::alloc(mtm),
+                            rect(8.0, y + 6.0, 552.0, 24.0),
+                        )
+                        .into_super()
+                    } else {
+                        NSTextField::initWithFrame(
+                            NSTextField::alloc(mtm),
+                            rect(8.0, y + 6.0, 552.0, 24.0),
+                        )
+                    };
                     text.setBezeled(true);
                     text.setBezelStyle(NSTextFieldBezelStyle::RoundedBezel);
                     text.setMaximumNumberOfLines(1);
@@ -521,17 +608,60 @@ impl Sheet {
                     }
                     Widget::Text(text)
                 }
-                2 => {
-                    let check = unsafe {
-                        NSButton::checkboxWithTitle_target_action(
-                            &title,
-                            Some(&self.target),
-                            Some(sel!(changed:)),
+                2 | 8 => {
+                    let check = if field.kind == 8 {
+                        let button = NSButton::initWithFrame(
+                            NSButton::alloc(mtm),
+                            rect(8.0, y + 6.0, 20.0, 24.0),
+                        );
+                        button.setTitle(&NSString::from_str(""));
+                        button.setButtonType(NSButtonType::PushOnPushOff);
+                        button.setBezelStyle(NSBezelStyle::Disclosure);
+                        button.setBordered(true);
+                        unsafe {
+                            button.setTarget(Some(&self.target));
+                            button.setAction(Some(sel!(changed:)));
+                        }
+                        doc.addSubview(&label(
                             mtm,
-                        )
+                            &title.to_string(),
+                            rect(34.0, y + 6.0, 520.0, 24.0),
+                        ));
+                        button
+                    } else {
+                        let button = unsafe {
+                            NSButton::checkboxWithTitle_target_action(
+                                &title,
+                                Some(&self.target),
+                                Some(sel!(changed:)),
+                                mtm,
+                            )
+                        };
+                        button.setFrame(rect(8.0, y + 6.0, 552.0, 24.0));
+                        button
                     };
-                    check.setFrame(rect(8.0, y + 6.0, 552.0, 24.0));
                     Widget::Check(check)
+                }
+                4 => {
+                    let scroll = NSScrollView::initWithFrame(
+                        NSScrollView::alloc(mtm),
+                        rect(8.0, y + 6.0, 552.0, 84.0),
+                    );
+                    scroll.setHasVerticalScroller(true);
+                    scroll.setAutohidesScrollers(true);
+                    let text = NSTextView::initWithFrame(
+                        NSTextView::alloc(mtm),
+                        rect(0.0, 0.0, 532.0, 84.0),
+                    );
+                    text.setRichText(false);
+                    text.setVerticallyResizable(true);
+                    text.setHorizontallyResizable(false);
+                    text.setMaxSize(NSSize::new(532.0, f64::MAX));
+                    text.setFont(Some(&NSFont::systemFontOfSize(13.0)));
+                    text.setDelegate(Some(ProtocolObject::from_ref(&*self.target)));
+                    text.setAccessibilityLabel(Some(&title));
+                    scroll.setDocumentView(Some(&text));
+                    Widget::Multiline(text, scroll)
                 }
                 3 => {
                     let choice = NSPopUpButton::initWithFrame_pullsDown(
@@ -552,16 +682,21 @@ impl Sheet {
                     let note = label(
                         mtm,
                         &crate::app::tr(&field.value),
-                        rect(8.0, y + 4.0, 552.0, 38.0),
+                        rect(
+                            8.0,
+                            y + 4.0,
+                            552.0,
+                            if field.kind == 9 { 24.0 } else { 38.0 },
+                        ),
                     );
                     note.setTextColor(Some(&NSColor::secondaryLabelColor()));
                     doc.addSubview(&note);
                     continue;
                 }
             };
-            widget.control().setAccessibilityLabel(Some(&title));
+            widget.view().setAccessibilityLabel(Some(&title));
             widget.update(&field.value);
-            doc.addSubview(widget.control());
+            doc.addSubview(widget.view());
             widgets.push((field.id.clone(), widget));
         }
         *self.target.ivars().fields.borrow_mut() = widgets;
@@ -574,9 +709,16 @@ impl Sheet {
         if let Some((id, range)) = editing {
             let fields = self.target.ivars().fields.borrow();
             if let Some((_, widget)) = fields.iter().find(|(key, _)| key == &id) {
-                self.window.makeFirstResponder(Some(widget.control()));
-                if let Some(editor) = widget.control().currentEditor() {
-                    editor.setSelectedRange(range);
+                if let Widget::Multiline(view, _) = widget {
+                    self.window.makeFirstResponder(Some(view));
+                    view.setSelectedRange(range);
+                } else {
+                    self.window.makeFirstResponder(Some(widget.view()));
+                    if let Some(editor) =
+                        widget.control().and_then(|control| control.currentEditor())
+                    {
+                        editor.setSelectedRange(range);
+                    }
                 }
             }
         }
@@ -616,14 +758,11 @@ impl Sheet {
         unsafe {
             let _: () = msg_send![&*self.window, setAppearance: appearance.as_deref()];
         }
-        for ((id, widget), field) in self
-            .target
-            .ivars()
-            .fields
-            .borrow()
-            .iter()
-            .zip(spec.fields.iter().filter(|f| matches!(f.kind, 0 | 2 | 3)))
-        {
+        for ((id, widget), field) in self.target.ivars().fields.borrow().iter().zip(
+            spec.fields
+                .iter()
+                .filter(|f| matches!(f.kind, 0 | 1 | 2 | 3 | 4 | 8)),
+        ) {
             debug_assert_eq!(id, &field.id);
             widget.update(&field.value);
         }
@@ -650,6 +789,9 @@ impl Drop for Sheet {
                 unsafe {
                     text.setDelegate(None);
                 }
+            }
+            if let Widget::Multiline(text, _) = widget {
+                text.setDelegate(None);
             }
         }
         self.parent.endSheet(&self.window);

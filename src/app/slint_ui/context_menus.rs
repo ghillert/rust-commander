@@ -53,24 +53,38 @@ pub(super) fn press(ui: &CommanderWindow, text: impl Into<SharedString>) {
 }
 fn menu_element(ui: &CommanderWindow, id: &str) -> ElementHandle {
     let command = ui.get_menu_items().iter().find(|c| c.id == id).unwrap();
-    // Long menus need the same wheel scrolling as a physical user. Searching
-    // visible accessibility elements must not assume every row fits at once.
+    // TestingWindow stores set_size(LogicalSize) at scale 1, including when a
+    // synthetic ScaleFactorChanged event is used by the interaction fixtures.
+    let height = (ui.get_menu_items().row_count() as f32 * 28.0 + 16.0)
+        .min(ui.window().size().height as f32 - 40.0);
+    let visible = |item: &ElementHandle| {
+        let position = item.absolute_position();
+        let size = item.size();
+        // Search also finds the toolbar's Refresh and partially clipped menu
+        // rows. Only click a complete command row inside the popup viewport.
+        size.height <= 28.5 && position.y >= 6.0 && position.y + size.height <= height - 6.0
+    };
     for _ in 0..20 {
-        if ElementHandle::find_by_accessible_label(ui, &command.title)
-            .next()
-            .is_some()
+        if let Some(item) = ElementHandle::find_by_accessible_label(ui, &command.title)
+            .filter(&visible)
+            .last()
         {
-            break;
+            return item;
         }
-        let visible = ui
+        let item = ui
             .get_menu_items()
             .iter()
-            .find_map(|item| ElementHandle::find_by_accessible_label(ui, &item.title).next())
+            .find_map(|entry| {
+                ElementHandle::find_by_accessible_label(ui, &entry.title)
+                    .filter(&visible)
+                    .last()
+            })
             .expect("No visible menu rows to scroll");
-        visible.scroll(0.0, -140.0);
+        item.scroll(0.0, -140.0);
+        i_slint_backend_testing::mock_elapsed_time(Duration::from_millis(250));
         slint::platform::update_timers_and_animations();
     }
-    element(ui, &command.title)
+    panic!("Menu command did not scroll fully into view: {id}");
 }
 
 #[test]
@@ -276,6 +290,9 @@ fn file_context_dialog_actions_open_and_cancel_without_modifying_files() {
         ("Mkdir", "prompt"),
         ("Trash", "prompt"),
     ] {
+        if id == "Permissions" && !cfg!(unix) {
+            continue;
+        }
         open(&ui, "alpha.txt");
         choose(&ui, id);
         assert_eq!(state.borrow().dialog_kind, dialog, "{id}");

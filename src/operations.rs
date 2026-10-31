@@ -216,6 +216,20 @@ pub enum Operation {
         #[serde(default)]
         background: bool,
     },
+    PackTo {
+        selection: crate::drag_drop::Selection,
+        target: crate::filesystem::Location,
+        #[serde(default)]
+        compression_level: Option<u8>,
+        #[serde(default)]
+        comment: String,
+        #[serde(default)]
+        encrypted: bool,
+        #[serde(skip)]
+        password: String,
+        #[serde(default)]
+        background: bool,
+    },
     Pack {
         sources: Vec<PathBuf>,
         destination: PathBuf,
@@ -279,9 +293,10 @@ impl Operation {
             Self::Mkfile(_) => "New file",
             Self::Trash(_) => "Move to Trash",
             Self::PermanentDelete(_) | Self::RemoteDelete { .. } => "Delete",
-            Self::Pack { .. } | Self::PackSelection { .. } | Self::PackProtected { .. } => {
-                "Create archive"
-            }
+            Self::Pack { .. }
+            | Self::PackSelection { .. }
+            | Self::PackProtected { .. }
+            | Self::PackTo { .. } => "Create archive",
             Self::Extract { .. } | Self::ExtractProtected { .. } | Self::ExtractResolved { .. } => {
                 "Extract archive"
             }
@@ -300,6 +315,19 @@ impl Operation {
     /// Recipe details exclude passwords and editor buffers.
     pub fn description(&self) -> String {
         match self {
+            Self::PackTo {
+                selection, target, ..
+            } => format!(
+                "{}\n{}\n→ {}",
+                selection.from.label(),
+                selection
+                    .entries
+                    .iter()
+                    .map(|e| e.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                target.label()
+            ),
             Self::PackSelection {
                 selection,
                 destination,
@@ -984,6 +1012,7 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             Ok("Created file.".into())
         }
         Operation::Permissions { paths, mode } => {
+            anyhow::ensure!(mode <= 0o7777, "Permissions must be between 0000 and 7777.");
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -993,7 +1022,7 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
                     if fs::symlink_metadata(&path)?.file_type().is_symlink() {
                         bail!("Change the symlink target directly.");
                     }
-                    fs::set_permissions(path, fs::Permissions::from_mode(mode & 0o777))?;
+                    fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
                 }
                 Ok("Permissions updated.".into())
             }
@@ -1091,6 +1120,31 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
                 task,
             )?;
             Ok(format!("Created {}", destination.display()))
+        }
+        Operation::PackTo {
+            selection,
+            target,
+            compression_level,
+            comment,
+            encrypted,
+            password,
+            ..
+        } => {
+            let path = match &target {
+                crate::filesystem::Location::Local(path)
+                | crate::filesystem::Location::Remote { path, .. } => path,
+                _ => bail!("Unsupported archive destination"),
+            };
+            let options = crate::packing::Options {
+                format: crate::archive::format(path).context("Unsupported archive format")?,
+                compression_level,
+                comment,
+                encrypted,
+                password,
+                ..Default::default()
+            };
+            crate::packing::pack_to(&selection, &target, &options, task)?;
+            Ok(format!("Created {}", target.label()))
         }
         Operation::Pack {
             sources,

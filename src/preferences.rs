@@ -415,24 +415,38 @@ impl Column {
             Self::Kind => crate::i18n::text(entry.kind()).into_owned(),
             Self::Owner | Self::Group => {
                 if local {
-                    let (owner, group, _) = crate::filesystem::ownership(&entry.path);
-                    if self == Self::Owner {
-                        owner.map(|n| n.to_string())
-                    } else {
-                        group.map(|n| n.to_string())
-                    }
-                    .unwrap_or_else(|| "—".into())
+                    let (owner, group) = crate::metadata::ownership_labels(&entry.path);
+                    if self == Self::Owner { owner } else { group }.unwrap_or_else(|| "—".into())
                 } else {
                     "—".into()
                 }
             }
             Self::Permissions => {
+                #[cfg(windows)]
+                if local {
+                    return std::fs::symlink_metadata(&entry.path)
+                        .map(|m| {
+                            crate::i18n::text(if m.permissions().readonly() {
+                                "Read-only"
+                            } else {
+                                "Writable"
+                            })
+                            .into_owned()
+                        })
+                        .unwrap_or_else(|_| "—".into());
+                }
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
                     if local {
                         return std::fs::symlink_metadata(&entry.path)
-                            .map(|meta| format!("{:03o}", meta.permissions().mode() & 0o777))
+                            .map(|meta| {
+                                format!(
+                                    "{} ({:04o})",
+                                    crate::metadata::symbolic(meta.permissions().mode()),
+                                    meta.permissions().mode() & 0o7777
+                                )
+                            })
                             .unwrap_or_else(|_| "—".into());
                     }
                 }

@@ -361,16 +361,8 @@ pub fn properties(paths: &[PathBuf], task: &mut Task) -> Result<String> {
                 chrono::DateTime::<chrono::Local>::from(time).format("%Y-%m-%d %H:%M:%S")
             ));
         }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            text.push_str(&format!(
-                "\nPermissions: {:o}\nUID: {} · GID: {}",
-                metadata.mode() & 0o7777,
-                metadata.uid(),
-                metadata.gid()
-            ));
-        }
+        text.push('\n');
+        text.push_str(&crate::metadata::describe(&paths[0])?);
     }
     Ok(text)
 }

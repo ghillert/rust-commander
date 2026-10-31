@@ -78,3 +78,37 @@ for the checks performed with this change.
 - GNOME: [Dialogs](https://developer.gnome.org/hig/patterns/feedback/dialogs.html),
   [UI styling](https://developer.gnome.org/hig/guidelines/ui-styling.html)
   and [Keyboard](https://developer.gnome.org/hig/guidelines/keyboard.html).
+
+
+## Repeatable desktop checks (2026-10-31)
+
+The shared unit/UI suite checks actual pointer/key dispatch, accessible row
+selection, context-menu targets and forms at scale factors 1, 1.25, 1.5 and 2.
+This tests the compiled platform style and controller; it is not OS screen-reader
+speech or a physical move between monitors.
+
+CI additionally runs the native Windows file-clipboard round trip and existing
+OLE deferred-provider fixtures. The Windows software-renderer smoke covers files
+and PDF viewing at all four scales. Linux uses an Xvfb clipboard with GNOME copy/cut
+formats, GTK drag-source checks, the separate XDND protocol peer fixtures and the
+headless Weston connection fixture. Both Linux renderers generate file/PDF
+snapshots at all four scales. macOS runs the Extract and Copy/Move/Rename/Pack
+AppKit fixtures in both renderers. All fixtures use disposable directories and
+private app configuration; native clipboard checks preserve the seeded clipboard.
+Reports and snapshots are uploaded with CI stabilization artifacts.
+
+Password fields retain the compiled platform LineEdit beneath an accessibility
+wrapper. The wrapper hides secret values and blocks edits while disabled; the
+inner widget is excluded from the accessibility tree. This also covers the PDF
+password field. It avoids the stock style's direct alias between plaintext and
+its accessible value.
+
+Native Windows execution of the newly added checks still requires the next CI
+run. The Windows metadata module has an MSVC-target compilation check and a
+supplementary Wine ACL-decoder check on macOS. Wine does not establish Explorer,
+NTFS permission enforcement, WinUI integration or NVDA behavior.
+
+Manual acceptance remains for NVDA/Orca/VoiceOver speech, high contrast, IME input,
+Full Keyboard Access variants, installed Linux themes and physical mixed-DPI
+monitor moves. Native Windows/Linux custom forms still require integration prototypes,
+as described in [Native forms](NATIVE_FORMS.md).

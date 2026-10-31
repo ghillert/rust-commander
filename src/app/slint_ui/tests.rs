@@ -207,41 +207,43 @@ fn dialog_fields_keep_control_height_and_standard_text_editing() {
 fn macos_password_fields_hide_accessibility_values_and_respect_disabled_input() {
     use i_slint_backend_testing::{AccessibleRole, ElementHandle};
     i_slint_backend_testing::init_no_event_loop();
-    let ui = CommanderWindow::new().unwrap();
-    ui.global::<DialogTheme>().set_macos(true);
-    ui.set_dialog_title("Credentials".into());
-    ui.set_dialog_fields(
-        Rc::new(VecModel::from(vec![FormField {
-            id: "password".into(),
-            title: "Password".into(),
-            value: "disposable-secret".into(),
-            kind: 1,
-            ..Default::default()
-        }]))
-        .into(),
-    );
-    let edits = Rc::new(RefCell::new(Vec::new()));
-    let captured = edits.clone();
-    ui.on_dialog_field(move |id, value| {
-        captured
-            .borrow_mut()
-            .push((id.to_string(), value.to_string()))
-    });
-    ui.show().unwrap();
-    slint::platform::update_timers_and_animations();
-    let password = ElementHandle::find_by_accessible_label(&ui, "Password")
-        .find(|e| e.accessible_role() == Some(AccessibleRole::TextInput))
-        .unwrap();
-    assert_eq!(password.accessible_value().unwrap_or_default(), "");
-    password.set_accessible_value("updated-secret");
-    assert_eq!(
-        &*edits.borrow(),
-        &[("password".to_string(), "updated-secret".to_string())]
-    );
-    ui.set_dialog_input_locked(true);
-    password.set_accessible_value("must-not-be-applied");
-    assert_eq!(edits.borrow().len(), 1);
-    assert_eq!(password.accessible_value().unwrap_or_default(), "");
+    for macos in [true, false] {
+        let ui = CommanderWindow::new().unwrap();
+        ui.global::<DialogTheme>().set_macos(macos);
+        ui.set_dialog_title("Credentials".into());
+        ui.set_dialog_fields(
+            Rc::new(VecModel::from(vec![FormField {
+                id: "password".into(),
+                title: "Password".into(),
+                value: "disposable-secret".into(),
+                kind: 1,
+                ..Default::default()
+            }]))
+            .into(),
+        );
+        let edits = Rc::new(RefCell::new(Vec::new()));
+        let captured = edits.clone();
+        ui.on_dialog_field(move |id, value| {
+            captured
+                .borrow_mut()
+                .push((id.to_string(), value.to_string()))
+        });
+        ui.show().unwrap();
+        slint::platform::update_timers_and_animations();
+        let password = ElementHandle::find_by_accessible_label(&ui, "Password")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::TextInput))
+            .unwrap();
+        assert_eq!(password.accessible_value().unwrap_or_default(), "");
+        password.set_accessible_value("updated-secret");
+        assert_eq!(
+            &*edits.borrow(),
+            &[("password".to_string(), "updated-secret".to_string())]
+        );
+        ui.set_dialog_input_locked(true);
+        password.set_accessible_value("must-not-be-applied");
+        assert_eq!(edits.borrow().len(), 1);
+        assert_eq!(password.accessible_value().unwrap_or_default(), "");
+    }
 }
 
 #[test]

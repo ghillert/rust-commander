@@ -180,10 +180,18 @@ pub fn sort_entries_with_options(
     descending: bool,
     folders_first: bool,
 ) {
-    let ownership_cache = if matches!(sort, Sort::Owner | Sort::Group | Sort::Permissions) {
+    let permissions_cache = if sort == Sort::Permissions {
         entries
             .iter()
-            .map(|e| (e.path.clone(), ownership(&e.path)))
+            .map(|e| (e.path.clone(), crate::metadata::permission_key(&e.path)))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    } else {
+        Default::default()
+    };
+    let names_cache = if matches!(sort, Sort::Owner | Sort::Group) {
+        entries
+            .iter()
+            .map(|e| (e.path.clone(), crate::metadata::ownership_labels(&e.path)))
             .collect::<std::collections::BTreeMap<_, _>>()
     } else {
         Default::default()
@@ -199,18 +207,19 @@ pub fn sort_entries_with_options(
             Sort::Modified => a.modified.cmp(&b.modified),
             Sort::Extension => a.path.extension().cmp(&b.path.extension()),
             Sort::Kind => a.kind().cmp(b.kind()),
-            Sort::Owner => ownership_cache
+            Sort::Owner => names_cache
                 .get(&a.path)
-                .and_then(|m| m.0)
-                .cmp(&ownership_cache.get(&b.path).and_then(|m| m.0)),
-            Sort::Group => ownership_cache
+                .and_then(|m| m.0.as_ref())
+                .cmp(&names_cache.get(&b.path).and_then(|m| m.0.as_ref())),
+            Sort::Group => names_cache
                 .get(&a.path)
-                .and_then(|m| m.1)
-                .cmp(&ownership_cache.get(&b.path).and_then(|m| m.1)),
-            Sort::Permissions => ownership_cache
+                .and_then(|m| m.1.as_ref())
+                .cmp(&names_cache.get(&b.path).and_then(|m| m.1.as_ref())),
+            Sort::Permissions => permissions_cache
                 .get(&a.path)
-                .and_then(|m| m.2)
-                .cmp(&ownership_cache.get(&b.path).and_then(|m| m.2)),
+                .copied()
+                .flatten()
+                .cmp(&permissions_cache.get(&b.path).copied().flatten()),
         }
         .then_with(|| a.name.cmp(&b.name));
         if descending { order.reverse() } else { order }

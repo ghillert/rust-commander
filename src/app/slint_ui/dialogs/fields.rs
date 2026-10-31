@@ -76,9 +76,47 @@ impl Adapter {
                                     options.background = checked(value);
                                 }
                             }
+                            "pack-files" => {
+                                if let PromptKind::Pack { options, .. } = &mut prompt.kind {
+                                    options.expanded = checked(value);
+                                }
+                            }
+                            "pack-encrypted" => {
+                                if let PromptKind::Pack { options, .. } = &mut prompt.kind {
+                                    options.encrypted = checked(value);
+                                }
+                            }
+                            "pack-password" => {
+                                if let PromptKind::Pack { options, .. } = &mut prompt.kind {
+                                    options.password = value.into();
+                                }
+                            }
                             "resumable" => prompt.resumable = checked(value),
                             "policy" => prompt.transfer_options.conflicts = parse_policy(value),
                             "merge" => prompt.transfer_options.merge_folders = checked(value),
+                            id if id.starts_with("permission-bit-")
+                                && matches!(prompt.kind, PromptKind::Permissions(_)) =>
+                            {
+                                let bit = u32::from_str_radix(
+                                    id.trim_start_matches("permission-bit-"),
+                                    8,
+                                )?;
+                                anyhow::ensure!(
+                                    crate::metadata::PERMISSION_BITS
+                                        .iter()
+                                        .any(|(_, mask)| *mask == bit),
+                                    "Unknown permission control."
+                                );
+                                let mode = crate::metadata::parse_mode(&prompt.value)?;
+                                prompt.value = format!(
+                                    "{:04o}",
+                                    if checked(value) {
+                                        mode | bit
+                                    } else {
+                                        mode & !bit
+                                    }
+                                );
+                            }
                             _ => {
                                 if let Some(index) = id
                                     .strip_prefix("conflict-")

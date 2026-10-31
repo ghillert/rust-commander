@@ -1,4 +1,4 @@
-import { Button, ComboBox, Palette } from "std-widgets.slint";
+import { Button, ComboBox, LineEdit, Palette } from "std-widgets.slint";
 import { Chrome, ChromeField } from "chrome.slint";
 
 // macOS form controls share the application's text editor behavior. Other
@@ -26,6 +26,42 @@ export component MacDialogField inherits ChromeField {
         border-radius: 8px;
         border-width: root.has-focus ? 3px : 0px;
         border-color: Chrome.accent.with-alpha(0.5);
+    }
+}
+
+// Keep the platform widget's editing and appearance, with one accessible
+// input. Stock styles alias their accessible value directly to plaintext.
+export component StandardDialogField inherits Rectangle {
+    in property <bool> enabled: true;
+    in property <InputType> input-type: InputType.text;
+    in-out property <string> text;
+    in property <string> label;
+    in property <string> placeholder;
+    callback edited(string);
+    callback accepted(string);
+    public function select-all() {standard.select-all();}
+    forward-focus: standard;
+    horizontal-stretch: 1; vertical-stretch: 0;
+    min-width: standard.min-width;
+    min-height: standard.min-height;
+    preferred-height: standard.min-height;
+    max-height: self.preferred-height;
+    accessible-role: text-input;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-value: root.input-type == InputType.password ? "" : root.text;
+    accessible-placeholder-text: root.placeholder;
+    accessible-action-set-value(value) => {if root.enabled {root.text=value;root.edited(value);}}
+    accessible-action-set-selection-offsets(anchor,focus) => {if root.enabled {standard.set-selection-offsets(anchor,focus);}}
+    standard := LineEdit {
+        width: parent.width; height: parent.height;
+        text <=> root.text;
+        input-type: root.input-type;
+        enabled: root.enabled;
+        placeholder-text: root.placeholder;
+        accessible-role: none;
+        edited(value) => {root.edited(value);}
+        accepted(value) => {root.accepted(value);}
     }
 }
 

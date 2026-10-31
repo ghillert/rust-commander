@@ -289,9 +289,11 @@ impl Adapter {
             } = &prompt.kind
             {
                 let mut d = Dialog::new("pack", "Pack files");
-                if selection.is_some() {
-                    d.description = "Create a local archive from the selected remote or archive files. Temporary disk space is required; originals are unchanged.".into();
-                }
+                d.description = if selection.is_some() {
+                    "Pack the selected remote or archive files using private temporary space. Choose a local path or a configured remote destination."
+                } else {
+                    "Choose a local path or a configured remote destination for the new archive."
+                }.into();
                 d.error = prompt.error.clone().unwrap_or_default();
                 d.fields.push(Field::text(
                     "prompt",
@@ -332,6 +334,23 @@ impl Adapter {
                         &options.comment,
                     ));
                 }
+                if matches!(
+                    options.format,
+                    crate::archive::Format::Zip | crate::archive::Format::SevenZ
+                ) {
+                    d.fields.push(Field::check(
+                        "pack-encrypted",
+                        "Encrypt archive",
+                        options.encrypted,
+                    ));
+                    if options.encrypted {
+                        d.fields.push(Field::password(
+                            "pack-password",
+                            "Password",
+                            &options.password,
+                        ));
+                    }
+                }
                 d.fields.push(Field {
                     kind: 8,
                     ..Field::text(
@@ -359,7 +378,11 @@ impl Adapter {
                         });
                     }
                 }
-                d.button("accept", "Pack", !sources.is_empty());
+                d.button(
+                    "accept",
+                    "Pack",
+                    !sources.is_empty() && (!options.encrypted || !options.password.is_empty()),
+                );
                 return d;
             }
 
@@ -382,10 +405,26 @@ impl Adapter {
                         | PromptKind::Extract { .. } => "Destination",
                         PromptKind::Rename(_) | PromptKind::RemoteRename { .. } => "New name",
                         PromptKind::Mkdir(_) | PromptKind::RemoteMkdir { .. } => "Folder name",
+                        PromptKind::Permissions(_) => "Octal permissions",
                         _ => "Value",
                     },
                     &prompt.value,
                 ));
+            }
+            if matches!(prompt.kind, PromptKind::Permissions(_))
+                && let Ok(mode) = crate::metadata::parse_mode(&prompt.value)
+            {
+                d.fields.push(Field::label(
+                    "Symbolic permissions",
+                    crate::metadata::symbolic(mode),
+                ));
+                for (title, bit) in crate::metadata::PERMISSION_BITS {
+                    d.fields.push(Field::check(
+                        format!("permission-bit-{bit:o}"),
+                        title,
+                        mode & bit != 0,
+                    ));
+                }
             }
             if let PromptKind::DropTransfer {
                 selection, moving, ..

@@ -3,7 +3,7 @@ import { Button, CheckBox, LineEdit, TextEdit, ScrollView, ListView, HorizontalB
 export { Palette } from "std-widgets.slint";
 import { Chrome, Glyphs, ChromeButton, ChromeField, ShortcutButton, IconView } from "chrome.slint";
 export { Chrome } from "chrome.slint";
-import { DialogTheme, MacDialogField, DialogButton, DialogChoice } from "dialog-controls.slint";
+import { DialogTheme, MacDialogField, StandardDialogField, DialogButton, DialogChoice } from "dialog-controls.slint";
 export { DialogTheme } from "dialog-controls.slint";
 export { IconGallery } from "icon-gallery.slint";
 export { IconCatalog } from "icons/catalog.slint";
@@ -960,7 +960,7 @@ export component CommanderWindow inherits Window {
                     Button { width:80px;text: Words.translate("Close", Words.version); clicked => { root.viewer-action("close"); } }
                 }
                 if root.viewer-locked: HorizontalBox {max-height:32px;
-                    LineEdit {text <=> root.viewer-password;input-type:InputType.password;accessible-label:"PDF password";placeholder-text:"PDF password";accepted(value)=>{root.viewer-action("unlock:"+value);}}
+                    StandardDialogField {text <=> root.viewer-password;input-type:InputType.password;label:"PDF password";placeholder:"PDF password";accepted(value)=>{root.viewer-action("unlock:"+value);}}
                     Button {text:"Unlock";enabled:!root.viewer-busy;clicked=>{root.viewer-action("unlock:"+root.viewer-password);root.viewer-password="";}}
                 }
                 if root.viewer-pdf-document && !root.viewer-locked: HorizontalBox {max-height:32px;
@@ -1063,12 +1063,12 @@ export component CommanderWindow inherits Window {
                                 accepted(value) => { root.dialog-action("accept"); }
                                 edited(value) => { root.dialog-field(field.id, value); }
                             }
-                            if !DialogTheme.macos && (field.kind == 0 || field.kind == 1 || field.kind == 5): LineEdit {
+                            if !DialogTheme.macos && (field.kind == 0 || field.kind == 1 || field.kind == 5): StandardDialogField {
                                 enabled: !root.dialog-input-locked;
                                 init => { if index == 0 { self.focus(); self.select-all(); } }
                                 text <=> field.value;
                                 input-type: field.kind == 1 ? InputType.password : InputType.text;
-                                accessible-label: field.title;
+                                label: field.title;
                                 accepted(value) => { root.dialog-action("accept"); }
                                 edited(value) => { root.dialog-field(field.id, value); }
                             }

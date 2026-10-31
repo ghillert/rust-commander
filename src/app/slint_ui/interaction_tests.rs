@@ -362,3 +362,79 @@ fn every_tab_creation_path_obeys_the_limit_and_moving_tabs_moves_focus() {
         assert!(a.app.status.contains("32"));
     }
 }
+
+#[test]
+fn scaled_panes_keep_pointer_keyboard_accessibility_and_context_targets_aligned() {
+    use i_slint_backend_testing::AccessibleRole;
+    let (_root, ui, state, left, _right) = setup();
+    for scale_factor in [1.0, 1.25, 1.5, 2.0] {
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged { scale_factor });
+        ui.window().set_size(slint::LogicalSize::new(1240.0, 780.0));
+        slint::platform::update_timers_and_animations();
+        let row = ElementHandle::find_by_accessible_label(&ui, "alpha.txt")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::ListItem))
+            .unwrap();
+        row.mock_single_click(Left);
+        assert_eq!(
+            state.borrow().app.tab().cursor,
+            Some(left.join("alpha.txt"))
+        );
+        assert_eq!(row.accessible_item_selected(), Some(true));
+        press(&ui, " ");
+        assert!(
+            state
+                .borrow()
+                .app
+                .tab()
+                .selected
+                .contains(&left.join("alpha.txt"))
+        );
+        open(&ui, "café.txt");
+        choose(&ui, "Rename");
+        assert!(
+            matches!(&state.borrow().app.prompt.as_ref().unwrap().kind,PromptKind::Rename(p) if p==&left.join("café.txt"))
+        );
+        press(&ui, Key::Escape);
+        assert!(state.borrow().app.prompt.is_none());
+        assert!(
+            state
+                .borrow()
+                .app
+                .tab()
+                .selected
+                .contains(&left.join("alpha.txt"))
+        );
+        state.borrow_mut().app.tab_mut().selected.clear();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn permission_fields_sync_octal_symbolic_and_each_checkbox() {
+    let (_root, ui, state, _left, _right) = setup();
+    element(&ui, "alpha.txt").mock_single_click(Left);
+    ui.invoke_action("Permissions".into());
+    ui.invoke_dialog_field("prompt".into(), "0640".into());
+    ui.invoke_dialog_field("permission-bit-1000".into(), "true".into());
+    ui.invoke_dialog_field("permission-bit-1".into(), "true".into());
+    assert_eq!(state.borrow().app.prompt.as_ref().unwrap().value, "1641");
+    assert!(
+        ui.get_dialog_fields()
+            .iter()
+            .any(|f| f.title == "Symbolic permissions" && f.value == "rw-r----t")
+    );
+    ui.invoke_dialog_field("prompt".into(), "0755".into());
+    assert_eq!(
+        ui.get_dialog_fields()
+            .iter()
+            .find(|f| f.id == "permission-bit-1000")
+            .unwrap()
+            .value,
+        "false"
+    );
+    ui.invoke_dialog_field("prompt".into(), "8888".into());
+    ui.invoke_dialog_action("accept".into());
+    assert!(state.borrow().app.job.is_none());
+    assert!(ui.get_dialog_error().contains("octal"));
+}

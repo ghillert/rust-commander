@@ -69,9 +69,10 @@ provider limits](FEATURES_NEXT.md#7-checkpointed-copies-and-live-transfer-contro
 Mark local, remote or archive files/folders with Space, then choose **Pack files…** from the right-click
 menu or **Operations → Pack files…**. The dialog mirrors the muCommander workflow:
 
-- **Add selected files to** suggests a name in the opposite local pane (or the
-  current local folder, or Home if neither pane is local). Edit it to choose
-  another local path. Uploading the output directly to remote storage is not offered.
+- **Add selected files to** suggests a name in the opposite local or remote pane
+  (falling back to the current local folder or Home). Enter a local path or an
+  address belonging to a configured writable connection. Inline passwords and
+  signed query strings are refused; choose the saved connection instead.
 - **Archive format** selects ZIP, 7z, TAR, compressed TAR, or a single-file stream.
   Changing format replaces the complete archive suffix, including `.tar.gz`.
 - **Compression level** offers the encoder default or an explicit level: ZIP/GZip
@@ -83,6 +84,9 @@ menu or **Operations → Pack files…**. The dialog mirrors the muCommander wor
   level survives queue recovery and is also available when creating encrypted archives.
 - **Comment** stores a UTF-8 archive comment for ZIP, up to 65,535 bytes. Other
   formats hide this field; switching back to ZIP restores the draft comment.
+- **Encrypt archive** is available for ZIP and 7z, including remote/archive
+  selections. Enter the password in the secure field. Passwords stay in memory;
+  a recovered encrypted queue recipe requires fresh input.
 - **Run in background** keeps the file panes available during packing. Otherwise
   a cancellable progress dialog appears; **Run in background** is also available
   there. Background jobs use the existing durable operation queue and history.
@@ -91,16 +95,23 @@ menu or **Operations → Pack files…**. The dialog mirrors the muCommander wor
 
 **Pack** creates a new archive and refuses to overwrite an existing destination.
 The selected format determines the output suffix; a missing/different suffix is
-corrected before packing. For password-protected ZIP or 7z, use **File → Archive
-tools… → Create encrypted archive**.
+corrected before packing. **File → Archive tools… → Create encrypted archive**
+remains available for local files.
 
 Remote/archive selections are frozen when the dialog opens. A worker stages
 their contents privately, verifies source snapshots, then packs the staged files.
-Source files are unchanged; only the output archive enters local Undo. Staging
+Source files are unchanged; only a local output archive enters local Undo.
+For remote output the worker completes the archive locally, uploads to a random
+sibling staging file, verifies its SHA-256 by reading it back, then publishes
+through the existing guarded transfer machinery. Existing targets are refused.
+Cancellation/failure attempts to remove remote staging; a disconnected service
+can leave a staging file requiring later cleanup. Publication guarantees depend
+on the provider's exclusive-create/conditional-write support, as for ordinary
+transfers. Remote archive creation has no general Undo. Staging
 uses temporary disk space and the existing transfer/extraction limits. Links and
 special entries retain the existing export/writer restrictions. Progress is a
 byte count across stages rather than a whole-job percentage. Cancelling or a
-failed source verification prevents output publication; temporary files are
+failed source verification prevents output publication; local temporary files are
 removed. Queued jobs retain source identities, not staged temporary paths; an
 archive cache that is unavailable after restart must be reopened and selected
 again. Encrypted archive creation still requires local sources.

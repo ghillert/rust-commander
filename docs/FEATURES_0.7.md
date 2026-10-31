@@ -84,13 +84,22 @@ remain appropriate to the focused terminal.
 
 ## 8. Metadata and automatic column sizing
 
-Settings can show owner, group and permission columns. Clicking their headers
-sorts by their metadata. Local Unix ownership is displayed as numeric UID/GID;
-permissions use the local mode bits. Unavailable Windows/remote metadata displays
-an em dash. View → Fit columns to content estimates widths from loaded rows and
-toggles fitting them to the pane width. Column dragging adjusts proportional
-widths when automatic sizing is enabled. Exact native ownership-name resolution
-and ACL display are outside this addition.
+Settings can show owner, group and permission columns. Local owner/group names
+resolve asynchronously through the operating system, falling back to UID/GID or
+Windows SID. Columns refresh and ownership sorting follows the resolved names.
+Unix permissions show symbolic and octal modes, including set-ID/sticky bits;
+Windows shows the read-only attribute. Unavailable remote metadata uses an em dash.
+View → Fit columns to content estimates widths from loaded rows and toggles fitting
+them to the pane width. Column dragging adjusts proportional widths when automatic
+sizing is enabled.
+
+Properties includes readable identities and macOS extended ACLs, Linux POSIX access
+and default ACLs, or Windows stored access rules plus the full SDDL descriptor.
+Windows rules distinguish grants/denials, inheritance and rights; they do not
+calculate effective access through all group memberships. Unix Change permissions
+provides synchronized octal, symbolic and checkbox controls, retaining special
+bits through Undo. This editor is disabled on Windows. Ownership changes and
+ACL editing are not implemented.
 
 ## 9. Text encoding and large-file paging
 

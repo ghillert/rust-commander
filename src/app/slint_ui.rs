@@ -52,6 +52,7 @@ pub(super) struct Adapter {
     drag: drag::State,
     extra: parity::State,
     interaction: interaction::State,
+    metadata_revision: u64,
     ctx: UiSignal,
     rows: [Rc<VecModel<FileRow>>; 2],
     row_cache: [Vec<RowData>; 2],
@@ -174,6 +175,7 @@ impl Adapter {
             drag: Default::default(),
             extra: Default::default(),
             interaction: Default::default(),
+            metadata_revision: 0,
             ctx,
             rows: std::array::from_fn(|_| Rc::new(VecModel::default())),
             row_cache: Default::default(),
@@ -585,6 +587,23 @@ impl Adapter {
     }
 
     fn sync(&mut self, ui: &CommanderWindow) {
+        let metadata_revision = crate::metadata::names_revision();
+        if self.metadata_revision != metadata_revision {
+            self.metadata_revision = metadata_revision;
+            for pane in &mut self.app.panes {
+                for tab in &mut pane.tabs {
+                    if matches!(tab.sort, filesystem::Sort::Owner | filesystem::Sort::Group) {
+                        filesystem::sort_entries_with_options(
+                            &mut tab.entries,
+                            tab.sort,
+                            tab.descending,
+                            tab.folders_first,
+                        );
+                        tab.revision = tab.revision.wrapping_add(1);
+                    }
+                }
+            }
+        }
         #[cfg(target_os = "macos")]
         for event in self.native_extract.events() {
             match event {
@@ -882,7 +901,7 @@ impl Adapter {
             tab.cursor.hash(&mut hasher);
             let selection = hasher.finish();
             let listing = format!(
-                "{}:{}:{}:{:?}:{}:{}:{}:{:?}:{:?}",
+                "{}:{}:{}:{:?}:{}:{}:{}:{:?}:{:?}:{}",
                 tab.id,
                 tab.revision,
                 tab.location.label(),
@@ -896,7 +915,8 @@ impl Adapter {
                     .iter()
                     .map(|c| c.kind)
                     .collect::<Vec<_>>(),
-                self.app.preferences.language
+                self.app.preferences.language,
+                metadata_revision
             );
             if self.listing_stamp[side] != listing {
                 self.drag.rows[side] = visible
@@ -1097,15 +1117,39 @@ impl Adapter {
         #[cfg(target_os = "macos")]
         let native_extract = {
             let extract = !self.app.exiting
-                && spec.kind == "prompt"
-                && self
-                    .app
-                    .prompt
-                    .as_ref()
-                    .is_some_and(|prompt| matches!(prompt.kind, PromptKind::Extract { .. }));
+                && matches!(spec.kind.as_str(), "prompt" | "pack")
+                && self.app.prompt.as_ref().is_some_and(|prompt| {
+                    matches!(
+                        prompt.kind,
+                        PromptKind::Extract { .. }
+                            | PromptKind::Transfer { .. }
+                            | PromptKind::RemoteTransfer { .. }
+                            | PromptKind::DropTransfer { .. }
+                            | PromptKind::Rename(_)
+                            | PromptKind::RemoteRename { .. }
+                            | PromptKind::Pack { .. }
+                    )
+                });
             self.native_extract_request = Some(dialogs::native_extract::Request {
                 ui: ui.as_weak(),
-                spec: extract.then(|| spec.clone()),
+                spec: extract.then(|| {
+                    let mut native_spec = spec.clone();
+                    native_spec.error = self
+                        .invalid_fields
+                        .values()
+                        .next()
+                        .map(|(_, e)| e.clone())
+                        .or_else(|| self.field_error.clone())
+                        .unwrap_or_else(|| spec.error.clone());
+                    if !native_spec.error.is_empty() {
+                        for (id, _, enabled) in &mut native_spec.buttons {
+                            if id == "accept" {
+                                *enabled = false;
+                            }
+                        }
+                    }
+                    native_spec
+                }),
                 scheme: self.app.preferences.color_scheme,
             });
             extract
@@ -1144,17 +1188,37 @@ impl Adapter {
                     .clamp(240.0, 700.0)
             }
             "pack" => {
-                if spec.fields.iter().any(|f| f.kind == 9) {
-                    if spec.fields.iter().any(|f| f.kind == 4) {
-                        664.0
+                let macos = env!("RUST_COMMANDER_WIDGET_STYLE") == "cupertino";
+                let fields: f32 = spec
+                    .fields
+                    .iter()
+                    .map(|field| match field.kind {
+                        2 => {
+                            if macos {
+                                26.0
+                            } else {
+                                36.0
+                            }
+                        }
+                        4 => 174.0,
+                        8 | 9 => 40.0,
+                        _ => {
+                            if macos {
+                                52.0
+                            } else {
+                                64.0
+                            }
+                        }
+                    })
+                    .sum();
+                (fields
+                    + 180.0
+                    + if spec.description.is_empty() {
+                        0.0
                     } else {
-                        524.0
-                    }
-                } else if spec.fields.iter().any(|f| f.kind == 4) {
-                    534.0
-                } else {
-                    384.0
-                }
+                        40.0
+                    })
+                .clamp(384.0, 720.0)
             }
             "pack-progress" => 300.0,
             "open-with" => 300.0,

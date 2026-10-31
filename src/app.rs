@@ -805,7 +805,8 @@ impl Commander {
                     && writable(&self.panes[1 - self.active].tab().location)
             }
             "Copy" => writable(&self.panes[1 - self.active].tab().location),
-            "Mkfile" | "PermanentDelete" | "Permissions" | "Modified" => {
+            "Permissions" => cfg!(unix) && self.tab().location.local().is_some(),
+            "Mkfile" | "PermanentDelete" | "Modified" => {
                 self.tab().location.local().is_some() && writable(&self.tab().location)
             }
             "Mkdir" | "Rename" | "BatchRename" | "Trash" | "Edit" | "CutClipboard"
@@ -958,6 +959,9 @@ impl Commander {
                 background: false,
                 ..
             } | Operation::PackSelection {
+                background: false,
+                ..
+            } | Operation::PackTo {
                 background: false,
                 ..
             }
@@ -2023,10 +2027,14 @@ impl Commander {
             }
             Action::Permissions => {
                 if local.is_some() {
+                    let mode = sources
+                        .first()
+                        .and_then(|path| filesystem::ownership(path).2)
+                        .unwrap_or(0o644);
                     prompt = Some((
                         "Change permissions",
-                        "Enter POSIX permission bits in octal (for example 644 or 755).".into(),
-                        "644".into(),
+                        "Choose the permissions to apply to the selected files, or enter an octal mode. Special bits are changed only as shown.".into(),
+                        format!("{mode:04o}"),
                         PromptKind::Permissions(sources),
                     ));
                 }
@@ -2193,11 +2201,26 @@ impl Commander {
                 .unwrap_or(std::ffi::OsStr::new("Archive"));
                 let mut name = name.to_os_string();
                 name.push(".zip");
-                let target = other.clone().unwrap_or_else(|| base.clone()).join(name);
+                let target = if let Location::Remote { connection, path } =
+                    &self.panes[1 - self.active].tab().location
+                {
+                    Location::Remote {
+                        connection: connection.clone(),
+                        path: path.join(&name),
+                    }
+                    .label()
+                } else {
+                    other
+                        .clone()
+                        .unwrap_or_else(|| base.clone())
+                        .join(name)
+                        .display()
+                        .to_string()
+                };
                 prompt = Some((
                     "Pack files",
                     String::new(),
-                    target.display().to_string(),
+                    target,
                     PromptKind::Pack {
                         sources,
                         selection: if local.is_none() {
@@ -2449,7 +2472,7 @@ impl Commander {
                 },
                 PromptKind::Permissions(paths) => Operation::Permissions {
                     paths: paths.clone(),
-                    mode: u32::from_str_radix(prompt.value.trim_start_matches("0o"), 8)?,
+                    mode: crate::metadata::parse_mode(&prompt.value)?,
                 },
                 PromptKind::Modified(paths) => Operation::Modified {
                     paths: paths.clone(),
@@ -2561,12 +2584,43 @@ impl Commander {
                         !prompt.value.trim().is_empty(),
                         "Enter an archive destination."
                     );
-                    let destination =
-                        options.destination(&filesystem::resolve_path(&prompt.value, base));
-                    anyhow::ensure!(
-                        !crate::operations::exists(&destination),
-                        "Archive already exists. Choose a different name."
-                    );
+                    let target = crate::packing::destination(
+                        &prompt.value,
+                        base,
+                        options,
+                        &self.connections,
+                    )?;
+                    if let Location::Local(destination) = &target {
+                        anyhow::ensure!(
+                            !crate::operations::exists(destination),
+                            "Archive already exists. Choose a different name."
+                        );
+                    }
+                    if options.encrypted || matches!(target, Location::Remote { .. }) {
+                        let selected = if let Some(selection) = selection {
+                            selection.clone()
+                        } else {
+                            crate::drag_drop::Selection {
+                                from: Location::Local(base.clone()),
+                                entries: sources
+                                    .iter()
+                                    .map(|path| filesystem::entry_from_path(path))
+                                    .collect::<anyhow::Result<_>>()?,
+                            }
+                        };
+                        return Ok(Some(Operation::PackTo {
+                            selection: selected,
+                            target,
+                            compression_level: options.compression_level,
+                            comment: options.comment().to_owned(),
+                            encrypted: options.encrypted,
+                            password: options.password.clone(),
+                            background: options.background,
+                        }));
+                    }
+                    let Location::Local(destination) = target else {
+                        unreachable!()
+                    };
                     if let Some(selection) = selection {
                         Operation::PackSelection {
                             selection: selection.clone(),

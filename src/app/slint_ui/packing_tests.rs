@@ -416,3 +416,100 @@ fn encrypted_archive_dialog_sends_the_selected_level_to_the_worker() {
     .unwrap();
     assert_eq!(std::fs::read(output.join("alpha.txt")).unwrap(), b"alpha");
 }
+
+#[test]
+fn encrypted_pack_uses_the_other_remote_pane_and_masks_password_accessibility() {
+    use i_slint_backend_testing::{AccessibleRole, ElementHandle};
+    let (_root, ui, state, _left, right) = setup();
+    let profile = crate::remote::Connection {
+        service: "fs".into(),
+        root: right.display().to_string(),
+        ..Default::default()
+    };
+    crate::remote::connect(&profile, Default::default(), false).unwrap();
+    {
+        let mut a = state.borrow_mut();
+        a.app.connections.push(profile.clone());
+        let tab = a.app.panes[1].tab_mut();
+        tab.location = Location::Remote {
+            connection: profile.id.clone(),
+            path: PathBuf::new(),
+        };
+        tab.entries.clear();
+        tab.loading = false;
+        tab.revision += 1;
+        a.sync(&ui);
+    }
+    ui.invoke_action("Pack".into());
+    let target = Location::Remote {
+        connection: profile.id,
+        path: "left.zip".into(),
+    };
+    assert_eq!(field(&ui, "prompt").value, target.label());
+    ui.invoke_dialog_field("pack-encrypted".into(), "true".into());
+    assert!(
+        !ui.get_dialog_buttons()
+            .iter()
+            .find(|b| b.id == "accept")
+            .unwrap()
+            .enabled
+    );
+    ui.invoke_dialog_field("pack-password".into(), "fixture-password".into());
+    assert_eq!(field(&ui, "pack-password").kind, 1);
+    // Scroll into the secure control on the shared fallback, then inspect its value.
+    let password = ElementHandle::find_by_accessible_label(&ui, "Password")
+        .find(|e| e.accessible_role() == Some(AccessibleRole::TextInput));
+    if let Some(password) = password {
+        assert_eq!(password.accessible_value().unwrap_or_default(), "");
+    }
+    ui.invoke_dialog_action("accept".into());
+    assert!(matches!(
+        state.borrow().app.queue.active,
+        Some(Operation::PackTo {
+            encrypted: true,
+            ..
+        })
+    ));
+    wait_for_job(&state, &ui);
+    let output = right.join("left.zip");
+    crate::archive::unlock(&output, "fixture-password").unwrap();
+    assert_eq!(
+        crate::archive::read_bytes(&output, Path::new("alpha.txt"), 100).unwrap(),
+        b"alpha"
+    );
+}
+
+#[test]
+fn disabling_an_encryptable_format_clears_the_password_and_requires_it_when_reenabled() {
+    let (_root, ui, state, _left, right) = setup();
+    ui.invoke_action("Pack".into());
+    ui.invoke_dialog_field("pack-encrypted".into(), "true".into());
+    ui.invoke_dialog_field("pack-password".into(), "fixture-password".into());
+    ui.invoke_dialog_field("pack-format".into(), "TAR.GZ".into());
+    assert!(
+        !ui.get_dialog_fields()
+            .iter()
+            .any(|f| f.id == "pack-password" || f.id == "pack-encrypted")
+    );
+    ui.invoke_dialog_field("pack-format".into(), "7z".into());
+    ui.invoke_dialog_field("pack-encrypted".into(), "true".into());
+    assert!(field(&ui, "pack-password").value.is_empty());
+    assert!(
+        !ui.get_dialog_buttons()
+            .iter()
+            .find(|b| b.id == "accept")
+            .unwrap()
+            .enabled
+    );
+    let existing = right.join("existing.7z");
+    std::fs::write(&existing, b"keep original").unwrap();
+    ui.invoke_dialog_field("pack-password".into(), "fixture-password".into());
+    ui.invoke_dialog_field("prompt".into(), existing.display().to_string().into());
+    ui.invoke_dialog_action("accept".into());
+    assert!(ui.get_dialog_error().contains("already exists"));
+    assert!(state.borrow().app.prompt.is_some());
+    assert!(state.borrow().app.job.is_none());
+    assert_eq!(std::fs::read(existing).unwrap(), b"keep original");
+    ui.invoke_dialog_action("cancel".into());
+    assert!(state.borrow().app.job.is_none());
+}

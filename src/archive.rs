@@ -834,6 +834,16 @@ pub fn pack_with_password_and_level(
     compression_level: Option<u8>,
     task: &mut Task,
 ) -> Result<()> {
+    pack_with_password_options(sources, destination, secret, "", compression_level, task)
+}
+pub fn pack_with_password_options(
+    sources: &[PathBuf],
+    destination: &Path,
+    secret: &str,
+    comment: &str,
+    compression_level: Option<u8>,
+    task: &mut Task,
+) -> Result<()> {
     if secret.is_empty() {
         bail!("Enter an archive password.");
     }
@@ -844,7 +854,7 @@ pub fn pack_with_password_and_level(
         sources,
         destination,
         Some(secret),
-        "",
+        comment,
         compression_level,
         task,
     )

@@ -505,3 +505,28 @@ fn encrypted_archives_honor_compression_levels() {
         assert_eq!(fs::read(output.join("secret.csv")).unwrap(), content);
     }
 }
+
+#[test]
+fn format_switches_keep_uri_separators_escaping_and_authority_on_every_platform() {
+    let mut options = Options::default();
+    for prefix in [
+        "remote://profile/dir",
+        "sftp://user@example.test/dir",
+        "s3://bucket/dir",
+        "file:///tmp/dir",
+    ] {
+        let mut destination = format!("{prefix}/caf%C3%A9%20report.tar.gz");
+        options.set_format("7z", &mut destination).unwrap();
+        assert_eq!(destination, format!("{prefix}/caf%C3%A9%20report.7z"));
+        options.set_format("ZIP", &mut destination).unwrap();
+        assert_eq!(destination, format!("{prefix}/caf%C3%A9%20report.zip"));
+    }
+    let mut escaped = "remote://profile/caf%C3%A9%20report%2Etar%2Egz".to_string();
+    options.set_format("7z", &mut escaped).unwrap();
+    assert_eq!(escaped, "remote://profile/caf%C3%A9%20report.7z");
+    for authority in ["remote://profile", "sftp://example.test"] {
+        let mut destination = authority.to_string();
+        options.set_format("7z", &mut destination).unwrap();
+        assert_eq!(destination, authority);
+    }
+}

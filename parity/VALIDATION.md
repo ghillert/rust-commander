@@ -1,5 +1,60 @@
 # Validation record
 
+## Native operation forms, remote packing and metadata — 2026-10-31
+
+macOS Copy, Move, Rename and Pack now share the asynchronous AppKit renderer
+with Extract. Pack adds native format/level popups, a plain multiline comment
+editor, secure password entry and source disclosure. The shared controller owns
+validation, conflict planning, queueing and file operations. **48 native scenarios
+pass** across software/light and FemtoVG/dark, with final Pack editor/encryption
+rechecks after the control changes. The existing AppKit deferred-file-provider
+fixture also passes.
+
+Packing supports configured remote destinations and ZIP/7z encryption from
+local, remote and archive selections. Remote output is completed locally,
+uploaded to a random sibling, SHA-256 verified by reading it back, then published
+through existing provider guards. Fixtures cover existing-target refusal,
+mid-verification cancellation/cleanup, concurrent-target preservation, encrypted
+contents/comments and password-free persisted recipes. Format changes preserve
+URI separators and escaped filenames on Windows. Local outputs retain Undo;
+remote creation has no general Undo or universal atomic-publication guarantee.
+
+Local owner/group names resolve asynchronously with ID fallback. Properties
+shows native ACL details; Unix permissions include symbolic/octal modes,
+synchronized checkboxes and special-bit Undo. Windows uses readable stored access
+rules plus SDDL, and disables the POSIX editor. The Windows metadata module passes
+MSVC-target all-target Clippy; its ACL decoder also passes a supplementary Wine
+fixture. Wine does not establish native Windows behavior or NTFS enforcement.
+
+The complete macOS all-target/all-feature run passes **442 tests, 17 ignored**.
+Final focused menu, permission, encryption and metadata checks pass after the last
+form/fixture changes. macOS warnings-denied Clippy, formatting, whitespace,
+Python smoke-script syntax, composite-action YAML, parity references and local
+documentation links pass. The rebuilt normal development bundle passes strict
+signature verification. The existing debug-linker compact-unwind warning remains.
+
+The complete Linux all-target/all-feature run passes **435 tests, 22 ignored**,
+with warnings-denied Clippy. Separate native clipboard, GTK drag-source, X11/XDND
+and live Weston/Wayland checks pass **13 additional tests**. All **16 rendering
+cases** pass for file and PDF views with software and FemtoVG renderers at 100%,
+125%, 150% and 200%; file and PDF screenshots were visually reviewed. The Linux
+fixture environment uses a UTF-8 locale for libarchive filenames and a
+3200×2200 Xvfb desktop so 200% windows fit fully; CI now applies both settings.
+These protocol and rendering checks do not establish screen-reader acceptance.
+
+The cross-platform review found plaintext accessible values in stock password
+widgets. Forms and PDF password entry now wrap the platform widget with a single
+accessible input that hides secret values and honors disabled state. Tests cover
+both custom Mac and stock-style paths. Popup click fixtures now distinguish
+fully visible command rows from clipped rows and identically named toolbar
+controls, including the testing backend's synthetic scale-factor behavior.
+
+Native Windows clipboard and software-renderer scale checks are added to CI;
+they still require execution on a Windows runner. Actual screen-reader speech,
+physical mixed-DPI moves, high-contrast/IME variants and native Windows/Linux
+custom-form prototypes remain open. Inventory counts stay at 4 implemented,
+188 partial, 7 missing and 1 inapplicable.
+
 ## Pane, keyboard and context-menu comparison — 2026-10-30
 
 The comparison against the pinned upstream FileTable/header, table/tab popup,

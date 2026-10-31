@@ -60,9 +60,12 @@
   "ChangePermissions": {
     "evidence": [
       "src/operations.rs",
-      "src/app.rs"
+      "src/app.rs",
+      "src/metadata.rs",
+      "tests/metadata.rs",
+      "src/app/slint_ui/interaction_tests.rs"
     ],
-    "note": "Core and UI exist; full platform behavior is not validated.",
+    "note": "Unix octal/symbolic/checkbox controls include special bits with Undo. Local Properties displays readable identities and native ACLs; Windows shows stored access rules and SDDL, with POSIX editing disabled. Ownership/ACL editing and broader native acceptance remain open.",
     "status": "partial"
   },
   "CheckForUpdates": {
@@ -175,9 +178,11 @@
       "src/recovery.rs",
       "tests/archive_writeback.rs",
       "tests/recovery_manager.rs",
-      "docs/RECOVERY_AND_SUPPORT.md"
+      "docs/RECOVERY_AND_SUPPORT.md",
+      "src/app/slint_ui/dialogs/native_extract.rs",
+      "scripts/native-operation-smoke.py"
     ],
-    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed copies retain fixed merge/conflict decisions and verified originals; recovery manager restore and completed-batch cleanup are available; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review.",
+    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed copies retain fixed merge/conflict decisions and verified originals; recovery manager restore and completed-batch cleanup are available; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review. Native macOS form uses the shared controller; Windows/Linux retain Slint forms.",
     "status": "partial"
   },
   "CopyFileBaseNames": {
@@ -703,9 +708,11 @@
       "src/recovery.rs",
       "tests/archive_writeback.rs",
       "tests/recovery_manager.rs",
-      "docs/RECOVERY_AND_SUPPORT.md"
+      "docs/RECOVERY_AND_SUPPORT.md",
+      "src/app/slint_ui/dialogs/native_extract.rs",
+      "scripts/native-operation-smoke.py"
     ],
-    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed copies retain fixed merge/conflict decisions and verified originals; recovery manager restore and completed-batch cleanup are available; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review.",
+    "note": "Local/remote conflict planning, recoverable replacement, recursive merges, native local moves and metadata copying, verified checkpoints, byte-based progress and recent transfer speed are implemented. Unknown lengths stay indeterminate. Checkpointed copies retain fixed merge/conflict decisions and verified originals; recovery manager restore and completed-batch cleanup are available; backend conditional-write and interrupted-publication limits remain. Local/loopback and disposable protocol checks pass on Mac; broad cloud, native desktop and cross-volume failure acceptance remain open. Drag/drop is separately partial in the workflow review. Native macOS form uses the shared controller; Windows/Linux retain Slint forms.",
     "status": "partial"
   },
   "MoveTabToOtherPanel": {
@@ -851,9 +858,12 @@
       "tests/archive_writeback.rs",
       "tests/recovery_manager.rs",
       "docs/RECOVERY_AND_SUPPORT.md",
-      "tests/virtual_packing.rs"
+      "tests/virtual_packing.rs",
+      "src/app/slint_ui/dialogs/native_extract.rs",
+      "scripts/native-operation-smoke.py",
+      "tests/packing_destinations.rs"
     ],
-    "note": "Pack files dialog and right-click action take local, remote or archive sources and a local output. Virtual sources are staged privately with source verification, cancellation and destination-only Undo; queue recipes retain selection identities. Direct remote output and encrypted packing of virtual sources are unavailable. They provide destination naming, ZIP/7z/TAR/stream format choices, validated compression levels (also encrypted/queued), ZIP comments, foreground/background packing with cancellation and an expandable source list. 7z multi-file/folder creation and encrypted 7z round trips are tested. Existing archive tools provide ZIP/7z AES encryption and guarded Add/Remove/Rename in local ZIP/TAR/7z containers. Writable nested/remote ZIP/TAR/7z sources support guarded outer-container save-back; HTTP and Open As format overrides remain read-only. Links/special files are rejected and broader desktop/format/metadata acceptance remains open. Performance measurements are recorded in docs/PACKING_PERFORMANCE.md. A pinned writer patch fixes empty digest/stream blocks, zero checksums and directory attributes; independent libarchive extraction covers default/fastest/maximum levels and empty/Unicode/nested entries. Official 7-Zip 26.05 integrity and extraction checks pass for plain/AES folders at default/fastest/maximum levels; broader encryption variants, metadata and native acceptance remain open.",
+    "note": "Local, remote and archive sources, ZIP/7z encryption, compression levels/comments and local or configured remote output are supported. Remote output is staged, read-back SHA-256 verified and published through existing provider guards. Passwords are never persisted; recovered encrypted jobs require fresh input. No general remote-output Undo; live-provider and broader native acceptance remain open. Native macOS Pack sheet and shared Slint fallback exist.",
     "status": "partial"
   },
   "PasteClipboardFiles": {
@@ -1058,9 +1068,11 @@
       "tests/features.rs",
       "src/archive_writeback.rs",
       "tests/archive_writeback.rs",
-      "src/app/slint_ui/interaction_tests.rs"
+      "src/app/slint_ui/interaction_tests.rs",
+      "src/app/slint_ui/dialogs/native_extract.rs",
+      "scripts/native-operation-smoke.py"
     ],
-    "note": "Local files, remote files and writable local/nested/remote ZIP/TAR/7z members support guarded renaming. Archive save-back checks containing sources and journals the outer local file or retains a remote recovery original. HTTP/Open As archive overrides stay read-only; broader live-service, metadata and native platform acceptance remain open. Rename uses the focused row even when other files remain marked; archive rename guards retain the same focused target.",
+    "note": "Local files, remote files and writable local/nested/remote ZIP/TAR/7z members support guarded renaming. Archive save-back checks containing sources and journals the outer local file or retains a remote recovery original. HTTP/Open As archive overrides stay read-only; broader live-service, metadata and native platform acceptance remain open. Rename uses the focused row even when other files remain marked; archive rename guards retain the same focused target. Native macOS form uses the shared controller; Windows/Linux retain Slint forms.",
     "status": "partial"
   },
   "ReportBug": {

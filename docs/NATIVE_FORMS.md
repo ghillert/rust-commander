@@ -3,9 +3,10 @@
 [← Slint interface](SLINT_UI.md)
 
 Reviewed on 2026-10-30. Slint remains the main file-manager interface. The first
-native form is macOS **Extract archive**, implemented as an asynchronous AppKit
-sheet attached to the originating file window. Windows and Linux retain their
-working Slint Extract forms while their native integrations are evaluated.
+native forms cover macOS **Extract archive, Copy, Move, Rename and Pack files**,
+implemented as asynchronous AppKit sheets attached to the originating file
+window. Windows and Linux retain the shared Slint forms while native form
+integrations are evaluated.
 
 ## Shared behavior and macOS implementation
 
@@ -13,14 +14,19 @@ working Slint Extract forms while their native integrations are evaluated.
 renderer consumes their existing IDs, raw choice values, translated labels,
 busy state, error and button state. Native callbacks enqueue field edits and
 commands; the ordinary controller applies them and starts the same background
-conflict scan and extraction operation. Native controls never perform filesystem
-work. There is no second set of extraction validation or overwrite rules.
+conflict scan and file operation. Native controls never perform filesystem
+work. Validation, queueing, progress, overwrite rules and Undo remain shared.
 
 The sheet includes a destination field, global conflict policy, merge checkbox,
 per-file conflict choices, recoverable-replacement explanation, inline errors,
 Apply to all, Cancel and the default Extract action. Long conflict lists scroll.
 Destination edits retain their cursor/selection when conflict results change the
-form. Return from the destination submits; an early Return waits for pending
+form. Copy and Move use the same preflight and per-item conflict controls. Rename
+uses the focused item and a single native name field. Pack supplies native format
+and compression popups, a multiline ZIP comment editor, background/encryption
+checkboxes, a secure password field and an expandable source list. Text selection
+is retained when conditional fields change. Validation errors disable submission;
+changing focus never starts an operation. Return from the destination submits; an early Return waits for pending
 preflight and is cancelled if the operation inputs change, an error occurs or
 the window exits. Escape and the sheet close control cancel. Changing focus does not submit. Cancellation never starts extraction.
 The native Edit menu routes Select All, Cut, Copy, Paste, Undo and Redo through
@@ -103,13 +109,16 @@ Run the actual AppKit smoke fixtures on macOS after a screenshot-enabled build:
 ```sh
 scripts/cargo-local.sh build --locked --features screenshot
 python3 scripts/native-extract-smoke.py
+python3 scripts/native-operation-smoke.py
 ```
 
 The fixture edits native controls and dispatches Cocoa target/action callbacks,
 checking extraction output, cancellation, native close, global Skip and per-file conflict choices, Apply to all, immediate/delayed Return,
 application quit,
 inline preflight errors, long lists and reopening with disposable files. The
-headless fixture checks the shared model and fallback cancellation. AppKit cached
+operation fixture verifies actual copied/moved/renamed files and ZIP/7z outputs,
+comments, encryption flags, background work, conflicts and cancellation. The
+headless fixtures check the shared model, fallback controls and remote packing. AppKit cached
 view PNGs do not reproduce every composited background; desktop visual inspection
 is separate from those snapshots. Actual VoiceOver speech, Full Keyboard Access
 settings, mixed-DPI monitor moves, cross-window modal behavior and packaged native

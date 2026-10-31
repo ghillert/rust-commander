@@ -11,6 +11,7 @@ pub mod desktop;
 pub mod filesystem;
 pub mod folder_tools;
 pub mod mail;
+pub mod metadata;
 pub mod model;
 #[cfg(target_os = "macos")]
 mod native_menu;

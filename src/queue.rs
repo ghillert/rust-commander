@@ -76,6 +76,7 @@ impl Queue {
     }
     pub fn requires_input(op: &Operation) -> bool {
         matches!(op,Operation::PackProtected{password,..}|Operation::ExtractProtected{password,..} if password.is_empty())
+            || matches!(op,Operation::PackTo{encrypted:true,password,..} if password.is_empty())
             || matches!(
                 op,
                 Operation::RecoveryRestore { .. }

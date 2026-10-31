@@ -195,7 +195,23 @@ pub(super) fn native_extract_smoke(command: &str, value: &str) {
         let session = sessions
             .iter()
             .find(|s| s.state.borrow().native_extract.active())
-            .expect("Native Extract owner must exist");
+            .unwrap_or_else(|| {
+                panic!(
+                    "Native operation owner must exist for {command}; states: {:?}",
+                    sessions
+                        .iter()
+                        .map(|s| {
+                            let a = s.state.borrow();
+                            (
+                                s.id,
+                                a.dialog_kind.clone(),
+                                a.native_extract_inflight,
+                                a.app.prompt.as_ref().map(|p| p.title.clone()),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                )
+            });
         assert!(
             session.ui.get_dialog_title().is_empty(),
             "Slint overlay must be hidden"
