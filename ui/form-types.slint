@@ -1,0 +1,4 @@
+export struct Command { id: string, title: string, enabled: bool }
+export struct FormField { id: string, title: string, value: string, kind: int, choices: [string], page: int }
+export struct FormRow { id: string, title: string, detail: string, selected: bool, actions: [Command], page: int }
+export struct FormPage { fields: [FormField], rows: [FormRow] }

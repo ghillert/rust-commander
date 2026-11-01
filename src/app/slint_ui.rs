@@ -70,6 +70,7 @@ pub(super) struct Adapter {
     field_cache: Vec<dialogs::Field>,
     form_rows: Rc<VecModel<FormRow>>,
     form_row_cache: Vec<dialogs::Row>,
+    settings_pages: ModelRc<FormPage>,
     dialog_buttons: Rc<VecModel<Command>>,
     dialog_button_cache: Vec<(String, String, bool)>,
     places: Vec<(String, Location)>,
@@ -115,6 +116,50 @@ fn publish<T: Clone + 'static, S: PartialEq>(
     *cache = next;
 }
 
+// Search and column toggles change the number of settings fields. Keep the
+// surviving controls in place so filtering cannot destroy the focused editor.
+fn publish_settings_fields(
+    model: &VecModel<FormField>,
+    cache: &mut Vec<dialogs::Field>,
+    next: Vec<dialogs::Field>,
+) {
+    let count = next.len();
+    let same_control = |a: &dialogs::Field, b: &dialogs::Field| {
+        a.id == b.id
+            && a.page == b.page
+            && a.kind == b.kind
+            && (!a.id.is_empty() || a.title == b.title)
+    };
+    for (index, field) in next.into_iter().enumerate() {
+        if !cache
+            .get(index)
+            .is_some_and(|old| same_control(old, &field))
+        {
+            if let Some(offset) = cache[index..]
+                .iter()
+                .position(|old| same_control(old, &field))
+            {
+                for _ in 0..offset {
+                    cache.remove(index);
+                    model.remove(index);
+                }
+            } else {
+                model.insert(index, field.slint());
+                cache.insert(index, field);
+                continue;
+            }
+        }
+        if cache[index] != field {
+            model.set_row_data(index, field.slint());
+            cache[index] = field;
+        }
+    }
+    while cache.len() > count {
+        cache.remove(count);
+        model.remove(count);
+    }
+}
+
 fn path_id(path: &Path) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(path.as_os_str().as_encoded_bytes())
 }
@@ -157,6 +202,25 @@ impl Adapter {
     fn new(paths: &[PathBuf], loaded: anyhow::Result<Settings>) -> Self {
         let ctx = UiSignal::default();
         let app = Commander::with_settings(&ctx, paths, loaded);
+        let fields = Rc::new(VecModel::<FormField>::default());
+        let form_rows = Rc::new(VecModel::<FormRow>::default());
+        let settings_pages = Rc::new(VecModel::from(
+            (0..9)
+                .map(|page| FormPage {
+                    fields: Rc::new(slint::FilterModel::new(
+                        fields.clone(),
+                        move |field: &FormField| field.page == page,
+                    ))
+                    .into(),
+                    rows: Rc::new(slint::FilterModel::new(
+                        form_rows.clone(),
+                        move |row: &FormRow| row.page == page,
+                    ))
+                    .into(),
+                })
+                .collect::<Vec<_>>(),
+        ))
+        .into();
         Self {
             app,
             enhancements: Default::default(),
@@ -189,10 +253,11 @@ impl Adapter {
             pending_drops: Vec::new(),
             pending_drop_side: None,
             drop_deadline: None,
-            fields: Rc::new(VecModel::default()),
+            fields,
             field_cache: Vec::new(),
-            form_rows: Rc::new(VecModel::default()),
+            form_rows,
             form_row_cache: Vec::new(),
+            settings_pages,
             dialog_buttons: Rc::new(VecModel::default()),
             dialog_button_cache: Vec::new(),
             places: Vec::new(),
@@ -440,6 +505,9 @@ impl Adapter {
                 }));
             }
         } else if let Some(action) = action_named(name) {
+            if name == "Preferences" {
+                self.extra.shortcut_filter.clear();
+            }
             self.app.act(action, &self.ctx);
         }
     }
@@ -1108,7 +1176,41 @@ impl Adapter {
             self.field_error = None;
             self.invalid_fields.clear();
             self.dialog_kind = spec.kind.clone();
+            if spec.kind == "preferences" {
+                ui.set_settings_tab(0);
+                ui.set_settings_folder_tab(0);
+                ui.set_settings_appearance_tab(0);
+            }
         }
+        ui.set_dialog_preferences(spec.kind == "preferences");
+        ui.set_settings_pages(self.settings_pages.clone());
+        ui.set_settings_labels(strings(
+            [
+                "General",
+                "Folders",
+                "Appearance",
+                "Shortcuts",
+                "Mail",
+                "Advanced",
+                "Browsing",
+                "Columns",
+                "Theme and icons",
+                "Toolbar",
+                "Command bar",
+                "Column order",
+                "Button order",
+                "Primary shortcut",
+                "Alternate shortcut",
+            ]
+            .map(|label| tr(label).into_owned()),
+        ));
+        ui.set_settings_error_page(
+            self.invalid_fields
+                .keys()
+                .next()
+                .and_then(|id| spec.fields.iter().find(|field| &field.id == id))
+                .map_or(-1, |field| field.page),
+        );
         for field in &mut spec.fields {
             if let Some((value, _)) = self.invalid_fields.get(&field.id) {
                 field.value = value.clone();
@@ -1221,6 +1323,7 @@ impl Adapter {
                 .clamp(384.0, 720.0)
             }
             "pack-progress" => 300.0,
+            "preferences" => 700.0,
             "open-with" => 300.0,
             "open-as" => {
                 if spec.fields.len() > 1 {
@@ -1295,12 +1398,16 @@ impl Adapter {
                 .into(),
         );
         ui.set_dialog_busy(spec.busy);
-        publish(
-            &self.fields,
-            &mut self.field_cache,
-            spec.fields,
-            dialogs::Field::slint,
-        );
+        if spec.kind == "preferences" {
+            publish_settings_fields(&self.fields, &mut self.field_cache, spec.fields);
+        } else {
+            publish(
+                &self.fields,
+                &mut self.field_cache,
+                spec.fields,
+                dialogs::Field::slint,
+            );
+        }
         publish(
             &self.form_rows,
             &mut self.form_row_cache,
@@ -1825,6 +1932,9 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                             "menu" => ui.invoke_show_menu(value.into()),
                             "action" => ui.invoke_action(value.into()),
                             "dialog" => ui.invoke_dialog_action(value.into()),
+                            "settings-page" => ui.invoke_show_settings_page(
+                                value.parse().expect("Settings page must be a number"),
+                            ),
                             "select" => ui.invoke_dialog_select(value.into()),
                             "viewer" => ui.invoke_viewer_action(value.into()),
                             "sort" => {

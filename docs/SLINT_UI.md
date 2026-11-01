@@ -34,6 +34,28 @@ The Qt style requires a Qt backend and libraries; this application uses winit.
 
 ## Desktop chrome
 
+Settings is organized into six tabs:
+
+| Tab | Contents |
+| --- | --- |
+| General | Language, panes, preview, folder tree and bar visibility |
+| Folders | Browsing behavior; a Columns subtab for visibility, widths and order |
+| Appearance | Theme, text and icons; separate Toolbar and Command bar subtabs |
+| Shortcuts | Searchable commands with primary and alternate bindings side by side |
+| Mail | SMTP connection, sender and username; passwords are requested when sending |
+| Advanced | Transfer limits/retries and recovery retention |
+
+All tabs edit one draft. **Apply** saves without closing, **OK** saves and closes,
+and **Cancel** discards changes made since the last Apply. Restore defaults changes
+the draft until it is applied. Invalid numeric values survive tab switches and
+block both save actions; **Review invalid setting** opens their page. Slint's
+standard tab widgets provide keyboard and accessible selection. Each page scrolls
+independently above a fixed action footer.
+
+Settings controls are rendered by Slint. The macOS Cupertino tabs are not AppKit
+controls; their equal-width segments and stacked tab bars remain a visual
+limitation. A native AppKit Settings window remains future work.
+
 The main window uses compact icon actions, text breadcrumbs, quiet tabs,
 sidebar icons, subtle row stripes and a slim function-key bar. The active pane
 uses a small accent marker; the selected file remains the main visual focus.
@@ -51,7 +73,7 @@ per-window cache are bounded; obsolete requests are cancelled and off-screen
 model rows release their images. Cache entries expire after a minute to pick up
 association or theme changes, and changed file timestamps have separate cache
 keys. Remote and archive entries use embedded icons without requesting local
-filesystem metadata. **Settings → Desktop appearance → File icons** also offers
+filesystem metadata. **Settings → Appearance → Theme and icons → File icons** also offers
 built-in-only mode, which performs no native icon queries. The curated Material
 catalog provides specific file-type fallbacks, including replacements for
 confirmed generic native documents. See [the icon guide](ICONS.md) for matching,
@@ -71,7 +93,7 @@ Other platforms retain their normal window caption above the toolbar.
 
 The sidebar button beside Refresh hides or restores both Places and the
 optional Folders tree, letting the file panes use the full width. The same
-toggle is in **View → Toggle sidebar**, and **Settings → Show sidebar** keeps
+toggle is in **View → Toggle sidebar**, and **Settings → General → Show sidebar** keeps
 the choice across launches. Places, Favorites, Devices and Connections can
 still be collapsed independently by clicking their headings.
 

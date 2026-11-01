@@ -4,6 +4,7 @@ mod fields;
 mod folders;
 #[cfg(target_os = "macos")]
 pub(super) mod native_extract;
+mod preferences;
 
 #[derive(Clone, PartialEq)]
 pub(super) struct Field {
@@ -12,6 +13,7 @@ pub(super) struct Field {
     pub value: String,
     pub kind: i32,
     pub choices: Vec<String>,
+    pub page: i32,
 }
 impl Field {
     pub(super) fn text(
@@ -25,6 +27,7 @@ impl Field {
             value: value.to_string(),
             kind: 0,
             choices: Vec::new(),
+            page: 0,
         }
     }
     pub(super) fn password(id: &str, title: &str, value: &str) -> Self {
@@ -70,6 +73,7 @@ impl Field {
             value: self.value.as_str().into(),
             kind: self.kind,
             choices: strings(self.choices.iter().map(String::as_str)),
+            page: self.page,
         }
     }
 }
@@ -80,6 +84,7 @@ pub(super) struct Row {
     pub detail: String,
     pub selected: bool,
     pub actions: Vec<(String, String, bool)>,
+    pub page: i32,
 }
 impl Row {
     pub(super) fn new(id: impl Into<String>, title: impl ToString, detail: impl ToString) -> Self {
@@ -89,6 +94,7 @@ impl Row {
             detail: detail.to_string(),
             selected: false,
             actions: Vec::new(),
+            page: 0,
         }
     }
     pub(super) fn action(mut self, id: impl Into<String>, title: &str, enabled: bool) -> Self {
@@ -101,6 +107,7 @@ impl Row {
             title: self.title.as_str().into(),
             detail: self.detail.as_str().into(),
             selected: self.selected,
+            page: self.page,
             actions: Rc::new(VecModel::from(
                 self.actions
                     .iter()
@@ -522,160 +529,7 @@ impl Adapter {
             return d;
         }
         if let Some(p) = &self.app.preferences_form {
-            let mut d = Dialog::new("preferences", "Settings");
-            d.description="Appearance profiles change colors, fonts and layout. Controls follow the style chosen for this platform.".into();
-            d.error = self.app.preferences_error.clone().unwrap_or_default();
-            d.fields.extend([
-                Field::choice(
-                    "style",
-                    "Desktop appearance",
-                    p.desktop_style.label(),
-                    [
-                        crate::appearance::DesktopStyle::Automatic,
-                        crate::appearance::DesktopStyle::MacOs,
-                        crate::appearance::DesktopStyle::Windows,
-                        crate::appearance::DesktopStyle::Ubuntu,
-                        crate::appearance::DesktopStyle::Gnome,
-                    ]
-                    .map(|v| v.label()),
-                ),
-                Field::choice(
-                    "scheme",
-                    "Color scheme",
-                    p.color_scheme.label(),
-                    [
-                        crate::appearance::ColorScheme::System,
-                        crate::appearance::ColorScheme::Light,
-                        crate::appearance::ColorScheme::Dark,
-                    ]
-                    .map(|v| v.label()),
-                ),
-                Field::choice(
-                    "language",
-                    "Language",
-                    p.language.label(),
-                    [
-                        crate::i18n::Language::System,
-                        crate::i18n::Language::English,
-                        crate::i18n::Language::German,
-                        crate::i18n::Language::Spanish,
-                    ]
-                    .map(|v| v.label()),
-                ),
-                Field::choice(
-                    "file-icons",
-                    "File icons",
-                    tr(p.file_icon_source.label()),
-                    crate::preferences::FileIconSource::ALL
-                        .map(|source| tr(source.label()).into_owned()),
-                ),
-                Field::text("font", "Font size", p.font_size),
-                Field::choice(
-                    "location-bar",
-                    "Location bar",
-                    tr(p.location_bar.label()),
-                    crate::preferences::LocationBar::ALL.map(|m| tr(m.label()).into_owned()),
-                ),
-                Field::check("toolbar", "Show toolbar", p.toolbar),
-                Field::check("sidebar", "Show sidebar", p.sidebar),
-                Field::check("commands", "Show command bar", p.command_bar),
-                Field::check("status", "Show status bar", p.status_bar),
-                Field::check("single", "Single pane", p.single_pane),
-                Field::check(
-                    "auto-refresh",
-                    "Automatically refresh changed folders",
-                    p.auto_refresh,
-                ),
-                Field::check("folders-first", "Folders first", p.folders_first),
-                Field::check("preview", "Preview pane", p.preview),
-            ]);
-            for column in crate::preferences::Column::ALL {
-                d.fields.push(Field::check(
-                    format!("column-{column:?}"),
-                    format!("Show {} column", column.label()),
-                    p.columns.iter().any(|c| c.kind == column),
-                ));
-            }
-            for (i, column) in p.columns.iter().enumerate() {
-                d.fields.push(Field::text(
-                    format!("width-{i}"),
-                    format!("{} column width", column.kind.label()),
-                    column.width,
-                ));
-                d.rows.push(
-                    Row::new(format!("column-{i}"), tr(column.kind.label()), "")
-                        .action(format!("column-up-{i}"), "Move up", i > 1)
-                        .action(
-                            format!("column-down-{i}"),
-                            "Move down",
-                            i > 0 && i + 1 < p.columns.len(),
-                        ),
-                );
-            }
-            for action in crate::preferences::ToolbarAction::ALL {
-                d.fields.push(Field::check(
-                    format!("toolbar-{action:?}"),
-                    format!("Toolbar: {}", tr(action.label())),
-                    p.toolbar_actions.contains(&action),
-                ));
-            }
-            for (i, action) in p.toolbar_actions.iter().enumerate() {
-                d.rows.push(
-                    Row::new(format!("toolbar-{i}"), tr(action.label()), "")
-                        .action(format!("toolbar-up-{i}"), "Move up", i > 0)
-                        .action(
-                            format!("toolbar-down-{i}"),
-                            "Move down",
-                            i + 1 < p.toolbar_actions.len(),
-                        ),
-                );
-            }
-            let catalog = super::parity::command_catalog();
-            let choices = std::iter::once("None".to_owned())
-                .chain(catalog.iter().map(|(_, title)| title.clone()))
-                .collect::<Vec<_>>();
-            for index in 0..12 {
-                let title = p
-                    .command_actions
-                    .get(index)
-                    .and_then(|id| catalog.iter().find(|(candidate, _)| candidate == id))
-                    .map(|(_, title)| title.as_str())
-                    .unwrap_or("None");
-                d.fields.push(Field::choice(
-                    format!("command-slot-{index}"),
-                    format!("Command bar button {}", index + 1),
-                    title,
-                    choices.clone(),
-                ));
-            }
-            d.fields.push(Field::text(
-                "shortcut-filter",
-                "Find a shortcut",
-                &self.extra.shortcut_filter,
-            ));
-            let query = self.extra.shortcut_filter.to_lowercase();
-            for (action, title) in catalog {
-                if !format!("{action} {title}").to_lowercase().contains(&query) {
-                    continue;
-                }
-                let binding = p.shortcuts.get(&action).map(String::as_str).unwrap_or("");
-                d.fields.push(Field::text(
-                    format!("shortcut-{action}"),
-                    format!("Shortcut: {title}"),
-                    binding,
-                ));
-                d.fields.push(Field::text(
-                    format!("alternate-{action}"),
-                    format!("Alternate shortcut: {title}"),
-                    p.alternate_shortcuts
-                        .get(&action)
-                        .map(String::as_str)
-                        .unwrap_or(""),
-                ));
-            }
-            d.button("defaults", "Restore defaults", true);
-            d.button("accept", "Apply", true);
-            return d;
+            return self.preferences_dialog(p);
         }
         if let Some(form) = &self.app.connection_form {
             let mut d = Dialog::new("connections", "Connections");

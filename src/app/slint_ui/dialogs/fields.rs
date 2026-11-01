@@ -208,6 +208,51 @@ impl Adapter {
                             "auto-refresh" => p.auto_refresh = checked(value),
                             "folders-first" => p.folders_first = checked(value),
                             "preview" => p.preview = checked(value),
+                            "directory-tree" => p.directory_tree = checked(value),
+                            "parent-entry" => p.parent_entry = checked(value),
+                            "auto-size" => p.auto_size_columns = checked(value),
+                            "mail-host" => {
+                                p.mail.host = value.into();
+                                if p.mail.port == 0 {
+                                    p.mail.port = 587;
+                                }
+                            }
+                            "mail-sender" => p.mail.sender = value.into(),
+                            "mail-user" => p.mail.username = value.into(),
+                            "mail-port" => {
+                                let port = number::<u16>(value)?;
+                                anyhow::ensure!(port > 0, "Enter an SMTP port between 1 and 65535");
+                                p.mail.port = port;
+                            }
+                            "mail-tls" => {
+                                p.mail.implicit_tls = checked(value);
+                                if [0, 465, 587].contains(&p.mail.port) {
+                                    p.mail.port = if p.mail.implicit_tls { 465 } else { 587 };
+                                }
+                            }
+                            "transfer-limit" => p.transfers.kib_per_second = number::<u32>(value)?,
+                            "transfer-retries" => {
+                                let retries = number::<u8>(value)?;
+                                anyhow::ensure!(retries <= 8, "Choose 0 to 8 retries.");
+                                p.transfers.retries = retries;
+                            }
+                            "retention-mib" => {
+                                let size = number::<u64>(value)?;
+                                anyhow::ensure!(
+                                    (1..=1_000_000).contains(&size),
+                                    "Limit must be between 1 and 1,000,000 MiB."
+                                );
+                                p.recovery.max_mib = size;
+                            }
+                            "retention-days" => {
+                                let days = number::<u64>(value)?;
+                                anyhow::ensure!(
+                                    (1..=3650).contains(&days),
+                                    "Retention must be between 1 and 3650 days."
+                                );
+                                p.recovery.max_days = days;
+                            }
+                            "retention-auto" => p.recovery.automatic = checked(value),
                             _ => {
                                 if let Some(name) = id.strip_prefix("column-")
                                     && let Some(kind) = crate::preferences::Column::ALL

@@ -9,14 +9,14 @@ export { IconGallery } from "icon-gallery.slint";
 export { IconCatalog } from "icons/catalog.slint";
 
 export struct CommandButton {id:string,title:string,key:string,enabled:bool}
-export struct Command { id: string, title: string, enabled: bool }
+import { Command, FormField, FormRow, FormPage } from "form-types.slint";
+export { Command, FormField, FormRow, FormPage } from "form-types.slint";
+import { SettingsView } from "settings.slint";
 export struct MenuEntry {id:string,title:string,enabled:bool,checkable:bool,checked:bool}
 export struct TreeRow { index:int, title:string, depth:int, expanded:bool, selected:bool, detail:string }
 export struct Place { id: string, title: string, detail: string, heading: bool, section: string, expanded: bool }
 export struct FileColumn { title: string, width: float }
 export struct FileRow { id: string, name: string, cells: [string], directory: bool, selected: bool, cursor: bool, payload: string, icon: image, native-icon: bool, fallback-icon: string, symlink: bool }
-export struct FormField { id: string, title: string, value: string, kind: int, choices: [string] }
-export struct FormRow { id: string, title: string, detail: string, selected: bool, actions: [Command] }
 export struct PdfMark {x:float,y:float,width:float,height:float}
 export struct TerminalCell { text: string, foreground: color, background: color, bold: bool, cursor: bool }
 export struct TerminalRow { cells: [TerminalCell], text: string }
@@ -493,6 +493,18 @@ export component CommanderWindow inherits Window {
     private property <float> menu-x: 8;
     out property <float> menu-y: 32;
     in property <string> dialog-title;
+    in property <bool> dialog-preferences;
+    in-out property <int> settings-tab;
+    in-out property <int> settings-folder-tab;
+    in-out property <int> settings-appearance-tab;
+    in property <[string]> settings-labels;
+    in property <[FormPage]> settings-pages;
+    in property <int> settings-error-page: -1;
+    public function show-settings-page(page:int) {
+        if page == 6 || page == 7 {root.settings-tab=2;root.settings-appearance-tab=page - 5;}
+        else if page == 8 {root.settings-tab=1;root.settings-folder-tab=1;}
+        else {root.settings-tab=page;if page == 1 {root.settings-folder-tab=0;}if page == 2 {root.settings-appearance-tab=0;}}
+    }
     in property <float> dialog-preferred-height: 650;
     in property <string> dialog-description;
     in property <string> dialog-error;
@@ -1035,7 +1047,7 @@ export component CommanderWindow inherits Window {
         key-event(event) => { return root.global-key(event); }
         Rectangle {
             x: max(16px, (parent.width - self.width) / 2); y: (parent.height - self.height) / 2;
-            width: min(root.dialog-diff ? 1080px : root.dialog-pack || root.dialog-simple ? 620px : 760px, parent.width - 32px); height: min(parent.height - 56px,root.dialog-preferred-height * 1px);
+            width: min(root.dialog-preferences ? 900px : root.dialog-diff ? 1080px : root.dialog-pack || root.dialog-simple ? 620px : 760px, parent.width - 32px); height: min(parent.height - 56px,root.dialog-preferred-height * 1px);
             background: DialogTheme.macos ? DialogTheme.surface : Palette.background;
             border-radius: DialogTheme.macos ? 12px : 8px;
             border-width: DialogTheme.macos ? 1px : 0px;
@@ -1047,7 +1059,15 @@ export component CommanderWindow inherits Window {
                 padding: DialogTheme.macos ? 20px : 16px; spacing: 12px;
                 Text { text: root.dialog-title; font-size: DialogTheme.macos ? max(17px, DialogTheme.font-size + 3px) : 20px; font-weight: 600; color: Palette.foreground; }
                 if root.dialog-description != "": Text { text: root.dialog-description; color: Palette.foreground; wrap: word-wrap; }
-                ScrollView {
+                if root.dialog-preferences: SettingsView {
+                    pages:root.settings-pages;labels:root.settings-labels;
+                    current-index <=> root.settings-tab;
+                    folder-index <=> root.settings-folder-tab;
+                    appearance-index <=> root.settings-appearance-tab;
+                    edited(id,value)=>{root.dialog-field(id,value);}
+                    action(id)=>{root.dialog-action(id);}
+                }
+                if !root.dialog-preferences: ScrollView {
                     VerticalBox {
                         padding: 4px; spacing: root.dialog-diff ? 0px : 12px; alignment: start;
                         for field[index] in root.dialog-fields: VerticalBox {
@@ -1126,7 +1146,23 @@ export component CommanderWindow inherits Window {
                 }
                 if root.dialog-busy: ProgressIndicator { indeterminate: true; }
                 if root.dialog-error != "": Text { text: root.dialog-error; color: #c74343; wrap: word-wrap; }
-                HorizontalBox {
+                if root.dialog-preferences && root.settings-error-page >= 0: DialogButton {
+                    text:Words.translate("Review invalid setting",Words.version);
+                    clicked=>{root.show-settings-page(root.settings-error-page);}
+                }
+                if root.dialog-preferences: HorizontalBox {
+                    padding:0px;spacing:8px;vertical-stretch:0;
+                    DialogButton {text:Words.translate("Restore defaults",Words.version);clicked=>{root.dialog-action("defaults");}}
+                    Rectangle {horizontal-stretch:1;}
+                    for command in root.dialog-buttons: HorizontalBox {
+                        padding:0px;spacing:0px;horizontal-stretch:0;
+                        if command.id != "defaults": DialogButton {
+                            text:command.title;primary:command.id == "accept";enabled:command.enabled;
+                            clicked=>{root.dialog-action(command.id);}
+                        }
+                    }
+                }
+                if !root.dialog-preferences: HorizontalBox {
                     padding: 0px; spacing: 8px; vertical-stretch: 0;
                     Rectangle { horizontal-stretch: 1; }
                     for command[index] in root.dialog-buttons: HorizontalBox {padding:0px;spacing:0px;horizontal-stretch:0;

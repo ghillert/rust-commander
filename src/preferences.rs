@@ -290,6 +290,20 @@ pub fn shortcut(text: &str) -> Result<Shortcut> {
 }
 
 pub fn validate(preferences: &Preferences) -> Result<()> {
+    if !preferences.mail.host.is_empty()
+        || !preferences.mail.sender.is_empty()
+        || !preferences.mail.username.is_empty()
+    {
+        preferences.mail.validate()?;
+    }
+    if preferences.transfers.retries > 8 {
+        bail!("Choose 0 to 8 retries.");
+    }
+    if !(1..=1_000_000).contains(&preferences.recovery.max_mib)
+        || !(1..=3650).contains(&preferences.recovery.max_days)
+    {
+        bail!("Recovery limits must be 1–1,000,000 MiB and 1–3650 days.");
+    }
     if !preferences.font_size.is_finite() || !(10.0..=24.0).contains(&preferences.font_size) {
         bail!("Font size must be between 10 and 24.");
     }

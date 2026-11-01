@@ -1,4 +1,4 @@
-## Current review — 2026-10-30
+## Current review — 2026-10-31
 
 This overview reflects the current source and the recorded checks in
 [VALIDATION.md](VALIDATION.md). It separates absent behavior from behavior that
@@ -7,18 +7,18 @@ includes the new checks recorded there; the other areas below remain source
 reviews without new live-account acceptance. Historical validation
 sections describe their original snapshots; later sections supersede older limits.
 
-The reviewed source includes commit `2905be8` and the current pane, keyboard and
-context-menu comparison, including the native macOS Extract sheet. The pinned inventory contains
+The reviewed source includes commits `737eca4` and `3a684b6` and the current
+Settings organization. The pinned inventory contains
 **200 entries: 4 implemented, 188 partial, 7 missing and 1 inapplicable**.
 These are 166 upstream actions and 34 modules, not 200 equally sized features.
 In particular, **partial does not mean absent**: many entries have working
 behavior and fixture coverage but lack complete upstream/native acceptance.
 The inapplicable entry is the JVM garbage-collection command.
 
-The latest recorded all-target local run records **414 passing tests and 17 ignored**; macOS
-and Linux-container Clippy pass. The connection-ID and Linux test-build fixes
-are committed, but hosted Windows confirmation remains open. These checks do
-not close the native/live-provider acceptance gaps below.
+The latest recorded macOS all-target run records **446 passing tests and 17
+ignored**, followed by focused Settings checks after layout refinements. Linux
+checks from the preceding batch are recorded in [VALIDATION.md](VALIDATION.md).
+Hosted Windows confirmation and native/live-provider acceptance remain open.
 
 ### Recently completed workflows
 
@@ -48,6 +48,10 @@ The following are implemented and should no longer appear as missing features:
   focused-file actions independent of marks, dedicated file/background/parent,
   column and tab context menus, and a Duplicate tab command. See the interaction
   comparison below and the latest targeted checks in [VALIDATION.md](VALIDATION.md).
+- Settings organized into General, Folders, Appearance, Shortcuts, Mail and
+  Advanced tabs, with focused column/toolbar/command-bar subtabs, searchable
+  primary/alternate bindings and shared Apply/OK/Cancel draft behavior. See
+  [Settings organization](../docs/SLINT_UI.md#desktop-chrome).
 
 ### Pane, keyboard and context-menu comparison — 2026-10-30
 

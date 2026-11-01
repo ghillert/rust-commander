@@ -2,7 +2,7 @@
 
 ## Choosing file icons
 
-In **Settings → Desktop appearance → File icons**, choose:
+In **Settings → Appearance → Theme and icons → File icons**, choose:
 
 - **System with built-in fallback** (default): preserve native application,
   custom, and document icons. A confirmed generic OS document icon yields to

@@ -12,7 +12,7 @@ fields may remain blank.
 The location bar is an editable text field by default. Press **Cmd+L** on macOS
 or **Ctrl+L** on Windows/Linux, paste an address, and press **Enter**. The button
 beside it switches to clickable breadcrumbs; choose either default in
-**Settings → Desktop appearance → Location bar**. Escape restores the current
+**Settings → Folders → Browsing → Location bar**. Escape restores the current
 address and cancels an outstanding URI connection. Failed input remains editable.
 The preference also travels with saved workspaces.
 

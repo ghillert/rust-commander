@@ -818,7 +818,7 @@ impl Adapter {
         {
             let command = command_catalog()
                 .into_iter()
-                .find(|(_, title)| title == value)
+                .find(|(_, title)| title == value || tr(title).as_ref() == value)
                 .map(|(id, _)| id);
             if let Some(p) = &mut self.app.preferences_form {
                 if let Some(command) = command {

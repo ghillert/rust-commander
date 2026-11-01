@@ -1,5 +1,35 @@
 # Validation record
 
+## Tabbed Settings organization — 2026-10-31
+
+Settings has General, Folders, Appearance, Shortcuts, Mail and Advanced tabs;
+columns, toolbar and command-bar customization have focused subtabs. Slint's
+standard tab widgets expose accessible selection and keyboard navigation. Each
+page uses compact controls and independent scrolling above a fixed footer.
+All pages share one draft. Apply saves without closing, OK saves and closes,
+and Cancel discards edits since the last Apply. Restore defaults edits the draft.
+Invalid numeric entries survive tab changes and prevent both save actions;
+Review invalid setting reveals their page. Shortcuts pair primary/alternate
+bindings and retain edits across search filtering. SMTP fields store no password.
+German/Spanish labels and documentation paths follow the new organization.
+
+The all-target/all-feature macOS run passes **446 tests, 17 ignored**. A later
+focused Settings run passes **10 tests**, including five tab/draft/validation/
+keyboard/large-text fixtures. The narrow-window fixture checks every footer on
+all nine pages at 840×480 and 24 px text. Physical typing also verifies that
+search retains focus as matching shortcut rows disappear; settings fields update
+by stable identity instead of resetting the entire form model. All **18 page renders** pass across
+software/light and FemtoVG/dark; four additional German/24 px previews pass.
+Visual review refined heading alignment, subtab spacing and adaptive label widths.
+Snapshots are under `/private/tmp/rc-settings-preview-final/`. CI now captures
+Settings snapshots on each desktop platform; hosted Windows/Linux execution of
+the new smoke step remains pending. Existing native/accessibility limits remain.
+The macOS tabs are Slint-rendered Cupertino controls, not AppKit; the equal-width
+segments and stacked bars remain a visual gap.
+Final warnings-denied Clippy, formatting, JSON/YAML syntax and documentation-link
+checks pass. The rebuilt normal development bundle passes strict signature
+verification.
+
 ## Command-bar icon color and shortcut placement — 2026-10-31
 
 Bottom buttons show icon, action label, then shortcut badge. The seven default

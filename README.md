@@ -254,7 +254,7 @@ shares the macOS title bar, keeping the native window controls. Breadcrumbs are
 the normal location display; **Mod+L** or the pencil button opens the full path
 for editing. Toolbar actions have hover hints and accessible labels.
 
-**Settings → Desktop appearance → File icons** offers **System with built-in
+**Settings → Appearance → Theme and icons → File icons** offers **System with built-in
 fallback** (default) or **Built-in icons only**. Native icons load in the
 background; confirmed generic document icons yield to a specific built-in match.
 This includes macOS's stock white document templates for PDFs, images, and other
@@ -264,7 +264,7 @@ catalog. Fluent regular controls and a colorful Fluent sidebar provide consisten
 application icons. See the [icon guide](docs/ICONS.md) for coverage, configuration,
 and asset provenance. File-list thumbnails remain separate from previews.
 
-Open **Settings → Desktop appearance** to choose the colors and layout profile.
+Open **Settings → Appearance → Theme and icons** to choose the colors and layout profile.
 **Automatic** detects the platform, including Ubuntu's orange accent.
 **Color scheme → Follow system** follows the desktop's light/dark preference;
 Light and Dark overrides are available.
@@ -281,14 +281,14 @@ including the optional folder tree, so the file panes gain its width. The
 same command is available from **View → Toggle sidebar** and remains available
 when the toolbar is hidden.
 
-New macOS installations hide the function-key command bar by default. Enable
-it in Settings if desired; existing preferences are preserved.
+The function-key command bar is visible by default. Change its visibility under
+**Settings → General** and its buttons under **Appearance → Command bar**.
 
 ## Keyboard shortcuts
 
 **Mod** means **Cmd** on macOS and **Ctrl** on Windows/Linux. Function keys may
 require **Fn**. Command and navigation bindings, including alternate shortcuts, can be changed
-in Settings. Search by command name to find a binding.
+in **Settings → Shortcuts**. Search by command name to find a binding.
 
 | Shortcut | Action |
 | --- | --- |

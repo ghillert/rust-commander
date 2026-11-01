@@ -421,6 +421,7 @@ impl Adapter {
                     detail: rule.application.display().to_string(),
                     selected: false,
                     actions: vec![(format!("remove-rule-{i}"), "Remove".into(), true)],
+                    page: 0,
                 });
             }
             d.error = self.enhancements.notice.clone();

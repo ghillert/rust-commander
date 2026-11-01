@@ -341,6 +341,212 @@ fn command_bar_and_shortcut_labels_follow_custom_bindings() {
             .any(|c| c.id == "Copy" && c.title.contains('K'))
     );
 }
+
+fn settings_element(
+    ui: &CommanderWindow,
+    label: &str,
+    role: i_slint_backend_testing::AccessibleRole,
+) -> i_slint_backend_testing::ElementHandle {
+    i_slint_backend_testing::ElementHandle::find_by_accessible_label(ui, label)
+        .find(|element| element.accessible_role() == Some(role))
+        .unwrap_or_else(|| panic!("Missing settings control: {label}"))
+}
+
+#[test]
+fn settings_tabs_preserve_drafts_and_distinguish_apply_ok_and_cancel() {
+    use i_slint_backend_testing::AccessibleRole::{Tab, TextInput};
+    use slint::platform::PointerEventButton::Left;
+    let (_root, ui, state, _left, _right) = setup();
+    ui.invoke_action("Preferences".into());
+    assert!(ui.get_dialog_preferences());
+    settings_element(&ui, "Appearance", Tab).mock_single_click(Left);
+    assert_eq!(ui.get_settings_tab(), 2);
+    settings_element(&ui, "Font size (10–24 px)", TextInput).set_accessible_value("16");
+    settings_element(&ui, "Folders", Tab).mock_single_click(Left);
+    assert_eq!(ui.get_settings_tab(), 1);
+    ui.invoke_dialog_field("parent-entry".into(), "false".into());
+    assert_eq!(state.borrow().app.preferences.font_size, 14.0);
+    assert!(state.borrow().app.preferences.parent_entry);
+    settings_element(&ui, "Appearance", Tab).mock_single_click(Left);
+    assert_eq!(
+        settings_element(&ui, "Font size (10–24 px)", TextInput)
+            .accessible_value()
+            .unwrap(),
+        "16"
+    );
+    ui.invoke_dialog_action("apply".into());
+    assert!(state.borrow().app.preferences_form.is_some());
+    assert_eq!(state.borrow().app.preferences.font_size, 16.0);
+    assert!(!state.borrow().app.preferences.parent_entry);
+    ui.invoke_dialog_field("font".into(), "18".into());
+    ui.invoke_dialog_action("cancel".into());
+    assert_eq!(state.borrow().app.preferences.font_size, 16.0);
+    ui.invoke_action("Preferences".into());
+    assert_eq!(ui.get_settings_tab(), 0);
+    ui.invoke_dialog_field("font".into(), "17".into());
+    ui.invoke_dialog_action("accept".into());
+    assert!(state.borrow().app.preferences_form.is_none());
+    assert_eq!(state.borrow().app.preferences.font_size, 17.0);
+}
+
+#[test]
+fn settings_validation_survives_tab_switches_and_defaults_remain_a_draft() {
+    let (_root, ui, state, _left, _right) = setup();
+    ui.invoke_action("Preferences".into());
+    ui.invoke_show_settings_page(2);
+    ui.invoke_dialog_field("font".into(), "invalid size".into());
+    ui.invoke_show_settings_page(4);
+    ui.invoke_dialog_field("mail-host".into(), "smtp.example.org".into());
+    ui.invoke_dialog_field("mail-sender".into(), "sender@example.org".into());
+    ui.invoke_dialog_field("mail-tls".into(), "true".into());
+    ui.invoke_dialog_action("apply".into());
+    assert!(state.borrow().app.preferences.mail.host.is_empty());
+    assert_eq!(ui.get_settings_error_page(), 2);
+    ui.invoke_show_settings_page(ui.get_settings_error_page());
+    assert_eq!(ui.get_settings_tab(), 2);
+    assert!(
+        ui.get_dialog_fields()
+            .iter()
+            .any(|field| field.id == "font" && field.value == "invalid size")
+    );
+    ui.invoke_dialog_field("font".into(), "18".into());
+    ui.invoke_dialog_action("apply".into());
+    assert_eq!(state.borrow().app.preferences.mail.port, 465);
+    assert_eq!(state.borrow().app.preferences.font_size, 18.0);
+    ui.invoke_dialog_action("defaults".into());
+    assert_eq!(
+        state
+            .borrow()
+            .app
+            .preferences_form
+            .as_ref()
+            .unwrap()
+            .font_size,
+        14.0
+    );
+    assert_eq!(state.borrow().app.preferences.font_size, 18.0);
+    ui.invoke_dialog_action("cancel".into());
+    assert_eq!(state.borrow().app.preferences.font_size, 18.0);
+}
+
+#[test]
+fn settings_shortcut_search_and_reordering_keep_unseen_edits() {
+    use i_slint_backend_testing::AccessibleRole::TextInput;
+    use slint::platform::{PointerEventButton::Left, WindowEvent};
+    let (_root, ui, state, _left, _right) = setup();
+    ui.invoke_action("Preferences".into());
+    ui.invoke_show_settings_page(3);
+    settings_element(&ui, "Find a command", TextInput).mock_single_click(Left);
+    let mut query = String::new();
+    for letter in ["c", "o", "p", "y"] {
+        ui.window().dispatch_event(WindowEvent::KeyPressed {
+            text: letter.into(),
+        });
+        ui.window().dispatch_event(WindowEvent::KeyReleased {
+            text: letter.into(),
+        });
+        query.push_str(letter);
+        assert_eq!(
+            state.borrow().extra.shortcut_filter,
+            query,
+            "Search must keep focus as matches disappear"
+        );
+    }
+    ui.invoke_show_settings_page(8);
+    assert_eq!(ui.get_settings_tab(), 1);
+    assert_eq!(ui.get_settings_folder_tab(), 1);
+    ui.invoke_dialog_action("column-down-1".into());
+    ui.invoke_dialog_field("width-1".into(), "210".into());
+    ui.invoke_show_settings_page(6);
+    assert_eq!(ui.get_settings_appearance_tab(), 1);
+    ui.invoke_dialog_field("toolbar-Search".into(), "true".into());
+    ui.invoke_show_settings_page(3);
+    ui.invoke_dialog_field("shortcut-filter".into(), "Copy".into());
+    ui.invoke_dialog_field("alternate-Copy".into(), "Control+Alt+Y".into());
+    ui.invoke_dialog_field("shortcut-filter".into(), "no-such-command-123".into());
+    assert!(
+        !ui.get_settings_pages()
+            .row_data(3)
+            .unwrap()
+            .fields
+            .iter()
+            .any(|field| field.kind == 11)
+    );
+    ui.invoke_dialog_field("shortcut-filter".into(), "Copy".into());
+    assert!(
+        ui.get_settings_pages()
+            .row_data(3)
+            .unwrap()
+            .fields
+            .iter()
+            .any(|field| field.id == "shortcut-Copy"
+                && field.choices.row_data(0).unwrap() == "Control+Alt+Y")
+    );
+    ui.invoke_dialog_action("accept".into());
+    let a = state.borrow();
+    assert_eq!(
+        a.app.preferences.columns[0].kind,
+        crate::preferences::Column::Name
+    );
+    assert_eq!(
+        a.app.preferences.columns[1].kind,
+        crate::preferences::Column::Modified
+    );
+    assert_eq!(a.app.preferences.columns[1].width, 210.0);
+    assert!(
+        a.app
+            .preferences
+            .toolbar_actions
+            .contains(&crate::preferences::ToolbarAction::Search)
+    );
+    assert_eq!(
+        a.app.preferences.alternate_shortcuts["Copy"],
+        "Control+Alt+Y"
+    );
+}
+
+#[test]
+fn settings_tab_headers_support_keyboard_selection_without_file_actions() {
+    use slint::platform::{Key, WindowEvent};
+    let (_root, ui, state, _left, _right) = setup();
+    ui.invoke_action("Preferences".into());
+    for key in [Key::Tab, Key::RightArrow, Key::Return] {
+        ui.window()
+            .dispatch_event(WindowEvent::KeyPressed { text: key.into() });
+        ui.window()
+            .dispatch_event(WindowEvent::KeyReleased { text: key.into() });
+    }
+    assert_eq!(ui.get_settings_tab(), 1);
+    assert!(state.borrow().app.prompt.is_none());
+    assert!(state.borrow().app.tab().selected.is_empty());
+}
+
+#[test]
+fn settings_footer_stays_visible_in_small_windows_with_large_text() {
+    use i_slint_backend_testing::AccessibleRole::Button;
+    let (_root, ui, state, _left, _right) = setup();
+    state.borrow_mut().app.preferences.font_size = 24.0;
+    state.borrow_mut().sync(&ui);
+    ui.window().set_size(slint::LogicalSize::new(840.0, 480.0));
+    ui.invoke_action("Preferences".into());
+    for page in 0..9 {
+        ui.invoke_show_settings_page(page);
+        slint::platform::update_timers_and_animations();
+        for label in ["Restore defaults", "Cancel", "Apply", "OK"] {
+            let control = settings_element(&ui, label, Button);
+            let p = control.absolute_position();
+            let size = control.size();
+            assert!(
+                p.x >= 0.0
+                    && p.y >= 0.0
+                    && size.height > 20.0
+                    && p.x + size.width <= 840.5
+                    && p.y + size.height <= 480.5,
+                "Page {page}: {label} clipped at {p:?}, {size:?}"
+            );
+        }
+    }
+}
 #[test]
 fn trash_emptying_requires_confirmation_and_cannot_resume_unattended() {
     let (_root, ui, state, _left, _right) = setup();

@@ -73,7 +73,8 @@ file viewing and file transfers still use their existing explicit actions.
 
 ## 7. Command bar and shortcuts
 
-Settings offers up to twelve named command-bar button choices, in display order.
+Settings → Appearance → Command bar offers up to twelve named button choices,
+in display order.
 Choose None to remove a slot. Duplicate/unsupported entries and conflicting
 shortcuts are rejected before applying. Find a shortcut filters the command
 catalog; primary and alternate bindings support navigation and operations.
@@ -84,7 +85,7 @@ remain appropriate to the focused terminal.
 
 ## 8. Metadata and automatic column sizing
 
-Settings can show owner, group and permission columns. Local owner/group names
+Settings → Folders → Columns can show owner, group and permission columns. Local owner/group names
 resolve asynchronously through the operating system, falling back to UID/GID or
 Windows SID. Columns refresh and ownership sorting follows the resolved names.
 Unix permissions show symbolic and octal modes, including set-ID/sticky bits;

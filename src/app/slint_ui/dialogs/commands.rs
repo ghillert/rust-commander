@@ -45,7 +45,12 @@ impl Adapter {
         }
         if matches!(
             id,
-            "accept" | "authorize" | "sync-preview" | "recovery-preview" | "expire-backups"
+            "accept"
+                | "apply"
+                | "authorize"
+                | "sync-preview"
+                | "recovery-preview"
+                | "expire-backups"
         ) && !self.invalid_fields.is_empty()
         {
             return;
@@ -130,13 +135,13 @@ impl Adapter {
                     if id == "defaults" {
                         self.app.preferences_form = Some(Default::default());
                         self.invalid_fields.clear();
-                    } else if id == "accept" {
+                    } else if id == "accept" || id == "apply" {
                         let Some(preferences) = self.app.preferences_form.as_ref() else {
                             return Ok(());
                         };
                         crate::preferences::validate(preferences)?;
                         self.app.preferences = preferences.clone();
-                        self.app.preferences_form = None;
+                        self.app.preferences_form = (id == "apply").then(|| preferences.clone());
                         self.app.preferences_error = None;
                         crate::i18n::set(self.app.preferences.language);
                         #[cfg(target_os = "macos")]
@@ -144,6 +149,11 @@ impl Adapter {
                             menu.localize();
                         }
                         self.app.refresh(&self.ctx);
+                        if let Some(control) =
+                            self.app.job.as_ref().and_then(|job| job.control.as_ref())
+                        {
+                            control.update(self.app.preferences.transfers);
+                        }
                         self.app.save_settings();
                     } else if let Some(index) = id
                         .strip_prefix("column-up-")

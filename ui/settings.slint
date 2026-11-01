@@ -1,0 +1,121 @@
+import { TabWidget, ScrollView, VerticalBox, HorizontalBox, CheckBox, Palette } from "std-widgets.slint";
+import { FormField, FormRow, FormPage } from "form-types.slint";
+import { DialogTheme, MacDialogField, StandardDialogField, DialogChoice } from "dialog-controls.slint";
+import { Chrome, ChromeButton, Glyphs } from "chrome.slint";
+
+component SettingsInput inherits Rectangle {
+    in property <string> label;
+    in-out property <string> text;
+    callback edited(string);
+    min-width: 0px; horizontal-stretch: 1; vertical-stretch: 0;
+    min-height: DialogTheme.macos ? max(26px, DialogTheme.font-size + 12px) : 34px;
+    preferred-height: self.min-height; max-height: self.min-height;
+    if DialogTheme.macos: MacDialogField {
+        width: parent.width; height: parent.height;
+        label: root.label; text <=> root.text;
+        edited(value) => {root.edited(value);}
+    }
+    if !DialogTheme.macos: StandardDialogField {
+        width: parent.width; height: parent.height;
+        label: root.label; text <=> root.text;
+        edited(value) => {root.edited(value);}
+    }
+}
+
+component SettingsPage inherits ScrollView {
+    in property <int> page;
+    in property <[FormField]> fields;
+    in property <[FormRow]> rows;
+    in property <string> order-heading;
+    in property <string> primary-heading;
+    in property <string> alternate-heading;
+    callback edited(string,string);
+    callback action(string);
+    horizontal-scrollbar-policy: always-off;
+    min-width: 0px; min-height: 0px;
+    VerticalBox {
+        padding: 14px; spacing: 10px; alignment: start;
+        for field in root.fields: VerticalBox {
+            padding: 0px; spacing: 4px; vertical-stretch: 0;
+            if field.kind == 10: Rectangle {
+                height: 32px;
+                Text {text:field.title;width:parent.width;height:parent.height;horizontal-alignment:left;color:Chrome.foreground;font-size:DialogTheme.font-size;font-weight:600;vertical-alignment:center;}
+                Rectangle {y:parent.height - 1px;height:1px;background:Chrome.separator;}
+            }
+            if field.kind == 2: CheckBox {
+                enabled: field.id != "column-Name";
+                text:field.title;checked:field.value == "true";
+                toggled => {root.edited(field.id,self.checked ? "true" : "false");}
+            }
+            if field.kind == 6: Text {text:field.value;color:Chrome.secondary;wrap:word-wrap;font-size:DialogTheme.font-size;}
+            if field.kind == 0 || field.kind == 3: HorizontalBox {
+                padding:0px;spacing:16px;vertical-stretch:0;
+                Text {text:field.title;width:max(180px, DialogTheme.font-size * 9);horizontal-stretch:0;color:Chrome.foreground;wrap:word-wrap;vertical-alignment:center;font-size:DialogTheme.font-size;}
+                if field.kind == 0: SettingsInput {label:field.title;text <=> field.value;edited(value)=>{root.edited(field.id,value);}}
+                if field.kind == 3: DialogChoice {accessible-label:field.title;model:field.choices;current-value:field.value;selected(value)=>{root.edited(field.id,value);}}
+            }
+            if field.kind == 11: HorizontalBox {
+                padding:0px;spacing:12px;vertical-stretch:0;
+                Text {text:field.title;width:max(180px, DialogTheme.font-size * 9);horizontal-stretch:0;color:Chrome.foreground;wrap:word-wrap;vertical-alignment:center;font-size:DialogTheme.font-size;}
+                SettingsInput {label:field.title + " — " + root.primary-heading;text <=> field.value;edited(value)=>{root.edited(field.id,value);}}
+                SettingsInput {label:field.title + " — " + root.alternate-heading;text:field.choices[0];edited(value)=>{root.edited(field.choices[1],value);}}
+            }
+            if field.kind == 12: HorizontalBox {
+                padding:0px;spacing:12px;vertical-stretch:0;
+                Text {text:field.title;width:max(180px, DialogTheme.font-size * 9);color:Chrome.secondary;font-size:12px;}
+                Text {text:field.value;color:Chrome.secondary;font-size:12px;horizontal-stretch:1;preferred-width:0px;}
+                Text {text:field.choices[0];color:Chrome.secondary;font-size:12px;horizontal-stretch:1;preferred-width:0px;}
+            }
+        }
+        if root.page == 6 || root.page == 8: Rectangle {
+            height:32px;
+            Text {text:root.order-heading;width:parent.width;height:parent.height;horizontal-alignment:left;color:Chrome.foreground;font-weight:600;vertical-alignment:center;font-size:DialogTheme.font-size;}
+            Rectangle {y:parent.height - 1px;height:1px;background:Chrome.separator;}
+        }
+        for item in root.rows: Rectangle {
+            height:34px;vertical-stretch:0;
+            border-radius:5px;background:Chrome.stripe;
+            HorizontalBox {
+                padding-left:8px;padding-right:4px;padding-top:0px;padding-bottom:0px;spacing:8px;
+                Text {text:item.title;color:Chrome.foreground;vertical-alignment:center;horizontal-stretch:1;overflow:elide;font-size:DialogTheme.font-size;}
+                for command in item.actions: ChromeButton {
+                    label:item.title + " — " + command.title;
+                    icon:Glyphs.action(command.id.starts-with("column-up-") || command.id.starts-with("toolbar-up-") ? "ReorderUp" : "ReorderDown");
+                    enabled:command.enabled;clicked=>{root.action(command.id);}
+                }
+            }
+        }
+    }
+}
+
+// Keep each page's controls alive while switching tabs, preserving edits,
+// selection, keyboard focus rules and the individual scroll positions.
+export component SettingsView inherits Rectangle {
+    in property <[FormPage]> pages;
+    in property <[string]> labels;
+    in-out property <int> current-index;
+    in-out property <int> folder-index;
+    in-out property <int> appearance-index;
+    callback edited(string,string);
+    callback action(string);
+    min-height:0px;min-width:0px;vertical-stretch:1;
+    tabs := TabWidget {
+        width:parent.width;height:parent.height;
+        current-index <=> root.current-index;
+        Tab {title:root.labels[0];SettingsPage {page:0;fields:root.pages[0].fields;rows:root.pages[0].rows;edited(id,value)=>{root.edited(id,value);}action(id)=>{root.action(id);}}}
+        Tab {title:root.labels[1];VerticalBox {padding-left:0px;padding-right:0px;padding-bottom:0px;padding-top:12px;TabWidget {
+            current-index <=> root.folder-index;
+            Tab {title:root.labels[6];SettingsPage {page:1;fields:root.pages[1].fields;rows:root.pages[1].rows;edited(id,value)=>{root.edited(id,value);}action(id)=>{root.action(id);}}}
+            Tab {title:root.labels[7];SettingsPage {page:8;fields:root.pages[8].fields;rows:root.pages[8].rows;order-heading:root.labels[11];edited(id,value)=>{root.edited(id,value);}action(id)=>{root.action(id);}}}
+        }}}
+        Tab {title:root.labels[2];VerticalBox {padding-left:0px;padding-right:0px;padding-bottom:0px;padding-top:12px;TabWidget {
+            current-index <=> root.appearance-index;
+            Tab {title:root.labels[8];SettingsPage {page:2;fields:root.pages[2].fields;rows:root.pages[2].rows;edited(id,value)=>{root.edited(id,value);}action(id)=>{root.action(id);}}}
+            Tab {title:root.labels[9];SettingsPage {page:6;fields:root.pages[6].fields;rows:root.pages[6].rows;order-heading:root.labels[12];edited(id,value)=>{root.edited(id,value);}action(id)=>{root.action(id);}}}
+            Tab {title:root.labels[10];SettingsPage {page:7;fields:root.pages[7].fields;rows:root.pages[7].rows;edited(id,value)=>{root.edited(id,value);}action(id)=>{root.action(id);}}}
+        }}}
+        Tab {title:root.labels[3];SettingsPage {page:3;fields:root.pages[3].fields;rows:root.pages[3].rows;primary-heading:root.labels[13];alternate-heading:root.labels[14];edited(id,value)=>{root.edited(id,value);}action(id)=>{root.action(id);}}}
+        Tab {title:root.labels[4];SettingsPage {page:4;fields:root.pages[4].fields;rows:root.pages[4].rows;edited(id,value)=>{root.edited(id,value);}action(id)=>{root.action(id);}}}
+        Tab {title:root.labels[5];SettingsPage {page:5;fields:root.pages[5].fields;rows:root.pages[5].rows;edited(id,value)=>{root.edited(id,value);}action(id)=>{root.action(id);}}}
+    }
+}

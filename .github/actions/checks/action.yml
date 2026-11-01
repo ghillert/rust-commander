@@ -68,6 +68,7 @@ runs:
       run: |
         cargo build --locked --features screenshot
         xvfb-run -a -s '-screen 0 3200x2200x24' dbus-run-session -- python3 scripts/desktop-smoke.py --scale 1 --scale 1.25 --scale 1.5 --scale 2
+        xvfb-run -a dbus-run-session -- python3 scripts/settings-smoke.py --renderer software --scheme light
         xvfb-run -a dbus-run-session -- python3 scripts/icon-smoke.py --quick
         xvfb-run -a dbus-run-session -- python3 scripts/uri-smoke.py
         xvfb-run -a dbus-run-session -- python3 scripts/progress-smoke.py
@@ -79,6 +80,7 @@ runs:
         cargo build --locked --features screenshot
         python3 scripts/native-extract-smoke.py
         python3 scripts/native-operation-smoke.py
+        python3 scripts/settings-smoke.py
 
     - name: Smoke test Windows software rendering at common scales
       if: runner.os == 'Windows'
@@ -86,6 +88,7 @@ runs:
       run: |
         cargo build --locked --features screenshot
         python scripts/desktop-smoke.py --renderer software --scale 1 --scale 1.25 --scale 1.5 --scale 2
+        python scripts/settings-smoke.py --renderer software --scheme light
 
     - name: Test optimized transfer recovery
       shell: bash
@@ -112,5 +115,7 @@ runs:
           target/native-extract-smoke/*.log
           target/native-operation-smoke/*.png
           target/native-operation-smoke/*.log
+          target/settings-smoke/*.png
+          target/settings-smoke/*.log
         if-no-files-found: ignore
         retention-days: 7

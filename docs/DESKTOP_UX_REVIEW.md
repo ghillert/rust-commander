@@ -82,6 +82,24 @@ for the checks performed with this change.
 
 ## Repeatable desktop checks (2026-10-31)
 
+Settings now uses Slint's standard tab widgets for General, Folders,
+Appearance, Shortcuts, Mail and Advanced. Browsing/columns and theme/toolbar/
+command-bar subtabs keep long groups separate. Pages retain independent scroll
+positions, compact labeled controls and a fixed footer. Apply keeps the draft
+open; OK saves and closes; Cancel discards edits since the last Apply. Invalid
+numeric values survive tab switches and link back to their page. Shortcuts show
+primary and alternate bindings together, with search and an empty-result message.
+German and Spanish labels cover the new organization.
+The Cupertino tabs are drawn by Slint, not AppKit. Their equal-width segments
+and stacked bars still need visual refinement or a native Settings integration.
+
+Settings interaction tests cover pointer and keyboard tab selection, edits on
+hidden pages, filtered shortcut edits, reordering, defaults and an 840×480 window
+at the maximum font size. The repeatable `scripts/settings-smoke.py` renders all
+nine pages, with light/dark software/FemtoVG profiles on macOS and software checks
+configured for Linux/Windows CI. These style checks do not establish native
+screen-reader or installed-theme acceptance.
+
 The shared unit/UI suite checks actual pointer/key dispatch, accessible row
 selection, context-menu targets and forms at scale factors 1, 1.25, 1.5 and 2.
 This tests the compiled platform style and controller; it is not OS screen-reader
