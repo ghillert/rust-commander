@@ -1202,6 +1202,17 @@ unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, w: usize, l: isize) 
                 SetScrollPos(view.body, SB_VERT, next, 1);
                 0
             }
+            WM_SETTINGCHANGE | WM_THEMECHANGED | WM_SYSCOLORCHANGE => {
+                // Common controls redraw with the updated system colors. Keep
+                // the current form and focused editor intact during a theme change.
+                RedrawWindow(
+                    hwnd,
+                    null(),
+                    null_mut(),
+                    RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN,
+                );
+                DefWindowProcW(hwnd, msg, w, l)
+            }
             WM_DPICHANGED => {
                 view.dpi = (w & 0xffff) as u32;
                 view.set_font();

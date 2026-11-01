@@ -1,3 +1,9 @@
+pub mod source;
+pub const EDIT_LIMIT: u64 = 16 * 1024 * 1024;
+pub const MEDIA_LIMIT: u64 = 512 * 1024 * 1024;
+pub const PAGE_CACHE_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
+pub type PdfBytes = hayro::hayro_syntax::PdfData;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct RasterImage {
     pub size: [usize; 2],
@@ -38,10 +44,10 @@ use std::{
 
 pub enum Content {
     LockedPdf {
-        bytes: std::sync::Arc<Vec<u8>>,
+        bytes: PdfBytes,
     },
     Pdf {
-        bytes: std::sync::Arc<Vec<u8>>,
+        bytes: PdfBytes,
         image: crate::viewer::RasterImage,
         pages: usize,
         text: std::sync::Arc<crate::pdf_text::PageText>,
@@ -52,6 +58,7 @@ pub enum Content {
     Hex {
         text: String,
         truncated: bool,
+        source: Option<std::sync::Arc<source::Source>>,
     },
     Image(crate::viewer::RasterImage),
 }
@@ -80,80 +87,95 @@ pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> 
             ]
             .contains(&extension.as_str());
     let pdf = mode == Mode::Pdf || mode == Mode::Auto && extension == "pdf";
-    if mode == Mode::Hex && location.local().is_some() {
-        let mut bytes = Vec::new();
-        File::open(path)?
-            .take(512 * 1024 + 1)
-            .read_to_end(&mut bytes)?;
-        return Ok(Content::Hex {
-            text: hex_dump(&bytes[..bytes.len().min(512 * 1024)]),
-            truncated: bytes.len() > 512 * 1024,
-        });
-    }
-    if !image
-        && !pdf
-        && mode != Mode::Hex
-        && location.local().is_some()
-        && std::fs::metadata(path)?.len() > 2 * 1024 * 1024
-    {
-        use std::io::Read;
-        let mut prefix = [0; 3];
-        let n = std::fs::File::open(path)?.read(&mut prefix)?;
-        let encoding = if n >= 2 && prefix[..2] == [0xff, 0xfe] {
+    let size = match location {
+        Location::Local(_) => Some(std::fs::metadata(path)?.len()),
+        Location::Remote { connection, .. } => crate::remote::viewer_stamp(connection, path)
+            .ok()
+            .map(|v| v.0),
+        Location::Archive { file, .. } => {
+            crate::archive::list(file, path.parent().unwrap_or(Path::new("")))
+                .ok()
+                .and_then(|entries| entries.into_iter().find(|entry| entry.path == path))
+                .map(|entry| entry.size)
+        }
+    };
+    if mode == Mode::Hex || (!image && !pdf && size.is_some_and(|size| size > EDIT_LIMIT)) {
+        let source = source::Source::open(location.clone(), path.to_owned())?;
+        if mode == Mode::Hex {
+            return Ok(Content::Hex {
+                text: source.hex(0)?,
+                truncated: source.total > 65536,
+                source: Some(source),
+            });
+        }
+        let prefix = source.bytes(0, 3)?;
+        let encoding = if prefix.starts_with(&[0xff, 0xfe]) {
             crate::text_document::Encoding::Utf16Le
-        } else if n >= 2 && prefix[..2] == [0xfe, 0xff] {
+        } else if prefix.starts_with(&[0xfe, 0xff]) {
             crate::text_document::Encoding::Utf16Be
         } else {
             crate::text_document::Encoding::Utf8
         };
-        if let Ok(page) = crate::text_document::Page::read(path, 0, encoding).or_else(|_| {
-            crate::text_document::Page::read(path, 0, crate::text_document::Encoding::Windows1252)
-        }) {
+        if let Ok(page) = source
+            .page(0, encoding)
+            .or_else(|_| source.page(0, crate::text_document::Encoding::Windows1252))
+        {
             return Ok(Content::LargeText(page));
         }
         if mode == Mode::Text {
-            bail!("Cannot decode this file as text; open it as hexadecimal instead.");
+            bail!("Cannot decode this source as text; open it as hexadecimal instead.");
         }
-        let mut bytes = Vec::new();
-        std::fs::File::open(path)?
-            .take(512 * 1024)
-            .read_to_end(&mut bytes)?;
         return Ok(Content::Hex {
-            text: hex_dump(&bytes),
-            truncated: true,
+            text: source.hex(0)?,
+            truncated: source.total > 65536,
+            source: Some(source),
         });
     }
-    let limit = if image || pdf || mode == Mode::Hex {
-        32 * 1024 * 1024
+    let snapshot = if image || pdf {
+        Some(snapshot(
+            location,
+            path,
+            MEDIA_LIMIT,
+            &mut crate::operations::Task::default(),
+        )?)
     } else {
-        2 * 1024 * 1024
+        None
     };
-    let bytes = read(location, path, limit)?;
-    if mode == Mode::Hex {
-        return Ok(Content::Hex {
-            text: hex_dump(&bytes[..bytes.len().min(512 * 1024)]),
-            truncated: bytes.len() > 512 * 1024,
-        });
-    }
+    let bytes = if let Some(snapshot) = &snapshot {
+        snapshot.as_ref().as_ref()
+    } else {
+        &[]
+    };
+    let text_bytes = if snapshot.is_none() {
+        read(location, path, EDIT_LIMIT)?
+    } else {
+        Vec::new()
+    };
+    let bytes = if snapshot.is_none() {
+        &text_bytes[..]
+    } else {
+        bytes
+    };
     if pdf {
+        let data: PdfBytes = snapshot.unwrap().into();
         if matches!(
-            hayro::hayro_syntax::Pdf::new(bytes.clone()),
+            hayro::hayro_syntax::Pdf::new(data.clone()),
             Err(hayro::hayro_syntax::LoadPdfError::Decryption(_))
         ) {
             return Ok(Content::LockedPdf {
-                bytes: std::sync::Arc::new(bytes),
+                bytes: data.clone(),
             });
         }
-        let (image, pages, text) = PdfCache::default().render_with_text(&bytes, 0, "")?;
+        let (image, pages, text) = PdfCache::default().render_data_with_text(&data, 0, "")?;
         return Ok(Content::Pdf {
-            bytes: std::sync::Arc::new(bytes),
+            bytes: data.clone(),
             image,
             pages,
             text,
         });
     }
     if image {
-        let mut reader = image::ImageReader::new(Cursor::new(&bytes)).with_guessed_format()?;
+        let mut reader = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
         let mut limits = image::Limits::default();
         limits.max_image_width = Some(8192);
         limits.max_image_height = Some(8192);
@@ -169,9 +191,9 @@ pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> 
     }
     if mode == Mode::Text {
         return Ok(Content::EncodedText(
-            crate::text_document::Document::detect(bytes.clone()).or_else(|_| {
+            crate::text_document::Document::detect(bytes.to_vec()).or_else(|_| {
                 crate::text_document::Document::decode(
-                    bytes,
+                    bytes.to_vec(),
                     crate::text_document::Encoding::Windows1252,
                 )
             })?,
@@ -182,18 +204,19 @@ pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> 
         || bytes.starts_with(&[0xef, 0xbb, 0xbf])
     {
         return Ok(Content::EncodedText(
-            crate::text_document::Document::detect(bytes)?,
+            crate::text_document::Document::detect(bytes.to_vec())?,
         ));
     }
     if !bytes.contains(&0)
-        && let Ok(text) = String::from_utf8(bytes.clone())
+        && let Ok(text) = String::from_utf8(bytes.to_vec())
     {
         return Ok(Content::Text(text));
     }
-    let truncated = bytes.len() > 512 * 1024;
+    let source = source::Source::open(location.clone(), path.to_owned())?;
     Ok(Content::Hex {
-        text: hex_dump(&bytes[..bytes.len().min(512 * 1024)]),
-        truncated,
+        text: source.hex(0)?,
+        truncated: source.total > 65536,
+        source: Some(source),
     })
 }
 
@@ -205,7 +228,14 @@ pub fn render_pdf_password(
     index: usize,
     password: &str,
 ) -> Result<(RasterImage, usize)> {
-    let pdf = hayro::hayro_syntax::Pdf::new_with_password(bytes.to_vec(), password)
+    render_pdf_data(&bytes.to_vec().into(), index, password)
+}
+pub fn render_pdf_data(
+    data: &PdfBytes,
+    index: usize,
+    password: &str,
+) -> Result<(RasterImage, usize)> {
+    let pdf = hayro::hayro_syntax::Pdf::new_with_password(data.clone(), password)
         .map_err(|e| anyhow::anyhow!("Cannot read PDF: {e:?}"))?;
     let page = pdf.pages().get(index).context("PDF page does not exist")?;
     let (width, height) = page.render_dimensions();
@@ -248,10 +278,13 @@ pub fn read(location: &Location, path: &Path, limit: u64) -> Result<Vec<u8>> {
     .context("Cannot load the selected file")
 }
 pub fn hex_dump(bytes: &[u8]) -> String {
+    hex_dump_at(bytes, 0)
+}
+pub fn hex_dump_at(bytes: &[u8], offset: u64) -> String {
     use std::fmt::Write;
     let mut output = String::new();
     for (index, row) in bytes.chunks(16).enumerate() {
-        let _ = write!(output, "{:08x}  ", index * 16);
+        let _ = write!(output, "{:08x}  ", offset + (index * 16) as u64);
         for i in 0..16 {
             if let Some(byte) = row.get(i) {
                 let _ = write!(output, "{byte:02x} ");
@@ -305,6 +338,14 @@ impl PdfCache {
         page: usize,
         password: &str,
     ) -> Result<PdfPage> {
+        self.render_data_with_text(&bytes.to_vec().into(), page, password)
+    }
+    pub fn render_data_with_text(
+        &mut self,
+        data: &PdfBytes,
+        page: usize,
+        password: &str,
+    ) -> Result<PdfPage> {
         if self.password != password {
             self.pages.clear();
             self.password = password.into();
@@ -315,13 +356,18 @@ impl PdfCache {
             self.pages.push_back(hit);
             return Ok(result);
         }
-        let (image, count) = render_pdf_password(bytes, page, password)?;
+        let (image, count) = render_pdf_data(data, page, password)?;
         let text = std::sync::Arc::new(
-            crate::pdf_text::load_page(bytes, password, page, &crate::operations::Task::default())
-                .unwrap_or_else(|e| crate::pdf_text::PageText {
-                    error: Some(e.to_string()),
-                    ..Default::default()
-                }),
+            crate::pdf_text::load_page_data(
+                data,
+                password,
+                page,
+                &crate::operations::Task::default(),
+            )
+            .unwrap_or_else(|e| crate::pdf_text::PageText {
+                error: Some(e.to_string()),
+                ..Default::default()
+            }),
         );
         while self.pages.len() >= 3
             || self
@@ -366,4 +412,21 @@ pub fn rotate(image: &RasterImage, turns: usize) -> RasterImage {
         }
     }
     RasterImage { size, pixels }
+}
+
+pub fn snapshot(
+    location: &Location,
+    path: &Path,
+    limit: u64,
+    task: &mut crate::operations::Task,
+) -> Result<std::sync::Arc<crate::private_bytes::Bytes>> {
+    if let Location::Archive { file, .. } = location {
+        return crate::archive::snapshot_member(file, path, limit, task);
+    }
+    crate::private_bytes::Bytes::capture(
+        &mut *crate::storage::reader(location, path)?,
+        limit,
+        path,
+        task,
+    )
 }

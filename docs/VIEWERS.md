@@ -12,9 +12,15 @@ choose an external application.
 
 The choice works for local, remote and archive entries. Text uses BOM-aware
 decoding with a Windows-1252 fallback; binary input containing NUL is rejected.
-Large local text uses the existing read-only pages. Hex initially displays at
-most 512 KiB. Images/PDFs retain their 32 MiB input limits. Remote/archive hex
-inputs are bounded to 32 MiB.
+Built-in editing accepts up to 16 MiB. Larger local and remote text uses read-only
+256 KiB pages; archive members use a private snapshot of at most 2 GiB. Text and
+hex search/jump work on these sources. Hex displays bounded 64 KiB windows.
+Remote paging requires known content length and uses available metadata tokens
+to reject changed sources; providers without ETag/mtime have weaker change detection.
+Images/PDFs accept up to 512 MiB through immutable file-backed snapshots, retaining
+decoded image and page-cache limits. Archive paging decompresses a member once;
+subsequent pages use its private snapshot. Disk space and initial decompression
+cost still apply.
 
 Archive overrides use a private read-only copy with the chosen suffix, checked
 before opening. The source parent is retained for parent navigation. The existing
@@ -52,3 +58,22 @@ Image-only scans need OCR, which is not included. Fonts without usable Unicode
 mappings cannot provide complete text. Reading order and inferred whitespace in
 complex columns, vertical writing and unusual PDFs may differ from their visual
 layout. Forms and annotation editing remain outside the built-in viewer.
+
+## External editing and draft recovery
+
+Reviewed external editing accepts up to 2 GiB for local/remote files and writable
+archive members. Original and edited snapshots use private temporary files and
+read-only mappings; comparisons and remote backup verification stream bounded
+buffers. Save-back still checks original contents/archive identity and retains
+existing recovery/conditional-write behavior. A provider without conditional
+writes cannot exclude a concurrent writer atomically.
+
+The built-in editor autosaves dirty drafts after a 500 ms debounce under the
+private configuration `editor-drafts` directory. A restart offers recovery; use
+**Operations → Recover editor drafts…** to reopen or discard them later. Recovery
+retains the original bytes, encoding, BOM and line endings. Saving a recovered
+draft refuses a changed original. Successful clean saves and explicit discards
+retire the draft ID so a late worker cannot resurrect it. Updates use atomic
+replacement and file synchronization; Unix draft folders/files use 0700/0600.
+An interruption before the first completed autosave can lose the latest input.
+External application working copies do not yet have restart recovery.

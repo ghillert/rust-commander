@@ -137,6 +137,13 @@ impl Commander {
         ctx: &UiSignal,
     ) {
         secrets.request_path = crate::remote::display_path(&ticket.path);
+        if connection.service == "sftp" {
+            let accepted = secrets.ssh_review.as_ref().and_then(|r| r.accepted.clone());
+            secrets.ssh_review = Some(crate::ssh::Review {
+                accepted,
+                ..Default::default()
+            });
+        }
         let cancel = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = mpsc::channel();
         if let Some(tab) = self.panes[ticket.side]
@@ -301,11 +308,20 @@ impl Commander {
                                 .as_ref()
                                 .is_none_or(|f| f.navigation.as_ref() == Some(&request.ticket))
                             {
+                                let ssh_challenge =
+                                    request.secrets.ssh_review.as_ref().and_then(|r| {
+                                        r.offered.lock().unwrap_or_else(|e| e.into_inner()).take()
+                                    });
                                 self.connection_form = Some(ConnectionForm {
                                     connection: request.connection,
                                     secrets: std::mem::take(&mut request.secrets),
                                     navigation: Some(request.ticket),
-                                    error: Some(error),
+                                    error: if ssh_challenge.is_some() {
+                                        None
+                                    } else {
+                                        Some(error)
+                                    },
+                                    ssh_challenge,
                                     ..Default::default()
                                 });
                             }

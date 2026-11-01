@@ -1538,3 +1538,92 @@ Logs are under `/private/tmp/rc-transfer-*.log`; final screenshots are under
 `/private/tmp/rc-transfer-visual-final/`. Tests and screenshots used disposable
 configuration and files. These checks do not claim native Windows/Linux acceptance,
 cloud-provider coverage or CI success for this uncommitted batch.
+
+
+## Desktop, SSH, security metadata and large-file pass — 2026-10-31
+
+The full all-feature test runs passed **460 tests, 18 ignored on macOS** and
+**455 tests, 23 ignored on Linux**. Subsequent focused checks cover literal `%`
+SSH paths (five SSH unit tests on each platform) and the final accessibility
+selection refinement (13 interaction tests on each platform). Strict all-target,
+all-feature Clippy passed on macOS and on Linux with Rust 1.92; the normal
+macOS dev bundle was rebuilt and its ad-hoc signature verified. Earlier full-suite
+counts describe those snapshots; focused checks validate the later narrow edits.
+
+### Real Linux desktop evidence
+
+A disposable unprivileged X11/Xvfb/Openbox session ran actual **Nautilus 43.2**,
+**Dolphin 22.12.3** and **Orca 43.1**. The repeatable fixture is
+`scripts/linux-desktop-acceptance.py`. Both file managers passed physical XTEST
+copy drags in both directions, byte-for-byte verification and source retention.
+Incoming drops created no destination file before the native GTK Copy action
+was invoked through AT-SPI. Dolphin's normal Copy/Move/Link choice is handled
+when it appears. GTK4's window-local accessible coordinates and iconless KDE
+file-label hit areas are handled by the fixture.
+
+AT-SPI exposed the two file lists, row names, roles, persistent selection marks
+and focused controls. Cursor focus and persistent marks are now distinct
+accessible states; Space toggles the final focused row correctly. Actual Orca
+logs contain Rust Commander file-list focus/selection events and generated
+speech output for file names and list context. This is automated event/speech
+**generation** evidence; no person assessed audible speech or navigation comfort.
+The high-contrast software-rendered desktop was captured and inspected.
+AccessKit's newer cache signature produced compatibility warnings with the
+Debian AT-SPI client, while direct queries/events and Orca output worked.
+
+For a configured disposable desktop, run as a non-root user:
+
+```sh
+xvfb-run -a -s '-screen 0 1600x900x24 -noreset' dbus-run-session -- \
+  python3 scripts/linux-desktop-acceptance.py \
+  --binary "$PWD/target/debug/rust-commander" \
+  --output "$PWD/target/linux-desktop-acceptance"
+```
+
+This supplements the existing native X11/Wayland protocol peers. It does not
+establish GNOME/KDE Wayland compositor, physical monitor, IME or human screen-reader
+acceptance. The owned container was removed after preserving its evidence.
+
+### Windows and macOS native controls
+
+Windows SDK checks compiled the ownership/DACL, high-contrast and menu modules.
+Wine ran actual Win32 form tabs, edits, Apply, capture and Close, plus native
+menu attachment, command dispatch, disabled-command filtering and window teardown.
+Wine did **not** persist the requested DACL change, so that is not a successful
+ACL-edit acceptance result. Synthetic posted menu-loop key messages also did not
+establish native Alt/access-key interaction; Win32 supplies the implementation,
+but real keyboard acceptance remains open. No Windows desktop was available:
+Explorer DND, NVDA, Windows ACL persistence and mixed-DPI acceptance remain open.
+
+Native AppKit ownership forms passed attached-sheet, field-edit, invalid-owner
+error-retention and explicit-action checks. Real macOS ACL allow-rule edit/removal,
+no-op, stale-object and symlink guards passed. Native sheet captures were blank
+on this host, so those captures are not counted as visual acceptance. The shared
+high-contrast screenshot was inspected successfully.
+
+### SSH and large-file evidence
+
+Seven disposable loopback transport workflows passed, including unknown-key
+review before authentication, an exact trust-once retry, persisted trust,
+changed-key rejection without a trust prompt, and an OpenSSH Host alias resolving
+host, user, port, identity and known-hosts file. Private fixture profiles explicitly
+disable user SSH configuration; the alias fixture uses its own `-F` file.
+Explicit key/known-host paths preserve spaces and literal percent characters; conventional Windows hostfile pairs are recognized.
+Certificate authorities/host certificates, proxy/jump commands, MFA and complete
+PreferredAuthentications ordering remain unsupported and are described in
+`docs/REMOTE_CONNECTIONS.md`.
+
+The new ownership/ACL form uses the operation queue and refuses stale file
+identity/security metadata. Linux POSIX named/default ACL inheritance and removal
+passed alongside macOS native allow-rule tests. Windows runtime persistence still
+needs real Windows. Metadata edits have no automatic Undo or elevation.
+
+Large text tests cross the new 16 MiB editing threshold; remote/archive text/hex
+pages are bounded and reject changed sources, while archive snapshots remain
+immutable after outer-file replacement. Reviewed external saves beyond the old
+32 MiB limit retain verified recovery copies and refuse changed originals,
+oversize/cancelled work. External snapshots accept 2 GiB; media input accepts
+512 MiB with decoded limits. Built-in draft autosave/recovery tests reopen edited
+text with the original byte guard, refuse a changed original and ensure a late
+worker cannot resurrect a discarded draft. External working-copy restart recovery
+remains open. See `docs/VIEWERS.md` for current bounds and provider limitations.

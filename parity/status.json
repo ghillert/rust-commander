@@ -63,9 +63,11 @@
       "src/app.rs",
       "src/metadata.rs",
       "tests/metadata.rs",
-      "src/app/slint_ui/interaction_tests.rs"
+      "src/app/slint_ui/interaction_tests.rs",
+      "src/security_metadata.rs",
+      "src/app/slint_ui/security.rs"
     ],
-    "note": "Unix octal/symbolic/checkbox controls include special bits with Undo. Local Properties displays readable identities and native ACLs; Windows shows stored access rules and SDDL, with POSIX editing disabled. Ownership/ACL editing and broader native acceptance remain open.",
+    "note": "Unix octal/symbolic/checkbox controls include special bits with Undo. Local Properties displays readable identities and native ACLs; Windows shows stored access rules and SDDL, with POSIX editing disabled. Ownership/ACL editing and broader native acceptance remain open. Local owner/group and native ACL editing are implemented with identity/stale-state guards; no automatic Undo or elevation. Windows ACL persistence still needs a real Windows desktop.",
     "status": "partial"
   },
   "CheckForUpdates": {
@@ -270,10 +272,14 @@
       "docs/RECOVERY_AND_SUPPORT.md",
       "docs/FEATURES_NEXT.md",
       "tests/external_save.rs",
-      "src/external_edit.rs",
-      "src/app/slint_ui/interaction_tests.rs"
+      "src/app/slint_ui/interaction_tests.rs",
+      "src/editor_drafts.rs",
+      "src/app/slint_ui/drafts.rs",
+      "src/private_bytes.rs",
+      "src/viewer/source.rs",
+      "docs/VIEWERS.md"
     ],
-    "note": "Built-in encoded text editing and guarded local/remote saves are available. External working copies support reviewed save-back to local/remote files and writable local/nested/remote ZIP/TAR/7z archive members. External copies and direct remote external-editor saves accept up to 32 MiB; built-in remote text saves retain their 2 MiB limit; cached archive publication has a separate 128 MiB container bound. Temporary editor copies are not crash recovery. Broader editor, provider and desktop compatibility remains open. Built-in/external edit use the focused row independently of marks.",
+    "note": "Built-in encoded editing accepts 16 MiB with private debounced draft autosave/recovery and changed-original guards. Reviewed external editing accepts 2 GiB using file-backed snapshots. Large local/remote/archive input has bounded read-only text/hex paging and streaming search/jump. Image/PDF input accepts 512 MiB with decoded limits. Additional encodings, larger built-in editing, external-working-copy restart recovery and native/provider acceptance remain open.",
     "status": "partial"
   },
   "EditBookmarks": {
@@ -1108,9 +1114,13 @@
       "src/remote.rs",
       "tests/file_manager.rs::text_editor_refuses_external_changes_and_preserves_content",
       "src/app/slint_ui/parity_tests.rs::legacy_text_can_be_decoded_edited_and_converted_without_losing_original_bytes",
-      "docs/FILE_OPERATIONS.md"
+      "docs/FILE_OPERATIONS.md",
+      "src/editor_drafts.rs",
+      "src/operations.rs",
+      "src/external_edit.rs",
+      "docs/VIEWERS.md"
     ],
-    "note": "Built-in editing supports UTF-8, UTF-16 LE/BE, Windows-1252 and ISO-8859-1 through 2 MiB, preserving BOM/line endings and refusing changed originals. Local saves are journaled; guarded remote saves retain recovery copies. Larger local text is paged read-only, and built-in archive/symlink editing remains unsupported. Additional encodings, large-file editing and native/provider acceptance remain open.",
+    "note": "Built-in encoding-preserving saves accept 16 MiB, retain local/remote recovery guards and recover unsaved drafts without overwriting changed originals. Larger sources are read-only in the built-in viewer. External editing accepts 2 GiB; provider-specific atomicity and external draft restart recovery remain open.",
     "status": "partial"
   },
   "SelectFirstRow": {
@@ -1290,9 +1300,12 @@
       "docs/ICONS.md",
       "docs/SLINT_UI.md",
       "ui/dialog-controls.slint",
-      "docs/DESKTOP_UX_REVIEW.md"
+      "docs/DESKTOP_UX_REVIEW.md",
+      "src/high_contrast.rs",
+      "src/windows_menu.rs",
+      "scripts/linux-desktop-acceptance.py"
     ],
-    "note": "Settings include persistent language, desktop style/light-dark appearance, file-icon source, address/breadcrumb mode, columns, toolbar/command bar, shortcuts, recovery and layout choices. File icons support system icons with specific built-in fallback or built-in-only mode. Apply/Cancel and shared-window/workspace behavior have tests. Shared forms now keep normal control heights, platform-specific button/chrome styling and Windows versus macOS/GNOME dismissal order. Visual style previews and keyboard/field fixtures cover these changes; high-contrast integration, full upstream settings/theme coverage, additional languages and native acceptance remain open.",
+    "note": "Settings include persistent language, desktop style/light-dark appearance, file-icon source, address/breadcrumb mode, columns, toolbar/command bar, shortcuts, recovery and layout choices. File icons support system icons with specific built-in fallback or built-in-only mode. Apply/Cancel and shared-window/workspace behavior have tests. Shared forms now keep normal control heights, platform-specific button/chrome styling and Windows versus macOS/GNOME dismissal order. Visual style previews and keyboard/field fixtures cover these changes; full upstream settings/theme coverage, additional languages and native acceptance remain open. System high contrast and a shared-view override are implemented; Windows uses a native menu bar, and Linux/shared menus support Alt/F10 navigation. Real desktop acceptance limits remain recorded.",
     "status": "partial"
   },
   "ShowRecentExecutedFilesQL": {
@@ -1678,7 +1691,7 @@
       "docs/NATIVE_FORMS.md",
       "src/native_menu.rs"
     ],
-    "note": "Extraction into new/existing folders offers per-file conflicts and merging through staged local transfers and Undo. macOS uses a native AppKit sheet with shared fields, conflict rules and controller actions; Windows/Linux retain Slint forms pending event-loop, ownership and runtime integration acceptance. Traversal/link/size guards remain; broader format metadata fixtures and provider behavior remain open.",
+    "note": "Extraction into new/existing folders offers per-file conflicts and merging through staged local transfers and Undo. macOS uses a native AppKit sheet with shared fields, conflict rules and controller actions; Windows/Linux use owned Win32/GTK4 native form helpers with shared fallback. Traversal/link/size guards remain; broader format metadata fixtures and provider behavior remain open.",
     "status": "partial"
   },
   "View": {
@@ -1960,9 +1973,11 @@
       "tests/remote_services.rs::uri_native_sftp_key_workflows",
       "scripts/test-uri-transports.py",
       "docs/REMOTE_CONNECTIONS.md",
-      "parity/VALIDATION.md"
+      "parity/VALIDATION.md",
+      "src/ssh.rs",
+      "tests/remote_services.rs::uri_ssh_fingerprint_review_alias_and_changed_key"
     ],
-    "note": "SFTP is available on Windows, macOS and Linux. Unix key/agent profiles retain OpenSSH; Windows/password profiles use the Rust transport with password/private-key/OpenSSH-agent support and strict known-host verification. Disposable password/key and transfer/recovery workflows pass on Mac; portable fixtures are configured in CI. Windows agent/native desktop acceptance and other server implementations remain open; Rust transport aliases/host certificates are unsupported.",
+    "note": "SFTP uses one Rust transport across desktop platforms, system ssh -G configuration/Host aliases, reviewed SHA-256 unknown-host fingerprints, trust once/save, and strict changed/revoked-key refusal. Seven portable loopback workflows pass on macOS. SSH certificates, jump/proxy commands, MFA and full authentication preference ordering remain unsupported; native Windows agent/desktop acceptance remains open.",
     "status": "partial"
   },
   "mucommander-protocol-smb": {
@@ -1999,9 +2014,12 @@
       "src/text_document.rs",
       "src/viewer_search.rs",
       "src/app/slint_ui/viewer_tools.rs",
-      "tests/features_08.rs"
+      "tests/features_08.rs",
+      "src/viewer/source.rs",
+      "tests/viewer_formats.rs",
+      "docs/VIEWERS.md"
     ],
-    "note": "Encoded text editing/paging and bounded streaming text/hex search with local byte navigation are implemented. Broader encodings, large remote/archive inputs and upstream interaction parity remain open.",
+    "note": "Hex uses bounded 64 KiB windows with local/remote/archive jump/search and page navigation. Source-change guards use identity/available metadata; archive members use a private snapshot up to 2 GiB. Full upstream/native/provider acceptance remains open.",
     "status": "partial"
   },
   "mucommander-viewer-image": {
@@ -2030,9 +2048,13 @@
       "src/text_document.rs",
       "src/viewer_search.rs",
       "src/app/slint_ui/viewer_tools.rs",
-      "tests/features_08.rs"
+      "tests/features_08.rs",
+      "src/viewer/source.rs",
+      "src/editor_drafts.rs",
+      "tests/viewer_formats.rs",
+      "docs/VIEWERS.md"
     ],
-    "note": "Encoded text editing/paging and bounded streaming text/hex search with local byte navigation are implemented. Broader encodings, large remote/archive inputs and upstream interaction parity remain open.",
+    "note": "Encoded text editing through 16 MiB, local/remote/archive bounded pages, streaming search/jump and private draft recovery are implemented. Archive snapshots are capped at 2 GiB; more encodings and large-file built-in editing remain open.",
     "status": "partial"
   }
 }

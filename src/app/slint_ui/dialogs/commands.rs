@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::Context;
 
 impl Adapter {
     pub(in super::super) fn dialog_select(&mut self, id: &str) {
@@ -27,6 +28,12 @@ impl Adapter {
     }
 
     pub(in super::super) fn dialog_action(&mut self, id: &str) {
+        if !self.app.confirm_exit && self.drafts_action(id) {
+            return;
+        }
+        if !self.app.confirm_exit && self.security_action(id) {
+            return;
+        }
         if self.desktop_commands_dialog_action(id) {
             return;
         }
@@ -85,7 +92,9 @@ impl Adapter {
                     if let Some(preparation) = &self.drag.preparation {
                         preparation.cancel.store(true, Ordering::Relaxed);
                     }
-                    self.app.editor = None;
+                    if let Some(mut editor) = self.app.editor.take() {
+                        self.discard_editor_draft(&mut editor);
+                    }
                     self.app.confirm_exit = false;
                     self.app.exiting = true;
                 }
@@ -189,7 +198,31 @@ impl Adapter {
                     }
                 }
                 "connections" => {
-                    if id == "accept"
+                    if matches!(id, "ssh-trust-once" | "ssh-trust-save") {
+                        if let Some(mut form) = self.app.connection_form.take() {
+                            let result = (|| -> anyhow::Result<()> {
+                                let challenge = form
+                                    .ssh_challenge
+                                    .as_ref()
+                                    .context("No SSH host key is awaiting review")?
+                                    .clone();
+                                if id == "ssh-trust-save" {
+                                    challenge.remember()?;
+                                }
+                                form.secrets.ssh_review = Some(crate::ssh::Review {
+                                    accepted: Some(challenge),
+                                    ..Default::default()
+                                });
+                                form.ssh_challenge = None;
+                                self.app.connect_form(&mut form, false, &self.ctx);
+                                Ok(())
+                            })();
+                            if let Err(error) = result {
+                                form.error = Some(error.to_string());
+                            }
+                            self.app.connection_form = Some(form);
+                        }
+                    } else if id == "accept"
                         && self
                             .app
                             .connection_form

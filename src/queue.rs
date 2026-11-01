@@ -87,6 +87,7 @@ impl Queue {
                     | Operation::SaveBytes { .. }
                     | Operation::RemoteSaveBytes { .. }
                     | Operation::RemoteExternalSave { .. }
+                    | Operation::ExternalSave { .. }
                     | Operation::ArchiveSaveBytes { .. }
             )
     }

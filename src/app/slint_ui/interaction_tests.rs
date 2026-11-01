@@ -380,8 +380,9 @@ fn scaled_panes_keep_pointer_keyboard_accessibility_and_context_targets_aligned(
             state.borrow().app.tab().cursor,
             Some(left.join("alpha.txt"))
         );
-        assert_eq!(row.accessible_item_selected(), Some(true));
+        assert_eq!(row.accessible_item_selected(), Some(false));
         press(&ui, " ");
+        assert_eq!(row.accessible_item_selected(), Some(true));
         assert!(
             state
                 .borrow()
@@ -437,4 +438,87 @@ fn permission_fields_sync_octal_symbolic_and_each_checkbox() {
     ui.invoke_dialog_action("accept".into());
     assert!(state.borrow().app.job.is_none());
     assert!(ui.get_dialog_error().contains("octal"));
+}
+
+#[test]
+fn alt_menu_navigation_moves_between_headings_and_restores_pane_focus() {
+    let (_root, ui, state, _left, _right) = setup();
+    ui.set_system_menubar(false);
+    ui.invoke_focus_files(0);
+    press(&ui, Key::F10);
+    assert!(ui.get_menu_heading_active());
+    assert_eq!(ui.get_menu_heading_index(), 0);
+    press(&ui, Key::RightArrow);
+    assert_eq!(ui.get_menu_heading_index(), 1);
+    press(&ui, Key::DownArrow);
+    assert!(ui.get_menu_items().iter().any(|i| i.id == "Copy"));
+    press(&ui, Key::RightArrow);
+    assert_eq!(ui.get_menu_heading_index(), 2);
+    assert!(ui.get_menu_items().iter().any(|i| i.id == "Parent"));
+    press(&ui, Key::Escape);
+    assert!(ui.get_menu_heading_active());
+    press(&ui, Key::Escape);
+    assert!(!ui.get_menu_heading_active());
+    assert!(state.borrow().app.prompt.is_none());
+}
+#[test]
+fn ownership_acl_form_loads_async_and_retains_invalid_drafts() {
+    let (_root, ui, state, left, _right) = setup();
+    ui.invoke_selected(0, path_id(&left.join("alpha.txt")).into(), false, false);
+    ui.invoke_action("OwnershipAcl".into());
+    for _ in 0..1000 {
+        let mut a = state.borrow_mut();
+        a.security_tick();
+        a.sync(&ui);
+        if a.security.is_some() && !a.dialog().busy {
+            break;
+        }
+        drop(a);
+        std::thread::sleep(Duration::from_millis(3));
+    }
+    assert_eq!(ui.get_dialog_title(), "Ownership and ACL");
+    ui.invoke_dialog_field(
+        "security-owner".into(),
+        "rust-commander-no-such-identity".into(),
+    );
+    ui.invoke_dialog_action("security-apply".into());
+    for _ in 0..1000 {
+        let mut a = state.borrow_mut();
+        let ctx = a.ctx.clone();
+        a.app.poll(&ctx);
+        a.security_tick();
+        a.sync(&ui);
+        if a.app.job.is_none() {
+            break;
+        }
+        drop(a);
+        std::thread::sleep(Duration::from_millis(3));
+    }
+    assert_eq!(ui.get_dialog_title(), "Ownership and ACL");
+    assert!(!ui.get_dialog_error().is_empty());
+    assert!(
+        ui.get_dialog_fields()
+            .iter()
+            .any(|f| f.id == "security-owner" && f.value == "rust-commander-no-such-identity")
+    );
+    ui.invoke_dialog_action("cancel".into());
+    assert!(left.join("alpha.txt").exists());
+}
+
+#[test]
+fn screen_reader_selection_changes_when_space_marks_the_focused_last_file() {
+    use i_slint_backend_testing::AccessibleRole;
+    let (_root, ui, state, left, _) = setup();
+    sorted(&state, &ui);
+    let row = ElementHandle::find_by_accessible_label(&ui, "café.txt")
+        .find(|e| e.accessible_role() == Some(AccessibleRole::ListItem))
+        .unwrap();
+    row.mock_single_click(Left);
+    assert_eq!(row.accessible_item_selected(), Some(false));
+    press(&ui, " ");
+    assert_eq!(row.accessible_item_selected(), Some(true));
+    row.mock_single_click(Left);
+    press(&ui, " ");
+    assert_eq!(row.accessible_item_selected(), Some(false));
+    assert_eq!(state.borrow().app.tab().cursor, Some(left.join("café.txt")));
 }

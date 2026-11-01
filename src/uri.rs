@@ -203,7 +203,11 @@ pub fn parse(text: &str, base: &Location) -> Result<Input> {
             s => s,
         };
         let host = url.host().unwrap().to_string();
-        connection.endpoint = format!("{endpoint_scheme}://{host}:{port}");
+        connection.endpoint = if scheme == "sftp" && url.port().is_none() {
+            format!("{endpoint_scheme}://{host}")
+        } else {
+            format!("{endpoint_scheme}://{host}:{port}")
+        };
     }
     let request_path = crate::remote::display_path(&path);
     Ok(Input::Remote(Box::new(Target {

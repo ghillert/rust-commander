@@ -81,14 +81,24 @@ validation on the supported platforms.
   Domain usernames can use `DOMAIN\user`. The pure Rust adapter streams files
   and supports the same search/edit/transfer workflows as other writable services.
 
-- **SFTP** supports Windows, macOS and Linux. Existing Unix key/agent profiles
-  retain the system OpenSSH transport and its SSH configuration. Windows and
-  password connections use the Rust SSH/SFTP transport, supporting passwords,
-  private keys and the Windows OpenSSH agent. Host keys must already be trusted
-  in `~/.ssh/known_hosts` (or the optional configured known-hosts file). Unknown
-  and changed keys are rejected; there is no automatic trust or verification
-  bypass. The Rust transport does not interpret OpenSSH host aliases or host
-  certificates. Use the real hostname and a pinned public host key there.
+- **SFTP** uses the same Rust transport on Windows, macOS and Linux, supporting
+  passwords, private keys and SSH agents. **Use OpenSSH configuration** evaluates
+  `ssh -G` with the system OpenSSH client, including Host/Include/Match aliases.
+  HostName, User, Port, IdentityFile, IdentitiesOnly, IdentityAgent, HostKeyAlias
+  and known-hosts paths are shared consistently. Explicit profile user/key/path
+  and explicit URI ports take precedence. Configured password/public-key enable
+  flags are respected; authentication tries keys/agent before password.
+  Unknown keys open a SHA-256 fingerprint review before authentication. Compare
+  it independently, then Cancel, Trust once, or Trust and save. A changed/revoked
+  key always fails, including during a reviewed retry. Trust once pins the exact
+  endpoint/key in memory; saving appends under a file lock and never replaces a key.
+  Wildcard, negated and hashed known-hosts entries are recognized.
+  ProxyJump/ProxyCommand, SSH certificates, keyboard-interactive/MFA and full
+  PreferredAuthentications ordering remain unsupported. `${ENV}` path tokens
+  require explicit profile paths. OpenSSH's unquoted custom known-hosts path
+  lists can be ambiguous; set a single explicit Known hosts file or disable
+  config. With config disabled, direct host/user/port/key fields and agents work
+  without an installed OpenSSH client. The key passphrase has its own secret field.
 - **FTP/FTPS** use binary, passive transfers. Both TLS styles are selectable under
   **FTP security**, including custom ports. Existing saved `ftps://` profiles
   retain their original explicit-TLS interpretation; newly pasted `ftps://` URIs

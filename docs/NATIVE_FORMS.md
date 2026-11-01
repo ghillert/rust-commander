@@ -11,7 +11,7 @@ surface and the shared application controller.
 | Settings | AppKit `NSTabView` with system fields, popups and buttons | Win32/common-control tabs, edits, combos and buttons | GTK4 notebooks, entries, dropdowns and buttons |
 | Copy, Move, Rename, Extract, Pack and other short forms | Asynchronous AppKit sheet | Owned Win32 form window | Modal GTK4 window with a foreign parent |
 | File, folder and archive-output browsing | `NSOpenPanel` / `NSSavePanel` | Shell `IFileDialog` | `GtkFileChooserNative` (portal/system chooser where available) |
-| Main menu | AppKit command menus | Shared Slint menu | Shared Slint menu |
+| Main menu | AppKit command menus | Native Win32 menu bar | Shared Slint menu with Alt/F10 navigation |
 | File icons, clipboard, window frames and drag/drop | Existing native integrations | Existing native integrations | Existing native integrations |
 | Panes, toolbar, sidebar, context menus, viewers and terminal | Shared specialized Slint UI | Shared specialized Slint UI | Shared specialized Slint UI |
 
@@ -22,7 +22,7 @@ and deletion; packing; Connections; Archive tools; Batch rename; synchronization
 and recovery forms; Open as/Open with; exit confirmation; results; browser URLs;
 donation; email; external-editor confirmation; associations; updates; diagnostics
 reports; Select by pattern; tab naming; Empty Trash confirmation; settings import
-and imported-command review. Availability is based on the actual form schema, not its title.
+and imported-command review, ownership/ACL editing, SSH fingerprint review and editor draft recovery. Availability is based on the actual form schema, not its title.
 Unsupported field types, more than 512 fields, 128 result rows or five footer
 buttons use the shared renderer. Streaming search, comparison/diff, queue/history,
 bookmarks/workspaces, event consoles and Help remain shared workflows.
@@ -93,7 +93,7 @@ selection retained. Path browsing uses the modern Shell file dialog on an STA.
 These are actual **Win32/common controls**. No preview Reactor or
 Windows App SDK deployment dependency is introduced. Classic common controls do
 not implement the app's explicit dark preference; complete Windows dark-mode,
-high-contrast and mixed-monitor acceptance remains open.
+mixed-monitor acceptance remains open. Windows High Contrast system colors now drive the custom panes/chrome; native controls redraw on system/theme changes. Real desktop acceptance remains open.
 
 ## Linux
 
@@ -148,3 +148,23 @@ Local evidence and desktop limitations are recorded in
 they do not establish real Windows screen-reader, Explorer or mixed-DPI acceptance.
 Actual VoiceOver/NVDA/Orca speech, Full Keyboard Access, physical monitor changes,
 compositor coverage and cross-window modal interaction remain desktop checks.
+
+## Menus and contrast
+
+Windows main menus attach to each originating HWND outside controller borrows.
+The native menu loop provides Alt/F10, access keys and arrow navigation. Command
+callbacks enqueue IDs; the controller rechecks availability before dispatch.
+Linux/shared menus support Alt plus unique translated heading initials, F10,
+left/right headings, Down/Enter, item-name navigation and Escape back to the bar
+and then the prior file/address/filter focus. Shift+F10 retains file-context menus.
+
+Settings → Appearance → Accessibility contrast offers a shared-view high-contrast
+override. Windows follows HIGHCONTRAST/GetSysColor; Linux detects GNOME's
+HighContrast theme and KDE HighContrast color-scheme names asynchronously.
+Custom panes use opaque foreground/background/selection colors and explicit
+check marks in addition to color for file marks. Native forms follow the OS theme;
+the manual shared-view override does not replace native system accessibility settings.
+
+File-list accessibility now exposes persistent marks as the selected state and
+announces marked rows in their description. Cursor focus remains independent;
+Space can select/unselect even the focused final row without a stale selected state.

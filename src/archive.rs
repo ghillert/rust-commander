@@ -964,3 +964,35 @@ pub fn extract_resolved(
         .collect::<std::io::Result<Vec<_>>>()?;
     crate::transfer::transfer_resolved(&sources, destination, false, options, overrides, task)
 }
+
+/// Stream a regular member into an immutable private snapshot, without a heap Vec.
+pub fn snapshot_member(
+    file: &Path,
+    path: &Path,
+    limit: u64,
+    task: &mut Task,
+) -> Result<std::sync::Arc<crate::private_bytes::Bytes>> {
+    let mut result = None;
+    visit(file, |member, input| {
+        task.check()?;
+        if member.path == path {
+            anyhow::ensure!(
+                !member.directory && !member.link && member.regular,
+                "Select a regular archive member"
+            );
+            anyhow::ensure!(
+                result.is_none(),
+                "Duplicate archive member paths cannot be viewed safely"
+            );
+            anyhow::ensure!(
+                member.size <= limit,
+                "Archive member exceeds the private viewer cache limit"
+            );
+            result = Some(crate::private_bytes::Bytes::capture(
+                input, limit, path, task,
+            )?);
+        }
+        Ok(())
+    })?;
+    result.context("Archive member no longer exists")
+}

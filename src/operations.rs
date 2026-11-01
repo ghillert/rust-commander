@@ -16,6 +16,21 @@ pub(crate) mod totals;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Operation {
+    ExternalSave {
+        location: crate::filesystem::Location,
+        path: PathBuf,
+        #[serde(skip)]
+        working: PathBuf,
+        #[serde(skip)]
+        original: Option<Arc<crate::private_bytes::Bytes>>,
+        #[serde(skip)]
+        lease: Option<Arc<tempfile::TempDir>>,
+        expected: Option<String>,
+    },
+    Security {
+        expected: crate::security_metadata::Snapshot,
+        change: crate::security_metadata::Change,
+    },
     RecoveryRestore {
         items: Vec<crate::recovery::Item>,
         destination: crate::filesystem::Location,
@@ -273,6 +288,7 @@ impl Operation {
             Self::EmptyTrash => "Empty Trash",
             Self::Undo(_) => "Undo",
             Self::Redo(_) => "Redo",
+            Self::ExternalSave { .. } => "Save external edit",
             Self::SaveText { .. }
             | Self::RemoteSave { .. }
             | Self::SaveBytes { .. }
@@ -307,6 +323,7 @@ impl Operation {
             Self::Compare { .. } | Self::CompareLocations { .. } => "Compare folders",
             Self::Checksum(_) => "Checksums",
             Self::Permissions { .. } => "Permissions",
+            Self::Security { .. } => "Change ownership and ACL",
             Self::Modified { .. } => "Modification time",
             Self::Split { .. } => "Split file",
             Self::Combine { .. } => "Combine files",
@@ -413,6 +430,8 @@ impl Operation {
             | Self::SaveBytes { path, .. }
             | Self::RemoteSaveBytes { path, .. }
             | Self::RemoteExternalSave { path, .. } => path.display().to_string(),
+            Self::Security { expected, .. } => expected.path.display().to_string(),
+            Self::ExternalSave { path, .. } => path.display().to_string(),
             _ => self.label().into(),
         }
     }
@@ -817,6 +836,16 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
         } => crate::remote::transfer_resolved(
             &from, &entries, &to, moving, options, &overrides, task,
         ),
+        Operation::ExternalSave {
+            location,
+            path,
+            working,
+            original,
+            lease,
+            expected,
+        } => {
+            crate::external_edit::save(&location, &path, &working, original, lease, &expected, task)
+        }
         Operation::SaveBytes {
             path,
             original,
@@ -1010,6 +1039,17 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
             task.capture(&path)?;
             File::options().write(true).create_new(true).open(path)?;
             Ok("Created file.".into())
+        }
+        Operation::Security { expected, change } => {
+            task.check()?;
+            let result = crate::security_metadata::apply(&expected, &change)?;
+            Ok(format!(
+                "Security metadata updated for {}.\nOwner: {}\nGroup: {}\nACL:\n{}",
+                result.path.display(),
+                result.owner,
+                result.group,
+                result.acl
+            ))
         }
         Operation::Permissions { paths, mode } => {
             anyhow::ensure!(mode <= 0o7777, "Permissions must be between 0000 and 7777.");
@@ -1340,11 +1380,7 @@ pub fn save_bytes(path: &Path, original: &[u8], bytes: &[u8]) -> Result<()> {
     if fs::symlink_metadata(path)?.file_type().is_symlink() {
         bail!("Edit the symlink target directly.");
     }
-    let mut current = Vec::new();
-    File::open(path)?
-        .take(original.len() as u64 + 1)
-        .read_to_end(&mut current)?;
-    if current != original {
+    if !matches_reader(&mut File::open(path)?, original, &Task::default())? {
         bail!("This file changed on disk. Reopen it before saving to avoid losing those changes.");
     }
     let permissions = fs::metadata(path)?.permissions();
@@ -1354,6 +1390,26 @@ pub fn save_bytes(path: &Path, original: &[u8], bytes: &[u8]) -> Result<()> {
     temporary.as_file().set_permissions(permissions)?;
     crate::file_metadata::copy(path, temporary.path())?;
     temporary.as_file().sync_all()?;
+    if !matches_reader(&mut File::open(path)?, original, &Task::default())? {
+        bail!("This file changed while saving. The new contents were not published.");
+    }
     temporary.persist(path).map_err(|e| e.error)?;
     Ok(())
+}
+
+/// Compare streamed data without allocating a second document-sized buffer.
+pub fn matches_reader(input: &mut dyn Read, expected: &[u8], task: &Task) -> Result<bool> {
+    let mut offset = 0;
+    let mut buffer = [0u8; 65536];
+    loop {
+        task.check()?;
+        let count = input.read(&mut buffer)?;
+        if count == 0 {
+            return Ok(offset == expected.len());
+        }
+        if offset + count > expected.len() || buffer[..count] != expected[offset..offset + count] {
+            return Ok(false);
+        }
+        offset += count;
+    }
 }

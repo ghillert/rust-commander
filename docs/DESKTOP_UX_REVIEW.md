@@ -49,15 +49,13 @@ file panes, locations, filtering and the tree retain keyboard navigation.
 - Cosmic remains the Linux fallback and custom chrome style. Native GTK forms
   follow the installed GTK theme; they do not implement Qt/KDE widgets or
   libadwaita-specific adaptive windows. The forms retain scrolling bodies/footers.
-- Windows High Contrast and Linux high-contrast theme integration are not
-  complete. The custom file-manager chrome uses application color tokens rather
-  than every platform accessibility/system color. Larger font preferences and
-  logical-pixel scaling exist, but do not establish high-contrast acceptance.
-- Windows/Linux menu access-key mnemonics and complete native menu-bar keyboard
-  conventions remain incomplete. Existing configurable shortcuts, Ctrl+F6 focus
-  traversal and Shift+F10 file context menus do not establish full Alt-key menu
-  parity. Broad shortcut changes should preserve the established Commander
-  bindings and user customizations.
+- Windows system High Contrast and Linux HighContrast theme detection now feed
+  custom chrome colors. A shared-view override is available in Appearance.
+  Real desktop contrast, IME and mixed-monitor acceptance remains open.
+- Windows main menus use Win32 access-key behavior. Shared/Linux menus have
+  Alt/F10 heading navigation, arrows, item-name jumps and focus restoration.
+  Native Windows keyboard acceptance and assistive-technology coverage remain
+  distinct from SDK/Wine and headless regression checks.
 
 These are recorded gaps, not reasons to replace functioning file operations or
 force macOS styling onto the other desktops. See [validation](../parity/VALIDATION.md)

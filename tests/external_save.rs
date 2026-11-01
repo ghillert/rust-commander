@@ -8,9 +8,9 @@ use rust_commander::{
 use std::{fs, path::Path};
 
 #[test]
-fn external_remote_save_accepts_32_mib_and_retains_a_verified_recovery_copy() {
+fn external_remote_save_accepts_more_than_32_mib_and_retains_a_verified_recovery_copy() {
     let root = tempfile::tempdir().unwrap();
-    let original = vec![1; external_edit::LIMIT as usize];
+    let original = vec![1; 33 * 1024 * 1024];
     fs::write(root.path().join("large.bin"), &original).unwrap();
     let profile = remote::Connection {
         service: "fs".into(),
@@ -26,14 +26,14 @@ fn external_remote_save_accepts_32_mib_and_retains_a_verified_recovery_copy() {
         "large.bin".into(),
     )
     .unwrap();
-    let edited = vec![2; external_edit::LIMIT as usize];
+    let edited = vec![2; 33 * 1024 * 1024];
     fs::write(&session.file, &edited).unwrap();
     let op = session.save_operation().unwrap();
-    assert!(matches!(op, Operation::RemoteExternalSave { .. }));
+    assert!(matches!(op, Operation::ExternalSave { .. }));
     assert!(Queue::requires_input(&op));
     let serialized = serde_json::to_value(&op).unwrap();
-    assert!(serialized["RemoteExternalSave"].get("original").is_none());
-    assert!(serialized["RemoteExternalSave"].get("bytes").is_none());
+    assert!(serialized["ExternalSave"].get("original").is_none());
+    assert!(serialized["ExternalSave"].get("bytes").is_none());
     operations::run(op, &mut Task::default()).unwrap();
     assert_eq!(fs::read(root.path().join("large.bin")).unwrap(), edited);
     let backup = fs::read_dir(root.path())

@@ -1,13 +1,18 @@
 use super::*;
-use std::io::Read;
 pub(in crate::app) struct Navigation {
     pub id: u64,
+    pub draft_revision: u64,
+    pub draft_saved: u64,
+    pub draft_due: std::time::Instant,
+    pub draft_pending: Option<Receiver<Result<(), String>>>,
+    pub draft_written: bool,
     pub location: Location,
     pub path: PathBuf,
+    pub source: Option<Arc<crate::viewer::source::Source>>,
     pub notice: String,
     pub pending: Option<Receiver<Result<Hit, String>>>,
     query: String,
-    last: Option<u64>,
+    pub last: Option<u64>,
     cancel: Arc<AtomicBool>,
     pub fit_width: bool,
     pub selection: Option<(i32, i32)>,
@@ -18,13 +23,21 @@ pub(in crate::app) struct Hit {
     page: Option<crate::text_document::Page>,
     hex: bool,
     selection: Option<(i32, i32)>,
+    source: Option<Arc<crate::viewer::source::Source>>,
+    notice: Option<String>,
 }
 impl Navigation {
     pub fn new(location: Location, path: PathBuf) -> Self {
         Self {
             id: rand::random(),
+            draft_revision: 1,
+            draft_saved: 0,
+            draft_due: std::time::Instant::now(),
+            draft_pending: None,
+            draft_written: false,
             location,
             path,
+            source: None,
             notice: String::new(),
             pending: None,
             query: String::new(),
@@ -41,6 +54,55 @@ impl Drop for Navigation {
     }
 }
 impl Adapter {
+    pub(super) fn request_view_page(
+        &mut self,
+        editor: &mut Editor,
+        offset: u64,
+        encoding: crate::text_document::Encoding,
+        hex: bool,
+    ) {
+        if editor.navigation.pending.is_some() {
+            return;
+        }
+        let source = editor.navigation.source.clone();
+        let location = editor.navigation.location.clone();
+        let path = editor.navigation.path.clone();
+        let ctx = self.ctx.clone();
+        let (sender, receiver) = mpsc::channel();
+        editor.navigation.pending = Some(receiver);
+        editor.navigation.notice = "Loading page…".into();
+        editor.editable = false;
+        editor.can_edit = false;
+        std::thread::spawn(move || {
+            let result = (|| -> anyhow::Result<Hit> {
+                let source = source
+                    .map(Ok)
+                    .unwrap_or_else(|| crate::viewer::source::Source::open(location, path))?;
+                let page = if hex {
+                    None
+                } else {
+                    Some(source.page(offset, encoding)?)
+                };
+                let text = if let Some(page) = &page {
+                    page.document.text.clone()
+                } else {
+                    source.hex(offset)?
+                };
+                Ok(Hit {
+                    offset,
+                    text,
+                    page,
+                    hex,
+                    selection: None,
+                    source: Some(source),
+                    notice: Some(format!("Byte {offset} · read-only")),
+                })
+            })()
+            .map_err(|e| format!("{e:#}"));
+            let _ = sender.send(result);
+            ctx.request_repaint();
+        });
+    }
     pub(super) fn render_pdf_page(
         &mut self,
         editor: &mut Editor,
@@ -70,7 +132,7 @@ impl Adapter {
                 let (image, count, text) = cache
                     .lock()
                     .map_err(|_| anyhow::anyhow!("PDF cache unavailable"))?
-                    .render_with_text(&bytes, page, &password)?;
+                    .render_data_with_text(&bytes, page, &password)?;
                 Ok((
                     title,
                     page,
@@ -92,12 +154,21 @@ impl Adapter {
         if let Some(result) = crate::background::poll(&mut editor.navigation.pending) {
             match result {
                 Ok(hit) => {
-                    editor.navigation.notice =
-                        format!("Match at byte {} (0x{:x})", hit.offset, hit.offset);
+                    editor.navigation.notice = hit.notice.unwrap_or_else(|| {
+                        format!("Match at byte {} (0x{:x})", hit.offset, hit.offset)
+                    });
+                    if hit.source.is_some() {
+                        editor.navigation.source = hit.source;
+                    }
                     editor.navigation.last = Some(hit.offset);
                     editor.navigation.selection = hit.selection;
                     editor.text = hit.text;
                     editor.text_page = hit.page;
+                    if editor.text_page.is_some() {
+                        editor.can_edit = false;
+                        editor.editable = false;
+                        editor.kind = "Paged text viewer";
+                    }
                     if hit.hex {
                         editor.kind = "Hex viewer";
                         editor.editable = false;
@@ -166,42 +237,24 @@ impl Adapter {
             return true;
         }
         if let Some(value) = action.strip_prefix("jump:") {
-            let result = (|| -> anyhow::Result<()> {
-                anyhow::ensure!(
-                    !editor.dirty(),
-                    "Save edits before jumping to a file offset"
-                );
-                anyhow::ensure!(
-                    editor.path.is_some(),
-                    "Byte-offset navigation requires a local file"
-                );
-                let offset = crate::viewer_search::offset(value)?;
-                if editor.kind.starts_with("Hex") {
-                    editor.text =
-                        crate::viewer_search::hex_page(editor.path.as_ref().unwrap(), offset)?;
-                    editor.text_page = None;
-                } else {
+            match crate::viewer_search::offset(value) {
+                Ok(offset) if !editor.dirty() => {
                     let encoding = editor
                         .document
                         .as_ref()
                         .map(|d| d.encoding)
                         .or_else(|| editor.text_page.as_ref().map(|p| p.document.encoding))
                         .unwrap_or_default();
-                    let page = crate::text_document::Page::read(
-                        editor.path.as_ref().unwrap(),
+                    self.request_view_page(
+                        editor,
                         offset,
                         encoding,
-                    )?;
-                    editor.text = page.document.text.clone();
-                    editor.text_page = Some(page);
-                    editor.editable = false;
-                    editor.kind = "Paged text viewer";
+                        editor.kind.starts_with("Hex"),
+                    );
                 }
-                editor.navigation.last = Some(offset);
-                editor.navigation.notice = format!("Byte {offset}");
-                Ok(())
-            })();
-            editor.error = result.err().map(|e| format!("{e:#}"));
+                Ok(_) => editor.error = Some("Save edits before jumping to a file offset".into()),
+                Err(error) => editor.error = Some(error.to_string()),
+            }
             return true;
         }
         let (hex, query) = if let Some(q) = action.strip_prefix("find:") {
@@ -265,20 +318,17 @@ impl Adapter {
         let ctx = self.ctx.clone();
         let location = editor.navigation.location.clone();
         let path = editor.navigation.path.clone();
+        let source = editor.navigation.source.clone();
         let start = editor.navigation.last.map(|n| n + 1).unwrap_or(0);
         let (sender, receiver) = mpsc::channel();
         editor.navigation.pending = Some(receiver);
         editor.navigation.notice = "Searching…".into();
         std::thread::spawn(move || {
             let result = (|| -> anyhow::Result<Hit> {
-                let mut input: Box<dyn Read> = match &location {
-                    Location::Local(_) => Box::new(std::fs::File::open(&path)?),
-                    _ => Box::new(std::io::Cursor::new(crate::viewer::read(
-                        &location,
-                        &path,
-                        32 * 1024 * 1024,
-                    )?)),
-                };
+                let source = source.map(Ok).unwrap_or_else(|| {
+                    crate::viewer::source::Source::open(location.clone(), path.clone())
+                })?;
+                let mut input = source.reader_at(0)?;
                 let alignment = if !hex
                     && matches!(
                         encoding,
@@ -300,33 +350,19 @@ impl Adapter {
                     anyhow::anyhow!("No further match; edit the search to start again")
                 })?;
                 if hex {
-                    let text = if matches!(location, Location::Local(_)) {
-                        crate::viewer_search::hex_page(&path, at)?
-                    } else {
-                        let bytes = crate::viewer::read(&location, &path, 32 * 1024 * 1024)?;
-                        crate::viewer::hex_dump(
-                            &bytes[at as usize..bytes.len().min(at as usize + 65536)],
-                        )
-                    };
+                    let text = source.hex(at)?;
                     return Ok(Hit {
                         offset: at,
                         text,
                         page: None,
                         hex: true,
                         selection: None,
+                        source: Some(source),
+                        notice: None,
                     });
                 }
-                let (text, page, base) = if matches!(location, Location::Local(_)) {
-                    let p =
-                        crate::text_document::Page::read(&path, at.saturating_sub(1024), encoding)?;
-                    (p.document.text.clone(), Some(p.clone()), p.offset)
-                } else {
-                    let doc = crate::text_document::Document::decode(
-                        crate::viewer::read(&location, &path, 32 * 1024 * 1024)?,
-                        encoding,
-                    )?;
-                    (doc.text, None, 0)
-                };
+                let p = source.page(at.saturating_sub(1024), encoding)?;
+                let (text, page, base) = (p.document.text.clone(), Some(p.clone()), p.offset);
                 let raw = match &page {
                     Some(p) => p.document.original.clone(),
                     None => crate::viewer::read(&location, &path, 32 * 1024 * 1024)?,
@@ -344,6 +380,8 @@ impl Adapter {
                     text,
                     page,
                     hex: false,
+                    source: Some(source),
+                    notice: None,
                     selection: Some((prefix as i32, (prefix + found) as i32)),
                 })
             })()
@@ -449,13 +487,14 @@ impl Adapter {
         editor.navigation.notice = "Searching PDF text…".into();
         let ctx = self.ctx.clone();
         std::thread::spawn(move || {
-            let result = crate::pdf_text::find(&bytes, &password, &query, start, backwards, &task)
-                .and_then(|hit| {
-                    hit.ok_or_else(|| {
-                        anyhow::anyhow!("No matching PDF text. Scanned pages need OCR.")
+            let result =
+                crate::pdf_text::find_data(&bytes, &password, &query, start, backwards, &task)
+                    .and_then(|hit| {
+                        hit.ok_or_else(|| {
+                            anyhow::anyhow!("No matching PDF text. Scanned pages need OCR.")
+                        })
                     })
-                })
-                .map_err(|e| format!("{e:#}"));
+                    .map_err(|e| format!("{e:#}"));
             let _ = sender.send(result);
             ctx.request_repaint();
         });

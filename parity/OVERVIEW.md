@@ -15,8 +15,8 @@ In particular, **partial does not mean absent**: many entries have working
 behavior and fixture coverage but lack complete upstream/native acceptance.
 The inapplicable entry is the JVM garbage-collection command.
 
-The latest recorded all-target runs have **449 passing tests and 17 ignored on
-macOS**, and **443 passing tests and 22 ignored on Linux**. Native form fixtures,
+The latest recorded all-target runs have **460 passing tests and 18 ignored on
+macOS**, and **455 passing tests and 23 ignored on Linux**. Native form fixtures,
 Windows SDK/Wine checks and their limits are recorded in [VALIDATION.md](VALIDATION.md).
 Hosted Windows confirmation and native/live-provider acceptance remain open.
 
@@ -43,7 +43,7 @@ The following are implemented and should no longer appear as missing features:
   See [behavior and limits](../docs/DESKTOP_COMMANDS.md). Their partial statuses
   retain the remaining native/live-service acceptance work.
 - A general reviewed browser URL dialog, shared Minimize/Maximize shortcut
-  actions and remote external-editor save-back through 32 MiB.
+  actions and reviewed external-editor save-back through 2 GiB.
 - Active sort indicators, a selectable `..` row, keyboard access to that row,
   focused-file actions independent of marks, dedicated file/background/parent,
   column and tab context menus, and a Duplicate tab command. See the interaction
@@ -55,6 +55,15 @@ The following are implemented and should no longer appear as missing features:
   operation/utility forms now use AppKit, Windows common controls or GTK4, with
   native local path choosers and a safe shared fallback. See the
   [native-control audit](../docs/NATIVE_FORMS.md).
+
+### Current four-area implementation
+
+SSH fingerprint review and alias/configuration resolution, ownership/ACL forms,
+16 MiB built-in editing, 2 GiB external editing, 512 MiB image/PDF input,
+remote/archive paging and built-in editor draft recovery are implemented. Windows
+uses a Win32 main menu; shared/Linux menus support Alt/F10 navigation. System
+high contrast and a shared-view override are connected. Current validation and
+remaining real-desktop limitations are recorded in [VALIDATION.md](VALIDATION.md).
 
 ### Pane, keyboard and context-menu comparison — 2026-10-30
 
@@ -110,16 +119,16 @@ It excludes limitations in working features and validation-only gaps.
 | Area | Existing behavior | Missing or limited behavior |
 | --- | --- | --- |
 | Drag and drop | Local/remote/archive selections; guarded copy/move; folder/tab/tree/breadcrumb/sidebar targets; hover navigation and edge scrolling; native X11/Wayland/AppKit/OLE bridges | Native desktop acceptance remains incomplete; virtual exports are Copy. Deferred native providers exist, with preparation available for receivers that require pre-existing local paths. See the detailed matrix below. |
-| Network services | HTTP/HTTPS, FTP/both FTPS modes, SFTP on all three desktop platforms, SMB2/3 and cloud adapters | The five missing adapters above and Bonjour discovery. WebHDFS does not establish full Hadoop parity. The Rust SSH transport does not interpret OpenSSH aliases or host certificates. |
+| Network services | HTTP/HTTPS, FTP/both FTPS modes, SFTP on all three desktop platforms, SMB2/3 and cloud adapters | The five missing adapters above and Bonjour discovery. WebHDFS does not establish full Hadoop parity. OpenSSH aliases/configuration and reviewed host fingerprints are supported. SSH certificates, jump/proxy commands and keyboard-interactive/MFA remain unsupported. |
 | Archives | Pack dialog with ZIP/7z/TAR/stream formats, compression levels, ZIP comments, foreground/background work and expandable source list; guarded local/nested/remote editing; encrypted ZIP/7z | Packing takes local, remote or archive sources, ZIP/7z encryption and local or configured remote output. Remote publication follows verified staging and provider-specific create guards; remote output has no general Undo. Live-provider acceptance remains incomplete. HTTP/format-override editing, LST/libguestfs and archive links/special files are unsupported. RAR/ISO/NRG/AR/DEB/CPIO/RPM creation/mutation is unavailable. Edited cached containers are limited to 128 MiB each, eight levels and a 512 MiB cache; cached edit recipes require reopening after restart. NRG/CPIO/RPM lack dedicated fixtures. See [format support](../docs/FILE_OPERATIONS.md#archives). |
 | Search and comparison | Streaming local/remote literal and per-line regex search with size/date/exclusion filters; SHA-256 or explicitly unverified metadata comparison; bounded read-only text diffs; shared presets and filtered local/remote synchronization | Regex lines are bounded to 8 MiB; text differences to 1 MiB per side and bounded line alignment. Comparison excludes archive roots and reports links without following them. Synchronization refuses links/special files; filtered sync refuses directory deletion/type replacement. Broader provider/desktop acceptance remains open. |
-| Viewers and editing | Encoded text editing, large local read-only pages, streaming local text/hex search, image/PDF rendering, PDF Unicode selection/copy and cancellable document search; reviewed external save-back to local/remote files and writable archive members | Built-in editing is limited to 2 MiB and does not edit archive members or symlinks; large local files are read-only. External working copies and direct remote external-editor save-back accept 32 MiB; built-in remote text saves retain their 2 MiB limit. Image/PDF input is limited to 32 MiB; large remote/archive paging, more encodings and image animation remain absent. OCR and PDF forms/annotation editing are also absent viewer enhancements, not additional missing inventory entries. |
-| Recovery and publication | Journaled local Undo/Redo, retained remote originals, checkpointed copies and a restore/cleanup manager | Universal/remote Undo/Redo, crash recovery for temporary editor drafts and uninterrupted save-back sessions after restart are absent. Checkpointed copies refuse links; interrupted remote publication and concurrent writers remain provider-dependent, with no atomic guarantee on backends lacking conditional writes. Recovery restore selects at most 100 originals per operation. |
-| Metadata | Native local moves; copying macOS ACLs/xattrs/resource forks, Linux user attributes/POSIX ACLs and Windows DACLs | Readable owner/group names, symbolic/octal permissions and local ACL presentation are available. Ownership and ACL editing, Windows alternate data streams/ownership preservation and privileged Linux namespaces remain outside current copy preservation. Remote metadata depends on the provider. |
+| Viewers and editing | Encoded text editing, local/remote/archive read-only pages, streaming text/hex search, image/PDF rendering, PDF Unicode selection/copy and cancellable document search; reviewed external save-back to local/remote files and writable archive members | Built-in editing accepts 16 MiB and does not edit archive members or symlinks. Local/remote/archive read-only paging and streaming search/jump are implemented; archive snapshots are capped at 2 GiB. Reviewed external editing accepts 2 GiB; image/PDF file-backed input accepts 512 MiB with decoded limits. More encodings and image animation remain absent. OCR and PDF forms/annotation editing are also absent viewer enhancements, not additional missing inventory entries. |
+| Recovery and publication | Journaled local Undo/Redo, retained remote originals, checkpointed copies and a restore/cleanup manager | Built-in editor drafts have private debounced autosave and guarded recovery. Universal/remote Undo/Redo, external-editor draft recovery and uninterrupted external save-back sessions after restart remain absent. Checkpointed copies refuse links; interrupted remote publication and concurrent writers remain provider-dependent, with no atomic guarantee on backends lacking conditional writes. Recovery restore selects at most 100 originals per operation. |
+| Metadata | Native local moves; copying macOS ACLs/xattrs/resource forks, Linux user attributes/POSIX ACLs and Windows DACLs | Readable owner/group names, symbolic/octal permissions and local ACL presentation are available. A native local form now edits owner/group and macOS/POSIX/Windows ACL rules with stale-object guards. Remote editing, Windows alternate data streams/ownership preservation and privileged Linux namespaces remain outside current copy preservation. Remote metadata depends on the provider. |
 | Pane swapping and file marks | Opposing-arrow toolbar button and Navigate > Swap panes move tabs, cursor, marks and keyboard focus together; Space/Insert toggle a mark and advance in visible order, with red marks independent of the cursor highlight | Broader native desktop acceptance remains open. |
 | Commands | Open As for explicit text/hex/image/PDF/archive interpretation, Open With, desktop reveal, searchable windows, configurable shortcuts, copy base names, parent-row toggle, numbered windows, manual release checks, diagnostics, reviewed bug-report links, bookmark explorer, bring-all-forward, Email files, support/donation links, reviewed general HTTP/HTTPS browser opening, shared Minimize/Maximize actions and event console | Complete upstream preference/shortcut coverage and broader parameterized URL integration. Linux Reveal opens the parent folder rather than selecting the item. Native acceptance remains open. |
 | Localization and migration | English/German/Spanish and reviewed XML import with backup | Additional languages, complete translated coverage and full upstream preference/keymap/command/bookmark import. See [import limits](../docs/FEATURES_0.7.md#12-mucommander-import). |
-| Desktop appearance and interaction | Actual AppKit/Win32/GTK4 Settings and suitable short forms, with native path choosers and shared operation logic; custom file-manager chrome retains Cupertino/Fluent/Cosmic styling | Physical desktop screen-reader, mixed-DPI and high-contrast acceptance; complete Windows dark-mode support, compositor coverage, KDE widget matching and menu mnemonics remain open. Unsupported native parenting uses Slint. See the [native-control audit](../docs/NATIVE_FORMS.md) and [desktop UX review](../docs/DESKTOP_UX_REVIEW.md). |
+| Desktop appearance and interaction | Actual AppKit/Win32/GTK4 Settings and suitable short forms, with native path choosers and shared operation logic; custom file-manager chrome retains Cupertino/Fluent/Cosmic styling | Physical desktop screen-reader, mixed-DPI and high-contrast acceptance; complete Windows dark-mode support, compositor coverage and KDE widget matching remain open. Windows has a native menu bar; Linux/shared menus have Alt/F10 navigation. Windows/Linux high-contrast detection and a shared-view override are implemented. Unsupported native parenting uses Slint. See the [native-control audit](../docs/NATIVE_FORMS.md) and [desktop UX review](../docs/DESKTOP_UX_REVIEW.md). |
 
 The size, link and publication guards above are deliberate current limits.
 Removing them requires an appropriate streaming, recovery or filesystem design;

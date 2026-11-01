@@ -311,9 +311,13 @@ impl Host {
                     "Expected native error {value:?}, got {}",
                     sheet.error.stringValue()
                 );
-                assert!(
+                assert_eq!(
                     sheet.window.defaultButtonCell().is_some(),
-                    "Native sheet must have a default action"
+                    sheet
+                        .buttons
+                        .iter()
+                        .any(|(_, button)| button.keyEquivalent().to_string() == "\r"),
+                    "Native default action must match its Return binding"
                 );
                 assert_eq!(
                     sheet

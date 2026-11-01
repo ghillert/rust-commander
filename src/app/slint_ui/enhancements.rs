@@ -16,6 +16,8 @@ pub(super) struct State {
     external_pending: Option<Receiver<Result<crate::external_edit::Session, String>>>,
     pub external: Option<crate::external_edit::Session>,
     external_saving: bool,
+    external_review: Option<Receiver<Result<bool, String>>>,
+    external_cancel: Arc<AtomicBool>,
     association_dialog: bool,
     application: String,
     pattern: String,
@@ -42,6 +44,13 @@ impl Adapter {
                 Ok(session) => self.enhancements.external = Some(session),
                 Err(e) => self.app.fail(e),
             }
+        }
+        if let Some(result) = crate::background::poll(&mut self.enhancements.external_review) {
+            self.enhancements.notice = match result {
+                Ok(true) => "Working copy changed. Save back to publish it.".into(),
+                Ok(false) => "No changes in the working copy.".into(),
+                Err(error) => error,
+            };
         }
         if self.enhancements.external_saving && self.app.job.is_none() && self.app.queue.is_empty()
         {
@@ -330,10 +339,16 @@ impl Adapter {
                 self.discover_applications();
                 let (sender, receiver) = mpsc::channel();
                 self.enhancements.external_pending = Some(receiver);
+                self.enhancements.external_cancel = Arc::new(AtomicBool::new(false));
+                let cancel = self.enhancements.external_cancel.clone();
                 let ctx = self.ctx.clone();
                 std::thread::spawn(move || {
-                    let result = crate::external_edit::Session::prepare(location, path)
-                        .map_err(|e| format!("{e:#}"));
+                    let result = crate::external_edit::Session::prepare_with_task(
+                        location,
+                        path,
+                        &mut Task::new(cancel, |_| {}),
+                    )
+                    .map_err(|e| format!("{e:#}"));
                     let _ = sender.send(result);
                     ctx.request_repaint();
                 });
@@ -382,7 +397,8 @@ impl Adapter {
                 &self.enhancements.pattern,
             ));
             d.error = self.enhancements.notice.clone();
-            d.busy = self.enhancements.external_saving;
+            d.busy =
+                self.enhancements.external_saving || self.enhancements.external_review.is_some();
             d.buttons.clear();
             d.button("editor-open", "Open editor", !d.busy);
             d.button("editor-review", "Review changes", !d.busy);
@@ -476,9 +492,15 @@ impl Adapter {
             match id {
                 "cancel" => {
                     self.enhancements.association_dialog = false;
+                    self.enhancements
+                        .external_cancel
+                        .store(true, Ordering::Relaxed);
                     self.enhancements.external_pending = None;
                 }
                 "editor-discard" => {
+                    self.enhancements
+                        .external_cancel
+                        .store(true, Ordering::Relaxed);
                     self.enhancements.external = None;
                 }
                 "editor-open" => {
@@ -495,14 +517,14 @@ impl Adapter {
                 }
                 "editor-review" => {
                     if let Some(session) = &self.enhancements.external {
-                        self.enhancements.notice = if session.changed()? {
-                            format!(
-                                "Edited copy: {} bytes. Save back checks that the original has not changed.",
-                                session.bytes()?.len()
-                            )
-                        } else {
-                            "No changes yet. Save the file in the external editor first.".into()
-                        };
+                        let session = session.clone();
+                        let (sender, receiver) = mpsc::channel();
+                        let ctx = self.ctx.clone();
+                        self.enhancements.external_review = Some(receiver);
+                        std::thread::spawn(move || {
+                            let _ = sender.send(session.changed().map_err(|e| format!("{e:#}")));
+                            ctx.request_repaint();
+                        });
                     }
                 }
                 "editor-save" => {
@@ -762,7 +784,8 @@ mod tests {
             .clone();
         std::fs::write(&copy, b"external editor draft").unwrap();
         ui.invoke_dialog_action("editor-review".into());
-        assert!(ui.get_dialog_error().contains("21 bytes"));
+        wait(&state, &ui, |a| a.enhancements.external_review.is_none());
+        assert!(ui.get_dialog_error().contains("Working copy changed"));
         {
             let mut a = state.borrow_mut();
             a.request_close();
@@ -823,7 +846,7 @@ mod tests {
     fn viewer_search_crosses_large_file_pages_and_byte_jump_works() {
         let (_root, ui, state, left, _right) = setup();
         let path = left.join("large.txt");
-        let mut bytes = vec![b'x'; 3 * 1024 * 1024];
+        let mut bytes = vec![b'x'; crate::viewer::EDIT_LIMIT as usize + 1024];
         bytes[700_000..700_006].copy_from_slice(b"needle");
         std::fs::write(&path, bytes).unwrap();
         {
@@ -840,6 +863,9 @@ mod tests {
         assert!(ui.get_viewer_notice().contains("700000"));
         assert!(ui.get_viewer_text().contains("needle"));
         ui.invoke_viewer_action("jump:0x10".into());
+        wait(&state, &ui, |a| {
+            a.app.editor.as_ref().unwrap().navigation.pending.is_none()
+        });
         assert_eq!(
             state
                 .borrow()

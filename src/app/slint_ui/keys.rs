@@ -76,6 +76,9 @@ impl Adapter {
     ) -> bool {
         // Slint maps macOS Command to `control` and physical Control to `meta`.
         let text = event.text.as_str();
+        if self.menubar_key(ui, &event) {
+            return true;
+        }
         if let Some(action) = configured_action(&self.app.preferences, &event)
             && matches!(action.as_str(), "MinimizeWindow" | "MaximizeWindow")
         {
@@ -240,6 +243,9 @@ impl Adapter {
                         candidate.encoding = encoding;
                         candidate.encode(&editor.text)?;
                         *document = candidate;
+                        editor.navigation.draft_revision =
+                            editor.navigation.draft_revision.wrapping_add(1);
+                        editor.navigation.draft_due = std::time::Instant::now();
                     }
                 } else {
                     anyhow::ensure!(
@@ -251,20 +257,10 @@ impl Adapter {
                             .path
                             .as_ref()
                             .and_then(|p| std::fs::metadata(p).ok())
-                            .is_some_and(|m| m.len() > 2 * 1024 * 1024)
+                            .is_some_and(|m| m.len() > crate::viewer::EDIT_LIMIT)
                     {
-                        let path = editor
-                            .path
-                            .as_ref()
-                            .ok_or_else(|| anyhow::anyhow!("A local file is required"))?;
                         let offset = editor.text_page.as_ref().map(|p| p.offset).unwrap_or(0);
-                        let next = crate::text_document::Page::read(path, offset, encoding)?;
-                        editor.text = next.document.text.clone();
-                        editor.original = editor.text.clone();
-                        editor.text_page = Some(next);
-                        editor.document = None;
-                        editor.editable = false;
-                        editor.kind = "Paged text viewer";
+                        self.request_view_page(&mut editor, offset, encoding, false);
                     } else {
                         let bytes = if let Some(document) = &editor.document {
                             document.original.clone()
@@ -272,10 +268,10 @@ impl Adapter {
                             crate::viewer::read(
                                 &Location::Local(path.clone()),
                                 path,
-                                2 * 1024 * 1024,
+                                crate::viewer::EDIT_LIMIT,
                             )?
                         } else if let Some((connection, path)) = &editor.remote {
-                            crate::remote::read_bytes(connection, path, 2 * 1024 * 1024)?
+                            crate::remote::read_bytes(connection, path, crate::viewer::EDIT_LIMIT)?
                         } else {
                             anyhow::bail!("Text encoding is unavailable")
                         };
@@ -293,6 +289,23 @@ impl Adapter {
             self.app.editor = Some(editor);
             return;
         }
+        if matches!(action, "next" | "previous") && editor.kind.starts_with("Hex") {
+            let current = editor.navigation.last.unwrap_or(0);
+            let total = editor.navigation.source.as_ref().map_or(0, |s| s.total);
+            let offset = if action == "next" {
+                (current + 65536).min(total)
+            } else {
+                current.saturating_sub(65536)
+            };
+            self.request_view_page(
+                &mut editor,
+                offset,
+                crate::text_document::Encoding::Utf8,
+                true,
+            );
+            self.app.editor = Some(editor);
+            return;
+        }
         if matches!(action, "next" | "previous")
             && let Some(page) = &editor.text_page
         {
@@ -301,15 +314,8 @@ impl Adapter {
             } else {
                 page.offset.saturating_sub(crate::text_document::PAGE_SIZE)
             };
-            if let Some(path) = &editor.path {
-                match crate::text_document::Page::read(path, offset, page.document.encoding) {
-                    Ok(next) => {
-                        editor.text = next.document.text.clone();
-                        editor.text_page = Some(next);
-                    }
-                    Err(error) => editor.error = Some(error.to_string()),
-                }
-            }
+            let encoding = page.document.encoding;
+            self.request_view_page(&mut editor, offset, encoding, false);
             self.app.editor = Some(editor);
             return;
         }
@@ -319,12 +325,14 @@ impl Adapter {
                 if editor.dirty() {
                     editor.confirm_close = true;
                 } else {
+                    self.discard_editor_draft(&mut editor);
                     self.app.refresh(&self.ctx);
                     return;
                 }
             }
             "keep" => editor.confirm_close = false,
             "discard" => {
+                self.discard_editor_draft(&mut editor);
                 self.app.refresh(&self.ctx);
                 return;
             }

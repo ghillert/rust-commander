@@ -49,7 +49,7 @@ retain bounded input limits; large-file paging and byte jumps require local file
 
 ## 5. External editor save-back
 
-**File → Edit externally…** prepares a private working copy, up to 32 MiB.
+**File → Edit externally…** prepares a private working copy, up to 2 GiB.
 Choose an installed application or leave the application path blank for the
 system default, then choose **Open editor**. Save in the external application,
 return to Rust Commander, **Review changes**, and explicitly **Save back**.
@@ -60,9 +60,9 @@ save-back; HTTP and format overrides remain read-only. See
 [recovery and archive save-back](RECOVERY_AND_SUPPORT.md). Closing protects an open editor
 session; **Discard working copy** explicitly removes it. A failed save retains
 the working copy for review. Working copies are temporary, not crash recovery.
-Direct remote external-editor save-back accepts the same 32 MiB limit as preparing
+Direct remote external-editor save-back accepts the same 2 GiB limit as preparing
 the working copy, including a verified recovery copy and changed-source checks.
-The built-in remote text editor retains its 2 MiB limit. The separate cached
+The built-in remote text editor accepts up to 16 MiB. The separate cached
 archive publication path supports containers up to 128 MiB.
 
 ## 6. Application associations

@@ -164,6 +164,7 @@ impl Adapter {
                 add(id, label, true);
             }
             add("Permissions", "Permissions…", local);
+            add("OwnershipAcl", "Ownership and ACL…", local);
             add("Modified", "Modification time…", local);
         }
         add("PasteClipboard", "Paste files", true);
@@ -210,8 +211,23 @@ impl Adapter {
     pub(super) fn menu_key(&self, ui: &CommanderWindow, event: &slint::language::KeyEvent) -> i32 {
         let text = event.text.as_str();
         let is = |key| event.text == SharedString::from(key);
+        if ui.get_menu_top()
+            && (is(slint::platform::Key::LeftArrow) || is(slint::platform::Key::RightArrow))
+        {
+            let step = if is(slint::platform::Key::LeftArrow) {
+                6
+            } else {
+                1
+            };
+            ui.set_menu_heading_index((ui.get_menu_heading_index().max(0) + step) % 7);
+            return 5;
+        }
         if is(slint::platform::Key::Escape) || is(slint::platform::Key::Tab) {
-            return 3;
+            return if ui.get_menu_top() && is(slint::platform::Key::Escape) {
+                4
+            } else {
+                3
+            };
         }
         if is(slint::platform::Key::Return) || text == " " {
             return 2;
@@ -258,5 +274,98 @@ impl Adapter {
             ui.set_menu_index(items[next].0 as i32);
         }
         1
+    }
+}
+
+impl Adapter {
+    pub(super) fn menubar_key(
+        &self,
+        ui: &CommanderWindow,
+        event: &slint::language::KeyEvent,
+    ) -> bool {
+        if ui.get_system_menubar() || self.blocked() {
+            return false;
+        }
+        let text = event.text.as_str();
+        let is = |key| event.text == SharedString::from(key);
+        let titles = [
+            "File",
+            "Operations",
+            "Navigate",
+            "Selection",
+            "View",
+            "Window",
+            "Help",
+        ];
+        let mut used = std::collections::BTreeSet::new();
+        let mnemonics = titles.map(|title| {
+            tr(title)
+                .chars()
+                .find(|c| c.is_alphabetic() && used.insert(c.to_lowercase().collect::<String>()))
+                .map(|c| c.to_lowercase().collect::<String>())
+        });
+        let index = event
+            .modifiers
+            .alt
+            .then(|| {
+                mnemonics
+                    .iter()
+                    .position(|m| m.as_deref() == Some(text.to_lowercase().as_str()))
+            })
+            .flatten();
+        if let Some(index) = index {
+            ui.set_menu_heading_index(index as i32);
+            ui.set_menu_heading_active(true);
+            let weak = ui.as_weak();
+            let title = titles[index];
+            slint::Timer::single_shot(Duration::ZERO, move || {
+                if let Some(ui) = weak.upgrade() {
+                    ui.invoke_show_menu(title.into());
+                }
+            });
+            return true;
+        }
+        if (is(slint::platform::Key::F10) && !event.modifiers.alt || is(slint::platform::Key::Alt))
+            && !event.modifiers.shift
+            && !event.modifiers.control
+            && !event.modifiers.meta
+        {
+            ui.set_menu_heading_active(!ui.get_menu_heading_active());
+            if ui.get_menu_heading_active() {
+                ui.set_menu_heading_index(0);
+                ui.invoke_focus_menubar();
+            } else {
+                ui.invoke_restore_menu_focus();
+            }
+            return true;
+        }
+        if !ui.get_menu_heading_active() {
+            return false;
+        }
+        if is(slint::platform::Key::LeftArrow) || is(slint::platform::Key::RightArrow) {
+            let step = if is(slint::platform::Key::LeftArrow) {
+                6
+            } else {
+                1
+            };
+            ui.set_menu_heading_index((ui.get_menu_heading_index().max(0) + step) % 7);
+            return true;
+        }
+        if is(slint::platform::Key::Escape) || is(slint::platform::Key::Tab) {
+            ui.set_menu_heading_active(false);
+            ui.invoke_restore_menu_focus();
+            return true;
+        }
+        if is(slint::platform::Key::DownArrow) || is(slint::platform::Key::Return) || text == " " {
+            let weak = ui.as_weak();
+            let title = titles[ui.get_menu_heading_index().clamp(0, 6) as usize];
+            slint::Timer::single_shot(Duration::ZERO, move || {
+                if let Some(ui) = weak.upgrade() {
+                    ui.invoke_show_menu(title.into());
+                }
+            });
+            return true;
+        }
+        false
     }
 }

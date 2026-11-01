@@ -6,7 +6,7 @@ use std::{
     path::Path,
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Encoding {
     #[default]
     Utf8,
@@ -36,7 +36,7 @@ impl Encoding {
         Self::ALL.into_iter().find(|e| e.label() == value)
     }
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Document {
     pub original: Vec<u8>,
     pub text: String,
@@ -164,6 +164,7 @@ pub struct Page {
     pub next: u64,
     pub total: u64,
     pub document: Document,
+    pub source: Option<std::sync::Arc<crate::viewer::source::Source>>,
 }
 impl Page {
     pub fn read(path: &Path, offset: u64, encoding: Encoding) -> Result<Self> {
@@ -176,6 +177,14 @@ impl Page {
         file.seek(SeekFrom::Start(offset))?;
         let mut bytes = Vec::new();
         file.take(PAGE_SIZE + 4).read_to_end(&mut bytes)?;
+        Self::from_bytes(bytes, offset, total, encoding)
+    }
+    pub fn from_bytes(
+        mut bytes: Vec<u8>,
+        mut offset: u64,
+        total: u64,
+        encoding: Encoding,
+    ) -> Result<Self> {
         if encoding == Encoding::Utf8 {
             while offset > 0 && bytes.first().is_some_and(|b| b & 0xc0 == 0x80) {
                 bytes.remove(0);
@@ -228,6 +237,7 @@ impl Page {
             next,
             total,
             document,
+            source: None,
         })
     }
 }

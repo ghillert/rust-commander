@@ -19,6 +19,9 @@ fn checked(value: &str) -> bool {
 
 impl Adapter {
     pub(in super::super) fn edit_field(&mut self, id: &str, value: &str) {
+        if self.security_edit(id, value) {
+            return;
+        }
         if self.desktop_commands_edit(id, value) {
             return;
         }
@@ -157,6 +160,14 @@ impl Adapter {
                                 {
                                     p.desktop_style = style;
                                 }
+                            }
+                            "contrast" => {
+                                p.contrast =
+                                    if value == crate::high_contrast::Contrast::High.label() {
+                                        crate::high_contrast::Contrast::High
+                                    } else {
+                                        crate::high_contrast::Contrast::System
+                                    };
                             }
                             "scheme" => {
                                 if let Some(scheme) = [
@@ -323,6 +334,9 @@ impl Adapter {
                             "username" => c.username = value.into(),
                             "key-file" => c.key_file = value.into(),
                             "known-hosts" => c.known_hosts_file = value.into(),
+                            "ssh-config" => c.ssh_use_config = checked(value),
+                            "ssh-config-file" => c.ssh_config_file = value.into(),
+                            "ssh-passphrase" => s.ssh_passphrase = value.into(),
                             "tls-ca" => c.tls_ca_file = value.into(),
                             "ftp-tls" => {
                                 c.ftp_tls = match value {

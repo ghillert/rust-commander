@@ -22,7 +22,7 @@ fn explicit_viewers_override_extensions_without_changing_sources() {
         matches!(viewer::load_as(&location,&file,Mode::Text).unwrap(),Content::EncodedText(doc) if doc.text == "ordinary UTF-8 text — café")
     );
     assert!(
-        matches!(viewer::load_as(&location,&file,Mode::Hex).unwrap(),Content::Hex {text,truncated:false} if text.starts_with("00000000"))
+        matches!(viewer::load_as(&location,&file,Mode::Hex).unwrap(),Content::Hex {text,truncated:false,..} if text.starts_with("00000000"))
     );
     assert_eq!(
         fs::read_to_string(&file).unwrap(),
@@ -47,7 +47,11 @@ fn explicit_viewers_override_extensions_without_changing_sources() {
 fn forced_hex_is_bounded_and_forced_large_text_uses_pages() {
     let root = tempfile::tempdir().unwrap();
     let file = root.path().join("large.pdf");
-    fs::write(&file, b"text line\n".repeat(300_000)).unwrap();
+    fs::write(
+        &file,
+        b"text line\n".repeat(viewer::EDIT_LIMIT as usize / 10 + 1),
+    )
+    .unwrap();
     let location = Location::Local(root.path().into());
     assert!(matches!(
         viewer::load_as(&location, &file, Mode::Hex).unwrap(),
@@ -260,4 +264,63 @@ fn pdf_unicode_ligatures_and_surrogates_keep_utf8_selection_boundaries() {
         .unwrap();
     assert_eq!(&hit.text.text[hit.range.clone()], "😀");
     assert_eq!(&page.text[page.selection(0, 1).unwrap()], "éfi");
+}
+
+#[test]
+fn remote_and_archive_pages_are_bounded_and_check_source_changes() {
+    use rust_commander::{remote, text_document::Encoding, viewer::source::Source};
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("large.txt");
+    let size = viewer::EDIT_LIMIT as usize + 1024;
+    fs::write(&path, b"line\n".repeat(size / 5 + 1)).unwrap();
+    let profile = remote::Connection {
+        service: "fs".into(),
+        root: root.path().display().to_string(),
+        ..Default::default()
+    };
+    remote::connect(&profile, Default::default(), false).unwrap();
+    let location = Location::Remote {
+        connection: profile.id,
+        path: "".into(),
+    };
+    let source = Source::open(location.clone(), "large.txt".into()).unwrap();
+    let first = source.page(0, Encoding::Utf8).unwrap();
+    assert!(first.next < first.total);
+    assert!(first.document.original.len() as u64 <= rust_commander::text_document::PAGE_SIZE + 4);
+    let second = source.page(first.next, Encoding::Utf8).unwrap();
+    assert!(second.offset > 0);
+    assert!(
+        source
+            .hex(first.next)
+            .unwrap()
+            .starts_with(&format!("{:08x}", first.next))
+    );
+    fs::write(&path, b"Changed source").unwrap();
+    assert!(source.page(first.next, Encoding::Utf8).is_err());
+    fs::write(&path, b"archive snapshot\n".repeat(size / 17 + 1)).unwrap();
+    let zip = root.path().join("source.zip");
+    archive::pack(std::slice::from_ref(&path), &zip, &mut Task::default()).unwrap();
+    let archived = Source::open(
+        Location::Archive {
+            file: zip.clone(),
+            prefix: "".into(),
+        },
+        "large.txt".into(),
+    )
+    .unwrap();
+    let first = archived.page(0, Encoding::Utf8).unwrap();
+    assert!(first.document.text.starts_with("archive snapshot"));
+    fs::write(zip, b"Changed outer archive").unwrap();
+    assert!(
+        archived
+            .page(first.next, Encoding::Utf8)
+            .unwrap()
+            .document
+            .text
+            .contains("archive snapshot")
+    );
+    let local = Source::open(Location::Local(root.path().into()), path.clone()).unwrap();
+    fs::rename(&path, root.path().join("previous.txt")).unwrap();
+    fs::write(&path, b"replacement").unwrap();
+    assert!(local.page(0, Encoding::Utf8).is_err());
 }

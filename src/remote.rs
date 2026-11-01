@@ -34,6 +34,8 @@ pub struct Connection {
     pub query_required: bool,
     pub native_sftp: bool,
     pub known_hosts_file: String,
+    pub ssh_use_config: bool,
+    pub ssh_config_file: String,
     pub tls_ca_file: String,
     #[serde(skip)]
     #[doc(hidden)]
@@ -62,6 +64,8 @@ impl Default for Connection {
             query_required: false,
             native_sftp: false,
             known_hosts_file: String::new(),
+            ssh_use_config: true,
+            ssh_config_file: String::new(),
             tls_ca_file: String::new(),
             credentials_from: String::new(),
         }
@@ -91,6 +95,7 @@ impl Connection {
 #[serde(default)]
 pub struct Secrets {
     pub password: String,
+    pub ssh_passphrase: String,
     pub access_key_id: String,
     pub secret_access_key: String,
     pub access_token: String,
@@ -102,6 +107,8 @@ pub struct Secrets {
     pub request_query: String,
     #[serde(skip)]
     pub request_path: String,
+    #[serde(skip)]
+    pub ssh_review: Option<crate::ssh::Review>,
 }
 pub const SERVICES: &[&str] = &[
     "sftp", "smb", "ftp", "webdav", "s3", "http", "dropbox", "gdrive", "onedrive", "gcs", "webhdfs",
@@ -176,6 +183,9 @@ pub(crate) fn navigation_credentials(
         }
         if provided.password.is_empty() {
             provided.password = saved.password;
+        }
+        if provided.ssh_passphrase.is_empty() {
+            provided.ssh_passphrase = saved.ssh_passphrase;
         }
         if provided.access_key_id.is_empty() {
             provided.access_key_id = saved.access_key_id;
@@ -256,6 +266,7 @@ pub(crate) fn clean_error(
     let mut text = error.to_string();
     for secret in [
         &secrets.password,
+        &secrets.ssh_passphrase,
         &secrets.access_key_id,
         &secrets.secret_access_key,
         &secrets.access_token,
@@ -1421,7 +1432,7 @@ pub fn save_bytes(
     bytes: &[u8],
     task: &mut Task,
 ) -> Result<String> {
-    save_bytes_bounded(id, path, original, bytes, 2 * 1024 * 1024, task)
+    save_bytes_bounded(id, path, original, bytes, crate::viewer::EDIT_LIMIT, task)
 }
 pub(crate) fn save_bytes_bounded(
     id: &str,
@@ -1437,7 +1448,7 @@ pub(crate) fn save_bytes_bounded(
         limit / (1024 * 1024)
     );
     task.check()?;
-    if read_bytes(id, path, limit)? != original {
+    if !crate::operations::matches_reader(&mut *read(id, path)?, original, task)? {
         bail!("Remote file changed since it was opened. Reload before saving.");
     }
     let session = session(id)?;
@@ -1448,7 +1459,7 @@ pub(crate) fn save_bytes_bounded(
     if let Some(smb) = &session.smb {
         smb.write(&backup, &mut std::io::Cursor::new(original), task, true)?;
         anyhow::ensure!(
-            read_bytes(id, &backup, limit)? == original,
+            crate::operations::matches_reader(&mut *read(id, &backup)?, original, task)?,
             "Remote recovery copy did not verify; source preserved at {}",
             path.display()
         );
@@ -1461,7 +1472,7 @@ pub(crate) fn save_bytes_bounded(
             path,
             task,
         )?;
-        if read_bytes(id, path, limit)? != original {
+        if !crate::operations::matches_reader(&mut *read(id, path)?, original, task)? {
             bail!(
                 "Remote file changed before upload. Recovery copy: {}",
                 backup.display()
@@ -1474,7 +1485,7 @@ pub(crate) fn save_bytes_bounded(
         operator
             .write_options(
                 &key(&backup, false)?,
-                original.to_vec(),
+                crate::remote_upload::buffer(&mut std::io::Cursor::new(original), path, task)?,
                 opendal::options::WriteOptions {
                     if_not_exists: operator.info().full_capability().write_with_if_not_exists,
                     ..Default::default()
@@ -1482,7 +1493,7 @@ pub(crate) fn save_bytes_bounded(
             )
             .map_err(|e| clean_error(e, &session.secrets))?;
         anyhow::ensure!(
-            read_bytes(id, &backup, limit)? == original,
+            crate::operations::matches_reader(&mut *read(id, &backup)?, original, task)?,
             "Remote recovery copy did not verify; source preserved at {}",
             path.display()
         );
@@ -1495,7 +1506,7 @@ pub(crate) fn save_bytes_bounded(
             path,
             task,
         )?;
-        if read_bytes(id, path, limit)? != original {
+        if !crate::operations::matches_reader(&mut *read(id, path)?, original, task)? {
             bail!(
                 "Remote file changed before upload. Recovery copy: {}",
                 backup.display()
@@ -1510,10 +1521,14 @@ pub(crate) fn save_bytes_bounded(
             ..Default::default()
         };
         operator
-            .write_options(&key(path, false)?, bytes.to_vec(), options)
+            .write_options(
+                &key(path, false)?,
+                crate::remote_upload::buffer(&mut std::io::Cursor::new(bytes), path, task)?,
+                options,
+            )
             .map_err(|e| clean_error(e, &session.secrets))?;
     }
-    if read_bytes(id, path, limit)? != bytes {
+    if !crate::operations::matches_reader(&mut *read(id, path)?, bytes, task)? {
         bail!(
             "Uploaded content did not verify. Recovery copy: {}",
             backup.display()
@@ -1671,6 +1686,36 @@ pub(crate) fn publish_checkpoint(
     let entry = entry_at(&location, stage)?.context("Transfer stage disappeared")?;
     copy_entry(&location, &entry, &location, target, task)?;
     remove_entry(&location, &entry, task)
+}
+
+/// Metadata-only token for read-only ranged viewers; no file content is hashed.
+pub(crate) fn viewer_stamp(id: &str, path: &Path) -> Result<(u64, String)> {
+    let session = session(id)?;
+    if let Some(smb) = &session.smb {
+        let entry = smb.stat(path)?.context("Remote file no longer exists")?;
+        return Ok((entry.size, format!("{}:{:?}", entry.size, entry.modified)));
+    }
+    let metadata = session
+        .operator()?
+        .stat(&key(path, false)?)
+        .map_err(|e| clean_error(e, &session.secrets))?;
+    anyhow::ensure!(metadata.is_file(), "Select a remote regular file");
+    anyhow::ensure!(
+        metadata
+            .user_metadata()
+            .and_then(|m| m.get("rust-commander-size-known"))
+            .is_none_or(|v| v != "false"),
+        "Server does not provide a length for ranged viewing"
+    );
+    Ok((
+        metadata.content_length(),
+        format!(
+            "{}:{:?}:{:?}",
+            metadata.content_length(),
+            metadata.etag(),
+            metadata.last_modified()
+        ),
+    ))
 }
 
 #[cfg(test)]

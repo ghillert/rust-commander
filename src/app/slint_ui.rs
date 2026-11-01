@@ -7,6 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 slint::include_modules!();
 mod desktop_commands;
 mod dialogs;
+mod drafts;
 mod drag;
 mod enhancements;
 #[cfg(feature = "screenshot")]
@@ -16,6 +17,7 @@ mod interaction;
 mod keys;
 mod management;
 mod parity;
+mod security;
 pub(in crate::app) mod viewer_tools;
 mod windows;
 
@@ -91,6 +93,8 @@ pub(super) struct Adapter {
     viewer_stamp: Option<(String, usize)>,
     pdf_marks_stamp: Option<(u64, u64, Option<std::ops::Range<usize>>)>,
     preview_stamp: Option<String>,
+    security: Option<security::Form>,
+    drafts: drafts::State,
     dark: bool,
     window_scheme: Option<crate::appearance::ColorScheme>,
 }
@@ -282,13 +286,16 @@ impl Adapter {
             viewer_stamp: None,
             pdf_marks_stamp: None,
             preview_stamp: None,
+            security: None,
+            drafts: Default::default(),
             dark: false,
             window_scheme: None,
         }
     }
 
     fn blocked(&self) -> bool {
-        self.desktop_commands.active()
+        (self.security.is_some() || self.drafts.open)
+            || self.desktop_commands.active()
             || self.management.active()
             || self.enhancements_modal()
             || self.drag.preparation.is_some()
@@ -495,6 +502,14 @@ impl Adapter {
         if self.management_action(name) {
             return;
         }
+        if name == "RecoverEditorDrafts" {
+            self.drafts_open();
+            return;
+        }
+        if name == "OwnershipAcl" {
+            self.security_open();
+            return;
+        }
         if self.enhancements_action(name) {
             return;
         }
@@ -627,6 +642,8 @@ impl Adapter {
             }
         }
         self.app.poll(&self.ctx);
+        self.security_tick();
+        self.drafts_tick();
         self.enhancements_tick();
         self.desktop_commands_tick();
         self.management_tick();
@@ -822,8 +839,26 @@ impl Adapter {
                 crate::appearance::ColorScheme::Light => slint::language::ColorScheme::Light,
             });
 
-        let palette =
+        let contrast = crate::high_contrast::system().or_else(|| {
+            (self.app.preferences.contrast == crate::high_contrast::Contrast::High)
+                .then(|| crate::high_contrast::Colors::fallback(self.dark))
+        });
+        ui.global::<Chrome>().set_high_contrast(contrast.is_some());
+        let mut palette =
             crate::appearance::Palette::new(self.app.preferences.desktop_style, self.dark);
+        if let Some(colors) = contrast {
+            ui.global::<Chrome>()
+                .set_contrast_background(colors.background);
+            ui.global::<Chrome>()
+                .set_contrast_foreground(colors.foreground);
+            ui.global::<Chrome>().set_contrast_disabled(colors.disabled);
+            palette.accent = colors.foreground;
+            palette.selection = colors.highlight;
+            palette.selection_text = colors.highlight_text;
+            palette.marked_text = colors.foreground;
+            palette.marked_cursor = colors.highlight;
+            palette.inactive_selection = colors.highlight;
+        }
         ui.set_accent(palette.accent);
         ui.global::<Chrome>().set_accent(palette.accent);
         ui.global::<Chrome>().set_selection(palette.selection);
@@ -1684,10 +1719,19 @@ impl Adapter {
                     .label()
                     .into(),
             );
-            ui.set_viewer_pdf(editor.pdf.is_some() || editor.text_page.is_some());
+            let hex_source = editor
+                .kind
+                .starts_with("Hex")
+                .then_some(editor.navigation.source.as_ref())
+                .flatten();
+            let hex_offset = editor.navigation.last.unwrap_or(0);
+            ui.set_viewer_pdf(
+                editor.pdf.is_some() || editor.text_page.is_some() || hex_source.is_some(),
+            );
             ui.set_viewer_has_previous(
                 (editor.pdf.as_ref().is_some_and(|pdf| pdf.page > 0)
-                    || editor.text_page.as_ref().is_some_and(|p| p.offset > 0))
+                    || editor.text_page.as_ref().is_some_and(|p| p.offset > 0)
+                    || hex_source.is_some() && hex_offset > 0)
                     && self.app.pending_pdf.is_none()
                     && editor
                         .pdf
@@ -1699,7 +1743,8 @@ impl Adapter {
                     .pdf
                     .as_ref()
                     .is_some_and(|pdf| pdf.page + 1 < pdf.pages)
-                    || editor.text_page.as_ref().is_some_and(|p| p.next < p.total))
+                    || editor.text_page.as_ref().is_some_and(|p| p.next < p.total)
+                    || hex_source.is_some_and(|s| hex_offset + 65536 < s.total))
                     && self.app.pending_pdf.is_none()
                     && editor
                         .pdf
@@ -1716,6 +1761,16 @@ impl Adapter {
                             .text_page
                             .as_ref()
                             .map(|p| format!("Bytes {}–{} / {}", p.offset, p.next, p.total))
+                    })
+                    .or_else(|| {
+                        hex_source.map(|s| {
+                            format!(
+                                "Bytes {}–{} / {}",
+                                hex_offset,
+                                (hex_offset + 65536).min(s.total),
+                                s.total
+                            )
+                        })
                     })
                     .unwrap_or_default()
                     .into(),
@@ -2197,6 +2252,7 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
 }
 
 fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
+    ui.set_system_menubar(cfg!(target_os = "macos"));
     let drag_ui = ui.as_weak();
     ui.on_window_drag(move || {
         use slint::winit_030::WinitWindowAccessor;
@@ -2466,6 +2522,8 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
             && editor.editable
         {
             editor.text = text.to_string();
+            editor.navigation.draft_revision = editor.navigation.draft_revision.wrapping_add(1);
+            editor.navigation.draft_due = std::time::Instant::now() + Duration::from_millis(500);
         }
     });
     callback!(on_viewer_action, |a, w, id| {

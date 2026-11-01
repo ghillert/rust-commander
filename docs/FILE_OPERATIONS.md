@@ -142,11 +142,11 @@ Stream formats accept one regular file.
 
 | Tool | Current support and limits |
 | --- | --- |
-| Text viewer/editor | UTF-8, UTF-16 LE/BE, Windows-1252 and ISO-8859-1, up to 2 MiB |
-| Large local text viewer | Read-only 256 KiB pages, with selectable encoding |
-| Image viewer | Input up to 32 MiB; image dimensions are bounded |
-| PDF viewer | Input up to 32 MiB; password unlock, page navigation, rotation, fit-width, text search/selection and bounded page cache |
-| Hex viewer | Initially the first 512 KiB; local byte jumps/search display bounded 64 KiB windows |
+| Text viewer/editor | UTF-8, UTF-16 LE/BE, Windows-1252 and ISO-8859-1, up to 16 MiB |
+| Large local/remote/archive text viewer | Read-only 256 KiB pages, with selectable encoding |
+| Image viewer | File-backed input up to 512 MiB; image dimensions are bounded |
+| PDF viewer | File-backed input up to 512 MiB; password unlock, page navigation, rotation, fit-width, text search/selection and bounded page cache |
+| Hex viewer | Bounded 64 KiB windows; local/remote/archive byte jumps and streaming search |
 | Checksums | SHA-256, SHA-512, SHA-1, and MD5 |
 
 **File → Open As…** (also in the right-click menu) overrides a file's extension
@@ -160,7 +160,7 @@ Text saves preserve encoding, BOM and CRLF line endings, atomically replace the
 file and refuse changed contents. The save-encoding choice allows conversion;
 unrepresentable legacy characters are rejected. Invalid UTF-8 opens as hex and
 can be decoded explicitly. Large local files use bounded read-only pages;
-remote/archive text editing remains limited to 2 MiB.
+built-in editing remains limited to 16 MiB. Archive members remain read-only in the built-in editor.
 
 Text saves atomically replace the file and refuse changed contents. Symlinks
 and archive entries are view-only in the built-in editor; reviewed external-editor
@@ -180,3 +180,16 @@ never automatically resumed from a persisted queue. macOS uses Finder automation
 and may request permission; Windows uses its native Recycle Bin API; Linux needs
 `gio` and a working GVfs Trash backend. Native emptying has not been executed as
 part of automated validation.
+
+## Ownership and ACL editing
+
+Choose one local file/directory, then File → Ownership and ACL… or its context
+menu. Owner/group accept names or numeric IDs (Windows account names/SIDs).
+The native form edits macOS extended allow/deny ACL text, Linux POSIX access and
+directory default ACLs, or a Windows DACL in SDDL. The operation opens the object
+without following its final symlink, checks identity and the displayed metadata,
+validates input, and uses native handle/descriptor APIs. The OS enforces permissions;
+there is no elevation or automatic Undo. Named Linux ACL entries require a mask.
+Windows null DACLs are refused. Remote ownership/ACL editing remains unsupported.
+Unix files must be readable to obtain the guarded handle; use permission bits to
+restore access first when appropriate. See [viewer limits and draft recovery](VIEWERS.md).

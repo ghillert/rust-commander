@@ -34,18 +34,11 @@ pub fn operator(c: &Connection, s: &Secrets) -> anyhow::Result<Option<Operator>>
     {
         "http" => (Arc::new(http::Http::new(c, s)?), Scheme::Http, false),
         "ftp" => (Arc::new(ftp::Ftp::new(c, s)?), Scheme::Ftp, true),
-        "sftp"
-            if cfg!(windows)
-                || c.native_sftp
-                || !c.known_hosts_file.is_empty()
-                || (!s.password.is_empty() && c.key_file.is_empty()) =>
-        {
-            (
-                Arc::new(sftp::Sftp::new(c, s)?),
-                Scheme::Custom("rust-sftp"),
-                true,
-            )
-        }
+        "sftp" => (
+            Arc::new(sftp::Sftp::new(c, s)?),
+            Scheme::Custom("rust-sftp"),
+            true,
+        ),
         _ => return Ok(None),
     };
     let info = Arc::new(AccessorInfo::default());

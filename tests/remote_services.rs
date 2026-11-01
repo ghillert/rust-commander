@@ -436,3 +436,78 @@ fn webdav_protocol_workflows() {
 fn smb_protocol_workflows() {
     exercise("smb");
 }
+
+#[test]
+#[ignore = "Run scripts/test-uri-transports.py"]
+fn uri_ssh_fingerprint_review_alias_and_changed_key() {
+    let mut c = profile("native_sftp");
+    c.id.push_str("-review");
+    let root = tempfile::tempdir().unwrap();
+    c.known_hosts_file = root.path().join("known_hosts").display().to_string();
+    let review = rust_commander::ssh::Review::default();
+    let mut secrets = Secrets {
+        password: "commander-test-only".into(),
+        ssh_review: Some(review.clone()),
+        ..Default::default()
+    };
+    let error = remote::connect(&c, secrets.clone(), false).unwrap_err();
+    assert!(!error.to_string().contains("commander-test-only"));
+    let challenge = review
+        .offered
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("Unknown key must offer review");
+    assert!(challenge.fingerprint.starts_with("SHA256:"));
+    assert!(!Path::new(&c.known_hosts_file).exists());
+    secrets.ssh_review.as_mut().unwrap().accepted = Some(challenge.clone());
+    remote::connect(&c, secrets, false).expect("Exact trust-once retry");
+    assert_eq!(contents(&c, Path::new("seed.txt")), b"fixture");
+    assert!(!Path::new(&c.known_hosts_file).exists());
+    challenge.remember().unwrap();
+    c.id.push_str("-saved");
+    remote::connect(
+        &c,
+        Secrets {
+            password: "commander-test-only".into(),
+            ..Default::default()
+        },
+        false,
+    )
+    .expect("Saved review");
+    let other = russh::keys::load_secret_key(Path::new(&profile("native_sftp_key").key_file), None)
+        .unwrap();
+    fs::write(
+        &c.known_hosts_file,
+        format!(
+            "{} {}\n",
+            challenge.lookup,
+            other.public_key().to_openssh().unwrap()
+        ),
+    )
+    .unwrap();
+    c.id.push_str("-changed");
+    let review = rust_commander::ssh::Review::default();
+    let error = remote::connect(
+        &c,
+        Secrets {
+            password: "commander-test-only".into(),
+            ssh_review: Some(review.clone()),
+            ..Default::default()
+        },
+        false,
+    )
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("HOST KEY CHANGED"));
+    assert!(review.offered.lock().unwrap().is_none());
+    let profiles: BTreeMap<String, Connection> = serde_json::from_slice(
+        &fs::read(std::env::var_os("RUST_COMMANDER_TEST_SERVICES").unwrap()).unwrap(),
+    )
+    .unwrap();
+    let alias = profiles.get("sftp_alias").unwrap();
+    let effective = rust_commander::ssh::Config::resolve(alias).unwrap();
+    assert_eq!(effective.host, "127.0.0.1");
+    remote::connect(alias, Secrets::default(), false)
+        .expect("OpenSSH Host alias resolves user, port, identity and known_hosts");
+    assert_eq!(contents(alias, Path::new("seed.txt")), b"fixture");
+}

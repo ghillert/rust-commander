@@ -21,25 +21,28 @@ use std::{
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 struct HostKey {
-    host: String,
-    port: u16,
-    known_hosts: String,
+    config: Arc<crate::ssh::Config>,
+    review: Option<crate::ssh::Review>,
 }
 impl client::Handler for HostKey {
     type Error = anyhow::Error;
     async fn check_server_key(&mut self, key: &keys::PublicKeyOrCertificate) -> Result<bool> {
         ensure!(
             key.certificate().is_none(),
-            "SSH host certificates are not supported by this transport. Configure a pinned host key in known_hosts."
+            "SSH host certificates are not supported; this server needs certificate verification with OpenSSH."
         );
-        let verified=if self.known_hosts.is_empty(){keys::check_known_hosts(&self.host,self.port,&key.public_key())}
-            else{keys::check_known_hosts_path(&self.host,self.port,&key.public_key(),&self.known_hosts)}
-            .context("SSH host-key verification failed. Check the server fingerprint and your known_hosts file.")?;
-        ensure!(
-            verified,
-            "SSH server is not trusted. Verify its fingerprint and add its public key to known_hosts before connecting."
-        );
-        Ok(true)
+        let key = key.public_key();
+        if self.config.verify(&key)? {
+            return Ok(true);
+        }
+        let offered = self.config.challenge(&key)?;
+        if let Some(review) = &self.review {
+            if review.accepted.as_ref() == Some(&offered) {
+                return Ok(true);
+            }
+            *review.offered.lock().unwrap_or_else(|e| e.into_inner()) = Some(offered);
+        }
+        anyhow::bail!("SSH host fingerprint needs review before authentication.");
     }
 }
 type Client = Arc<Mutex<client::Handle<HostKey>>>;
@@ -58,19 +61,8 @@ fn wait<T>(future: impl std::future::Future<Output = Result<T>>) -> Result<T> {
 impl Sftp {
     pub fn new(c: &Connection, s: &Secrets) -> Result<Self> {
         wait(async {
-            let url = url::Url::parse(&c.endpoint).context("Invalid SFTP endpoint")?;
-            let host = url
-                .host_str()
-                .context("SFTP needs a host")?
-                .trim_matches(['[', ']'])
-                .to_owned();
-            let port = url.port().unwrap_or(22);
-            let username = if c.username.is_empty() {
-                std::env::var(if cfg!(windows) { "USERNAME" } else { "USER" })
-                    .context("Enter an SFTP username")?
-            } else {
-                c.username.clone()
-            };
+            let resolved = Arc::new(crate::ssh::Config::resolve(c)?);
+            let username = &resolved.user;
             let config = client::Config {
                 inactivity_timeout: None,
                 keepalive_interval: Some(Duration::from_secs(30)),
@@ -78,48 +70,103 @@ impl Sftp {
             };
             let mut client = client::connect(
                 Arc::new(config),
-                (host.as_str(), port),
+                (resolved.host.as_str(), resolved.port),
                 HostKey {
-                    host: host.clone(),
-                    port,
-                    known_hosts: c.known_hosts_file.clone(),
+                    config: resolved.clone(),
+                    review: s.ssh_review.clone(),
                 },
             )
-            .await?;
-            let mut authenticated = client.authenticate_none(&username).await?.success();
-            if !authenticated && !c.key_file.is_empty() {
-                let path = crate::filesystem::resolve_path(&c.key_file, &crate::filesystem::home());
-                let key = keys::load_secret_key(
-                    path,
-                    (!s.password.is_empty()).then_some(s.password.as_str()),
-                )?;
-                let hash = client.best_supported_rsa_hash().await?.flatten();
-                authenticated = client
-                    .authenticate_publickey(
-                        &username,
-                        PrivateKeyWithHashAlg::new(Arc::new(key), hash),
-                    )
-                    .await?
-                    .success();
+            .await
+            .map_err(|error| anyhow::anyhow!("SSH connection failed: {error:#}"))?;
+            let mut authenticated = client.authenticate_none(username).await?.success();
+            let mut detail = "No supported credentials were available.".to_owned();
+            let mut allowed = Vec::new();
+            if resolved.public_key_auth {
+                for path in &resolved.identities {
+                    if authenticated {
+                        break;
+                    }
+                    if !path.exists() && c.key_file.is_empty() {
+                        continue;
+                    }
+                    let passphrase = if !s.ssh_passphrase.is_empty() {
+                        Some(s.ssh_passphrase.as_str())
+                    } else if !c.key_file.is_empty() && !s.password.is_empty() {
+                        Some(s.password.as_str())
+                    } else {
+                        None
+                    };
+                    match keys::load_secret_key(path, passphrase) {
+                        Ok(key) => {
+                            allowed.push(key.public_key().clone());
+                            let hash = client.best_supported_rsa_hash().await?.flatten();
+                            authenticated = client
+                                .authenticate_publickey(
+                                    username,
+                                    PrivateKeyWithHashAlg::new(Arc::new(key), hash),
+                                )
+                                .await?
+                                .success();
+                            if !authenticated {
+                                detail =
+                                    "The server rejected the private key for this username.".into();
+                            }
+                        }
+                        Err(_) => {
+                            detail = "A private key could not be read or decrypted. Check its path, permissions and key passphrase.".into();
+                            if let Ok(public) =
+                                std::fs::read_to_string(path.with_extension(format!(
+                                    "{}pub",
+                                    path.extension()
+                                        .map(|e| format!("{}.", e.to_string_lossy()))
+                                        .unwrap_or_default()
+                                )))
+                                && let Ok(public) = keys::PublicKey::from_openssh(&public)
+                            {
+                                allowed.push(public);
+                            }
+                        }
+                    }
+                }
             }
-            if !authenticated && !s.password.is_empty() && c.key_file.is_empty() {
-                authenticated = client
-                    .authenticate_password(&username, &s.password)
-                    .await?
-                    .success();
-            }
-            if !authenticated {
+            if !authenticated
+                && resolved.public_key_auth
+                && resolved.agent.as_deref() != Some("none")
+            {
                 #[cfg(unix)]
-                let agent = AgentClient::connect_env().await;
+                let agent = if let Some(path) = resolved
+                    .agent
+                    .as_ref()
+                    .filter(|p| p.as_str() != "SSH_AUTH_SOCK")
+                {
+                    AgentClient::connect_uds(crate::filesystem::resolve_path(
+                        path,
+                        &crate::filesystem::home(),
+                    ))
+                    .await
+                } else {
+                    AgentClient::connect_env().await
+                };
                 #[cfg(windows)]
-                let agent = AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent").await;
+                let agent = AgentClient::connect_named_pipe(
+                    resolved
+                        .agent
+                        .as_deref()
+                        .filter(|p| *p != "SSH_AUTH_SOCK")
+                        .unwrap_or(r"\\.\pipe\openssh-ssh-agent"),
+                )
+                .await;
                 #[cfg(any(unix, windows))]
                 if let Ok(mut agent) = agent {
                     let hash = client.best_supported_rsa_hash().await?.flatten();
                     for identity in agent.request_identities().await? {
                         if let AgentIdentity::PublicKey { key, .. } = identity
+                            && (!resolved.identities_only
+                                || allowed
+                                    .iter()
+                                    .any(|candidate| candidate.key_data() == key.key_data()))
                             && client
-                                .authenticate_publickey_with(&username, key, hash, &mut agent)
+                                .authenticate_publickey_with(username, key, hash, &mut agent)
                                 .await?
                                 .success()
                         {
@@ -129,9 +176,26 @@ impl Sftp {
                     }
                 }
             }
+            if !authenticated
+                && resolved.password_auth
+                && !s.password.is_empty()
+                && c.key_file.is_empty()
+            {
+                authenticated = client
+                    .authenticate_password(username, &s.password)
+                    .await?
+                    .success();
+                if !authenticated {
+                    detail = "The server rejected the password, or requires an additional authentication step.".into();
+                }
+            }
             ensure!(
                 authenticated,
-                "SFTP authentication failed. Enter a password, select a private key, or unlock your SSH agent."
+                "SFTP authentication failed for {}@{}:{}. {} Check the username, password/key passphrase, IdentityFile and unlocked SSH agent. Keyboard-interactive/MFA is not supported.",
+                username,
+                resolved.host,
+                resolved.port,
+                detail
             );
             let channel = client.channel_open_session().await?;
             channel.request_subsystem(true, "sftp").await?;

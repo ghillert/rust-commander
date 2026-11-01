@@ -6,22 +6,26 @@ export global Chrome {
     in property <int> platform;
     out property <length> control-radius: platform == 1 ? 4px : platform == 2 ? 8px : 6px;
     in property <bool> dark;
+    in property <bool> high-contrast;
+    in property <color> contrast-background: black;
+    in property <color> contrast-foreground: white;
+    in property <color> contrast-disabled: #c0c0c0;
     in property <color> accent: #007aff;
     in property <color> selection: #0065d3;
     in property <color> selection-text: white;
-    out property <color> foreground: dark ? #ededf0 : #25252b;
-    out property <color> secondary: dark ? #98989f : #717179;
-    out property <color> disabled: dark ? #626269 : #b3b3b9;
-    out property <color> toolbar: dark ? (platform == 1 ? #202020 : platform == 2 ? #303030 : #29292c) : (platform == 1 ? #f3f3f3 : platform == 2 ? #fafafa : #f5f5f7);
-    out property <color> sidebar: dark ? (platform == 0 ? #252528 : #242424) : (platform == 1 ? #f0f0f0 : platform == 2 ? #ebebeb : #f0f1f4);
-    out property <color> pane: dark ? (platform == 0 ? #1e1e20 : #1e1e1e) : white;
-    out property <color> header: dark ? (platform == 0 ? #252527 : #282828) : #fafafa;
-    out property <color> separator: dark ? #ffffff14 : #00000016;
-    out property <color> hover: dark ? #ffffff0d : #00000008;
-    out property <color> pressed: dark ? #ffffff1c : #00000014;
-    out property <color> selected-tab: dark ? #3a3a3f : white;
-    out property <color> field: dark ? (platform == 1 ? #2d2d2d : platform == 2 ? #303030 : #202023) : (platform == 0 ? #f3f3f5 : white);
-    out property <color> stripe: dark ? #222225 : #fafafb;
+    out property <color> foreground: high-contrast ? contrast-foreground : dark ? #ededf0 : #25252b;
+    out property <color> secondary: high-contrast ? contrast-foreground : dark ? #98989f : #717179;
+    out property <color> disabled: high-contrast ? contrast-disabled : dark ? #626269 : #b3b3b9;
+    out property <color> toolbar: high-contrast ? contrast-background : dark ? (platform == 1 ? #202020 : platform == 2 ? #303030 : #29292c) : (platform == 1 ? #f3f3f3 : platform == 2 ? #fafafa : #f5f5f7);
+    out property <color> sidebar: high-contrast ? contrast-background : dark ? (platform == 0 ? #252528 : #242424) : (platform == 1 ? #f0f0f0 : platform == 2 ? #ebebeb : #f0f1f4);
+    out property <color> pane: high-contrast ? contrast-background : dark ? (platform == 0 ? #1e1e20 : #1e1e1e) : white;
+    out property <color> header: high-contrast ? contrast-background : dark ? (platform == 0 ? #252527 : #282828) : #fafafa;
+    out property <color> separator: high-contrast ? contrast-foreground : dark ? #ffffff14 : #00000016;
+    out property <color> hover: high-contrast ? selection : dark ? #ffffff0d : #00000008;
+    out property <color> pressed: high-contrast ? selection : dark ? #ffffff1c : #00000014;
+    out property <color> selected-tab: high-contrast ? contrast-background : dark ? #3a3a3f : white;
+    out property <color> field: high-contrast ? contrast-background : dark ? (platform == 1 ? #2d2d2d : platform == 2 ? #303030 : #202023) : (platform == 0 ? #f3f3f5 : white);
+    out property <color> stripe: high-contrast ? contrast-background : dark ? #222225 : #fafafb;
 }
 
 export global Glyphs {
@@ -71,7 +75,7 @@ export component ChromeButton inherits Rectangle {
     in property <string> label;
     in property <image> icon;
     in property <bool> icon-monochrome: true;
-    in property <color> icon-color: !root.enabled ? Chrome.disabled : root.checked && !root.tab-style ? Chrome.accent : root.muted ? Chrome.secondary : Chrome.foreground;
+    in property <color> icon-color: !root.enabled ? Chrome.disabled : Chrome.high-contrast && (touch.has-hover || touch.pressed || root.checked) ? Chrome.selection-text : root.checked && !root.tab-style ? Chrome.accent : root.muted ? Chrome.secondary : Chrome.foreground;
     in property <bool> show-label;
     in property <bool> checked;
     in property <bool> checkable;
@@ -106,8 +110,8 @@ export component ChromeButton inherits Rectangle {
         height: min(parent.height,30px); y: (parent.height - self.height) / 2;
         border-radius: Chrome.control-radius;
         border-width: root.has-focus ? 1px : 0px;
-        border-color: Chrome.accent.with-alpha(0.65);
-        background: touch.pressed ? Chrome.pressed : root.checked ? (root.tab-style ? Chrome.selected-tab : Chrome.accent.with-alpha(0.13)) : touch.has-hover ? Chrome.hover : transparent;
+        border-color: Chrome.high-contrast ? Chrome.accent : Chrome.accent.with-alpha(0.65);
+        background: touch.pressed ? Chrome.pressed : root.checked ? (Chrome.high-contrast ? Chrome.selection : root.tab-style ? Chrome.selected-tab : Chrome.accent.with-alpha(0.13)) : touch.has-hover ? Chrome.hover : transparent;
         content := HorizontalLayout {
             padding-left: 7px; padding-right: 7px; spacing: root.icon.width > 0 ? 6px : 0px;
             Rectangle {
@@ -125,7 +129,7 @@ export component ChromeButton inherits Rectangle {
                 vertical-alignment: center;
                 font-size: 12px;
                 font-weight: root.emphasized ? 600 : 400;
-                color: !root.enabled ? Chrome.disabled : root.checked && !root.tab-style ? Chrome.accent : root.muted ? Chrome.secondary : Chrome.foreground;
+                color: !root.enabled ? Chrome.disabled : Chrome.high-contrast && (touch.has-hover || touch.pressed || root.checked) ? Chrome.selection-text : root.checked && !root.tab-style ? Chrome.accent : root.muted ? Chrome.secondary : Chrome.foreground;
                 accessible-role: none;
             }
         }
@@ -164,7 +168,7 @@ export component ChromeField inherits Rectangle {
     border-radius: Chrome.control-radius;
     background: Chrome.field;
     border-width: 1px;
-    border-color: root.has-focus ? Chrome.accent.with-alpha(0.65) : Chrome.separator;
+    border-color: root.has-focus ? Chrome.high-contrast ? Chrome.accent : Chrome.accent.with-alpha(0.65) : Chrome.separator;
     accessible-role: text-input;
     accessible-label: root.label;
     accessible-enabled: root.enabled;

@@ -8,17 +8,21 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
-pub const LIMIT: u64 = 32 * 1024 * 1024;
+pub const LIMIT: u64 = 2 * 1024 * 1024 * 1024;
+#[derive(Clone)]
 pub struct Session {
-    directory: tempfile::TempDir,
+    directory: std::sync::Arc<tempfile::TempDir>,
     pub file: PathBuf,
     pub location: Location,
     pub source: PathBuf,
-    original: Vec<u8>,
+    original: std::sync::Arc<crate::private_bytes::Bytes>,
     archive_stamp: Option<String>,
 }
 impl Session {
     pub fn prepare(location: Location, source: PathBuf) -> Result<Self> {
+        Self::prepare_with_task(location, source, &mut Task::default())
+    }
+    pub fn prepare_with_task(location: Location, source: PathBuf, task: &mut Task) -> Result<Self> {
         if matches!(location, Location::Local(_)) {
             ensure!(
                 !std::fs::symlink_metadata(&source)?.file_type().is_symlink(),
@@ -34,10 +38,11 @@ impl Session {
         } else {
             None
         };
-        let original = crate::viewer::read(&location, &source, LIMIT)?;
+        let original = crate::viewer::snapshot(&location, &source, LIMIT, task)?;
         let directory = tempfile::Builder::new()
             .prefix("rust-commander-editor-")
             .tempdir()?;
+        let directory = std::sync::Arc::new(directory);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -46,7 +51,7 @@ impl Session {
         let file = directory
             .path()
             .join(source.file_name().context("Select a file")?);
-        std::fs::File::create(&file)?.write_all(&original)?;
+        std::fs::File::create(&file)?.write_all(original.as_ref().as_ref())?;
         Ok(Self {
             directory,
             file,
@@ -57,13 +62,19 @@ impl Session {
         })
     }
     pub fn changed(&self) -> Result<bool> {
-        Ok(self.bytes()? != self.original)
+        ensure!(
+            !std::fs::symlink_metadata(&self.file)?
+                .file_type()
+                .is_symlink(),
+            "Editor output must be a regular file"
+        );
+        Ok(!crate::operations::matches_reader(
+            &mut std::fs::File::open(&self.file)?,
+            self.original.as_ref().as_ref(),
+            &Task::default(),
+        )?)
     }
     pub fn bytes(&self) -> Result<Vec<u8>> {
-        ensure!(
-            self.file.starts_with(self.directory.path()),
-            "Invalid editor path"
-        );
         ensure!(
             !std::fs::symlink_metadata(&self.file)?
                 .file_type()
@@ -74,33 +85,64 @@ impl Session {
         std::fs::File::open(&self.file)?
             .take(LIMIT + 1)
             .read_to_end(&mut bytes)?;
-        ensure!(bytes.len() as u64 <= LIMIT, "Edited file exceeds 32 MiB");
+        ensure!(bytes.len() as u64 <= LIMIT, "Edited file exceeds 2 GiB");
         Ok(bytes)
     }
     pub fn save_operation(&self) -> Result<Operation> {
-        let bytes = self.bytes()?;
-        ensure!(bytes != self.original, "The editor copy has no changes");
-        Ok(match &self.location {
-            Location::Local(_) => Operation::SaveBytes {
-                path: self.source.clone(),
-                original: self.original.clone(),
-                bytes,
-            },
-            Location::Remote { connection, .. } => Operation::RemoteExternalSave {
-                connection: connection.clone(),
-                path: self.source.clone(),
-                original: self.original.clone(),
-                bytes,
-            },
-            Location::Archive { file, .. } => Operation::ArchiveSaveBytes {
-                archive: file.clone(),
-                path: self.source.clone(),
-                expected: self.archive_stamp.clone(),
-                bytes,
-            },
+        let metadata = std::fs::symlink_metadata(&self.file)?;
+        ensure!(
+            metadata.is_file() && metadata.len() <= LIMIT,
+            "Editor output must be a regular file of at most 2 GiB"
+        );
+        Ok(Operation::ExternalSave {
+            location: self.location.clone(),
+            path: self.source.clone(),
+            working: self.file.clone(),
+            original: Some(self.original.clone()),
+            lease: Some(self.directory.clone()),
+            expected: self.archive_stamp.clone(),
         })
     }
 }
+pub(crate) fn save(
+    location: &Location,
+    path: &Path,
+    working: &Path,
+    original: Option<std::sync::Arc<crate::private_bytes::Bytes>>,
+    lease: Option<std::sync::Arc<tempfile::TempDir>>,
+    expected: &Option<String>,
+    task: &mut Task,
+) -> Result<String> {
+    let lease = lease.context(
+        "Editor working copy cannot be resumed after restart; recover its draft or reopen the file",
+    )?;
+    let original = original.context("Editor original snapshot is unavailable")?;
+    ensure!(
+        working.starts_with(lease.path()) && std::fs::symlink_metadata(working)?.is_file(),
+        "Editor output must stay in its private working directory"
+    );
+    let edited = crate::private_bytes::Bytes::capture(
+        &mut std::fs::File::open(working)?,
+        LIMIT,
+        working,
+        task,
+    )?;
+    let original = original.as_ref().as_ref();
+    let edited = edited.as_ref().as_ref();
+    ensure!(original != edited, "The editor copy has no changes");
+    match location {
+        Location::Local(_) => {
+            task.capture(path)?;
+            crate::operations::save_bytes(path, original, edited)?;
+            Ok("Saved external editor working copy".into())
+        }
+        Location::Remote { connection, .. } => {
+            crate::remote::save_bytes_bounded(connection, path, original, edited, LIMIT, task)
+        }
+        Location::Archive { file, .. } => save_archive(file, path, expected, edited, task),
+    }
+}
+
 pub fn save_archive(
     archive: &Path,
     path: &Path,

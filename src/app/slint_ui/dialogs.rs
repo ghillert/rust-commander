@@ -169,7 +169,9 @@ impl Dialog {
                 continue;
             }
             field.picker = match field.id.as_str() {
-                "key-file" | "known-hosts" | "application" | "archive-file" => Some(Picker::File),
+                "key-file" | "known-hosts" | "ssh-config-file" | "application" | "archive-file" => {
+                    Some(Picker::File)
+                }
                 "directory" if self.kind == "import" => Some(Picker::Directory),
                 "destination" if self.kind == "archive" && !field.value.contains("://") => {
                     Some(Picker::SaveFile)
@@ -251,6 +253,8 @@ pub(super) fn native_supported(dialog: &Dialog) -> bool {
             | "updates"
             | "diagnostics"
             | "report"
+            | "security"
+            | "drafts"
             | "selection"
             | "tab-title"
             | "empty-trash"
@@ -319,6 +323,14 @@ impl Adapter {
         native
     }
     pub(super) fn dialog(&self) -> Dialog {
+        if !self.app.confirm_exit {
+            if let Some(dialog) = self.drafts_dialog() {
+                return dialog;
+            }
+            if let Some(dialog) = self.security_dialog() {
+                return dialog;
+            }
+        }
         if let Some(dialog) = self.desktop_commands_dialog() {
             return dialog;
         }
@@ -666,6 +678,26 @@ impl Adapter {
         }
         if let Some(form) = &self.app.connection_form {
             let mut d = Dialog::new("connections", "Connections");
+            if let Some(challenge) = &form.ssh_challenge {
+                d.error = form.error.clone().unwrap_or_default();
+                d.title = tr("Verify SSH host key").into_owned();
+                d.description = tr("This host is not in known_hosts. Compare the SHA-256 fingerprint with the server administrator using a trusted channel before continuing.").into_owned();
+                d.fields.extend([
+                    Field::label("Host", format!("{}:{}", challenge.host, challenge.port)),
+                    Field::label("Known hosts identity", &challenge.lookup),
+                    Field::label("Key algorithm", &challenge.algorithm),
+                    Field::label("SHA-256 fingerprint", &challenge.fingerprint),
+                ]);
+                if let Some(path) = &challenge.save_to {
+                    d.fields
+                        .push(Field::label("Save host key to", path.display()));
+                }
+                d.button("ssh-trust-once", "Trust this key once", true);
+                if challenge.save_to.is_some() {
+                    d.button("ssh-trust-save", "Trust and save key", true);
+                }
+                return d;
+            }
             d.error = form.error.clone().unwrap_or_default();
             d.busy = self.app.uri_connecting();
             if form.save_only {
@@ -761,7 +793,22 @@ impl Adapter {
                 d.button("authorize", "Sign in with browser", !d.busy);
             }
             if c.service == "sftp" {
-                d.fields.push(Field::label("SFTP","SFTP supports passwords, private keys and SSH agents, with strict known-host verification. Trust the server in known_hosts first."));
+                d.fields.push(Field::label("SFTP", "Review unknown host fingerprints before connecting. Changed and revoked keys are refused."));
+                d.fields.push(Field::check(
+                    "ssh-config",
+                    "Use SSH configuration and host aliases",
+                    c.ssh_use_config,
+                ));
+                d.fields.push(Field::text(
+                    "ssh-config-file",
+                    "SSH config file (optional)",
+                    &c.ssh_config_file,
+                ));
+                d.fields.push(Field::password(
+                    "ssh-passphrase",
+                    "Private key passphrase",
+                    &s.ssh_passphrase,
+                ));
                 d.fields.push(Field::text(
                     "known-hosts",
                     "Known hosts file (optional)",

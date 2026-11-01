@@ -186,7 +186,15 @@ pub fn extract_page(page: &pdf::hayro_syntax::page::Page<'_>, task: &Task) -> Re
     Ok(device.result)
 }
 pub fn load_page(bytes: &[u8], password: &str, page: usize, task: &Task) -> Result<PageText> {
-    let pdf = pdf::hayro_syntax::Pdf::new_with_password(bytes.to_vec(), password)
+    load_page_data(&bytes.to_vec().into(), password, page, task)
+}
+pub fn load_page_data(
+    data: &crate::viewer::PdfBytes,
+    password: &str,
+    page: usize,
+    task: &Task,
+) -> Result<PageText> {
+    let pdf = pdf::hayro_syntax::Pdf::new_with_password(data.clone(), password)
         .map_err(|e| anyhow::anyhow!("Cannot read PDF: {e:?}"))?;
     extract_page(
         pdf.pages().get(page).context("PDF page does not exist")?,
@@ -209,6 +217,23 @@ pub fn find(
     backwards: bool,
     task: &Task,
 ) -> Result<Option<SearchHit>> {
+    find_data(
+        &bytes.to_vec().into(),
+        password,
+        query,
+        start,
+        backwards,
+        task,
+    )
+}
+pub fn find_data(
+    data: &crate::viewer::PdfBytes,
+    password: &str,
+    query: &str,
+    start: (usize, usize),
+    backwards: bool,
+    task: &Task,
+) -> Result<Option<SearchHit>> {
     ensure!(
         !query.is_empty() && query.len() <= 4096,
         "Enter a search of 1–4096 bytes"
@@ -216,7 +241,7 @@ pub fn find(
     let expression = regex::RegexBuilder::new(&regex::escape(query))
         .case_insensitive(true)
         .build()?;
-    let pdf = pdf::hayro_syntax::Pdf::new_with_password(bytes.to_vec(), password)
+    let pdf = pdf::hayro_syntax::Pdf::new_with_password(data.clone(), password)
         .map_err(|e| anyhow::anyhow!("Cannot read PDF: {e:?}"))?;
     let count = pdf.pages().len();
     ensure!(

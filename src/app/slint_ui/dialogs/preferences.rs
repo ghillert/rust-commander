@@ -128,6 +128,16 @@ impl Adapter {
                     crate::appearance::DesktopStyle::ALL.map(|v| v.label()),
                 ),
                 Field::choice(
+                    "contrast",
+                    "Accessibility contrast",
+                    p.contrast.label(),
+                    [
+                        crate::high_contrast::Contrast::System,
+                        crate::high_contrast::Contrast::High,
+                    ]
+                    .map(|c| c.label()),
+                ),
+                Field::choice(
                     "scheme",
                     "Color scheme",
                     p.color_scheme.label(),

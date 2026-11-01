@@ -83,3 +83,16 @@ pub mod drag_drop;
 
 #[cfg(target_os = "linux")]
 mod native_drag;
+
+pub mod ssh;
+
+pub mod security_metadata;
+
+pub mod private_bytes;
+
+pub mod editor_drafts;
+
+pub mod high_contrast;
+
+#[cfg(target_os = "windows")]
+mod windows_menu;

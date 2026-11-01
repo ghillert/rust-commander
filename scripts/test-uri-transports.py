@@ -82,9 +82,13 @@ def main():
                 profiles[name] = dict(id="uri-fixture-" + name, name=name, service="sftp" if service == "sftp" else "ftp",
                     endpoint=f"{'ssh' if service == 'sftp' else 'ftp' if service == 'ftp' else 'ftps'}://127.0.0.1:{port}",
                     root="/", username="commander", ftp_tls={"ftp": "Plain", "explicit": "Explicit", "implicit": "Implicit", "sftp": "Automatic"}[service],
-                    native_sftp=True, known_hosts_file=str(known), tls_ca_file=str(work / "cert.der"), listed=False)
+                    native_sftp=True, ssh_use_config=False, known_hosts_file=str(known), tls_ca_file=str(work / "cert.der"), listed=False)
             profiles["anonymous_ftp"] = dict(profiles["ftp"], id="uri-fixture-anonymous", username="")
             profiles["native_sftp_key"] = dict(profiles["native_sftp"], id="uri-fixture-key", key_file=str(work / "client_key"))
+            alias_config = work / "ssh_config"
+            parsed = __import__("urllib.parse", fromlist=["urlparse"]).urlparse(profiles["native_sftp"]["endpoint"])
+            alias_config.write_text(f"Host fixture-alias\n  HostName 127.0.0.1\n  Port {parsed.port}\n  User commander\n  IdentityFile {work / 'client_key'}\n  IdentitiesOnly yes\n  UserKnownHostsFile {work / 'known_hosts'}\n")
+            profiles["sftp_alias"] = dict(profiles["native_sftp"], id="uri-fixture-alias", endpoint="ssh://fixture-alias", username="", ssh_use_config=True, ssh_config_file=str(alias_config), key_file="", known_hosts_file="")
             recipes = work / "profiles.json"
             recipes.write_text(json.dumps(profiles))
             env = dict(os.environ, RUST_COMMANDER_TEST_SERVICES=str(recipes))

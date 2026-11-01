@@ -109,6 +109,8 @@ pub(crate) enum Action {
     Split,
     Combine,
     Permissions,
+    OwnershipAcl,
+    RecoverEditorDrafts,
     Modified,
     PermanentDelete,
     Compare,
@@ -402,6 +404,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Batch rename…", Action::BatchRename),
                 ("Properties", Action::Properties),
                 ("Permissions…", Action::Permissions),
+                ("Ownership and ACL…", Action::OwnershipAcl),
                 ("Modification time…", Action::Modified),
                 ("View  F3", Action::View),
                 ("Edit  F4", Action::Edit),
@@ -426,6 +429,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Undo last operation", Action::Undo),
                 ("Redo last operation", Action::Redo),
                 ("Recovery manager…", Action::Recovery),
+                ("Recover editor drafts…", Action::RecoverEditorDrafts),
                 ("Synchronize folders…", Action::Synchronize),
                 ("Transfer queue and history…", Action::Queue),
                 ("Copy  F5", Action::Copy),
@@ -649,7 +653,7 @@ struct Editor {
     confirm_close: bool,
 }
 struct PdfState {
-    bytes: Arc<Vec<u8>>,
+    bytes: crate::viewer::PdfBytes,
     page: usize,
     pages: usize,
     password: String,
@@ -667,7 +671,8 @@ struct PdfState {
     pending_selection: Option<(usize, std::ops::Range<usize>)>,
 }
 impl PdfState {
-    fn new(bytes: Arc<Vec<u8>>, pages: usize) -> Self {
+    fn new(bytes: impl Into<crate::viewer::PdfBytes>, pages: usize) -> Self {
+        let bytes = bytes.into();
         Self {
             bytes,
             page: 0,
@@ -739,6 +744,7 @@ struct ConnectionForm {
     navigation: Option<uri_navigation::Ticket>,
     choices: Vec<crate::remote::Connection>,
     save_only: bool,
+    ssh_challenge: Option<crate::ssh::Challenge>,
 }
 
 pub struct Commander {
@@ -805,6 +811,7 @@ impl Commander {
                     && writable(&self.panes[1 - self.active].tab().location)
             }
             "Copy" => writable(&self.panes[1 - self.active].tab().location),
+            "OwnershipAcl" => self.tab().location.local().is_some(),
             "Permissions" => cfg!(unix) && self.tab().location.local().is_some(),
             "Mkfile" | "PermanentDelete" | "Modified" => {
                 self.tab().location.local().is_some() && writable(&self.tab().location)
@@ -1135,6 +1142,9 @@ impl Commander {
                         document.text = text.clone();
                     }
                     editor.original = text;
+                    editor.navigation.draft_revision =
+                        editor.navigation.draft_revision.wrapping_add(1);
+                    editor.navigation.draft_due = std::time::Instant::now();
                     editor.error = None;
                 } else {
                     editor.error = Some(match &result {
@@ -1317,6 +1327,7 @@ impl Commander {
             let result = (|| -> anyhow::Result<Editor> {
                 let mut document = None;
                 let mut text_page = None;
+                let mut page_source = None;
                 let (text, image, kind, pdf) =
                     match crate::viewer::load_as(&location, &entry.path, mode)? {
                         crate::viewer::Content::LockedPdf { bytes } => (
@@ -1340,20 +1351,28 @@ impl Commander {
                             (text, None, "Text viewer", None)
                         }
                         crate::viewer::Content::LargeText(page) => {
+                            page_source = page.source.clone();
                             let text = page.document.text.clone();
                             text_page = Some(page);
                             (text, None, "Paged text viewer", None)
                         }
-                        crate::viewer::Content::Hex { text, truncated } => (
+                        crate::viewer::Content::Hex {
                             text,
-                            None,
-                            if truncated {
-                                "Hex viewer · first 512 KiB"
-                            } else {
-                                "Hex viewer"
-                            },
-                            None,
-                        ),
+                            truncated,
+                            source,
+                        } => {
+                            page_source = source;
+                            (
+                                text,
+                                None,
+                                if truncated {
+                                    "Hex viewer · paged"
+                                } else {
+                                    "Hex viewer"
+                                },
+                                None,
+                            )
+                        }
                         crate::viewer::Content::Image(image) => {
                             (String::new(), Some(image), "Image viewer", None)
                         }
@@ -1374,11 +1393,20 @@ impl Commander {
                 } else {
                     None
                 };
+                let mut navigation =
+                    slint_ui::viewer_tools::Navigation::new(location.clone(), entry.path.clone());
+                navigation.source = page_source;
+                let can_edit = editable
+                    && (kind == "Text viewer"
+                        || (kind.starts_with("Hex")
+                            && navigation
+                                .source
+                                .as_ref()
+                                .is_none_or(|s| s.total <= crate::viewer::EDIT_LIMIT)))
+                    && (path.is_some() || remote.is_some())
+                    && !entry.is_symlink;
                 Ok(Editor {
-                    navigation: slint_ui::viewer_tools::Navigation::new(
-                        location.clone(),
-                        entry.path.clone(),
-                    ),
+                    navigation,
                     image_revision: 0,
                     document,
                     text_page,
@@ -1387,7 +1415,7 @@ impl Commander {
                     zoom: 1.0,
                     kind,
                     title: entry.path.display().to_string(),
-                    can_edit: editable && (path.is_some() || remote.is_some()) && !entry.is_symlink,
+                    can_edit,
                     editable: editable
                         && kind == "Text viewer"
                         && (path.is_some() || remote.is_some())
@@ -2025,6 +2053,7 @@ impl Commander {
                     prompt = Some(("Combine files", "Combine selected files in the order shown in this pane. Choose a new output file.".into(), base.join("combined.bin").display().to_string(), PromptKind::Combine { sources, base }));
                 }
             }
+            Action::OwnershipAcl | Action::RecoverEditorDrafts => {}
             Action::Permissions => {
                 if local.is_some() {
                     let mode = sources

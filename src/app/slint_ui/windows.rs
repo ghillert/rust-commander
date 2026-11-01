@@ -54,6 +54,8 @@ struct Session {
     title: String,
     ui: CommanderWindow,
     state: Rc<RefCell<Adapter>>,
+    #[cfg(target_os = "windows")]
+    menu: Option<crate::windows_menu::Menu>,
 }
 thread_local! {
     static RUNTIME:RefCell<Option<Runtime>>=const {RefCell::new(None)};
@@ -314,6 +316,8 @@ pub(super) fn open(paths: &[PathBuf], loaded: Result<Settings>) -> Result<Comman
             title: parity::tab_label(state.borrow().app.tab()),
             ui: ui.clone_strong(),
             state: state.clone(),
+            #[cfg(target_os = "windows")]
+            menu: None,
         })
     });
     Ok(ui)
@@ -447,7 +451,11 @@ pub(super) fn tick() {
             .map(|s| (s.id, s.ui.clone_strong(), s.state.clone()))
             .collect::<Vec<_>>()
     });
-    for (_, ui, state) in &sessions {
+    for (id, ui, state) in &sessions {
+        #[cfg(target_os = "windows")]
+        native_menu_tick(*id, ui, state);
+        #[cfg(not(target_os = "windows"))]
+        let _ = id;
         with_state(state, |a| a.tick(ui));
         drag::dispatch(state, ui);
         dispatch_native_drag(state, ui);
@@ -564,7 +572,9 @@ pub(super) fn tick() {
                         if let Some(preparation) = &a.drag.preparation {
                             preparation.cancel.store(true, Ordering::Relaxed);
                         }
-                        a.app.editor = None;
+                        if let Some(mut editor) = a.app.editor.take() {
+                            a.discard_editor_draft(&mut editor);
+                        }
                         a.app.confirm_exit = false;
                         a.app.exiting = true;
                     });
@@ -577,6 +587,7 @@ pub(super) fn tick() {
     for (id, ui, state) in sessions {
         let done = with_state(&state, |a| {
             a.app.exiting
+                && !a.drafts.cleanup_pending()
                 && a.app
                     .job
                     .as_ref()
@@ -589,10 +600,18 @@ pub(super) fn tick() {
             closed.push(id);
         }
     }
-    let empty = SESSIONS.with(|s| {
-        s.borrow_mut().retain(|s| !closed.contains(&s.id));
-        s.borrow().is_empty()
+    let retired = SESSIONS.with(|s| {
+        let mut sessions = s.borrow_mut();
+        let (retired, remaining): (Vec<_>, Vec<_>) = std::mem::take(&mut *sessions)
+            .into_iter()
+            .partition(|s| closed.contains(&s.id));
+        *sessions = remaining;
+        retired
     });
+    // Native menu detachment can synchronously send resize/focus events.
+    // Drop menus and windows only after releasing the session registry borrow.
+    drop(retired);
+    let empty = SESSIONS.with(|s| s.borrow().is_empty());
     if empty {
         let _ = slint::quit_event_loop();
     }
@@ -828,4 +847,88 @@ mod tests {
             )
         });
     }
+}
+
+#[cfg(target_os = "windows")]
+fn native_menu_tick(id: usize, ui: &CommanderWindow, state: &Rc<RefCell<Adapter>>) {
+    use raw_window_handle::HasWindowHandle;
+    let mut menu = SESSIONS.with(|sessions| {
+        sessions
+            .borrow_mut()
+            .iter_mut()
+            .find(|s| s.id == id)
+            .and_then(|s| s.menu.take())
+    });
+    if menu.is_none()
+        && let Ok(handle) = ui.window().window_handle().window_handle()
+        && let raw_window_handle::RawWindowHandle::Win32(handle) = handle.as_raw()
+    {
+        menu = crate::windows_menu::Menu::attach(handle.hwnd.get() as _);
+    }
+    if let Some(menu) = &mut menu {
+        for command in menu.poll() {
+            with_state(state, |a| a.action(&command));
+        }
+        let model = with_state(state, |a| {
+            let mut used = std::collections::BTreeSet::new();
+            action_menus()
+                .into_iter()
+                .filter(|(title, _)| *title != "More tools")
+                .map(|(title, entries)| {
+                    let title = tr(title).into_owned();
+                    let mnemonic = title
+                        .chars()
+                        .find(|c| c.is_alphabetic() && used.insert(c.to_ascii_lowercase()));
+                    let mut label = String::new();
+                    let mut marked = false;
+                    for ch in title.chars() {
+                        if !marked && Some(ch) == mnemonic {
+                            label.push('&');
+                            marked = true;
+                        }
+                        label.push(ch);
+                        if ch == '&' {
+                            label.push('&');
+                        }
+                    }
+                    let mut entry_used = std::collections::BTreeSet::new();
+                    let entries = entries
+                        .into_iter()
+                        .map(|(title, action)| {
+                            let action = format!("{action:?}");
+                            let caption = parity::caption(&action, title, &a.app.preferences);
+                            let mut label = String::new();
+                            let mut marked = false;
+                            for ch in caption.chars() {
+                                if !marked
+                                    && ch.is_alphabetic()
+                                    && entry_used.insert(ch.to_ascii_lowercase())
+                                {
+                                    label.push('&');
+                                    marked = true;
+                                }
+                                label.push(ch);
+                                if ch == '&' {
+                                    label.push('&');
+                                }
+                            }
+                            crate::windows_menu::Entry {
+                                enabled: !a.blocked() && a.action_available(&action),
+                                action,
+                                label,
+                            }
+                        })
+                        .collect();
+                    (label, entries)
+                })
+                .collect()
+        });
+        menu.update(model);
+        ui.set_system_menubar(true);
+    }
+    SESSIONS.with(|sessions| {
+        if let Some(s) = sessions.borrow_mut().iter_mut().find(|s| s.id == id) {
+            s.menu = menu;
+        }
+    });
 }

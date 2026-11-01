@@ -110,11 +110,12 @@ blocked while edits are unsaved. Save encoding converts on save and refuses
 characters a legacy encoding cannot represent. Encoding, BOM and CRLF endings
 are preserved by default. Local Undo restores the exact original bytes.
 
-Files up to 2 MiB support editing, including guarded remote saves. Larger local
-text files open read-only in 256 KiB pages with previous/next controls. UTF-8 and
-UTF-16 page boundaries do not split characters. The hex view is bounded to the
-first 512 KiB. Paging does not provide whole-file search or large-file editing;
-remote/archive input limits remain in force.
+Files up to 16 MiB support editing, including guarded remote saves. Larger
+local/remote/archive text opens read-only in 256 KiB pages. UTF-8 and UTF-16 page
+boundaries do not split characters. Hex uses 64 KiB windows; streaming search and
+byte jumps work across these sources. Archive snapshots are capped at 2 GiB.
+Built-in draft recovery and larger file-backed media/external editing workflows
+are described in [Viewers](VIEWERS.md).
 
 ## 10. System Trash actions
 
@@ -168,3 +169,5 @@ Arguments are passed directly without a shell. Pipelines, shell expressions and
 unsupported placeholders are rejected during import. Review imported programs
 before choosing to run them. This is a supported-subset migration, not a complete
 upstream configuration converter.
+
+Current remote/archive paging and editor draft recovery are described in [Viewers](VIEWERS.md).

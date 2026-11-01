@@ -285,7 +285,8 @@ fn legacy_encodings_round_trip_and_refuse_unrepresentable_characters() {
 fn large_unicode_file_pages_are_bounded_and_reassemble_without_splitting_characters() {
     let root = tempfile::tempdir().unwrap();
     let file = root.path().join("large.txt");
-    let text = "ab🌍世界\n".repeat(240_000);
+    let text =
+        "ab🌍世界\n".repeat(rust_commander::viewer::EDIT_LIMIT as usize / "ab🌍世界\n".len() + 1);
     fs::write(&file, text.as_bytes()).unwrap();
     let mut offset = 0;
     let mut actual = String::new();
