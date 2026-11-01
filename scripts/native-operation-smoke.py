@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise AppKit Copy/Move/Rename/Pack sheets with disposable files/config."""
+"""Exercise native Copy/Move/Rename/Pack controls with disposable files/config."""
 import argparse
 import json
 import os
@@ -13,14 +13,14 @@ import zipfile
 def main():
     project = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--binary', type=Path, default=project / 'target/debug/rust-commander')
+    parser.add_argument('--binary', type=Path, default=project / ('target/debug/rust-commander.exe' if os.name == 'nt' else 'target/debug/rust-commander'))
     parser.add_argument('--output', type=Path, default=project / 'target/native-operation-smoke')
     parser.add_argument('--renderer', action='append', choices=['software', 'femtovg'])
     parser.add_argument('--case', action='append', choices=['copy', 'move', 'rename', 'pack', 'pack-form', 'pack-encrypted', 'pack-7z', 'pack-background', 'cancel', 'conflict', 'return-fast'])
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='rc-native-operation-') as directory:
-        binary = Path(directory) / 'rust-commander'
+        binary = Path(directory) / ('rust-commander.exe' if os.name == 'nt' else 'rust-commander')
         shutil.copy2(args.binary.resolve(), binary)
         for renderer in args.renderer or ['software', 'femtovg']:
             for case in args.case or ['copy', 'move', 'rename', 'pack', 'pack-form', 'pack-encrypted', 'pack-7z', 'pack-background', 'cancel', 'conflict', 'return-fast']:

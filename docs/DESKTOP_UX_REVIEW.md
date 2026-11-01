@@ -2,20 +2,18 @@
 
 [← Slint interface](SLINT_UI.md)
 
-Reviewed on 2026-10-30 against the current source and rendered Cupertino,
-Fluent and Cosmic styles. This review covers the main file window, confirmation
-forms, Settings, focus, text editing and action presentation. It does not certify
-the app as a native AppKit, WinUI or GTK application: most controls are rendered by
-Slint, with native window frames, menus and other integrations where documented.
-The macOS Extract form now uses a real AppKit sheet; see the
-[native form integration review](NATIVE_FORMS.md).
+Reviewed on 2026-10-31. This review covers the main file window, confirmations,
+Settings, focus, text editing and action presentation. Settings and suitable
+forms now use actual AppKit, Windows common controls or GTK4 controls; the main
+file-manager surface retains Slint. See the [native-control audit](NATIVE_FORMS.md)
+for the complete surface inventory, eligibility, system choosers and fallback.
 
 ## Platform conventions
 
 | Area | macOS | Windows | Linux |
 | --- | --- | --- | --- |
-| Widget family | Cupertino, with rounded form fields and push buttons | Standard Fluent fields, buttons and choices | Standard Cosmic fields, buttons and choices |
-| Short action dialogs | Compact sheet-like surface; normal-height controls | Larger Fluent control metrics; inline validation retained | Larger desktop control metrics; inline validation retained |
+| Form widgets | Actual AppKit controls | Actual Win32/common controls | Actual GTK4 controls |
+| Short action dialogs | Attached native sheet | Owned native form window | Modal native window, with foreign parenting |
 | Footer order | Cancel before the action | Actions before Cancel/Close | Cancel before the action, following GNOME guidance |
 | Main chrome | Existing neutral macOS surfaces; 6 px control corners | Neutral Windows surfaces; 4 px control corners | Neutral Linux surfaces; 8 px control corners |
 | Keyboard | Command labels, native menus, Tab/Shift+Tab and text editing | Control labels, F2 rename and clipboard shortcuts | Control labels, keyboard navigation and clipboard shortcuts |
@@ -45,13 +43,12 @@ file panes, locations, filtering and the tree retain keyboard navigation.
 
 ## Remaining acceptance and integration limits
 
-- The Windows and Linux visual previews use their compiled widget styles on the
-  development Mac. Linux container checks establish compilation, not a physical
-  Windows/Linux desktop result. Native frame, screen-reader, compositor and
-  mixed-DPI monitor testing still require those desktops.
-- Cosmic is the current Linux fallback. It does not reproduce Adwaita, KDE
-  Breeze or arbitrary installed GTK themes. GNOME action-dialog header bars are
-  not implemented; this app retains its shared scrolling-form/footer structure.
+- GTK native forms have live X11 fixtures and captured pages in the Linux container.
+  Windows has SDK compilation plus configured native CI fixtures. Physical desktop,
+  screen-reader and mixed-monitor acceptance still require those desktops.
+- Cosmic remains the Linux fallback and custom chrome style. Native GTK forms
+  follow the installed GTK theme; they do not implement Qt/KDE widgets or
+  libadwaita-specific adaptive windows. The forms retain scrolling bodies/footers.
 - Windows High Contrast and Linux high-contrast theme integration are not
   complete. The custom file-manager chrome uses application color tokens rather
   than every platform accessibility/system color. Larger font preferences and
@@ -82,7 +79,7 @@ for the checks performed with this change.
 
 ## Repeatable desktop checks (2026-10-31)
 
-Settings now uses Slint's standard tab widgets for General, Folders,
+Settings now uses native platform tab widgets for General, Folders,
 Appearance, Shortcuts, Mail and Advanced. Browsing/columns and theme/toolbar/
 command-bar subtabs keep long groups separate. Pages retain independent scroll
 positions, compact labeled controls and a fixed footer. Apply keeps the draft
@@ -90,8 +87,8 @@ open; OK saves and closes; Cancel discards edits since the last Apply. Invalid
 numeric values survive tab switches and link back to their page. Shortcuts show
 primary and alternate bindings together, with search and an empty-result message.
 German and Spanish labels cover the new organization.
-The Cupertino tabs are drawn by Slint, not AppKit. Their equal-width segments
-and stacked bars still need visual refinement or a native Settings integration.
+AppKit Settings uses naturally sized `NSTabView` tabs. Windows uses common-control
+tabs and Linux uses GTK notebooks. Slint tabs remain the fallback.
 
 Settings interaction tests cover pointer and keyboard tab selection, edits on
 hidden pages, filtered shortcut edits, reordering, defaults and an 840×480 window

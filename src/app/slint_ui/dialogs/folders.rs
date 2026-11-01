@@ -55,6 +55,7 @@ impl Adapter {
                     kind: 7,
                     choices: vec![row.right.clone()],
                     page: 0,
+                    picker: None,
                 });
             }
             if diff.rows.is_empty() {

@@ -494,6 +494,7 @@ export component CommanderWindow inherits Window {
     out property <float> menu-y: 32;
     in property <string> dialog-title;
     in property <bool> dialog-preferences;
+    in property <bool> native-form-open;
     in-out property <int> settings-tab;
     in-out property <int> settings-folder-tab;
     in-out property <int> settings-appearance-tab;
@@ -621,7 +622,7 @@ export component CommanderWindow inherits Window {
     public function focus-filter(side: int) { if side == 0 { left.focus-filter(); } else { right.focus-filter(); } }
 
     FocusScope {
-        enabled: root.dialog-title == "" && !root.viewer-visible;
+        enabled: root.dialog-title == "" && !root.viewer-visible && !root.native-form-open;
         key-pressed(event) => { return root.global-key(event) ? EventResult.accept : EventResult.reject; }
         VerticalLayout {
             spacing: 0px;
@@ -1043,6 +1044,9 @@ export component CommanderWindow inherits Window {
         }
     }
 
+    if root.native-form-open: Overlay {
+        key-event(event)=>{return root.global-key(event);}
+    }
     if root.dialog-title != "": Overlay {
         key-event(event) => { return root.global-key(event); }
         Rectangle {

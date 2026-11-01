@@ -235,6 +235,34 @@ pub(super) fn native_extract_snapshot(path: &std::path::Path) -> bool {
             .any(|s| s.state.borrow().native_extract.snapshot(path))
     })
 }
+#[cfg(all(
+    any(target_os = "windows", target_os = "linux"),
+    feature = "screenshot"
+))]
+pub(super) fn native_form_smoke(command: &str, value: &str) -> bool {
+    SESSIONS.with(|sessions| {
+        for session in sessions.borrow().iter() {
+            let mut state = session.state.borrow_mut();
+            if state.native_forms.active() {
+                state.native_forms.smoke(command, value);
+                return true;
+            }
+        }
+        false
+    })
+}
+#[cfg(all(
+    any(target_os = "windows", target_os = "linux"),
+    feature = "screenshot"
+))]
+pub(super) fn native_form_snapshot(path: &std::path::Path) -> bool {
+    SESSIONS.with(|sessions| {
+        sessions
+            .borrow()
+            .iter()
+            .any(|session| session.state.borrow_mut().native_forms.snapshot(path))
+    })
+}
 pub(super) fn open(paths: &[PathBuf], loaded: Result<Settings>) -> Result<CommanderWindow> {
     anyhow::ensure!(
         SESSIONS.with(|s| s.borrow().len()) < 16,
@@ -568,6 +596,34 @@ pub(super) fn tick() {
     if empty {
         let _ = slint::quit_event_loop();
     }
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+pub(super) fn shutdown_native_forms() {
+    let hosts = SESSIONS.with(|sessions| {
+        sessions
+            .borrow()
+            .iter()
+            .map(|s| std::mem::take(&mut s.state.borrow_mut().native_forms))
+            .collect::<Vec<_>>()
+    });
+    // Reap outside session/controller borrows, including screenshot-loop exit.
+    drop(hosts);
+}
+
+#[cfg(feature = "screenshot")]
+pub(super) fn native_form_ready() -> bool {
+    SESSIONS.with(|sessions| {
+        sessions.borrow().iter().any(|session| {
+            let state = session.state.borrow();
+            #[cfg(target_os = "macos")]
+            return state.native_extract.active();
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
+            return state.native_forms.active();
+            #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+            false
+        })
+    })
 }
 
 #[cfg(test)]

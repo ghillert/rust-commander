@@ -1,5 +1,69 @@
 # Validation record
 
+## Native-control audit and integration — 2026-10-31
+
+Settings and suitable operation/utility forms now render actual AppKit, Windows
+common controls or GTK4 controls. Native local path pickers, busy indicators,
+validation/error-page navigation and safe default actions share the original
+controller. Custom panes, context menus, viewers, the terminal and streaming
+consoles remain Slint. See the [surface audit](../docs/NATIVE_FORMS.md).
+
+Validation on Apple Silicon macOS and the disposable Linux development container:
+
+- Complete all-target/all-feature suites: **449 passed, 0 failed, 17 ignored on
+  macOS** and **443 passed, 0 failed, 22 ignored on Linux**. Focused tests cover
+  native eligibility, local-versus-remote chooser policy, new extraction folder
+  naming, shared validation and refusal to default to deletion/discarding work.
+- macOS and Linux all-target/all-feature Clippy pass with warnings denied.
+  Windows' actual native renderer module compiles and passes Clippy against the
+  MSVC SDK bindings, including the modern Shell file chooser. Production builds
+  are also checked without screenshot-only hooks.
+- Real AppKit fixtures passed **26 extraction and 22 operation scenarios** across
+  software/light and FemtoVG/dark. GTK/X11 passed all **13 extraction and 11
+  operation scenarios**. They verify output, conflicts, Skip/Keep both/Apply to
+  all, encrypted ZIP, 7z, comments, background packing, Cancel/Close, validation,
+  reopening, quit and early Return. AppKit and GTK rendered all nine Settings
+  pages in light/dark. Native Apply/Cancel and invalid drafts were exercised with
+  disposable configuration and verified saved values; paired shortcut fields and
+  conditional packing layouts received final spot checks.
+- The isolated helper fixture exercised real GTK control events, Close/EOF and
+  owner-pipe EOF with a system folder chooser open. Shutdown now explicitly kills
+  and waits for remaining helpers. Private pipe requests are bounded and updates
+  coalesce. No form contents are written into protocol files or process arguments.
+- The native Windows module also ran under Wine: six native tabs, text edits,
+  actual Apply button dispatch, client-area PNG capture and Close passed. This
+  uses the real source module with a small protocol harness; it is **not** a full
+  Windows application build or physical Windows desktop acceptance.
+- Native X11/Wayland drag protocol checks passed after adding optional xdg-foreign
+  v2 parent export. Headless Weston rendered Settings through the **Slint
+  fallback** (1240×780); that compositor does not supply the required parent
+  export/import integration. Native GTK/X11 Settings captures are 840×620.
+  Supported Wayland foreign-parent import still needs compositor acceptance.
+- Screenshots were visually inspected for AppKit, GTK and Windows/Wine. AppKit
+  captures only its own composited window; Win32 captures only its client area.
+  Screenshot steps now execute in order and wait for native readiness, preventing
+  overdue timers from overtaking posted AppKit sheet presentation under load.
+- Formatting, whitespace, manifest XML, modified documentation links, Python
+  syntax and CI YAML parsing passed. CI now runs the extraction, operation,
+  Settings-edit and helper-lifetime fixtures on the applicable desktop runners.
+  This records local evidence, not a claim of hosted CI success.
+
+Logs are under `/private/tmp/rc-native-audit-*`; final AppKit images are under
+`/private/tmp/rc-native-settings-ready-final/`, `/private/tmp/rc-native-extract-final2/`
+and `/private/tmp/rc-native-operation-final/`. Windows captures are under
+`/private/tmp/rc-native-windows-captures/`. Linux evidence was generated in the
+owned disposable `rc-native-controls` container; preserved logs and selected GTK
+images are under `/private/tmp/rc-native-linux-evidence/`. Test files and
+configuration were isolated from the user's app data. The normal
+`target/debug/Rust Commander Dev.app` was rebuilt and its ad-hoc signature verified.
+
+Remaining acceptance: actual VoiceOver/NVDA/Orca speech, Full Keyboard Access,
+physical mixed-DPI monitor moves, cross-window modality, complete Windows dark
+mode/high contrast, supported Wayland compositor parenting and KDE appearance.
+Win32 controls do not add a WinUI preview runtime, and GTK forms do not claim
+libadwaita/Qt parity. Main Windows/Linux menus and custom context menus remain
+Slint; full menu mnemonics are still a gap.
+
 ## Tabbed Settings organization — 2026-10-31
 
 Settings has General, Folders, Appearance, Shortcuts, Mail and Advanced tabs;

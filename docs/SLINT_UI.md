@@ -48,13 +48,13 @@ Settings is organized into six tabs:
 All tabs edit one draft. **Apply** saves without closing, **OK** saves and closes,
 and **Cancel** discards changes made since the last Apply. Restore defaults changes
 the draft until it is applied. Invalid numeric values survive tab switches and
-block both save actions; **Review invalid setting** opens their page. Slint's
-standard tab widgets provide keyboard and accessible selection. Each page scrolls
-independently above a fixed action footer.
+block both save actions; **Review invalid setting** opens their page. Native platform
+tabs provide selection and keyboard navigation where a supported parent exists;
+the shared Slint fallback retains the same draft. Pages scroll above a fixed footer.
 
-Settings controls are rendered by Slint. The macOS Cupertino tabs are not AppKit
-controls; their equal-width segments and stacked tab bars remain a visual
-limitation. A native AppKit Settings window remains future work.
+Settings uses real AppKit tabs/controls on macOS, Win32/common controls on Windows
+and GTK4 notebooks/controls on Linux. The shared Slint form remains a fallback for
+unsupported native parenting or helper startup failure. See [native forms](NATIVE_FORMS.md).
 
 The main window uses compact icon actions, text breadcrumbs, quiet tabs,
 sidebar icons, subtle row stripes and a slim function-key bar. The active pane
@@ -281,8 +281,8 @@ and `true` opens it directly.
 Open/click values are native file paths. Field values contain an encoded
 JSON `[field_id, value]` pair. This drives the existing UI callbacks for reproducible
 multi-step checks; it is compiled out of normal development and release builds.
-On macOS, `native-field`, `native-field-return`, `native-action` and `native-check` exercise the real
-Extract sheet. Use `scripts/native-extract-smoke.py` for its disposable fixtures;
+On macOS, Windows and Linux, `native-field`, `native-field-return`, `native-action`
+and `native-check` exercise the actual platform form controls. Use `scripts/native-extract-smoke.py` for its disposable fixtures;
 the script freezes its executable before running, so a separate development
 build cannot replace the binary between scenarios. Run desktop keyboard
 inspection separately from GUI smoke tests to keep their focus independent.
@@ -308,13 +308,14 @@ and explicitly quits after the final protected session closes.
 References: [Slint widget styles](https://docs.slint.dev/latest/docs/slint/reference/std-widgets/style/),
 [Slint Rust API](https://docs.slint.dev/latest/docs/rust/slint/).
 
-### Native Extract sheet on macOS
+### Native forms on desktop platforms
 
-Extract uses AppKit text fields, pop-up buttons, checkboxes and push buttons in a
-sheet attached to its file window. Its fields and actions use the same dialog
-model, controller, conflict scan and operation guards as the Slint fallback.
-Other forms continue to use Slint. See [native forms](NATIVE_FORMS.md) for the
-adapter boundary, cross-platform integration findings and acceptance limits.
+Settings and suitable editable/confirmation forms use real AppKit, Windows common
+controls or GTK4 controls, with native local path choosers. Their fields/actions
+use the same dialog model, validation, conflict scan and operation guards as the
+Slint fallback. Custom panes, context menus, document viewers, the terminal and
+streaming consoles remain shared. See [native forms](NATIVE_FORMS.md) for coverage,
+parenting, helper lifetime, fallback and desktop acceptance limits.
 
 ### Bottom command buttons
 

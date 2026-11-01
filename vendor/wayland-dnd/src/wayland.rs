@@ -21,7 +21,12 @@ use sctk::reexports::client::protocol::wl_data_source::WlDataSource;
 use sctk::reexports::client::protocol::wl_pointer::WlPointer;
 use sctk::reexports::client::protocol::wl_seat::WlSeat;
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
+use sctk::reexports::client::{delegate_noop, Dispatch};
 use sctk::reexports::client::{Connection, Proxy, QueueHandle};
+use sctk::reexports::protocols::xdg::foreign::zv2::client::{
+    zxdg_exported_v2::{self, ZxdgExportedV2},
+    zxdg_exporter_v2::ZxdgExporterV2,
+};
 use sctk::registry::{ProvidesRegistryState, RegistryState};
 use sctk::seat::pointer::{PointerData, PointerEvent, PointerEventKind, PointerHandler};
 use sctk::seat::{Capability, SeatHandler, SeatState};
@@ -220,7 +225,15 @@ fn run(
     let Ok(manager) = DataDeviceManagerState::bind(&globals, &queue_handle) else {
         return;
     };
+    let exporter = globals
+        .bind::<ZxdgExporterV2, _, _>(&queue_handle, 1..=1, ())
+        .ok();
+    let exported = exporter
+        .as_ref()
+        .map(|manager| manager.export_toplevel(&surface, &queue_handle, ()));
     let mut state = State {
+        exporter,
+        exported,
         registry: RegistryState::new(&globals),
         seat_state: SeatState::new(&globals, &queue_handle),
         manager,
@@ -265,6 +278,8 @@ struct Seat {
 }
 
 struct State {
+    exporter: Option<ZxdgExporterV2>,
+    exported: Option<ZxdgExportedV2>,
     registry: RegistryState,
     seat_state: SeatState,
     manager: DataDeviceManagerState,
@@ -285,6 +300,31 @@ struct State {
     wake: Box<dyn Fn() + Send>,
     exit: bool,
     pressed: Arc<AtomicBool>,
+}
+delegate_noop!(State: ignore ZxdgExporterV2);
+impl Dispatch<ZxdgExportedV2, ()> for State {
+    fn event(
+        state: &mut Self,
+        _: &ZxdgExportedV2,
+        event: zxdg_exported_v2::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zxdg_exported_v2::Event::Handle { handle } = event {
+            state.emit(DndEvent::ParentHandle { handle });
+        }
+    }
+}
+impl Drop for State {
+    fn drop(&mut self) {
+        if let Some(exported) = self.exported.take() {
+            exported.destroy();
+        }
+        if let Some(exporter) = self.exporter.take() {
+            exporter.destroy();
+        }
+    }
 }
 
 impl State {
@@ -677,7 +717,13 @@ mod tests {
     use sctk::reexports::client::{delegate_noop, Dispatch};
     use std::time::Duration;
 
+    use sctk::reexports::protocols::xdg::shell::client::{
+        xdg_surface::XdgSurface, xdg_toplevel::XdgToplevel, xdg_wm_base::XdgWmBase,
+    };
     struct Host;
+    delegate_noop!(Host: ignore XdgWmBase);
+    delegate_noop!(Host: ignore XdgSurface);
+    delegate_noop!(Host: ignore XdgToplevel);
     delegate_noop!(Host: WlCompositor);
     delegate_noop!(Host: ignore WlSurface);
     impl Dispatch<WlRegistry, GlobalListContents> for Host {
@@ -703,6 +749,10 @@ mod tests {
         let handle = queue.handle();
         let compositor: WlCompositor = globals.bind(&handle, 1..=4, ()).unwrap();
         let surface = compositor.create_surface(&handle, ());
+        let shell: XdgWmBase = globals.bind(&handle, 1..=1, ()).unwrap();
+        let shell_surface = shell.get_xdg_surface(&surface, &handle, ());
+        let toplevel = shell_surface.get_toplevel(&handle, ());
+        surface.commit();
         queue.roundtrip(&mut Host).unwrap();
 
         let worker = unsafe {
@@ -715,16 +765,47 @@ mod tests {
         .expect("worker attaches");
         // No button was pressed on the surface, so the drag is refused locally.
         worker.start_drag(b"file:///tmp/a\r\n".to_vec(), false);
-        assert_eq!(
-            worker.events.recv_timeout(Duration::from_secs(2)),
-            Ok(DndEvent::DragEnded { accepted: false })
-        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut parent_handle = None;
+        loop {
+            match worker
+                .events
+                .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                .unwrap()
+            {
+                DndEvent::ParentHandle { handle } => {
+                    assert!(!handle.is_empty());
+                    parent_handle = Some(handle);
+                }
+                DndEvent::DragEnded { accepted: false } => break,
+                event => panic!("Unexpected worker event: {event:?}"),
+            }
+        }
         // Let seats, pointers and data devices bind on the worker's queue.
         std::thread::sleep(Duration::from_millis(300));
         queue.roundtrip(&mut Host).unwrap();
+        if globals.contents().with_list(|list| {
+            list.iter()
+                .any(|global| global.interface == "zxdg_exporter_v2")
+        }) {
+            while parent_handle.is_none() {
+                match worker.events.recv_timeout(Duration::from_secs(2)).unwrap() {
+                    DndEvent::ParentHandle { handle } => {
+                        assert!(!handle.is_empty());
+                        parent_handle = Some(handle);
+                    }
+                    event => panic!("Unexpected parent export event: {event:?}"),
+                }
+            }
+        }
         drop(worker);
         queue.roundtrip(&mut Host).unwrap();
         assert!(connection.protocol_error().is_none());
+        toplevel.destroy();
+        shell_surface.destroy();
+        surface.destroy();
+        shell.destroy();
+        queue.roundtrip(&mut Host).unwrap();
     }
     #[test]
     fn deferred_pipe_probes_never_fetch_until_drop_and_cancellation_closes_them() {

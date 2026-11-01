@@ -4,6 +4,13 @@ use rust_commander::APP_NAME;
 use std::path::PathBuf;
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--native-forms-helper")
+    {
+        std::process::exit(rust_commander::app::slint_ui::run_native_form_helper());
+    }
     rust_commander::debug_log::record("application", "Rust Commander started");
     #[cfg(target_os = "linux")]
     if std::env::args_os()

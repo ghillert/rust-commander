@@ -1,12 +1,36 @@
 use super::*;
 mod commands;
 mod fields;
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(super) enum Picker {
+    File,
+    Directory,
+    NewDirectory,
+    SaveFile,
+}
+impl Picker {
+    pub(super) fn selected(self, path: std::path::PathBuf, current: &str) -> String {
+        let path = if self == Self::NewDirectory {
+            path.join(
+                std::path::Path::new(current)
+                    .file_name()
+                    .unwrap_or_else(|| std::ffi::OsStr::new("extracted")),
+            )
+        } else {
+            path
+        };
+        path.to_string_lossy().into_owned()
+    }
+}
 mod folders;
 #[cfg(target_os = "macos")]
 pub(super) mod native_extract;
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+pub(super) mod native_host;
+pub(super) mod native_intent;
 mod preferences;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct Field {
     pub id: String,
     pub title: String,
@@ -14,6 +38,8 @@ pub(super) struct Field {
     pub kind: i32,
     pub choices: Vec<String>,
     pub page: i32,
+    #[serde(default)]
+    pub picker: Option<Picker>,
 }
 impl Field {
     pub(super) fn text(
@@ -28,6 +54,7 @@ impl Field {
             kind: 0,
             choices: Vec::new(),
             page: 0,
+            picker: None,
         }
     }
     pub(super) fn password(id: &str, title: &str, value: &str) -> Self {
@@ -77,7 +104,7 @@ impl Field {
         }
     }
 }
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct Row {
     pub id: String,
     pub title: String,
@@ -122,7 +149,7 @@ impl Row {
         }
     }
 }
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct Dialog {
     pub kind: String,
     pub title: String,
@@ -132,8 +159,41 @@ pub(super) struct Dialog {
     pub fields: Vec<Field>,
     pub rows: Vec<Row>,
     pub buttons: Vec<(String, String, bool)>,
+    pub default_action: bool,
+    pub error_page: Option<i32>,
 }
 impl Dialog {
+    pub(super) fn native_pickers(&mut self, prompt: Option<&Prompt>) {
+        for field in &mut self.fields {
+            if !matches!(field.kind, 0 | 5) {
+                continue;
+            }
+            field.picker = match field.id.as_str() {
+                "key-file" | "known-hosts" | "application" | "archive-file" => Some(Picker::File),
+                "directory" if self.kind == "import" => Some(Picker::Directory),
+                "destination" if self.kind == "archive" && !field.value.contains("://") => {
+                    Some(Picker::SaveFile)
+                }
+                "prompt" => prompt.and_then(|p| match &p.kind {
+                    PromptKind::Pack { .. } if !p.value.contains("://") => Some(Picker::SaveFile),
+                    PromptKind::Extract { .. } => Some(Picker::NewDirectory),
+                    PromptKind::Transfer { .. } if !p.value.contains("://") => {
+                        Some(Picker::Directory)
+                    }
+                    PromptKind::RemoteTransfer { to, .. } | PromptKind::DropTransfer { to, .. }
+                        if matches!(
+                            filesystem::parse_location(&p.value, to),
+                            Ok(Location::Local(_))
+                        ) =>
+                    {
+                        Some(Picker::Directory)
+                    }
+                    _ => None,
+                }),
+                _ => None,
+            };
+        }
+    }
     pub(super) fn new(kind: &str, title: &str) -> Self {
         Self {
             kind: kind.into(),
@@ -165,6 +225,46 @@ impl Dialog {
     }
 }
 const POLICIES: [&str; 4] = ["Stop on conflict", "Skip", "Keep both", "Replace"];
+
+/// Native form controls suit editable forms and short confirmations. File panes,
+/// viewers, text diffs and streaming result/queue consoles retain their shared UI.
+pub(super) fn native_supported(dialog: &Dialog) -> bool {
+    matches!(
+        dialog.kind.as_str(),
+        "preferences"
+            | "prompt"
+            | "pack"
+            | "connections"
+            | "archive"
+            | "rename"
+            | "sync"
+            | "recovery"
+            | "open-as"
+            | "open-with"
+            | "exit"
+            | "message"
+            | "browser-url"
+            | "donate"
+            | "email"
+            | "external-edit"
+            | "associations"
+            | "updates"
+            | "diagnostics"
+            | "report"
+            | "selection"
+            | "tab-title"
+            | "empty-trash"
+            | "import"
+            | "run-command"
+    ) && dialog
+        .fields
+        .iter()
+        .all(|f| matches!(f.kind, 0..=6 | 8..=12))
+        && dialog.description.len() <= 4096
+        && dialog.fields.len() <= 512
+        && dialog.rows.len() <= 128
+        && dialog.buttons.len() <= 5
+}
 fn policy_label(policy: crate::transfer::ConflictPolicy) -> &'static str {
     use crate::transfer::ConflictPolicy::*;
     match policy {
@@ -185,6 +285,39 @@ fn parse_policy(value: &str) -> crate::transfer::ConflictPolicy {
 }
 
 impl Adapter {
+    pub(super) fn native_dialog(&self, spec: &Dialog) -> Dialog {
+        let mut native = spec.clone();
+        native.default_action = !matches!(spec.kind.as_str(), "exit" | "empty-trash")
+            && !self.app.prompt.as_ref().is_some_and(|p| {
+                matches!(
+                    p.kind,
+                    PromptKind::Trash(_)
+                        | PromptKind::PermanentDelete(_)
+                        | PromptKind::RemoteDelete { .. }
+                )
+            });
+        native.error_page = self
+            .invalid_fields
+            .keys()
+            .next()
+            .and_then(|id| spec.fields.iter().find(|field| &field.id == id))
+            .map(|field| field.page);
+        native.error = self
+            .invalid_fields
+            .values()
+            .next()
+            .map(|(_, error)| error.clone())
+            .or_else(|| self.field_error.clone())
+            .unwrap_or_else(|| spec.error.clone());
+        if !native.error.is_empty() {
+            for (id, _, enabled) in &mut native.buttons {
+                if id == "accept" || id == "apply" {
+                    *enabled = false;
+                }
+            }
+        }
+        native
+    }
     pub(super) fn dialog(&self) -> Dialog {
         if let Some(dialog) = self.desktop_commands_dialog() {
             return dialog;

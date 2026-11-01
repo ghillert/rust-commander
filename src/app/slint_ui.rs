@@ -47,6 +47,10 @@ pub(super) struct Adapter {
     native_extract_inflight: bool,
     #[cfg(target_os = "macos")]
     native_extract_accept: Option<dialogs::native_extract::Intent>,
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    native_forms: dialogs::native_host::Host,
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    native_forms_accept: Option<dialogs::native_intent::Intent>,
     #[cfg(test)]
     desktop_settings_path: Option<PathBuf>,
     drag: drag::State,
@@ -234,6 +238,10 @@ impl Adapter {
             native_extract_inflight: false,
             #[cfg(target_os = "macos")]
             native_extract_accept: None,
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            native_forms: Default::default(),
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
+            native_forms_accept: None,
             #[cfg(test)]
             desktop_settings_path: None,
             drag: Default::default(),
@@ -655,6 +663,52 @@ impl Adapter {
     }
 
     fn sync(&mut self, ui: &CommanderWindow) {
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        for event in self.native_forms.events() {
+            use dialogs::native_host::Event;
+            match event {
+                Event::Editing => self.native_forms_accept = None,
+                Event::Field(id, value) => self.edit_field(&id, &value),
+                Event::Action(id) => {
+                    self.native_forms_accept = None;
+                    self.dialog_action(&id);
+                    if id == "accept"
+                        && self
+                            .app
+                            .prompt
+                            .as_ref()
+                            .is_some_and(|p| p.pending_conflicts.is_some())
+                    {
+                        self.native_forms_accept = dialogs::native_intent::Intent::capture(self);
+                    }
+                }
+                Event::Select(id) => self.dialog_select(&id),
+                Event::Ready | Event::Failed => {}
+                #[cfg(feature = "screenshot")]
+                Event::Checked(_) | Event::Captured(_) => {}
+            }
+        }
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        if self.native_forms_accept.is_some() {
+            if !self.native_forms.active()
+                || self.app.exiting
+                || self.app.confirm_exit
+                || self.app.message.is_some()
+                || self.native_forms_accept != dialogs::native_intent::Intent::capture(self)
+            {
+                self.native_forms_accept = None;
+            } else if self
+                .app
+                .prompt
+                .as_ref()
+                .is_some_and(|p| p.pending_conflicts.is_none())
+            {
+                self.native_forms_accept = None;
+                if self.app.prompt.as_ref().is_some_and(|p| p.error.is_none()) {
+                    self.dialog_action("accept");
+                }
+            }
+        }
         let metadata_revision = crate::metadata::names_revision();
         if self.metadata_revision != metadata_revision {
             self.metadata_revision = metadata_revision;
@@ -675,7 +729,10 @@ impl Adapter {
         #[cfg(target_os = "macos")]
         for event in self.native_extract.events() {
             match event {
+                dialogs::native_extract::Event::Review(page) => self.native_extract.show_page(page),
+                dialogs::native_extract::Event::Editing => self.native_extract_accept = None,
                 dialogs::native_extract::Event::Field(id, value) => self.edit_field(&id, &value),
+                dialogs::native_extract::Event::Select(id) => self.dialog_select(&id),
                 dialogs::native_extract::Event::Action(id) => {
                     self.native_extract_accept = None;
                     self.dialog_action(&id);
@@ -1167,6 +1224,7 @@ impl Adapter {
         self.sync_viewer(ui);
         self.sync_terminal(ui);
         let mut spec = self.dialog();
+        spec.native_pickers(self.app.prompt.as_ref());
         if env!("RUST_COMMANDER_WIDGET_STYLE") == "fluent" {
             // Windows ContentDialog places the safe dismissal after actions;
             // macOS and GNOME put cancellation before the affirmative action.
@@ -1218,40 +1276,10 @@ impl Adapter {
         }
         #[cfg(target_os = "macos")]
         let native_extract = {
-            let extract = !self.app.exiting
-                && matches!(spec.kind.as_str(), "prompt" | "pack")
-                && self.app.prompt.as_ref().is_some_and(|prompt| {
-                    matches!(
-                        prompt.kind,
-                        PromptKind::Extract { .. }
-                            | PromptKind::Transfer { .. }
-                            | PromptKind::RemoteTransfer { .. }
-                            | PromptKind::DropTransfer { .. }
-                            | PromptKind::Rename(_)
-                            | PromptKind::RemoteRename { .. }
-                            | PromptKind::Pack { .. }
-                    )
-                });
+            let extract = !self.app.exiting && dialogs::native_supported(&spec);
             self.native_extract_request = Some(dialogs::native_extract::Request {
                 ui: ui.as_weak(),
-                spec: extract.then(|| {
-                    let mut native_spec = spec.clone();
-                    native_spec.error = self
-                        .invalid_fields
-                        .values()
-                        .next()
-                        .map(|(_, e)| e.clone())
-                        .or_else(|| self.field_error.clone())
-                        .unwrap_or_else(|| spec.error.clone());
-                    if !native_spec.error.is_empty() {
-                        for (id, _, enabled) in &mut native_spec.buttons {
-                            if id == "accept" {
-                                *enabled = false;
-                            }
-                        }
-                    }
-                    native_spec
-                }),
+                spec: extract.then(|| self.native_dialog(&spec)),
                 scheme: self.app.preferences.color_scheme,
             });
             extract
@@ -1259,7 +1287,24 @@ impl Adapter {
                     || self.native_extract_inflight
                     || dialogs::native_extract::Host::available(ui))
         };
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        let native_extract = {
+            let native_spec = self.native_dialog(&spec);
+            #[cfg(target_os = "linux")]
+            let parent = self.drag.linux.as_ref().and_then(|d| d.parent_handle());
+            #[cfg(not(target_os = "linux"))]
+            let parent = None;
+            let active = self.native_forms.sync(
+                ui,
+                (!self.app.exiting).then_some(&native_spec),
+                self.app.preferences.color_scheme,
+                self.app.preferences.language,
+                parent,
+            );
+            ui.set_native_form_open(active && self.native_forms.active());
+            active
+        };
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         let native_extract = false;
         ui.set_dialog_preferred_height(match spec.kind.as_str() {
             "exit" => 240.0,
@@ -1857,6 +1902,42 @@ impl Drop for Adapter {
     }
 }
 
+// A native sheet is posted outside the timer driver. Chain screenshot steps so
+// overdue timers cannot overtake its presentation during a busy startup.
+#[cfg(feature = "screenshot")]
+struct SmokeStep {
+    delay: u64,
+    action: Box<dyn FnMut() -> bool>,
+}
+#[cfg(feature = "screenshot")]
+fn smoke_steps(mut steps: std::collections::VecDeque<SmokeStep>, done: Rc<std::cell::Cell<bool>>) {
+    if let Some(step) = steps.pop_front() {
+        smoke_step(step, steps, done, 0);
+    } else {
+        done.set(true);
+    }
+}
+#[cfg(feature = "screenshot")]
+fn smoke_step(
+    mut step: SmokeStep,
+    steps: std::collections::VecDeque<SmokeStep>,
+    done: Rc<std::cell::Cell<bool>>,
+    retries: u32,
+) {
+    slint::Timer::single_shot(Duration::from_millis(step.delay), move || {
+        if (step.action)() {
+            smoke_steps(steps, done);
+        } else {
+            assert!(
+                retries < 100,
+                "Native form did not become ready for the screenshot step"
+            );
+            step.delay = 50;
+            smoke_step(step, steps, done, retries + 1);
+        }
+    });
+}
+
 pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
     #[cfg(target_os = "macos")]
     {
@@ -1896,7 +1977,7 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
         windows::tick,
     );
     #[cfg(feature = "screenshot")]
-    let screenshot_timer = slint::Timer::default();
+    let screenshot_timer = Rc::new(slint::Timer::default());
     #[cfg(feature = "screenshot")]
     if let Some(path) = std::env::var_os("RUST_COMMANDER_SCREENSHOT_TO") {
         let weak = smoke_ui.as_weak();
@@ -1918,52 +1999,99 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                 }
             });
         }
+        let sequence_done = Rc::new(std::cell::Cell::new(true));
         if let Ok(sequence) = std::env::var("RUST_COMMANDER_SCREENSHOT_SEQUENCE") {
             let steps: Vec<(u64, String, String)> = serde_json::from_str(&sequence)
                 .expect("Screenshot sequence must contain delay, callback, value tuples");
+            let mut previous = 0;
+            let mut scheduled = std::collections::VecDeque::new();
             for (delay, callback, value) in steps {
+                let delay = delay.min(30_000);
+                let interval = delay.saturating_sub(previous);
+                previous = delay;
                 let step_ui = smoke_ui.as_weak();
-                slint::Timer::single_shot(Duration::from_millis(delay.min(30_000)), move || {
-                    if let Some(ui) = step_ui.upgrade() {
-                        match callback.as_str() {
-                            "navigate" => ui.invoke_navigate(0, value.into()),
-                            "open" => ui.invoke_opened(0, path_id(Path::new(&value)).into()),
-                            "click" => ui.invoke_clicked_file(0, path_id(Path::new(&value)).into()),
-                            "menu" => ui.invoke_show_menu(value.into()),
-                            "action" => ui.invoke_action(value.into()),
-                            "dialog" => ui.invoke_dialog_action(value.into()),
-                            "settings-page" => ui.invoke_show_settings_page(
-                                value.parse().expect("Settings page must be a number"),
-                            ),
-                            "select" => ui.invoke_dialog_select(value.into()),
-                            "viewer" => ui.invoke_viewer_action(value.into()),
-                            "sort" => {
-                                let (side, column): (i32, i32) = serde_json::from_str(&value)
-                                    .expect("Screenshot sort must be a pane/column pair");
-                                ui.invoke_sort(side, column);
-                            }
-                            "parent" => {
-                                let (side, open): (i32, bool) = serde_json::from_str(&value)
-                                    .expect("Screenshot parent must be a pane/open pair");
-                                ui.invoke_parent_entry(side, open);
-                            }
-                            #[cfg(target_os = "macos")]
-                            "native-field"
-                            | "native-field-return"
-                            | "native-action"
-                            | "native-check" => {
-                                windows::native_extract_smoke(&callback, &value);
-                            }
-                            "field" => {
-                                let (id, value): (String, String) = serde_json::from_str(&value)
-                                    .expect("Screenshot field must be an id/value pair");
-                                ui.invoke_dialog_field(id.into(), value.into());
-                            }
-                            _ => panic!("Unsupported screenshot callback"),
+                let mut payload = Some((callback, value));
+                scheduled.push_back(SmokeStep {
+                    delay: interval,
+                    action: Box::new(move || {
+                        let callback = &payload.as_ref().unwrap().0;
+                        let native = callback.starts_with("native-")
+                            || (cfg!(target_os = "macos") && callback == "settings-page");
+                        if native && !windows::native_form_ready() {
+                            return false;
                         }
-                    }
+                        let (callback, value) = payload.take().unwrap();
+                        if let Some(ui) = step_ui.upgrade() {
+                            match callback.as_str() {
+                                "navigate" => ui.invoke_navigate(0, value.into()),
+                                "open" => ui.invoke_opened(0, path_id(Path::new(&value)).into()),
+                                "click" => {
+                                    ui.invoke_clicked_file(0, path_id(Path::new(&value)).into())
+                                }
+                                "menu" => ui.invoke_show_menu(value.into()),
+                                "action" => ui.invoke_action(value.into()),
+                                "dialog" => ui.invoke_dialog_action(value.into()),
+                                "settings-page" => {
+                                    #[cfg(target_os = "macos")]
+                                    windows::native_extract_smoke("native-page", &value);
+                                    #[cfg(any(target_os = "windows", target_os = "linux"))]
+                                    if !windows::native_form_smoke("native-page", &value) {
+                                        ui.invoke_show_settings_page(
+                                            value.parse().expect("Settings page must be a number"),
+                                        );
+                                    }
+                                }
+                                "select" => ui.invoke_dialog_select(value.into()),
+                                "viewer" => ui.invoke_viewer_action(value.into()),
+                                "sort" => {
+                                    let (side, column): (i32, i32) = serde_json::from_str(&value)
+                                        .expect("Screenshot sort must be a pane/column pair");
+                                    ui.invoke_sort(side, column);
+                                }
+                                "parent" => {
+                                    let (side, open): (i32, bool) = serde_json::from_str(&value)
+                                        .expect("Screenshot parent must be a pane/open pair");
+                                    ui.invoke_parent_entry(side, open);
+                                }
+                                "native-field"
+                                | "native-field-return"
+                                | "native-action"
+                                | "native-check" => {
+                                    #[cfg(target_os = "macos")]
+                                    windows::native_extract_smoke(&callback, &value);
+                                    #[cfg(any(target_os = "windows", target_os = "linux"))]
+                                    {
+                                        assert!(windows::native_form_smoke(
+                                            if callback == "native-field-return" {
+                                                "native-field"
+                                            } else {
+                                                &callback
+                                            },
+                                            &value
+                                        ));
+                                        if callback == "native-field-return" {
+                                            assert!(windows::native_form_smoke(
+                                                "native-action",
+                                                "return"
+                                            ));
+                                        }
+                                    }
+                                }
+                                "field" => {
+                                    let (id, value): (String, String) =
+                                        serde_json::from_str(&value)
+                                            .expect("Screenshot field must be an id/value pair");
+                                    ui.invoke_dialog_field(id.into(), value.into());
+                                }
+                                _ => panic!("Unsupported screenshot callback"),
+                            }
+                        }
+                        true
+                    }),
                 });
             }
+            sequence_done.set(false);
+            smoke_steps(scheduled, sequence_done.clone());
         }
         if let Ok(action) = std::env::var("RUST_COMMANDER_SCREENSHOT_VIEWER_ACTION") {
             let viewer_ui = smoke_ui.as_weak();
@@ -1973,16 +2101,25 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                 }
             });
         }
-        screenshot_timer.start(
-            slint::TimerMode::SingleShot,
-            Duration::from_millis(
+        let capture_timer = Rc::downgrade(&screenshot_timer);
+        let capture_at = std::time::Instant::now()
+            + Duration::from_millis(
                 std::env::var("RUST_COMMANDER_SCREENSHOT_DELAY_MS")
                     .ok()
                     .and_then(|v| v.parse::<u64>().ok())
                     .unwrap_or(2000)
                     .clamp(500, 30_000),
-            ),
+            );
+        screenshot_timer.start(
+            slint::TimerMode::Repeated,
+            Duration::from_millis(50),
             move || {
+                if !sequence_done.get() || std::time::Instant::now() < capture_at {
+                    return;
+                }
+                if let Some(timer) = capture_timer.upgrade() {
+                    timer.stop();
+                }
                 if let Some(ui) = weak.upgrade() {
                     eprintln!(
                         "Location snapshot: {} · {} rows · {}",
@@ -2021,6 +2158,13 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                         }
                         return;
                     }
+                    #[cfg(any(target_os = "windows", target_os = "linux"))]
+                    if windows::native_form_snapshot(Path::new(&path)) {
+                        if std::env::var_os("RUST_COMMANDER_SMOKE_KEEP_OPEN").is_none() {
+                            let _ = slint::quit_event_loop();
+                        }
+                        return;
+                    }
                     let result = ui
                         .window()
                         .take_snapshot()
@@ -2045,7 +2189,10 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
             },
         );
     }
-    slint::run_event_loop_until_quit()?;
+    let result = slint::run_event_loop_until_quit();
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    windows::shutdown_native_forms();
+    result?;
     Ok(())
 }
 
@@ -2621,3 +2768,9 @@ mod packing_tests;
 mod parity_tests;
 #[cfg(test)]
 mod viewer_tests;
+
+/// Internal entry point for the isolated native UI host; it never loads app state.
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+pub fn run_native_form_helper() -> i32 {
+    dialogs::native_host::run_helper()
+}

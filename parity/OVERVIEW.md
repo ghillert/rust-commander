@@ -8,16 +8,16 @@ reviews without new live-account acceptance. Historical validation
 sections describe their original snapshots; later sections supersede older limits.
 
 The reviewed source includes commits `737eca4` and `3a684b6` and the current
-Settings organization. The pinned inventory contains
+Settings organization and native-control audit. The pinned inventory contains
 **200 entries: 4 implemented, 188 partial, 7 missing and 1 inapplicable**.
 These are 166 upstream actions and 34 modules, not 200 equally sized features.
 In particular, **partial does not mean absent**: many entries have working
 behavior and fixture coverage but lack complete upstream/native acceptance.
 The inapplicable entry is the JVM garbage-collection command.
 
-The latest recorded macOS all-target run records **446 passing tests and 17
-ignored**, followed by focused Settings checks after layout refinements. Linux
-checks from the preceding batch are recorded in [VALIDATION.md](VALIDATION.md).
+The latest recorded all-target runs have **449 passing tests and 17 ignored on
+macOS**, and **443 passing tests and 22 ignored on Linux**. Native form fixtures,
+Windows SDK/Wine checks and their limits are recorded in [VALIDATION.md](VALIDATION.md).
 Hosted Windows confirmation and native/live-provider acceptance remain open.
 
 ### Recently completed workflows
@@ -51,7 +51,10 @@ The following are implemented and should no longer appear as missing features:
 - Settings organized into General, Folders, Appearance, Shortcuts, Mail and
   Advanced tabs, with focused column/toolbar/command-bar subtabs, searchable
   primary/alternate bindings and shared Apply/OK/Cancel draft behavior. See
-  [Settings organization](../docs/SLINT_UI.md#desktop-chrome).
+  [Settings organization](../docs/SLINT_UI.md#desktop-chrome). Settings and suitable
+  operation/utility forms now use AppKit, Windows common controls or GTK4, with
+  native local path choosers and a safe shared fallback. See the
+  [native-control audit](../docs/NATIVE_FORMS.md).
 
 ### Pane, keyboard and context-menu comparison — 2026-10-30
 
@@ -116,7 +119,7 @@ It excludes limitations in working features and validation-only gaps.
 | Pane swapping and file marks | Opposing-arrow toolbar button and Navigate > Swap panes move tabs, cursor, marks and keyboard focus together; Space/Insert toggle a mark and advance in visible order, with red marks independent of the cursor highlight | Broader native desktop acceptance remains open. |
 | Commands | Open As for explicit text/hex/image/PDF/archive interpretation, Open With, desktop reveal, searchable windows, configurable shortcuts, copy base names, parent-row toggle, numbered windows, manual release checks, diagnostics, reviewed bug-report links, bookmark explorer, bring-all-forward, Email files, support/donation links, reviewed general HTTP/HTTPS browser opening, shared Minimize/Maximize actions and event console | Complete upstream preference/shortcut coverage and broader parameterized URL integration. Linux Reveal opens the parent folder rather than selecting the item. Native acceptance remains open. |
 | Localization and migration | English/German/Spanish and reviewed XML import with backup | Additional languages, complete translated coverage and full upstream preference/keymap/command/bookmark import. See [import limits](../docs/FEATURES_0.7.md#12-mucommander-import). |
-| Desktop appearance and interaction | Native macOS Extract/Copy/Move/Rename/Pack sheets with shared operation logic; platform-specific Cupertino/Fluent/Cosmic controls and chrome, compact form sizing, focus states, explicit action labels and Windows versus macOS/GNOME dismissal order | Native Windows/Linux screen-reader, mixed-DPI and high-contrast acceptance; installed Linux theme matching and full menu mnemonics remain open. Native Windows/Linux forms require event-loop/parenting prototypes and additional runtimes; see [native forms](../docs/NATIVE_FORMS.md). See the [desktop UX review](../docs/DESKTOP_UX_REVIEW.md). |
+| Desktop appearance and interaction | Actual AppKit/Win32/GTK4 Settings and suitable short forms, with native path choosers and shared operation logic; custom file-manager chrome retains Cupertino/Fluent/Cosmic styling | Physical desktop screen-reader, mixed-DPI and high-contrast acceptance; complete Windows dark-mode support, compositor coverage, KDE widget matching and menu mnemonics remain open. Unsupported native parenting uses Slint. See the [native-control audit](../docs/NATIVE_FORMS.md) and [desktop UX review](../docs/DESKTOP_UX_REVIEW.md). |
 
 The size, link and publication guards above are deliberate current limits.
 Removing them requires an appropriate streaming, recovery or filesystem design;

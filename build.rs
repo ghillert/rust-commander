@@ -2,10 +2,12 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SLINT_STYLE");
     let target = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target == "windows" {
+        println!("cargo:rerun-if-changed=assets/windows/app.manifest");
         println!("cargo:rerun-if-changed=assets/icons/rust-commander.ico");
         let mut resource = winresource::WindowsResource::new();
         resource
             .set_icon("assets/icons/rust-commander.ico")
+            .set_manifest_file("assets/windows/app.manifest")
             .set("ProductName", "Rust Commander")
             .set("FileDescription", "Rust Commander dual-pane file manager")
             .set("OriginalFilename", "rust-commander.exe")

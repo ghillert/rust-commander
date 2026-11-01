@@ -22,6 +22,11 @@ mod wayland;
 /// Positions are in logical pixels relative to the window's surface.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DndEvent {
+    /// Opaque xdg-foreign parent handle for an isolated native dialog host.
+    ParentHandle {
+        /// Valid while this window's protocol worker remains alive.
+        handle: String,
+    },
     /// Files from any application are over the window.
     Hovered {
         /// Pointer position from the left edge of the surface.

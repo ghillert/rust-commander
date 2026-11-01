@@ -1013,3 +1013,88 @@ fn native_drops_preserve_archive_and_remote_confirmation_contracts() {
     relative.set_file_paths([PathBuf::from("relative.txt")]);
     assert!(!adapter.drop_files(0, relative));
 }
+
+#[test]
+fn native_forms_keep_streaming_views_shared_and_choose_local_destinations_only() {
+    use dialogs::{Dialog, Field, Picker, native_supported};
+    let (_root, mut adapter, left, right) = fixture();
+    let mut form = Dialog::new("pack", "Pack files");
+    form.fields.push(Field::text("prompt", "Destination", ""));
+    assert!(native_supported(&form));
+    form.kind = "search".into();
+    assert!(!native_supported(&form));
+    form.kind = "preferences".into();
+    form.fields[0].kind = 99;
+    assert!(!native_supported(&form));
+    adapter.app.prompt = Some(Prompt {
+        title: "Copy".into(),
+        description: String::new(),
+        value: right.display().to_string(),
+        kind: PromptKind::RemoteTransfer {
+            from: Location::Remote {
+                connection: "fixture".into(),
+                path: PathBuf::from("/"),
+            },
+            entries: Vec::new(),
+            to: Location::Local(right.clone()),
+            moving: false,
+        },
+        error: None,
+        resumable: false,
+        transfer_options: Default::default(),
+        overrides: Default::default(),
+        conflicts: Vec::new(),
+        conflict_key: String::new(),
+        pending_conflicts: None,
+    });
+    form.fields[0].kind = 0;
+    form.native_pickers(adapter.app.prompt.as_ref());
+    assert!(form.fields[0].picker == Some(Picker::Directory));
+    adapter.app.prompt.as_mut().unwrap().value = "remote://fixture/upload".into();
+    form.native_pickers(adapter.app.prompt.as_ref());
+    assert!(
+        form.fields[0].picker.is_none(),
+        "A local chooser must never replace a remote destination"
+    );
+    let selected =
+        Picker::NewDirectory.selected(right.clone(), &left.join("résultats").display().to_string());
+    assert_eq!(PathBuf::from(selected), right.join("résultats"));
+}
+
+#[test]
+fn native_forms_share_validation_and_never_default_to_discarding_work() {
+    let (_root, mut adapter, left, _right) = fixture();
+    let mut spec = dialogs::Dialog::new("preferences", "Settings");
+    spec.fields.push(dialogs::Field {
+        page: 5,
+        ..dialogs::Field::text("transfer-limit", "Limit", "0")
+    });
+    spec.button("accept", "OK", true);
+    spec.button("apply", "Apply", true);
+    adapter.invalid_fields.insert(
+        "transfer-limit".into(),
+        ("bad".into(), "Enter a number".into()),
+    );
+    let native = adapter.native_dialog(&spec);
+    assert_eq!(native.error_page, Some(5));
+    assert_eq!(native.error, "Enter a number");
+    assert!(
+        native
+            .buttons
+            .iter()
+            .filter(|(id, _, _)| id == "accept" || id == "apply")
+            .all(|(_, _, enabled)| !enabled)
+    );
+    adapter.invalid_fields.clear();
+    spec.kind = "exit".into();
+    assert!(!adapter.native_dialog(&spec).default_action);
+    spec.kind = "prompt".into();
+    // Construct an actual trash prompt through the normal selection action.
+    adapter.app.tab_mut().cursor = Some(left.join("alpha.txt"));
+    adapter.app.act(Action::Trash, &UiSignal::default());
+    assert!(matches!(
+        adapter.app.prompt.as_ref().map(|p| &p.kind),
+        Some(PromptKind::Trash(_))
+    ));
+    assert!(!adapter.native_dialog(&spec).default_action);
+}

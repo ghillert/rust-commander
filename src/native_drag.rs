@@ -19,6 +19,7 @@ enum Backend {
     Wayland {
         device: rust_commander_wayland_dnd::FileDnd,
         finished: Option<Box<dyn Fn(bool) + Send>>,
+        parent_handle: Option<String>,
     },
     X11(Box<x11::Pointer>),
 }
@@ -30,6 +31,7 @@ impl Linux {
                 device: rust_commander_wayland_dnd::FileDnd::attach(&window, wake)
                     .ok_or_else(|| anyhow::anyhow!("Could not attach the Wayland drag adapter"))?,
                 finished: None,
+                parent_handle: None,
             },
             RawWindowHandle::Xlib(handle) => {
                 Backend::X11(Box::new(x11::Pointer::new(u32::try_from(handle.window)?)?))
@@ -46,10 +48,18 @@ impl Linux {
     }
     pub fn poll(&mut self) -> Vec<Event> {
         match &mut self.backend {
-            Backend::Wayland { device, finished } => device
+            Backend::Wayland {
+                device,
+                finished,
+                parent_handle,
+            } => device
                 .poll()
                 .into_iter()
                 .filter_map(|event| match event {
+                    rust_commander_wayland_dnd::DndEvent::ParentHandle { handle } => {
+                        *parent_handle = Some(handle);
+                        None
+                    }
                     rust_commander_wayland_dnd::DndEvent::Hovered { x, y } => {
                         Some(Event::Hover(x, y))
                     }
@@ -72,6 +82,12 @@ impl Linux {
                 })
                 .collect(),
             Backend::X11(_) => Vec::new(),
+        }
+    }
+    pub fn parent_handle(&self) -> Option<&str> {
+        match &self.backend {
+            Backend::Wayland { parent_handle, .. } => parent_handle.as_deref(),
+            _ => None,
         }
     }
     pub fn pointer(&self, scale: f64) -> Option<(f32, f32)> {
@@ -97,6 +113,7 @@ impl Linux {
             Backend::Wayland {
                 device,
                 finished: callback,
+                ..
             } => {
                 *callback = Some(Box::new(finished));
                 device.start_drag(paths, moving);
@@ -119,6 +136,7 @@ impl Linux {
             Backend::Wayland {
                 device,
                 finished: callback,
+                ..
             } => {
                 *callback = Some(Box::new(finished));
                 device.start_deferred_with_token(provider, token);

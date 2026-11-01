@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise actual AppKit Extract controls against disposable archive fixtures."""
+"""Exercise native Extract controls against disposable archive fixtures."""
 import argparse
 import json
 import os
@@ -13,7 +13,7 @@ import zipfile
 def main():
     project = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--binary', type=Path, default=project / 'target/debug/rust-commander')
+    parser.add_argument('--binary', type=Path, default=project / ('target/debug/rust-commander.exe' if os.name == 'nt' else 'target/debug/rust-commander'))
     parser.add_argument('--output', type=Path, default=project / 'target/native-extract-smoke')
     parser.add_argument('--renderer', action='append', choices=['software', 'femtovg'])
     parser.add_argument('--case', action='append', choices=['form', 'extract', 'cancel', 'close', 'conflicts', 'validation', 'scroll', 'reopen', 'skip', 'apply-all', 'return', 'quit', 'return-fast'])
@@ -21,7 +21,7 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     # Keep the tested executable stable if a development build runs concurrently.
     with tempfile.TemporaryDirectory(prefix='rc-native-extract-binary-') as directory:
-        binary = Path(directory) / 'rust-commander'
+        binary = Path(directory) / ('rust-commander.exe' if os.name == 'nt' else 'rust-commander')
         shutil.copy2(args.binary.resolve(), binary)
         run_cases(args, binary)
 

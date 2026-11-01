@@ -18,67 +18,27 @@ use objc2_foundation::{
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::{cell::RefCell, rc::Rc};
 
+mod preferences;
+
 type Events = Rc<RefCell<Vec<Event>>>;
-/// An early Return may wait for preflight, but editing any operation input
-/// invalidates that intent. It cannot approve a later, different extraction.
-#[derive(PartialEq)]
-pub(in super::super) struct Intent {
-    identity: String,
-    destination: String,
-    resumable: bool,
-    options: crate::transfer::TransferOptions,
-    overrides: std::collections::BTreeMap<std::path::PathBuf, crate::transfer::ConflictPolicy>,
-}
-impl Intent {
-    pub fn capture(adapter: &super::super::Adapter) -> Option<Self> {
-        let prompt = adapter.app.prompt.as_ref()?;
-        use crate::app::PromptKind;
-        let identity = match &prompt.kind {
-            PromptKind::Extract {
-                archive,
-                selected,
-                prefix,
-                base,
-            } => serde_json::to_string(&("extract", archive, selected, prefix, base)),
-            PromptKind::Transfer {
-                sources,
-                base,
-                moving,
-            } => serde_json::to_string(&("transfer", sources, base, moving)),
-            PromptKind::RemoteTransfer {
-                from,
-                entries,
-                to,
-                moving,
-            } => serde_json::to_string(&("remote-transfer", from, entries, to, moving)),
-            PromptKind::DropTransfer {
-                selection,
-                to,
-                moving,
-            } => serde_json::to_string(&("drop-transfer", selection, to, moving)),
-            _ => return None,
-        };
-        Some(Self {
-            identity: identity.ok()?,
-            destination: prompt.value.clone(),
-            resumable: prompt.resumable,
-            options: prompt.transfer_options,
-            overrides: prompt.overrides.clone(),
-        })
-    }
-}
+pub(in super::super) use super::native_intent::Intent;
 pub(in super::super) struct Request {
     pub ui: slint::Weak<super::super::CommanderWindow>,
     pub spec: Option<Dialog>,
     pub scheme: crate::appearance::ColorScheme,
 }
 pub(in super::super) enum Event {
+    Editing,
+    Review(i32),
     Field(String, String),
     Action(String),
+    Select(String),
 }
 
+#[derive(Clone)]
 enum Widget {
     Text(Retained<NSTextField>),
+    Note(Retained<NSTextField>),
     Choice(Retained<NSPopUpButton>, Vec<String>),
     Check(Retained<NSButton>),
     Multiline(Retained<NSTextView>, Retained<NSScrollView>),
@@ -89,12 +49,12 @@ impl Widget {
             Self::Text(w) => Some(w),
             Self::Choice(w, _) => Some(w),
             Self::Check(w) => Some(w),
-            Self::Multiline(..) => None,
+            Self::Multiline(..) | Self::Note(_) => None,
         }
     }
     fn view(&self) -> &NSView {
         match self {
-            Self::Text(w) => w,
+            Self::Text(w) | Self::Note(w) => w,
             Self::Choice(w, _) => w,
             Self::Check(w) => w,
             Self::Multiline(_, scroll) => scroll,
@@ -102,7 +62,7 @@ impl Widget {
     }
     fn value(&self) -> String {
         match self {
-            Self::Text(w) => w.stringValue().to_string(),
+            Self::Text(w) | Self::Note(w) => w.stringValue().to_string(),
             Self::Choice(w, choices) => usize::try_from(w.indexOfSelectedItem())
                 .ok()
                 .and_then(|i| choices.get(i))
@@ -117,10 +77,12 @@ impl Widget {
             return;
         }
         match self {
-            Self::Text(w) => w.setStringValue(&NSString::from_str(value)),
+            Self::Text(w) | Self::Note(w) => w.setStringValue(&NSString::from_str(value)),
             Self::Choice(w, choices) => {
                 if let Some(i) = choices.iter().position(|c| c == value) {
                     w.selectItemAtIndex(i as isize);
+                } else {
+                    w.selectItem(None);
                 }
             }
             Self::Check(w) => w.setState(isize::from(value == "true")),
@@ -133,6 +95,8 @@ struct TargetIvars {
     events: Events,
     fields: RefCell<Vec<(String, Widget)>>,
     actions: RefCell<Vec<String>>,
+    pickers: RefCell<Vec<(String, super::Picker)>>,
+    review_page: std::cell::Cell<i32>,
 }
 
 define_class!(
@@ -171,6 +135,35 @@ define_class!(
         }
     }
     impl Target {
+        #[unsafe(method(review:))]
+        fn review(&self, _sender: &NSControl) { self.ivars().events.borrow_mut().push(Event::Review(self.ivars().review_page.get())); }
+        #[unsafe(method(browse:))]
+        fn browse(&self,sender:&NSControl) {
+            self.ivars().events.borrow_mut().push(Event::Editing);
+            use objc2_app_kit::{NSOpenPanel,NSSavePanel};
+            use objc2_foundation::NSURL;
+            let Some((id,picker))=self.ivars().pickers.borrow().get(sender.tag() as usize).cloned() else{return;};
+            let current=self.ivars().fields.borrow().iter().find(|(key,_)|key==&id).map(|(_,widget)|widget.value()).unwrap_or_default();
+            let Some(owner)=sender.window() else{return;};let mtm=self.mtm();
+            let panel:Retained<NSSavePanel>=if picker==super::Picker::SaveFile {NSSavePanel::savePanel(mtm)}else{
+                let panel=NSOpenPanel::openPanel(mtm);
+                panel.setCanChooseFiles(picker==super::Picker::File);
+                panel.setCanChooseDirectories(matches!(picker,super::Picker::Directory|super::Picker::NewDirectory));
+                panel.setAllowsMultipleSelection(false);panel.into_super()
+            };
+            panel.setTitle(Some(&translated(if picker==super::Picker::NewDirectory{"Choose parent folder"}else{"Browse"})));
+            let path=std::path::Path::new(&current);
+            let folder=if picker==super::Picker::Directory {Some(path)}else{path.parent()};
+            if let Some(folder)=folder.filter(|path|path.is_absolute()){panel.setDirectoryURL(Some(&NSURL::fileURLWithPath(&NSString::from_str(&folder.to_string_lossy()))));}
+            if picker==super::Picker::SaveFile&& let Some(name)=path.file_name(){panel.setNameFieldStringValue(&NSString::from_str(&name.to_string_lossy()));}
+            let selected=panel.clone();let events=self.ivars().events.clone();
+            let completion=block2::RcBlock::new(move|response:isize|{
+                if response==1&& let Some(path)=selected.URL().and_then(|url|url.path()) {
+                    events.borrow_mut().push(Event::Field(id.clone(),picker.selected(std::path::PathBuf::from(path.to_string()),&current)));
+                }
+            });
+            panel.beginSheetModalForWindow_completionHandler(&owner,&completion);
+        }
         #[unsafe(method(changed:))]
         fn changed(&self, sender: &NSControl) { self.collect_field(sender); }
         #[unsafe(method(perform:))]
@@ -180,8 +173,8 @@ define_class!(
             if let Some((id, widget)) = self.ivars().fields.borrow().first() {
                 self.ivars().events.borrow_mut().push(Event::Field(id.clone(), widget.value()));
             }
-            if let Some(id) = self.ivars().actions.borrow().get(sender.tag() as usize) {
-                self.ivars().events.borrow_mut().push(Event::Action(id.clone()));
+            if let Some(id) = self.ivars().actions.borrow().get(sender.tag() as usize).filter(|id| !id.is_empty()) {
+                self.ivars().events.borrow_mut().push(if let Some(row) = id.strip_prefix("select:") {Event::Select(row.into())} else {Event::Action(id.clone())});
             }
         }
     }
@@ -235,9 +228,22 @@ impl Host {
         self.sheet.is_some()
     }
     pub fn focused(&self) -> bool {
-        self.sheet
+        self.sheet.as_ref().is_some_and(|sheet| {
+            sheet.window.isKeyWindow()
+                || sheet
+                    .window
+                    .attachedSheet()
+                    .is_some_and(|panel| panel.isKeyWindow())
+        })
+    }
+    pub fn show_page(&self, page: i32) {
+        if let Some(view) = self
+            .sheet
             .as_ref()
-            .is_some_and(|sheet| sheet.window.isKeyWindow())
+            .and_then(|sheet| sheet.preferences.as_ref())
+        {
+            view.show_page(page);
+        }
     }
     pub fn events(&self) -> Vec<Event> {
         self.sheet
@@ -252,6 +258,13 @@ impl Host {
             .as_ref()
             .expect("Native Extract sheet must be open");
         match command {
+            "native-page" => {
+                sheet
+                    .preferences
+                    .as_ref()
+                    .expect("Native Settings must be open")
+                    .show_page(value.parse().unwrap());
+            }
             "native-field" => {
                 let (id, value): (String, String) = serde_json::from_str(value).unwrap();
                 let fields = sheet.target.ivars().fields.borrow();
@@ -319,17 +332,32 @@ impl Host {
     }
     #[cfg(feature = "screenshot")]
     pub fn snapshot(&self, path: &std::path::Path) -> bool {
-        use objc2_app_kit::NSBitmapImageFileType;
+        use objc2::AnyThread;
+        use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep};
         use objc2_foundation::NSDictionary;
         let Some(sheet) = &self.sheet else {
             return false;
         };
         let view = sheet.window.contentView().unwrap();
         view.displayIfNeeded();
-        let bitmap = view
-            .bitmapImageRepForCachingDisplayInRect(view.bounds())
-            .unwrap();
-        view.cacheDisplayInRect_toBitmapImageRep(view.bounds(), &bitmap);
+        // Layer-backed native tabs cannot be captured with NSView's vector
+        // cache. Read only our own window's composited image when available.
+        #[allow(deprecated)]
+        let captured = objc2_core_graphics::CGWindowListCreateImage(
+            rect(f64::INFINITY, f64::INFINITY, 0.0, 0.0),
+            objc2_core_graphics::CGWindowListOption::OptionIncludingWindow,
+            sheet.window.windowNumber() as u32,
+            objc2_core_graphics::CGWindowImageOption::BoundsIgnoreFraming,
+        );
+        let bitmap = if let Some(image) = captured {
+            NSBitmapImageRep::initWithCGImage(NSBitmapImageRep::alloc(), &image)
+        } else {
+            let bitmap = view
+                .bitmapImageRepForCachingDisplayInRect(view.bounds())
+                .unwrap();
+            view.cacheDisplayInRect_toBitmapImageRep(view.bounds(), &bitmap);
+            bitmap
+        };
         let png = unsafe {
             bitmap.representationUsingType_properties(
                 NSBitmapImageFileType::PNG,
@@ -365,7 +393,6 @@ impl Host {
                         .buttons
                         .iter()
                         .map(|(id, _, _)| id)
-                        .filter(|id| matches!(id.as_str(), "accept" | "cancel" | "apply-all"))
                         .collect::<std::collections::BTreeSet<_>>()
         }) {
             self.sheet = None;
@@ -401,13 +428,18 @@ impl Host {
 struct Sheet {
     kind: String,
     title: String,
+    description: String,
     parent: Retained<NSWindow>,
     window: Retained<NSWindow>,
     target: Retained<Target>,
     body: Retained<NSScrollView>,
     error: Retained<NSTextField>,
+    review: Retained<NSButton>,
+    busy: Retained<objc2_app_kit::NSProgressIndicator>,
     buttons: Vec<(String, Retained<NSButton>)>,
-    schema: Vec<(String, String, i32, Vec<String>)>,
+    schema: Vec<Field>,
+    preferences: Option<preferences::View>,
+    row_schema: Vec<super::Row>,
 }
 fn rect(x: f64, y: f64, width: f64, height: f64) -> NSRect {
     NSRect::new(NSPoint::new(x, y), NSSize::new(width, height))
@@ -427,7 +459,13 @@ fn field_height(field: &Field) -> f64 {
         4 => 124.0,
         8 => 34.0,
         9 => 28.0,
-        6 => 68.0,
+        6 => {
+            if field.value.len() > 300 {
+                220.0
+            } else {
+                68.0
+            }
+        }
         _ => 62.0 + (field.title.chars().count() / 80).min(3) as f64 * 16.0,
     }
 }
@@ -459,11 +497,46 @@ impl Sheet {
         // SAFETY: Native subviews are retained by the content view.
         content.addSubview(&body);
         content.addSubview(&error);
+        let review = unsafe {
+            NSButton::buttonWithTitle_target_action(
+                &translated("Review invalid setting"),
+                Some(&target),
+                Some(sel!(review:)),
+                mtm,
+            )
+        };
+        review.setBezelStyle(NSBezelStyle::Push);
+        review.setFrame(rect(612.0, 54.0, 184.0, 28.0));
+        review.setHidden(true);
+        content.addSubview(&review);
+        let busy = objc2_app_kit::NSProgressIndicator::initWithFrame(
+            objc2_app_kit::NSProgressIndicator::alloc(mtm),
+            rect(24.0, 62.0, 16.0, 16.0),
+        );
+        busy.setStyle(objc2_app_kit::NSProgressIndicatorStyle::Spinning);
+        busy.setIndeterminate(true);
+        busy.setDisplayedWhenStopped(false);
+        busy.setAccessibilityLabel(Some(&translated("Working…")));
+        content.addSubview(&busy);
         let mut buttons = Vec::new();
-        let mut x = 596.0;
+        let mut x = if spec.kind == "preferences" {
+            796.0
+        } else {
+            596.0
+        };
         // Cocoa places the default action on the trailing edge, Cancel next to it.
-        for id in ["accept", "cancel", "apply-all"] {
-            if let Some((_, title, _)) = spec.buttons.iter().find(|(key, _, _)| key == id) {
+        let mut footer = spec.buttons.iter().collect::<Vec<_>>();
+        footer.sort_by_key(|(id, _, _)| match id.as_str() {
+            "accept" => 0,
+            "cancel" => 1,
+            "apply" => 2,
+            "apply-all" => 3,
+            "defaults" => 99,
+            _ => 4,
+        });
+        for (id, title, _) in footer {
+            let id = id.as_str();
+            {
                 let width = (title.chars().count() as f64 * 8.0 + 28.0).max(84.0);
                 let button = unsafe {
                     NSButton::buttonWithTitle_target_action(
@@ -474,33 +547,45 @@ impl Sheet {
                     )
                 };
                 button.setBezelStyle(NSBezelStyle::Push);
-                button.setFrame(rect(x - width, 14.0, width, 32.0));
+                button.setFrame(rect(
+                    if id == "defaults" { 24.0 } else { x - width },
+                    14.0,
+                    width,
+                    32.0,
+                ));
                 button.setTag(buttons.len() as isize);
-                if id == "accept" {
+                if id == "accept" && spec.default_action {
                     let cell = button.cell().unwrap().downcast::<NSButtonCell>().unwrap();
                     window.setDefaultButtonCell(Some(&cell));
                 }
                 button.setKeyEquivalent(&NSString::from_str(match id {
-                    "accept" => "\r",
+                    "accept" if spec.default_action => "\r",
                     "cancel" => "\u{1b}",
                     _ => "",
                 }));
                 content.addSubview(&button);
                 target.ivars().actions.borrow_mut().push(id.into());
                 buttons.push((id.into(), button));
-                x -= width + 8.0;
+                if id != "defaults" {
+                    x -= width + 8.0;
+                }
             }
         }
         let mut sheet = Self {
             kind: spec.kind.clone(),
             title: spec.title.clone(),
+            description: String::new(),
             parent,
             window,
             target,
             body,
             error,
+            review,
+            busy,
             buttons,
             schema: Vec::new(),
+            preferences: None,
+            row_schema: Vec::new(),
         };
         sheet.layout(spec);
         sheet
@@ -515,6 +600,22 @@ impl Sheet {
         sheet
     }
     fn layout(&mut self, spec: &Dialog) {
+        self.description = spec.description.clone();
+        if spec.kind == "preferences" {
+            self.window.setContentSize(NSSize::new(820.0, 640.0));
+            self.body.setHidden(true);
+            self.error.setFrame(rect(24.0, 50.0, 772.0, 40.0));
+            if self.preferences.is_none() {
+                let view = preferences::View::new(self.window.mtm(), &self.target);
+                self.window.contentView().unwrap().addSubview(view.view());
+                self.preferences = Some(view);
+            }
+            self.preferences
+                .as_mut()
+                .unwrap()
+                .update(spec, &self.target, &self.window);
+            return;
+        }
         let editing = self
             .target
             .ivars()
@@ -538,8 +639,18 @@ impl Sheet {
                     .map(|editor| (id.clone(), editor.selectedRange())),
             });
         let mtm = self.window.mtm();
-        let description_height = 74.0;
-        let total = description_height + spec.fields.iter().map(field_height).sum::<f64>() + 16.0;
+        let text_height = (spec
+            .description
+            .lines()
+            .map(|line| line.chars().count().div_ceil(75).max(1))
+            .sum::<usize>() as f64
+            * 17.0)
+            .max(24.0);
+        let description_height = 32.0 + text_height;
+        let total = description_height
+            + spec.fields.iter().map(field_height).sum::<f64>()
+            + spec.rows.len() as f64 * 74.0
+            + 16.0;
         let viewport = total.clamp(180.0, 480.0);
         self.window
             .setContentSize(NSSize::new(620.0, viewport + 116.0));
@@ -551,11 +662,17 @@ impl Sheet {
         let description = label(
             mtm,
             &spec.description,
-            rect(8.0, total - description_height, 552.0, 42.0),
+            rect(8.0, total - description_height, 552.0, text_height),
         );
         doc.addSubview(&description);
         let mut y = total - description_height - 8.0;
         let mut widgets = Vec::new();
+        self.target.ivars().pickers.borrow_mut().clear();
+        self.target
+            .ivars()
+            .actions
+            .borrow_mut()
+            .truncate(self.buttons.len());
         for field in &spec.fields {
             let height = field_height(field);
             y -= height;
@@ -563,7 +680,7 @@ impl Sheet {
             if !matches!(field.kind, 2 | 8 | 9) {
                 let title_height = height
                     - if field.kind == 6 {
-                        42.0
+                        height - 24.0
                     } else if field.kind == 4 {
                         100.0
                     } else {
@@ -577,17 +694,27 @@ impl Sheet {
                 doc.addSubview(&heading);
             }
             let widget = match field.kind {
-                0 | 1 => {
+                0 | 1 | 5 => {
                     let text: Retained<NSTextField> = if field.kind == 1 {
                         NSSecureTextField::initWithFrame(
                             NSSecureTextField::alloc(mtm),
-                            rect(8.0, y + 6.0, 552.0, 24.0),
+                            rect(
+                                8.0,
+                                y + 6.0,
+                                if field.picker.is_some() { 448.0 } else { 552.0 },
+                                24.0,
+                            ),
                         )
                         .into_super()
                     } else {
                         NSTextField::initWithFrame(
                             NSTextField::alloc(mtm),
-                            rect(8.0, y + 6.0, 552.0, 24.0),
+                            rect(
+                                8.0,
+                                y + 6.0,
+                                if field.picker.is_some() { 448.0 } else { 552.0 },
+                                24.0,
+                            ),
                         )
                     };
                     text.setBezeled(true);
@@ -601,9 +728,14 @@ impl Sheet {
                     }
                     unsafe {
                         // Return submits; leaving the field never submits.
-                        text.setTarget(Some(&self.target));
-                        text.setAction(Some(sel!(perform:)));
-                        text.setTag(0);
+                        if spec.default_action
+                            && let Some(index) =
+                                self.buttons.iter().position(|(id, _)| id == "accept")
+                        {
+                            text.setTarget(Some(&self.target));
+                            text.setAction(Some(sel!(perform:)));
+                            text.setTag(index as isize);
+                        }
                         text.setDelegate(Some(ProtocolObject::from_ref(&*self.target)));
                     }
                     Widget::Text(text)
@@ -642,10 +774,15 @@ impl Sheet {
                     };
                     Widget::Check(check)
                 }
-                4 => {
+                4 | 6 if field.kind == 4 || field.value.len() > 300 => {
                     let scroll = NSScrollView::initWithFrame(
                         NSScrollView::alloc(mtm),
-                        rect(8.0, y + 6.0, 552.0, 84.0),
+                        rect(
+                            8.0,
+                            y + 6.0,
+                            552.0,
+                            if field.kind == 6 { height - 36.0 } else { 84.0 },
+                        ),
                     );
                     scroll.setHasVerticalScroller(true);
                     scroll.setAutohidesScrollers(true);
@@ -654,11 +791,14 @@ impl Sheet {
                         rect(0.0, 0.0, 532.0, 84.0),
                     );
                     text.setRichText(false);
+                    text.setEditable(field.kind == 4);
                     text.setVerticallyResizable(true);
                     text.setHorizontallyResizable(false);
                     text.setMaxSize(NSSize::new(532.0, f64::MAX));
                     text.setFont(Some(&NSFont::systemFontOfSize(13.0)));
-                    text.setDelegate(Some(ProtocolObject::from_ref(&*self.target)));
+                    if field.kind == 4 {
+                        text.setDelegate(Some(ProtocolObject::from_ref(&*self.target)));
+                    }
                     text.setAccessibilityLabel(Some(&title));
                     scroll.setDocumentView(Some(&text));
                     Widget::Multiline(text, scroll)
@@ -690,14 +830,62 @@ impl Sheet {
                         ),
                     );
                     note.setTextColor(Some(&NSColor::secondaryLabelColor()));
-                    doc.addSubview(&note);
-                    continue;
+                    Widget::Note(note)
                 }
             };
             widget.view().setAccessibilityLabel(Some(&title));
             widget.update(&field.value);
             doc.addSubview(widget.view());
             widgets.push((field.id.clone(), widget));
+            if let Some(picker) = field.picker {
+                let button = unsafe {
+                    NSButton::buttonWithTitle_target_action(
+                        &translated("Browse…"),
+                        Some(&self.target),
+                        Some(sel!(browse:)),
+                        mtm,
+                    )
+                };
+                button.setBezelStyle(NSBezelStyle::Push);
+                button.setFrame(rect(464.0, y + 4.0, 96.0, 28.0));
+                let mut pickers = self.target.ivars().pickers.borrow_mut();
+                button.setTag(pickers.len() as isize);
+                pickers.push((field.id.clone(), picker));
+                doc.addSubview(&button);
+            }
+        }
+        for row in &spec.rows {
+            y -= 74.0;
+            let heading = label(mtm, &row.title, rect(8.0, y + 42.0, 552.0, 24.0));
+            heading.setFont(Some(&NSFont::boldSystemFontOfSize(13.0)));
+            doc.addSubview(&heading);
+            let mut x = 8.0;
+            for (id, title, enabled) in &row.actions {
+                let button = unsafe {
+                    NSButton::buttonWithTitle_target_action(
+                        &translated(title),
+                        Some(&self.target),
+                        Some(sel!(perform:)),
+                        mtm,
+                    )
+                };
+                let width = (title.chars().count() as f64 * 7.0 + 28.0).max(84.0);
+                button.setBezelStyle(NSBezelStyle::Push);
+                button.setFrame(rect(x, y + 14.0, width, 28.0));
+                button.setEnabled(*enabled);
+                let mut actions = self.target.ivars().actions.borrow_mut();
+                button.setTag(actions.len() as isize);
+                actions.push(id.clone());
+                doc.addSubview(&button);
+                x += width + 8.0;
+            }
+            if !row.detail.is_empty() {
+                doc.addSubview(&label(
+                    mtm,
+                    &row.detail,
+                    rect(x, y + 14.0, (552.0 - x).max(0.0), 28.0),
+                ));
+            }
         }
         *self.target.ivars().fields.borrow_mut() = widgets;
         self.body.setDocumentView(Some(&doc));
@@ -725,21 +913,26 @@ impl Sheet {
         self.schema = spec
             .fields
             .iter()
-            .map(|f| (f.id.clone(), f.title.clone(), f.kind, f.choices.clone()))
+            .cloned()
+            .map(|mut field| {
+                field.value.clear();
+                field
+            })
             .collect();
+        self.row_schema = spec.rows.clone();
     }
     fn update(&mut self, spec: &Dialog, scheme: crate::appearance::ColorScheme) {
-        if self.schema.len() != spec.fields.len()
-            || self
-                .schema
-                .iter()
-                .zip(&spec.fields)
-                .any(|((id, title, kind, choices), field)| {
-                    id != &field.id
-                        || title != &field.title
-                        || kind != &field.kind
-                        || choices != &field.choices
-                })
+        if spec.kind == "preferences"
+            || self.description != spec.description
+            || self.row_schema != spec.rows
+            || self.schema.len() != spec.fields.len()
+            || self.schema.iter().zip(&spec.fields).any(|(old, field)| {
+                old.id != field.id
+                    || old.title != field.title
+                    || old.kind != field.kind
+                    || old.choices != field.choices
+                    || old.picker != field.picker
+            })
         {
             self.layout(spec);
         }
@@ -758,13 +951,48 @@ impl Sheet {
         unsafe {
             let _: () = msg_send![&*self.window, setAppearance: appearance.as_deref()];
         }
-        for ((id, widget), field) in self.target.ivars().fields.borrow().iter().zip(
-            spec.fields
-                .iter()
-                .filter(|f| matches!(f.kind, 0 | 1 | 2 | 3 | 4 | 8)),
-        ) {
-            debug_assert_eq!(id, &field.id);
-            widget.update(&field.value);
+        let widgets = self.target.ivars().fields.borrow();
+        if spec.kind != "preferences" {
+            for ((_, widget), field) in widgets.iter().zip(&spec.fields) {
+                widget.update(&field.value);
+            }
+        } else {
+            for (id, widget) in widgets.iter() {
+                if let Some(field) = spec.fields.iter().find(|f| &f.id == id) {
+                    widget.update(&field.value);
+                } else if let Some(field) = spec
+                    .fields
+                    .iter()
+                    .find(|f| f.kind == 11 && f.choices.get(1) == Some(id))
+                {
+                    widget.update(&field.choices[0]);
+                }
+            }
+        }
+        // SAFETY: nil sender is valid; this indicator is owned on the AppKit thread.
+        unsafe {
+            if spec.busy && spec.error.is_empty() {
+                self.busy.startAnimation(None);
+            } else {
+                self.busy.stopAnimation(None);
+            }
+        }
+        self.review.setHidden(spec.error_page.is_none());
+        self.target
+            .ivars()
+            .review_page
+            .set(spec.error_page.unwrap_or(-1));
+        if self.preferences.is_some() {
+            self.error.setFrame(rect(
+                24.0,
+                50.0,
+                if spec.error_page.is_some() {
+                    572.0
+                } else {
+                    772.0
+                },
+                40.0,
+            ));
         }
         self.error.setStringValue(&NSString::from_str(&spec.error));
         self.error
@@ -784,6 +1012,10 @@ impl Drop for Sheet {
     fn drop(&mut self) {
         // Disconnect weak Cocoa delegates before releasing the retained target.
         self.window.setDelegate(None);
+        if let Some(panel) = self.window.attachedSheet() {
+            self.window.endSheet(&panel);
+            panel.orderOut(None);
+        }
         for (_, widget) in self.target.ivars().fields.borrow().iter() {
             if let Widget::Text(text) = widget {
                 unsafe {
