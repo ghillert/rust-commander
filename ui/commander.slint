@@ -12,6 +12,8 @@ export struct CommandButton {id:string,title:string,key:string,enabled:bool}
 import { Command, FormField, FormRow, FormPage } from "form-types.slint";
 export { Command, FormField, FormRow, FormPage } from "form-types.slint";
 import { SettingsView } from "settings.slint";
+import { SourceView, SourceRun } from "source-view.slint";
+export { SourceRun } from "source-view.slint";
 export struct MenuEntry {id:string,title:string,enabled:bool,checkable:bool,checked:bool}
 export struct TreeRow { index:int, title:string, depth:int, expanded:bool, selected:bool, detail:string }
 export struct Place { id: string, title: string, detail: string, heading: bool, section: string, expanded: bool }
@@ -484,6 +486,23 @@ export component CommanderWindow inherits Window {
     in property <string> preview-title;
     in property <string> preview-text;
     in property <image> preview-image;
+    in property <bool> preview-source;
+    in property <string> source-font-family: "monospace";
+    in property <bool> preview-source-active;
+    in-out property <string> preview-source-mode;
+    in property <[string]> preview-source-modes;
+    in property <string> preview-source-notice;
+    in property <[SourceRun]> preview-source-runs;
+    in property <int> preview-source-lines: 1;
+    in property <int> preview-source-revision;
+    in property <color> preview-source-background;
+    in property <color> preview-source-foreground;
+    in property <string> preview-source-layout;
+    in property <[int]> preview-source-to-layout;
+    in property <[int]> preview-source-to-source;
+    out property <int> preview-source-first: 0;
+    out property <int> preview-source-count: 40;
+    callback preview-source-mode-selected(string);
     in property <bool> terminal-visible;
     in-out property <bool> terminal-focused;
     in property <string> terminal-status;
@@ -542,9 +561,9 @@ export component CommanderWindow inherits Window {
     private property <string> viewer-password;
     private property <string> viewer-jump;
     private property <string> viewer-page-input;
-    public function focus-viewer() {viewer-overlay.focus();if root.viewer-image.width==0 {viewer-contents.focus();}}
+    public function focus-viewer() {viewer-overlay.focus();if root.viewer-image.width==0 {if root.viewer-source-active {viewer-source-view.focus();}else{viewer-contents.focus();}}}
     public function select-viewer(start:int,end:int) {
-        viewer-contents.set-selection-offsets(start,end);
+        if root.viewer-source-active {viewer-source-view.set-selection-offsets(start,end);}else{viewer-contents.set-selection-offsets(start,end);}
         if root.viewer-pdf-document && !root.viewer-pdf-text && root.viewer-pdf-marks.length>0 {
             let mark=root.viewer-pdf-marks[0];
             image-scroll.content-y = -min(max(0px,(mark.y+mark.height/2)*viewer-page.height - image-scroll.visible-height/2),max(0px,viewer-page.height - image-scroll.visible-height));
@@ -552,13 +571,33 @@ export component CommanderWindow inherits Window {
         }
     }
     public function focus-viewer-search() { if root.viewer-pdf-document {pdf-search.focus();pdf-search.select-all();} else {viewer-search.focus(); viewer-search.select-all();} }
-    public function copy-viewer() {if root.viewer-pdf-text {viewer-contents.copy();} else {root.viewer-action("pdf-copy");}}
-    public function select-all-viewer() {if root.viewer-pdf-text {viewer-contents.select-all();} else {root.viewer-action("pdf-select-all");}}
+    public function copy-viewer() {if root.viewer-source-active {viewer-source-view.copy();}else if root.viewer-pdf-text || !root.viewer-pdf-document {viewer-contents.copy();} else {root.viewer-action("pdf-copy");}}
+    public function select-all-viewer() {if root.viewer-source-active {viewer-source-view.select-all();}else if root.viewer-pdf-text || !root.viewer-pdf-document {viewer-contents.select-all();} else {root.viewer-action("pdf-select-all");}}
 
     in property <string> viewer-title;
     in-out property <string> viewer-text;
     in property <image> viewer-image;
     in property <bool> viewer-editable;
+    in property <bool> viewer-source;
+    in property <bool> viewer-source-active;
+    in-out property <string> viewer-source-mode;
+    in property <[string]> viewer-source-modes;
+    in property <string> viewer-source-language;
+    in property <string> viewer-source-notice;
+    in property <[SourceRun]> viewer-source-runs;
+    in property <int> viewer-source-lines: 1;
+    in property <int> viewer-source-revision;
+    in property <color> viewer-source-background;
+    in property <color> viewer-source-foreground;
+    in property <string> viewer-source-layout;
+    in property <[int]> viewer-source-to-layout;
+    in property <[int]> viewer-source-to-source;
+    out property <int> viewer-source-first: viewer-source-view.first-line;
+    out property <int> viewer-source-count: viewer-source-view.visible-lines;
+    changed viewer-source-active => {
+        if root.viewer-source-active && viewer-contents.has-focus {viewer-source-view.focus();}
+        else if !root.viewer-source-active && viewer-source-view.has-focus {viewer-contents.focus();}
+    }
     in property <bool> viewer-pdf;
     in property <bool> viewer-has-previous;
     in property <bool> viewer-has-next;
@@ -859,8 +898,24 @@ export component CommanderWindow inherits Window {
                 if root.preview-visible: VerticalBox {
                     width: 300px;
                     Text { text: root.preview-title; color: Palette.foreground; wrap: word-wrap; font-weight: 600; }
+                    if root.preview-source: DialogChoice {accessible-label:"Preview source view";model:root.preview-source-modes;current-value <=> root.preview-source-mode;selected(value)=>{root.preview-source-mode-selected(value);}}
                     Image { source: root.preview-image; image-fit: contain; height: self.source.height > 0 ? 200px : 0px; }
-                    ScrollView { Text { text: root.preview-text; wrap: word-wrap; color: Palette.foreground; } }
+                    preview-source-view := SourceView {
+                        visible:root.preview-source-active;max-height:self.visible?100000px:0px;min-height:0px;
+                        text:root.preview-text;runs:root.preview-source-runs;line-count:root.preview-source-lines;
+                        revision:root.preview-source-revision;page-color:root.preview-source-background;high-contrast:Chrome.high-contrast;
+                        font-family:root.source-font-family;font-size:root.text-size * 1px;
+                        layout-text:root.preview-source-layout;foreground:root.preview-source-foreground;
+                        to-layout:root.preview-source-to-layout;to-source:root.preview-source-to-source;
+                        label:Words.translate("Preview contents",Words.version);
+                        changed first-line => { root.preview-source-first = self.first-line; }
+                        changed visible-lines => { root.preview-source-count = self.visible-lines; }
+                    }
+                    TextEdit {visible:root.preview-source && !root.preview-source-active;max-height:self.visible?100000px:0px;min-height:0px;
+                        text:root.preview-text;read-only:true;font-family:root.source-font-family;wrap:no-wrap;accessible-label:Words.translate("Preview contents",Words.version);}
+                    ScrollView {visible:!root.preview-source;max-height:self.visible?100000px:0px;min-height:0px;
+                        Text { text: root.preview-text; wrap: word-wrap; color: Palette.foreground; } }
+                    if root.preview-source-notice != "": Text {text:root.preview-source-notice;wrap:word-wrap;color:Palette.foreground;}
                 }
             }
             if root.terminal-visible: terminal-focus := FocusScope {
@@ -989,6 +1044,11 @@ export component CommanderWindow inherits Window {
                     StandardDialogField {text <=> root.viewer-password;input-type:InputType.password;label:"PDF password";placeholder:"PDF password";accepted(value)=>{root.viewer-action("unlock:"+value);}}
                     Button {text:"Unlock";enabled:!root.viewer-busy;clicked=>{root.viewer-action("unlock:"+root.viewer-password);root.viewer-password="";}}
                 }
+                if root.viewer-source: HorizontalBox {max-height:32px;
+                    DialogChoice {accessible-label:"Source view";model:root.viewer-source-modes;current-value <=> root.viewer-source-mode;selected(value)=>{root.viewer-action("source-mode:"+value);}}
+                    Text {text:root.viewer-source-language;color:Palette.foreground;vertical-alignment:center;}
+                    Rectangle {horizontal-stretch:1;}
+                }
                 if root.viewer-pdf-document && !root.viewer-locked: HorizontalBox {max-height:32px;
                     LineEdit {text <=> root.viewer-page-input;placeholder-text:"Page";accessible-label:"Go to PDF page";width:90px;accepted(value)=>{root.viewer-action("page:"+value);}}
                     Button {text:"Go";enabled:!root.viewer-busy;clicked=>{root.viewer-action("page:"+root.viewer-page-input);}}
@@ -1036,15 +1096,25 @@ export component CommanderWindow inherits Window {
                         }
                     }
                 }
+                viewer-source-view := SourceView {
+                    visible:root.viewer-source-active;max-height:self.visible?100000px:0px;min-height:0px;
+                    text:root.viewer-text;runs:root.viewer-source-runs;line-count:root.viewer-source-lines;
+                    revision:root.viewer-source-revision;page-color:root.viewer-source-background;high-contrast:Chrome.high-contrast;
+                    font-family:root.source-font-family;font-size:root.text-size * 1px;
+                    layout-text:root.viewer-source-layout;foreground:root.viewer-source-foreground;
+                    to-layout:root.viewer-source-to-layout;to-source:root.viewer-source-to-source;
+                    label:Words.translate("File contents",Words.version);
+                }
                 viewer-contents := TextEdit {
-                    visible:root.viewer-image.width == 0;max-height:self.visible?100000px:0px;min-height:0px;
+                    visible:root.viewer-image.width == 0 && !root.viewer-source-active;max-height:self.visible?100000px:0px;min-height:0px;
                     init => { self.focus(); }
                     accessible-label: Words.translate("File contents",Words.version);
-                    text <=> root.viewer-text; read-only: !root.viewer-editable; font-family: "monospace";
+                    text <=> root.viewer-text; read-only: !root.viewer-editable; font-family: root.source-font-family;wrap:no-wrap;
                     edited => { root.viewer-edit(root.viewer-text); }
                 }
                 if root.viewer-image.width > 0: Slider { minimum: 0.1; maximum: 4; value <=> root.viewer-zoom; }
                 if root.viewer-notice != "": Text {text:root.viewer-notice;color:Palette.foreground;}
+                if root.viewer-source-notice != "": Text {text:root.viewer-source-notice;color:Palette.foreground;wrap:word-wrap;}
                 if root.viewer-busy: ProgressIndicator {indeterminate:true;}
                 if root.viewer-error != "": Text { text: root.viewer-error; color: #c74343; wrap: word-wrap; }
                 if root.viewer-confirm-close: HorizontalBox {

@@ -1,6 +1,14 @@
 use super::*;
 use i_slint_backend_testing::ElementHandle;
 
+slint::slint! {
+    export component SourceClipboardProbe inherits Window {
+        in-out property <string> text;
+        input := TextInput { text <=> root.text; single-line: false; }
+        public function paste() { input.paste(); }
+    }
+}
+
 fn setup(
     name: &str,
     contents: &[u8],
@@ -36,6 +44,10 @@ fn wait(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
             a.app.pending_view.is_none()
                 && a.app.pending_pdf.is_none()
                 && a.app.pending_archive.is_none()
+                && a.app
+                    .editor
+                    .as_ref()
+                    .is_none_or(|e| !e.navigation.presentation.busy())
                 && a.app
                     .editor
                     .as_ref()
@@ -230,4 +242,317 @@ fn encrypted_pdf_unlock_and_search_share_the_password() {
         .clone();
     ui.invoke_viewer_action("close".into());
     assert!(cancel.load(Ordering::Relaxed));
+}
+
+#[test]
+fn source_modes_preserve_original_bytes_and_search_the_displayed_text() {
+    let original = "{\r\n\t\"snow\": \"雪\", \"b\": [1,2]\r\n}\r\n";
+    let (_root, ui, state, path) = setup("source.json", original.as_bytes());
+    open(&ui, "Text");
+    wait(&state, &ui);
+    assert_eq!(ui.get_viewer_source_mode(), "Highlighted original");
+    assert!(ui.get_viewer_source_active());
+    assert!(ui.get_viewer_source_runs().row_count() > 0);
+    assert_eq!(ui.get_viewer_text(), original);
+    assert!(!ui.get_viewer_dirty());
+    ui.invoke_select_all_viewer();
+    ui.invoke_copy_viewer();
+    let original_probe = SourceClipboardProbe::new().unwrap();
+    original_probe.invoke_paste();
+    assert_eq!(original_probe.get_text(), original);
+    ui.invoke_viewer_action("source-mode:Pretty view".into());
+    wait(&state, &ui);
+    let pretty = ui.get_viewer_text().to_string();
+    assert!(pretty.contains("\n  \"b\": [\n    1,\n    2\n  ]"));
+    assert!(!ui.get_viewer_editable());
+    ui.invoke_viewer_action("find:\n  \"b\"".into());
+    assert_eq!(
+        state.borrow().app.editor.as_ref().unwrap().navigation.last,
+        Some(pretty.find("\n  \"b\"").unwrap() as u64)
+    );
+    ui.invoke_select_all_viewer();
+    ui.invoke_copy_viewer();
+    let probe = SourceClipboardProbe::new().unwrap();
+    probe.invoke_paste();
+    assert_eq!(probe.get_text(), pretty);
+    let start = pretty.find("雪").unwrap();
+    let end = pretty.find("2\n").unwrap() + 1;
+    ui.invoke_select_viewer(start as i32, end as i32);
+    ui.invoke_copy_viewer();
+    probe.set_text("".into());
+    probe.invoke_paste();
+    assert_eq!(probe.get_text(), &pretty[start..end]);
+    ui.invoke_viewer_action("source-mode:Plain original".into());
+    wait(&state, &ui);
+    assert_eq!(ui.get_viewer_text(), original);
+    assert!(!ui.get_viewer_source_active());
+    assert!(!ui.get_viewer_dirty());
+    assert_eq!(std::fs::read(&path).unwrap(), original.as_bytes());
+    ui.invoke_viewer_action("source-mode:Highlighted original".into());
+    ui.invoke_viewer_action("find:雪".into());
+    wait(&state, &ui);
+    ui.invoke_copy_viewer();
+    probe.set_text("".into());
+    probe.invoke_paste();
+    assert_eq!(probe.get_text(), "雪");
+    ui.invoke_viewer_action("hex-find:7b".into());
+    wait(&state, &ui);
+    assert_eq!(
+        state
+            .borrow()
+            .app
+            .editor
+            .as_ref()
+            .unwrap()
+            .navigation
+            .presentation
+            .mode,
+        crate::source_view::Mode::Plain
+    );
+    assert!(ui.get_viewer_text().starts_with("00000000"));
+    assert_eq!(std::fs::read(&path).unwrap(), original.as_bytes());
+}
+
+#[test]
+fn editing_and_saving_never_use_the_pretty_buffer() {
+    let original = r#"{"z":1,"z":2}"#;
+    let edited = r#"{"z":1,"z":2,"unsaved":true}"#;
+    let (_root, ui, state, path) = setup("edit.json", original.as_bytes());
+    {
+        let mut a = state.borrow_mut();
+        let entry = a
+            .app
+            .tab()
+            .entries
+            .iter()
+            .find(|e| e.path == path)
+            .unwrap()
+            .clone();
+        let ctx = a.ctx.clone();
+        a.app.view(entry, true, &ctx);
+    }
+    wait(&state, &ui);
+    assert!(ui.get_viewer_editable());
+    ui.invoke_viewer_edit(edited.into());
+    assert!(ui.get_viewer_dirty());
+    let revision = state
+        .borrow()
+        .app
+        .editor
+        .as_ref()
+        .unwrap()
+        .navigation
+        .draft_revision;
+    for mode in [
+        "Highlighted original",
+        "Pretty view",
+        "Plain original",
+        "Pretty view",
+    ] {
+        ui.invoke_viewer_action(format!("source-mode:{mode}").into());
+        wait(&state, &ui);
+        let a = state.borrow();
+        let editor = a.app.editor.as_ref().unwrap();
+        assert_eq!(editor.text, edited);
+        assert!(editor.dirty());
+        assert_eq!(editor.navigation.draft_revision, revision);
+        assert_eq!(
+            editor.document.as_ref().unwrap().original,
+            original.as_bytes()
+        );
+    }
+    assert!(!ui.get_viewer_editable());
+    assert!(ui.get_viewer_dirty());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+    // Even the Save shortcut from a read-only presentation saves only the source.
+    ui.invoke_viewer_action("save".into());
+    for _ in 0..1500 {
+        let done = {
+            let mut a = state.borrow_mut();
+            let ctx = a.ctx.clone();
+            a.app.poll(&ctx);
+            a.sync(&ui);
+            a.app.job.is_none() && a.app.pending_save.is_none()
+        };
+        if done {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
+    assert!(!state.borrow().app.editor.as_ref().unwrap().dirty());
+}
+
+fn wait_preview(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
+    for _ in 0..1500 {
+        let done = {
+            let mut a = state.borrow_mut();
+            let ctx = a.ctx.clone();
+            a.app.preview.poll(&ctx);
+            a.sync(ui);
+            a.app.preview.source_text
+                && !a.app.preview.loading
+                && !a.app.preview.presentation.busy()
+        };
+        if done {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panic!("Preview preparation did not finish");
+}
+
+#[test]
+fn preview_modes_reset_for_new_files_and_do_not_format_truncated_documents() {
+    let original = r#"{"preview":[1,2]}"#;
+    let (_root, ui, state, path) = setup("preview.json", original.as_bytes());
+    let location = state.borrow().app.tab().location.clone();
+    let entry = state
+        .borrow()
+        .app
+        .tab()
+        .entries
+        .iter()
+        .find(|e| e.path == path)
+        .unwrap()
+        .clone();
+    {
+        let mut a = state.borrow_mut();
+        a.app.preferences.preview = true;
+        a.app.preview.select(location.clone(), Some(entry.clone()));
+    }
+    wait_preview(&state, &ui);
+    assert_eq!(ui.get_preview_source_mode(), "Highlighted original");
+    assert_eq!(ui.get_preview_text(), original);
+    ui.invoke_preview_source_mode_selected("Pretty view".into());
+    wait_preview(&state, &ui);
+    assert!(ui.get_preview_text().contains("\n"));
+    ui.invoke_preview_source_mode_selected("Plain original".into());
+    wait_preview(&state, &ui);
+    assert_eq!(ui.get_preview_text(), original);
+    assert_eq!(std::fs::read(&path).unwrap(), original.as_bytes());
+    // Retire an in-flight formatting worker while the file selection changes.
+    ui.invoke_preview_source_mode_selected("Pretty view".into());
+    let next = path.with_file_name("next.xml");
+    std::fs::write(&next, "<root><item/></root>").unwrap();
+    let next_entry = filesystem::list(&location)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.path == next)
+        .unwrap();
+    state
+        .borrow_mut()
+        .app
+        .preview
+        .select(location, Some(next_entry));
+    wait_preview(&state, &ui);
+    assert_eq!(ui.get_preview_source_mode(), "Highlighted original");
+    assert_eq!(ui.get_preview_text(), "<root><item/></root>");
+    {
+        let mut a = state.borrow_mut();
+        a.app.preview.complete = false;
+        a.app.preview.presentation.mode = crate::source_view::Mode::Pretty;
+        a.sync(&ui);
+    }
+    assert_eq!(ui.get_preview_source_mode(), "Plain original");
+    assert!(ui.get_preview_source_notice().contains("complete document"));
+    assert_eq!(ui.get_preview_text(), "<root><item/></root>");
+}
+
+#[test]
+fn utf16_source_views_preserve_the_bom_encoding_and_line_endings() {
+    let source = "<root>\r\n\t<name>café 雪</name>\r\n</root>\r\n";
+    let bytes: Vec<u8> = [0xff, 0xfe]
+        .into_iter()
+        .chain(source.encode_utf16().flat_map(u16::to_le_bytes))
+        .collect();
+    let (_root, ui, state, path) = setup("utf16.xml", &bytes);
+    open(&ui, "Text");
+    wait(&state, &ui);
+    assert_eq!(ui.get_viewer_text(), source);
+    assert_eq!(ui.get_viewer_encoding(), "UTF-16 LE");
+    for mode in ["Pretty view", "Plain original", "Highlighted original"] {
+        ui.invoke_viewer_action(format!("source-mode:{mode}").into());
+        wait(&state, &ui);
+        let a = state.borrow();
+        let editor = a.app.editor.as_ref().unwrap();
+        assert_eq!(editor.text, source);
+        assert_eq!(editor.document.as_ref().unwrap().original, bytes);
+        assert!(!editor.dirty());
+    }
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+}
+
+#[test]
+fn archive_source_highlighting_never_reopens_the_member_as_a_local_file() {
+    let original = r#"{"archive":{"value":true}}"#;
+    let (_root, ui, state, path) = setup("member.json", original.as_bytes());
+    let archive = path.with_file_name("source.zip");
+    crate::archive::pack(std::slice::from_ref(&path), &archive, &mut Task::default()).unwrap();
+    let location = Location::Archive {
+        file: archive.clone(),
+        prefix: PathBuf::new(),
+    };
+    let entry = crate::archive::list(&archive, Path::new(""))
+        .unwrap()
+        .into_iter()
+        .find(|e| e.name == "member.json")
+        .unwrap();
+    {
+        let mut a = state.borrow_mut();
+        let ctx = a.ctx.clone();
+        a.app
+            .view_as(entry, false, location, crate::viewer::Mode::Auto, &ctx);
+    }
+    wait(&state, &ui);
+    assert_eq!(ui.get_viewer_source_language(), "JSON");
+    assert!(ui.get_viewer_source_active());
+    ui.invoke_viewer_action("source-mode:Pretty view".into());
+    wait(&state, &ui);
+    assert!(ui.get_viewer_text().contains("\n"));
+    ui.invoke_viewer_action("source-mode:Plain original".into());
+    wait(&state, &ui);
+    assert_eq!(ui.get_viewer_text(), original);
+    assert_eq!(
+        crate::archive::read_bytes(&archive, Path::new("member.json"), 1024).unwrap(),
+        original.as_bytes()
+    );
+}
+
+#[test]
+fn remote_source_views_use_the_loaded_snapshot_and_keep_the_original() {
+    let original = r#"{"remote":[true,false]}"#;
+    let (_root, ui, state, path) = setup("remote-source.json", original.as_bytes());
+    // Exercise the remote reader with an isolated filesystem-backed session.
+    let profile = crate::remote::Connection {
+        service: "fs".into(),
+        root: path.parent().unwrap().to_string_lossy().into_owned(),
+        ..Default::default()
+    };
+    crate::remote::connect(&profile, Default::default(), false).unwrap();
+    let location = Location::Remote {
+        connection: profile.id.clone(),
+        path: PathBuf::new(),
+    };
+    let entry = filesystem::list(&location)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.name == "remote-source.json")
+        .unwrap();
+    {
+        let mut a = state.borrow_mut();
+        let ctx = a.ctx.clone();
+        a.app
+            .view_as(entry, false, location, crate::viewer::Mode::Auto, &ctx);
+    }
+    wait(&state, &ui);
+    assert_eq!(ui.get_viewer_source_language(), "JSON");
+    assert_eq!(ui.get_viewer_text(), original);
+    ui.invoke_viewer_action("source-mode:Pretty view".into());
+    wait(&state, &ui);
+    assert!(ui.get_viewer_text().contains("\n"));
+    ui.invoke_viewer_action("source-mode:Plain original".into());
+    wait(&state, &ui);
+    assert_eq!(ui.get_viewer_text(), original);
+    assert_eq!(std::fs::read(&path).unwrap(), original.as_bytes());
 }

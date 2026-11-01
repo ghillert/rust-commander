@@ -24,6 +24,7 @@ pub mod preferences;
 pub mod remote;
 pub mod search;
 pub mod settings;
+mod source_view;
 pub mod terminal;
 pub mod tools_ui;
 pub mod transfer;

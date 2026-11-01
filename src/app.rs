@@ -1395,6 +1395,9 @@ impl Commander {
                 };
                 let mut navigation =
                     slint_ui::viewer_tools::Navigation::new(location.clone(), entry.path.clone());
+                if editable {
+                    navigation.presentation.mode = crate::source_view::Mode::Plain;
+                }
                 navigation.source = page_source;
                 let can_edit = editable
                     && (kind == "Text viewer"

@@ -9,6 +9,9 @@ use std::{
 };
 #[derive(Default)]
 pub struct Preview {
+    pub(crate) presentation: crate::source_view::State,
+    pub(crate) source_text: bool,
+    pub(crate) complete: bool,
     pub(crate) target: Option<(Location, Entry)>,
     changed: Option<Instant>,
     pending: Option<Receiver<Result<Content, String>>>,
@@ -28,6 +31,9 @@ impl Preview {
         if changed {
             self.target = entry.map(|e| (location, e));
             self.pending = None;
+            self.presentation = Default::default();
+            self.source_text = false;
+            self.complete = false;
             self.image = None;
             self.text.clear();
             self.changed = Some(Instant::now());
@@ -62,9 +68,22 @@ impl Preview {
         }
         if let Some(result) = crate::background::poll(&mut self.pending) {
             match result {
-                Ok(Content::Text(t)) | Ok(Content::Hex { text: t, .. }) => self.text = t,
-                Ok(Content::EncodedText(document)) => self.text = document.text,
-                Ok(Content::LargeText(page)) => self.text = page.document.text,
+                Ok(Content::Text(t)) => {
+                    self.text = t;
+                    self.source_text = true;
+                    self.complete = true;
+                }
+                Ok(Content::Hex { text: t, .. }) => self.text = t,
+                Ok(Content::EncodedText(document)) => {
+                    self.text = document.text;
+                    self.source_text = true;
+                    self.complete = true;
+                }
+                Ok(Content::LargeText(page)) => {
+                    self.complete = page.offset == 0 && page.next == page.total;
+                    self.text = page.document.text;
+                    self.source_text = true;
+                }
                 Ok(Content::Image(i)) | Ok(Content::Pdf { image: i, .. }) => {
                     self.image = Some(i.clone());
                 }

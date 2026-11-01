@@ -76,6 +76,7 @@ impl Adapter {
                     let mut navigation =
                         viewer_tools::Navigation::new(draft.location.clone(), draft.path.clone());
                     navigation.id = draft.id;
+                    navigation.presentation.mode = crate::source_view::Mode::Plain;
                     navigation.draft_written = true;
                     let path = draft.location.local().map(|_| draft.path.clone());
                     let remote = match &draft.location {

@@ -30,6 +30,42 @@ edited through Archive tools. Choose explicit ZIP/7z and enter the optional arch
 password for password-protected files. Other archive uses libarchive's format
 detection and encryption support.
 
+## Source highlighting and pretty views
+
+The full viewer and preview pane offer a source-view selector:
+
+- **Highlighted original** opens recognized source/configuration files with
+  syntax colors and their original layout.
+- **Plain original** always shows the decoded source without formatting. Use
+  **Open As → Hexadecimal** to inspect exact file bytes, including encoding/BOM.
+- **Pretty view** displays JSON or XML with two-space indentation. This is a
+  read-only presentation: it never changes the file or the editor/save buffer.
+
+Source views use monospace text with horizontal scrolling. Selection, copying,
+and ordinary text search use the displayed text. Hex search and byte-offset
+navigation return to Plain original. File editing (F4) opens the existing plain
+editor; highlighted and pretty views of an edited document show its current
+unsaved source. Switching views preserves edits and does not mark a clean
+document dirty. Save and draft recovery always use the source buffer.
+Tabs in enhanced views expand to four-column stops for display; copying
+retains the original tabs and line endings.
+
+JSON formatting preserves key order, duplicate keys, number spellings, and
+string escapes. XML formatting retains mixed-content and preserved-whitespace
+subtrees, comments, CDATA, declarations, and namespace information. Invalid
+documents remain available in their original layout with a formatting error.
+
+Highlighting uses syntect 5.3 with the two-face grammar bundle, including XML,
+JSON, YAML, TOML, Rust, Python, JavaScript/TypeScript, shell, Dockerfiles, and
+other recognized formats. Colors follow light/dark appearance; high-contrast
+mode uses the application text colors. No source files are executed.
+
+Enhanced views require complete documents of at most 2 MiB in the viewer or
+256 KiB in preview, including formatted output. Paged/truncated or larger
+documents retain Plain original. Lines over 16 KiB and excessive token counts
+stop syntax coloring with an explanation. Preview changes cancel obsolete
+preparation work and reset the source mode for the new selection.
+
 ## PDF search and selection
 
 - Drag over text on the rendered page to select it. Blue highlights follow

@@ -236,8 +236,11 @@ to select ZIP, 7z or TAR variants and compression levels, add a ZIP comment, rev
 and run packing in the foreground or background. See [archive options](docs/FILE_OPERATIONS.md#archives).
 
 **File → Open As…** overrides extensions for text, hex, image, PDF or archive
-viewing without renaming files. PDFs support text selection/copying and document
-search with previous/next matches. See [viewer tools](docs/VIEWERS.md).
+viewing without renaming files. Source files support syntax highlighting in the
+viewer and preview pane, optional JSON/XML pretty views, and an always-available
+Plain original view. Formatting only changes the display. PDFs support text
+selection/copying and document search with previous/next matches.
+See [viewer tools](docs/VIEWERS.md).
 **F5** extracts archive entries into new or existing folders with conflict choices. **File → Archive tools…**
 edits local ZIP/TAR/7z containers or creates/unlocks encrypted ZIP and 7z archives. Nested and
 remote ZIP/TAR/7z archives support guarded save-back; HTTP and Open As overrides stay read-only. **Mod+Z / Mod+Shift+Z** undo/redo eligible local operations and

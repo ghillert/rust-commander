@@ -1,0 +1,136 @@
+import { ScrollView } from "std-widgets.slint";
+import { Chrome } from "chrome.slint";
+
+export struct SourceRun { line: int, prefix: string, through: string, text: string, color: color }
+
+// The input owns the exact text, selection, copying, and accessibility. Colored
+// runs underneath it share its font, line height, origin, and scroll viewport.
+export component SourceView inherits Rectangle {
+    in property <string> text;
+    in property <string> layout-text;
+    in property <[int]> to-layout;
+    in property <[int]> to-source;
+    in property <color> foreground;
+    in property <[SourceRun]> runs;
+    in property <int> line-count: 1;
+    in property <bool> high-contrast;
+    in property <color> page-color;
+    in property <string> label: "File contents";
+    in property <int> revision;
+    in property <string> font-family: "monospace";
+    in property <length> font-size: 14px;
+    out property <int> first-line: max(0, floor(-scroll.content-y / max(1px, root.line-height)) - 8);
+    out property <int> visible-lines: ceil(scroll.visible-height / max(1px, root.line-height)) + 16;
+    out property <bool> has-focus: input.has-focus;
+    // Use unrounded metrics: preferred-height is rounded to whole pixels and
+    // accumulating that rounding would separate colors from selection on long files.
+    private property <length> line-height: (input.font-metrics.ascent - input.font-metrics.descent) * input.line-height-factor;
+    background: root.high-contrast ? Chrome.pane : root.page-color;
+    forward-focus: input;
+    changed text => { scroll.content-x = 0px; scroll.content-y = 0px; }
+    public function copy() {
+        if root.to-source.length > 0 {
+            original.set-selection-offsets(root.to-source[input.anchor-position-byte-offset], root.to-source[input.cursor-position-byte-offset]);
+            original.copy();
+        } else { input.copy(); }
+    }
+    public function select-all() { input.focus(); input.select-all(); }
+    public function set-selection-offsets(start: int, end: int) {
+        input.focus();
+        input.set-selection-offsets(root.to-layout.length > 0 ? root.to-layout[min(max(start,0),root.to-layout.length - 1)] : start, root.to-layout.length > 0 ? root.to-layout[min(max(end,0),root.to-layout.length - 1)] : end);
+    }
+    original := TextInput {visible:false;text:root.text;single-line:false;read-only:true;accessible-role:none;}
+
+    ContextMenuArea {
+        Menu {
+            MenuItem { title: @tr("Copy"); activated => { root.copy(); } }
+            MenuItem { title: @tr("Select All"); activated => { input.select-all(); } }
+        }
+        scroll := ScrollView {
+            x: 6px; y: 6px;
+            width: parent.width - 12px; height: parent.height - 12px;
+            content-width: max(self.visible-width, input.preferred-width);
+            content-height: max(self.visible-height, input.preferred-height);
+            Rectangle {
+                x:0px; y:0px;
+                width: scroll.content-width; height: scroll.content-height;
+                Text {
+                    visible:!root.high-contrast;
+                    z:0;
+                    x:0px;y:0px;text:root.layout-text;color:root.high-contrast ? Chrome.foreground : root.foreground;
+                    font-family:input.font-family;font-size:input.font-size;line-height-factor:input.line-height-factor;
+                    wrap:no-wrap;vertical-alignment:top;width:input.width;height:input.height;accessible-role:none;
+                }
+                for run in root.runs: Rectangle {
+                    z:1;
+                    visible: !root.high-contrast;
+                    x: prefix.preferred-width;
+                    y: run.line * root.line-height;
+                    width: max(0px, through.preferred-width - prefix.preferred-width);
+                    height: root.line-height; clip: true;
+                    background: root.page-color;
+                    // Prefix widths are measured by the same renderer, including
+                    // whitespace, tabs, and Unicode fallback glyphs.
+                    prefix := Text {
+                        x:0px;y:0px;
+                        text: run.prefix; color: transparent;
+                        font-family: input.font-family; font-size: input.font-size;
+                        line-height-factor:input.line-height-factor;
+                        wrap: no-wrap; width: self.preferred-width; height: parent.height;
+                        vertical-alignment: top; accessible-role: none;
+                    }
+                    through := Text {
+                        x:0px;y:0px;
+                        text: run.through; color: transparent;
+                        font-family: input.font-family; font-size: input.font-size;
+                        line-height-factor:input.line-height-factor;
+                        wrap: no-wrap; width: self.preferred-width; height: parent.height;
+                        vertical-alignment: top; accessible-role: none;
+                    }
+                    Text {
+                        // Shape the whole line, then clip to this run. Tabs,
+                        // ligatures and fallback glyphs keep their source positions.
+                        x: -prefix.preferred-width; y:0px;text: run.text; color: run.color;
+                        font-family: input.font-family; font-size: input.font-size;
+                        line-height-factor:input.line-height-factor;
+                        wrap: no-wrap; width: self.preferred-width; height: parent.height;
+                        vertical-alignment: top; accessible-role: none;
+                    }
+                }
+                input := TextInput {
+                    z:2;
+                    x:0px;y:0px;
+                    text: root.layout-text; read-only: true; single-line: false;
+                    font-family: root.font-family; font-size: root.font-size;line-height-factor:1.25;
+                    wrap: no-wrap; vertical-alignment: top;
+                    width: parent.width; height: self.preferred-height;
+                    // FemtoVG skips a fully transparent text brush before
+                    // drawing selection. One alpha unit keeps that path active.
+                    color: root.high-contrast ? Chrome.foreground : root.foreground.with-alpha(0.004);
+                    selection-foreground-color: Chrome.selection-text;
+                    selection-background-color: Chrome.selection;
+                    accessible-label: root.label;
+                    page-height: scroll.visible-height;
+                    key-pressed(event) => {
+                        if event.modifiers.control && (event.text=="c" || event.text=="C" || event.text==Key.Insert) {
+                            root.copy(); return accept;
+                        }
+                        return reject;
+                    }
+                    cursor-position-changed(position) => {
+                        if position.x + scroll.content-x < 0px {
+                            scroll.content-x = -position.x;
+                        } else if position.x + scroll.content-x > scroll.visible-width - 8px {
+                            scroll.content-x = scroll.visible-width - position.x - 8px;
+                        }
+                        if position.y + scroll.content-y < 0px {
+                            scroll.content-y = -max(0px, position.y - root.line-height);
+                        } else if position.y + scroll.content-y > scroll.visible-height - 3 * root.line-height {
+                            scroll.content-y = min(0px,max(scroll.visible-height - scroll.content-height,scroll.visible-height - position.y - 3 * root.line-height));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

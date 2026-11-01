@@ -18,6 +18,7 @@ mod keys;
 mod management;
 mod parity;
 mod security;
+mod source_views;
 pub(in crate::app) mod viewer_tools;
 mod windows;
 
@@ -93,6 +94,8 @@ pub(super) struct Adapter {
     viewer_stamp: Option<(String, usize)>,
     pdf_marks_stamp: Option<(u64, u64, Option<std::ops::Range<usize>>)>,
     preview_stamp: Option<String>,
+    viewer_source_cache: source_views::Cache,
+    preview_source_cache: source_views::Cache,
     security: Option<security::Form>,
     drafts: drafts::State,
     dark: bool,
@@ -286,6 +289,8 @@ impl Adapter {
             viewer_stamp: None,
             pdf_marks_stamp: None,
             preview_stamp: None,
+            viewer_source_cache: Default::default(),
+            preview_source_cache: Default::default(),
             security: None,
             drafts: Default::default(),
             dark: false,
@@ -1616,6 +1621,7 @@ impl Adapter {
     }
 
     fn sync_viewer(&mut self, ui: &CommanderWindow) {
+        self.sync_source_views(ui);
         let opening = self.app.editor.is_some() && !ui.get_viewer_visible();
         ui.set_viewer_visible(self.app.editor.is_some());
         if let Some(editor) = &self.app.editor {
@@ -1687,8 +1693,18 @@ impl Adapter {
                 .unwrap_or(&editor.navigation.notice);
             ui.set_viewer_notice(tr(notice).into_owned().into());
             ui.set_viewer_fit_width(editor.navigation.fit_width);
-            ui.set_viewer_text(editor.text.as_str().into());
-            ui.set_viewer_editable(editor.editable);
+            ui.set_viewer_text(
+                if ui.get_viewer_source() {
+                    editor.navigation.presentation.display(&editor.text)
+                } else {
+                    &editor.text
+                }
+                .into(),
+            );
+            ui.set_viewer_editable(
+                editor.editable
+                    && editor.navigation.presentation.mode == crate::source_view::Mode::Plain,
+            );
             ui.set_viewer_dirty(editor.dirty());
             ui.set_viewer_save_key(
                 self.app
@@ -1816,7 +1832,13 @@ impl Adapter {
                     .unwrap_or_else(|| tr("Preview").into_owned())
                     .into(),
             );
-            ui.set_preview_text(self.app.preview.text.as_str().into());
+            ui.set_preview_text(
+                self.app
+                    .preview
+                    .presentation
+                    .display(&self.app.preview.text)
+                    .into(),
+            );
             let stamp = self.app.preview.target.as_ref().map(|(location, entry)| {
                 format!(
                     "{}:{:?}:{:?}:{}:{}",
@@ -2522,6 +2544,7 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
     callback!(on_viewer_edit, |a, w, text| {
         if let Some(editor) = &mut a.app.editor
             && editor.editable
+            && editor.navigation.presentation.mode == crate::source_view::Mode::Plain
         {
             editor.text = text.to_string();
             editor.navigation.draft_revision = editor.navigation.draft_revision.wrapping_add(1);
@@ -2530,6 +2553,9 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
     });
     callback!(on_viewer_action, |a, w, id| {
         a.viewer_action(&id);
+    });
+    callback!(on_preview_source_mode_selected, |a, w, label| {
+        a.app.preview.presentation.select(&label);
     });
     callback!(on_viewer_pdf_select, |a, w, x, y, begin| {
         a.pdf_select(x, y, begin);

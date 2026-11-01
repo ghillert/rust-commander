@@ -1,5 +1,6 @@
 use super::*;
 pub(in crate::app) struct Navigation {
+    pub presentation: crate::source_view::State,
     pub id: u64,
     pub draft_revision: u64,
     pub draft_saved: u64,
@@ -27,8 +28,19 @@ pub(in crate::app) struct Hit {
     notice: Option<String>,
 }
 impl Navigation {
+    pub fn selection_in_display(&self, source: &str) -> Option<(i32, i32)> {
+        let query = self
+            .query
+            .strip_prefix("false:")
+            .filter(|q| !q.is_empty())?;
+        let start = self.last? as usize;
+        let end = start.checked_add(query.len())?;
+        (self.presentation.display(source).get(start..end) == Some(query))
+            .then_some((start as i32, end as i32))
+    }
     pub fn new(location: Location, path: PathBuf) -> Self {
         Self {
+            presentation: Default::default(),
             id: rand::random(),
             draft_revision: 1,
             draft_saved: 0,
@@ -206,6 +218,16 @@ impl Adapter {
         }
     }
     pub(super) fn viewer_tool_action(&mut self, editor: &mut Editor, action: &str) -> bool {
+        if let Some(mode) = action.strip_prefix("source-mode:") {
+            editor.navigation.presentation.select(mode);
+            editor.navigation.last = None;
+            editor.navigation.query.clear();
+            editor.navigation.selection = None;
+            return true;
+        }
+        if action.starts_with("jump:") || action.starts_with("hex-find:") {
+            editor.navigation.presentation.mode = crate::source_view::Mode::Plain;
+        }
         if editor.pdf.is_some() && self.pdf_tool_action(editor, action) {
             return true;
         }
@@ -271,25 +293,24 @@ impl Adapter {
             editor.navigation.last = None;
         }
         editor.navigation.query = format!("{hex}:{query}");
-        if editor.editable && !hex {
+        if !hex && editor.kind == "Text viewer" && editor.text_page.is_none() {
+            let display = editor.navigation.presentation.display(&editor.text);
             let start = editor
                 .navigation
                 .last
                 .map(|n| n as usize + 1)
                 .unwrap_or(0)
-                .min(editor.text.len());
-            let start = editor.text.ceil_char_boundary(start);
-            if let Some(at) = editor.text[start..]
+                .min(display.len());
+            let start = display.ceil_char_boundary(start);
+            if let Some(at) = display[start..]
                 .find(query)
                 .map(|n| n + start)
                 .filter(|_| !query.is_empty())
             {
                 editor.navigation.last = Some(at as u64);
                 editor.navigation.selection = Some((at as i32, (at + query.len()) as i32));
-                editor.navigation.notice = format!(
-                    "Match at character {}",
-                    editor.text[..at].chars().count() + 1
-                );
+                editor.navigation.notice =
+                    format!("Match at character {}", display[..at].chars().count() + 1);
             } else {
                 editor.navigation.notice =
                     "No further match; edit the search to start again".into();
