@@ -924,7 +924,9 @@ impl Adapter {
                 .unwrap_or_default()
                 .into(),
         );
-        let status = if let Some(preparation) = &self.drag.preparation {
+        let status = if self.security_loading() {
+            tr("Reading ownership and ACL…").into_owned()
+        } else if let Some(preparation) = &self.drag.preparation {
             format!(
                 "{} · {} · {}",
                 tr(
@@ -968,7 +970,7 @@ impl Adapter {
             .into_owned()
         };
         ui.set_status(status.into());
-        ui.set_status_error(self.app.status_error);
+        ui.set_status_error(!self.security_loading() && self.app.status_error);
         let toolbar = self
             .app
             .preferences

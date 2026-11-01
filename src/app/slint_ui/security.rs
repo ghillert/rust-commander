@@ -11,7 +11,13 @@ pub(super) struct Form {
     error: String,
     saving: bool,
 }
+
 impl Adapter {
+    pub(super) fn security_loading(&self) -> bool {
+        self.security
+            .as_ref()
+            .is_some_and(|form| form.pending.is_some())
+    }
     pub(super) fn security_open(&mut self) {
         let selected = self.app.tab().chosen(self.app.show_hidden);
         if self.app.tab().location.local().is_none() || selected.len() != 1 {
@@ -66,6 +72,11 @@ impl Adapter {
     }
     pub(super) fn security_dialog(&self) -> Option<dialogs::Dialog> {
         let form = self.security.as_ref()?;
+        // Present only the complete form. A cancel-only loading sheet has a
+        // different button/schema set and would be replaced when metadata arrives.
+        if form.pending.is_some() {
+            return None;
+        }
         let mut d = dialogs::Dialog::new("security", "Ownership and ACL");
         d.busy = form.pending.is_some() || form.saving;
         d.error = form.error.clone();
@@ -131,5 +142,70 @@ impl Adapter {
             _ => return false,
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metadata_loading_presents_only_the_completed_dialog_and_can_be_cancelled() {
+        let (_root, ui, state, left, _) = super::super::context_menus::setup();
+        let snapshot = crate::security_metadata::read(&left.join("alpha.txt")).unwrap();
+        let status = ui.get_status();
+        let (send, receive) = mpsc::channel();
+        {
+            let mut a = state.borrow_mut();
+            a.security = Some(Form {
+                pending: Some(receive),
+                ..Default::default()
+            });
+            a.sync(&ui);
+            assert!(a.blocked());
+            assert!(a.security_dialog().is_none());
+            assert!(!dialogs::native_supported(&a.dialog()));
+        }
+        assert!(ui.get_dialog_title().is_empty());
+        assert_eq!(ui.get_status(), "Reading ownership and ACL…");
+
+        send.send(Ok(snapshot.clone())).unwrap();
+        {
+            let mut a = state.borrow_mut();
+            a.security_tick();
+            a.sync(&ui);
+            let dialog = a.security_dialog().unwrap();
+            assert!(dialogs::native_supported(&dialog));
+            assert_eq!(dialog.fields.len(), 5);
+            assert_eq!(dialog.buttons.len(), 3);
+            assert!(!dialog.busy);
+            assert!(dialog.buttons.iter().all(|(_, _, enabled)| *enabled));
+        }
+        assert_eq!(ui.get_dialog_title(), "Ownership and ACL");
+        assert_eq!(ui.get_status(), status);
+        ui.invoke_dialog_action("cancel".into());
+
+        let (send, receive) = mpsc::channel();
+        {
+            let mut a = state.borrow_mut();
+            a.security = Some(Form {
+                pending: Some(receive),
+                ..Default::default()
+            });
+            a.sync(&ui);
+        }
+        let mut escape = slint::language::KeyEvent::default();
+        escape.text = slint::platform::Key::Escape.into();
+        assert!(ui.invoke_global_key(escape));
+        assert!(send.send(Ok(snapshot)).is_err());
+        {
+            let mut a = state.borrow_mut();
+            a.security_tick();
+            a.sync(&ui);
+            assert!(a.security.is_none());
+            assert!(!a.blocked());
+        }
+        assert!(ui.get_dialog_title().is_empty());
+        assert_eq!(ui.get_status(), status);
     }
 }
