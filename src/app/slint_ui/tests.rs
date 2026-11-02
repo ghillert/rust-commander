@@ -468,9 +468,16 @@ pub(super) fn fixture() -> (tempfile::TempDir, Adapter, PathBuf, PathBuf) {
     adapter.app.queue = Default::default();
     adapter.app.history.clear();
     for side in 0..2 {
-        let location = adapter.app.panes[side].tab().location.clone();
-        adapter.app.panes[side].tab_mut().entries = filesystem::list(&location).unwrap();
-        adapter.app.panes[side].tab_mut().loading = false;
+        let tab = adapter.app.panes[side].tab_mut();
+        tab.entries = filesystem::list(&tab.location).unwrap();
+        // Match normal directory loading instead of relying on read_dir order.
+        filesystem::sort_entries_with_options(
+            &mut tab.entries,
+            tab.sort,
+            tab.descending,
+            tab.folders_first,
+        );
+        tab.loading = false;
     }
     (root, adapter, left, right)
 }

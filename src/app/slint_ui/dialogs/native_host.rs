@@ -292,7 +292,7 @@ impl Host {
         form: Option<&Dialog>,
         scheme: crate::appearance::ColorScheme,
         language: crate::i18n::Language,
-        wayland_parent: Option<&str>,
+        _wayland_parent: Option<&str>,
     ) -> bool {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
         use slint::ComponentHandle;
@@ -313,13 +313,17 @@ impl Host {
             return false;
         };
         let parent = match handle {
+            #[cfg(target_os = "windows")]
             RawWindowHandle::Win32(h) => Parent::Windows(h.hwnd.get() as usize),
+            #[cfg(target_os = "linux")]
             RawWindowHandle::Xlib(h) => match u32::try_from(h.window) {
                 Ok(id) => Parent::X11(id),
                 Err(_) => return false,
             },
+            #[cfg(target_os = "linux")]
             RawWindowHandle::Xcb(h) => Parent::X11(h.window.get()),
-            RawWindowHandle::Wayland(_) => match wayland_parent {
+            #[cfg(target_os = "linux")]
+            RawWindowHandle::Wayland(_) => match _wayland_parent {
                 Some(handle) => Parent::Wayland(handle.into()),
                 None => return false,
             },
