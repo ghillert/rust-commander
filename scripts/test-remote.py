@@ -8,7 +8,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import shlex
 import signal
 import threading
 import socket
@@ -79,9 +78,6 @@ def main():
             config.write_text(f'Host *\n  UserKnownHostsFile "{known}"\n'
                               '  GlobalKnownHostsFile /dev/null\n  StrictHostKeyChecking yes\n'
                               '  IdentitiesOnly yes\n  BatchMode yes\n')
-            wrapper = work / "ssh"
-            wrapper.write_text("#!/bin/sh\nexec /usr/bin/ssh -F " + shlex.quote(str(config)) + ' "$@"\n')
-            wrapper.chmod(0o700)
             profiles = {}
             for service, number in ports.items():
                 scheme = "http" if service == "webdav" else "ssh" if service == "sftp" else service
@@ -91,12 +87,12 @@ def main():
                     "username": "commander", "bucket": "commander" if service == "smb" else "",
                     "root": "/srv/test/sftp" if service == "sftp" else "/", "key_file": str(key),
                 }
+            profiles["sftp"].update(known_hosts_file=str(known), ssh_config_file=str(config))
             recipes = work / "profiles.json"
             profiles["native_sftp"] = dict(profiles["sftp"], id=name + "-native-sftp", native_sftp=True, known_hosts_file=str(known))
             recipes.write_text(json.dumps(profiles))
             recipes.chmod(0o600)
             env = os.environ.copy()
-            env["PATH"] = str(work) + os.pathsep + env.get("PATH", "")
             env["RUST_COMMANDER_TEST_SERVICES"] = str(recipes)
             cargo = [str(PROJECT / "scripts/cargo-local.sh"), "test", "--locked", "--all-features", "--test",
                      "remote_services"]

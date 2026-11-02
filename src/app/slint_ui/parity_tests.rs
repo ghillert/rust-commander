@@ -582,7 +582,23 @@ fn legacy_text_can_be_decoded_edited_and_converted_without_losing_original_bytes
         std::thread::sleep(Duration::from_millis(5));
     }
     state.borrow_mut().sync(&ui);
+    let source = std::sync::Arc::downgrade(
+        state
+            .borrow()
+            .app
+            .editor
+            .as_ref()
+            .unwrap()
+            .navigation
+            .source
+            .as_ref()
+            .expect("Invalid UTF-8 opens as hex with a pinned source"),
+    );
     ui.invoke_viewer_action("encoding:Windows-1252".into());
+    assert!(
+        source.upgrade().is_none(),
+        "Editing must release the read-only source before replacing the file"
+    );
     assert!(ui.get_viewer_editable());
     assert_eq!(ui.get_viewer_text(), "é €");
     ui.invoke_viewer_action("save-encoding:UTF-8".into());
@@ -617,6 +633,11 @@ fn legacy_text_can_be_decoded_edited_and_converted_without_losing_original_bytes
         state.borrow_mut().app.poll(&ctx);
         std::thread::sleep(Duration::from_millis(5));
     }
+    assert!(
+        !state.borrow().app.status_error,
+        "{}",
+        state.borrow().app.status
+    );
     assert_eq!(std::fs::read(path).unwrap(), "é €".as_bytes());
     assert!(!state.borrow().app.editor.as_ref().unwrap().dirty());
 }
