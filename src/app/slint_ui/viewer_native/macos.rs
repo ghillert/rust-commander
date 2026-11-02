@@ -518,12 +518,11 @@ impl Platform {
                 .iter()
                 .find(|i| i.spec.id == "query")
                 && let Widget::Text(field) = &item.widget
+                && let Some(window) = field.window()
             {
-                if let Some(window) = field.window() {
-                    window.makeFirstResponder(Some(field));
-                    unsafe {
-                        field.selectText(None);
-                    }
+                window.makeFirstResponder(Some(field));
+                unsafe {
+                    field.selectText(None);
                 }
             }
         }

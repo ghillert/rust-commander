@@ -22,7 +22,7 @@ fn wide(value: &str) -> Vec<u16> {
 }
 unsafe fn text(hwnd: HWND) -> String {
     unsafe {
-        let len = GetWindowTextLengthW(hwnd).max(0).min(65536) as usize;
+        let len = GetWindowTextLengthW(hwnd).clamp(0, 65536) as usize;
         let mut buffer = vec![0; len + 1];
         let count = GetWindowTextW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32);
         String::from_utf16_lossy(&buffer[..count.max(0) as usize])
@@ -354,7 +354,7 @@ impl Platform {
                         Kind::Field | Kind::Search => {
                             ("EDIT", WS_BORDER | ES_AUTOHSCROLL as u32 | WS_TABSTOP)
                         }
-                        Kind::Label => ("STATIC", SS_LEFT as u32 | SS_ENDELLIPSIS as u32),
+                        Kind::Label => ("STATIC", SS_LEFT | SS_ENDELLIPSIS),
                     };
                     let hwnd = CreateWindowExW(
                         0,
@@ -508,8 +508,10 @@ impl Platform {
             *self.state.shortcuts.borrow_mut() = shortcuts.to_vec();
             let scale = ui.window().scale_factor();
             if self.state.font.get().is_null() || self.state.scale.get() != scale {
-                let mut metrics = NONCLIENTMETRICSW::default();
-                metrics.cbSize = std::mem::size_of::<NONCLIENTMETRICSW>() as u32;
+                let mut metrics = NONCLIENTMETRICSW {
+                    cbSize: std::mem::size_of::<NONCLIENTMETRICSW>() as u32,
+                    ..Default::default()
+                };
                 let font = if SystemParametersInfoForDpi(
                     SPI_GETNONCLIENTMETRICS,
                     metrics.cbSize,

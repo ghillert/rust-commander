@@ -655,7 +655,7 @@ mod tests {
     }
     #[cfg(debug_assertions)]
     #[test]
-    fn accessibility_actions_select_files_and_expose_tree_expansion() {
+    fn accessibility_actions_focus_files_without_marking_and_expose_tree_expansion() {
         use i_slint_backend_testing::{AccessibleRole, ElementHandle};
         let (_root, ui, state, left, _right) = setup();
         ui.show().unwrap();
@@ -668,7 +668,8 @@ mod tests {
             state.borrow().app.tab().cursor.as_deref(),
             Some(left.join("alpha.txt").as_path())
         );
-        assert_eq!(row.accessible_item_selected(), Some(true));
+        assert_eq!(row.accessible_item_selected(), Some(false));
+        assert!(state.borrow().app.tab().selected.is_empty());
         ui.invoke_action("DirectoryTree".into());
         {
             let mut a = state.borrow_mut();

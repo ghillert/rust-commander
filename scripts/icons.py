@@ -211,13 +211,20 @@ def main():
             file.unlink()
     files = generated(catalog)
     notice_path = ROOT / "NOTICE"
-    base = re.sub(r"\n*--- BEGIN VENDORED ICON NOTICES ---.*?--- END VENDORED ICON NOTICES ---\n*", "", notice_path.read_text(encoding="utf-8"), flags=re.S).rstrip()
-    notice = [base, "\n\n--- BEGIN VENDORED ICON NOTICES ---\n"]
+    original = notice_path.read_text(encoding="utf-8")
+    notice = ["--- BEGIN VENDORED ICON NOTICES ---\n"]
     for source_id, source in catalog["sources"].items():
         notice.append(f'\n{source_id}: https://github.com/{source["repository"]}\nPinned revision: {source["revision"]}\n\n')
         notice.append((ICONS / "licenses" / f"{source_id}-MIT.txt").read_text(encoding="utf-8").strip() + "\n")
-    notice.append("\n--- END VENDORED ICON NOTICES ---\n")
-    files[notice_path] = "".join(notice)
+    notice.append("\n--- END VENDORED ICON NOTICES ---")
+    block = "".join(notice)
+    section = re.compile(r"^--- BEGIN VENDORED ICON NOTICES ---\n.*?^--- END VENDORED ICON NOTICES ---$", re.M | re.S)
+    if section.search(original):
+        # Other dependencies may add notices after this generated section.
+        files[notice_path] = section.sub(lambda _: block, original, count=1)
+    else:
+        separator = "" if original.endswith("\n\n") else "\n" if original.endswith("\n") else "\n\n"
+        files[notice_path] = original + separator + block + "\n"
     for path, content in files.items():
         if args.check:
             if path.read_text(encoding="utf-8") != content:
