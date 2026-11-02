@@ -616,6 +616,36 @@ impl Platform {
     #[cfg(feature = "screenshot")]
     pub fn smoke(&self, id: &str, value: &str) {
         unsafe {
+            if id == "assert-tools-layout" {
+                let popup = self.state.popup.get();
+                assert!(!popup.is_null());
+                let mut bounds = RECT::default();
+                GetClientRect(popup, &mut bounds);
+                for item in self.state.items.borrow().iter().filter(|i| i.tool) {
+                    let mut rect = RECT::default();
+                    GetWindowRect(item.hwnd, &mut rect);
+                    let mut top = POINT {
+                        x: rect.left,
+                        y: rect.top,
+                    };
+                    let mut bottom = POINT {
+                        x: rect.right,
+                        y: rect.bottom,
+                    };
+                    ScreenToClient(popup, &mut top);
+                    ScreenToClient(popup, &mut bottom);
+                    let inset = self.px(12.0);
+                    assert!(
+                        top.x >= inset
+                            && top.y >= inset
+                            && bottom.x <= bounds.right - inset
+                            && bottom.y <= bounds.bottom - inset,
+                        "Native popover clips {}",
+                        item.spec.id
+                    );
+                }
+                return;
+            }
             if id == "assert-document-focus" {
                 assert_eq!(GetFocus(), self.state.parent.get());
                 return;

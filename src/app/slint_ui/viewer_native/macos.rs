@@ -364,14 +364,36 @@ impl Platform {
                     "next" => "Next page",
                     _ => &spec.label,
                 })));
-            item.widget.view().setFrame(rect(spec.frame));
+            let view = item.widget.view();
+            if let Widget::Text(w) = &item.widget
+                && spec.kind == Kind::Label
+            {
+                let font = if spec.id == "tools-title" {
+                    NSFont::boldSystemFontOfSize(13.0)
+                } else {
+                    NSFont::systemFontOfSize(12.0)
+                };
+                w.setFont(Some(&font));
+            }
+            let mut frame = rect(spec.frame);
+            if tool {
+                // Align native visual bounds, excluding bezel/shadow padding.
+                let fitting = view.fittingSize();
+                let natural = view.alignmentRectForFrame(NSRect::new(
+                    NSPoint::new(0.0, 0.0),
+                    NSSize::new(frame.size.width, fitting.height),
+                ));
+                frame.origin.y += (frame.size.height - natural.size.height) / 2.0;
+                frame.size.height = natural.size.height;
+                frame = view.frameForAlignmentRect(frame);
+            }
+            view.setFrame(frame);
             item.widget.control().setEnabled(spec.enabled);
             match &item.widget {
                 Widget::Button(w) => w.setTitle(&NSString::from_str(&spec.label)),
                 Widget::Text(w) => {
                     if spec.kind == Kind::Label {
                         w.setStringValue(&NSString::from_str(&spec.label));
-                        w.setFont(Some(&NSFont::systemFontOfSize(12.0)));
                     } else {
                         w.setPlaceholderString(Some(&NSString::from_str(&spec.label)));
                         if w.stringValue().to_string() != spec.value {
@@ -457,9 +479,13 @@ impl Platform {
         self.body.setAppearance(appearance.as_deref());
         self.reconcile(controls, false);
         if ui.get_viewer_native_tools_open() {
-            self.body.setFrame(rect([0.0, 0.0, 352.0, height]));
+            // NSPopover owns the controller view's frame, including its origin.
+            // Reassigning it after presentation shifts content under the bezel.
+            let size = NSSize::new(352.0, height as f64);
+            if self.popup.contentSize() != size {
+                self.popup.setContentSize(size);
+            }
             self.reconcile(tools, true);
-            self.popup.setContentSize(NSSize::new(352.0, height as f64));
             if !self.popup.isShown()
                 && let Some(button) = self
                     .target
@@ -522,6 +548,29 @@ impl Platform {
     }
     #[cfg(feature = "screenshot")]
     pub fn smoke(&self, id: &str, value: &str) {
+        if id == "assert-tools-layout" {
+            assert!(self.popup.isShown());
+            let visible = self.body.visibleRect();
+            for item in self.target.ivars().items.borrow().iter().filter(|i| i.tool) {
+                let rect = item
+                    .widget
+                    .view()
+                    .alignmentRectForFrame(item.widget.view().frame());
+                assert!(
+                    rect.origin.x >= visible.origin.x + 12.0
+                        && rect.origin.y >= visible.origin.y + 12.0
+                        && rect.origin.x + rect.size.width
+                            <= visible.origin.x + visible.size.width - 12.0
+                        && rect.origin.y + rect.size.height
+                            <= visible.origin.y + visible.size.height - 12.0,
+                    "Native popover clips {}: {:?} in {:?}",
+                    item.spec.id,
+                    rect,
+                    visible
+                );
+            }
+            return;
+        }
         if id == "assert-document-focus" {
             let window = self.parent.window().unwrap();
             assert!(

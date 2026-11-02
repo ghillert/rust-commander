@@ -21,7 +21,7 @@ def main():
     parser.add_argument("--scale", action="append", type=float, choices=[1, 1.25, 1.5, 2])
     parser.add_argument("--width", type=int, default=1240)
     parser.add_argument("--height", type=int, default=780)
-    parser.add_argument("--case", action="append", choices=["files", "pdf", "source", "pretty", "source-selected", "source-scrolled", "source-dark", "source-contrast", "source-find", "source-tools", "source-edit", "native-views", "native-edit", "preview"])
+    parser.add_argument("--case", action="append", choices=["files", "pdf", "source", "pretty", "source-selected", "source-scrolled", "source-dark", "source-contrast", "source-find", "source-tools", "source-edit", "source-edit-tools", "native-views", "native-edit", "preview"])
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="rust-commander-desktop-") as directory:
@@ -79,6 +79,7 @@ def main():
                              native(3100, "key", "X"), check(3300, query="snow"),
                              native(3400, "key", "Command+F"), native(3600, "key", "Escape"), check(3800, find=False),
                              native(3900, "tools"), check(4100, tools=True),
+                             native(4200, "assert-tools-layout"),
                              native(4300, "key", "Escape"), check(4500, tools=False, dirty=False)]
                 else:
                     edited = original.replace('"enabled": true', '"enabled": false')
@@ -101,11 +102,16 @@ def main():
                 elif case in ["source-find", "source-tools"]:
                     callback = "viewer-find" if case == "source-find" else "viewer-tools"
                     env["RUST_COMMANDER_SCREENSHOT_SEQUENCE"] = json.dumps([[1250, callback, ""]])
-                elif case == "source-edit":
+                    if case == "source-tools":
+                        env["RUST_COMMANDER_SCREENSHOT_SEQUENCE"] = json.dumps([[1250, callback, ""], [1750, "native-viewer", json.dumps(["assert-tools-layout", ""])]])
+                elif case in ["source-edit", "source-edit-tools"]:
                     env.pop("RUST_COMMANDER_SCREENSHOT_ACTION", None)
-                    env["RUST_COMMANDER_SCREENSHOT_SEQUENCE"] = json.dumps([
+                    steps = [
                         [750, "click", str(source)], [1000, "action", "Edit"],
-                        [1250, "viewer", "source-mode:Pretty view"]])
+                        [1250, "viewer", "source-mode:Pretty view"]]
+                    if case == "source-edit-tools":
+                        steps += [[1500, "viewer-tools", ""], [1750, "native-viewer", json.dumps(["assert-tools-layout", ""])]]
+                    env["RUST_COMMANDER_SCREENSHOT_SEQUENCE"] = json.dumps(steps)
             if (args.width, args.height) != (1240, 780):
                 steps = json.loads(env.get("RUST_COMMANDER_SCREENSHOT_SEQUENCE", "[]"))
                 steps.insert(0, [250, "resize", json.dumps([args.width, args.height])])
