@@ -557,24 +557,62 @@ export component CommanderWindow inherits Window {
     in property <[PdfMark]> viewer-pdf-marks;
     callback viewer-pdf-select(float,float,bool);
     in property <string> viewer-notice;
-    private property <string> viewer-query;
+    in-out property <string> viewer-query;
+    in-out property <bool> viewer-native;
+    in property <float> viewer-native-toolbar-width;
+    in-out property <bool> viewer-native-tools-open;
+    in-out property <int> viewer-native-find-focus;
+    in-out property <int> viewer-native-document-focus;
+    out property <float> viewer-native-x: native-viewer-toolbar.absolute-position.x / 1px;
+    out property <float> viewer-native-y: native-viewer-toolbar.absolute-position.y / 1px;
+    out property <float> viewer-native-find-y: viewer-find-bar.absolute-position.y / 1px;
+    out property <float> viewer-window-width: root.width / 1px;
+    out property <float> viewer-window-height: root.height / 1px;
+    out property <bool> viewer-document-focused: !root.viewer-locked && root.viewer-image.width==0 && (root.viewer-source-active?viewer-source-view.has-focus:viewer-contents.has-focus);
     private property <string> viewer-password;
     private property <string> viewer-jump;
+    private property <string> viewer-hex-query;
     private property <string> viewer-page-input;
-    public function focus-viewer() {viewer-overlay.focus();if root.viewer-image.width==0 {if root.viewer-source-active {viewer-source-view.focus();}else{viewer-contents.focus();}}}
+    in-out property <bool> viewer-find-visible;
+    out property <bool> viewer-tools-visible: root.viewer-native ? root.viewer-native-tools-open : viewer-tools.is-open;
+    public function focus-viewer() {if root.viewer-native {root.viewer-native-document-focus+=1;}viewer-overlay.focus();if root.viewer-image.width==0 {if root.viewer-source-active {viewer-source-view.focus();}else{viewer-contents.focus();}}}
+    public function focus-viewer-chrome() {viewer-overlay.focus();}
+    public function restore-viewer-focus() {if viewer-overlay.has-focus {root.focus-viewer();}}
     public function select-viewer(start:int,end:int) {
+        let searching = viewer-search.has-focus;
         if root.viewer-source-active {viewer-source-view.set-selection-offsets(start,end);}else{viewer-contents.set-selection-offsets(start,end);}
         if root.viewer-pdf-document && !root.viewer-pdf-text && root.viewer-pdf-marks.length>0 {
             let mark=root.viewer-pdf-marks[0];
             image-scroll.content-y = -min(max(0px,(mark.y+mark.height/2)*viewer-page.height - image-scroll.visible-height/2),max(0px,viewer-page.height - image-scroll.visible-height));
             image-scroll.content-x = -min(max(0px,(mark.x+mark.width/2)*viewer-page.width - image-scroll.visible-width/2),max(0px,viewer-page.width - image-scroll.visible-width));
         }
+        if searching {viewer-search.focus();}
     }
-    public function focus-viewer-search() { if root.viewer-pdf-document {pdf-search.focus();pdf-search.select-all();} else {viewer-search.focus(); viewer-search.select-all();} }
+    public function focus-viewer-search() {
+        if root.viewer-text-controls || (root.viewer-pdf-document && !root.viewer-locked) {
+            viewer-tools.close();root.viewer-native-tools-open=false; root.viewer-find-visible = true;
+            if root.viewer-native {root.viewer-native-find-focus+=1;}else{viewer-search.focus(); viewer-search.select-all();}
+        }
+    }
+    public function show-viewer-tools() {
+        if root.viewer-text-controls || (root.viewer-pdf-document && !root.viewer-locked) {if root.viewer-native {root.viewer-native-tools-open=true;}else{viewer-tools.show();}}
+    }
+    public function dismiss-viewer-tools() -> bool {
+        if root.viewer-native-tools-open {root.viewer-native-tools-open=false;return true;}
+        if viewer-tools.is-open { viewer-tools.close(); return true; }
+        if root.viewer-find-visible { root.viewer-find-visible = false; root.focus-viewer(); return true; }
+        return false;
+    }
+    public function find-in-viewer() {
+        root.viewer-action((root.viewer-pdf-document ? "pdf-find:" : "find:") + root.viewer-query);
+    }
     public function copy-viewer() {if root.viewer-source-active {viewer-source-view.copy();}else if root.viewer-pdf-text || !root.viewer-pdf-document {viewer-contents.copy();} else {root.viewer-action("pdf-copy");}}
     public function select-all-viewer() {if root.viewer-source-active {viewer-source-view.select-all();}else if root.viewer-pdf-text || !root.viewer-pdf-document {viewer-contents.select-all();} else {root.viewer-action("pdf-select-all");}}
 
     in property <string> viewer-title;
+    in property <string> viewer-path;
+    in property <string> viewer-kind;
+    in property <bool> viewer-can-save;
     in-out property <string> viewer-text;
     in property <image> viewer-image;
     in property <bool> viewer-editable;
@@ -641,7 +679,7 @@ export component CommanderWindow inherits Window {
     callback terminal-key(KeyEvent) -> bool;
     callback terminal-resize(int, int);
     changed dialog-title => { if root.dialog-title == "" { root.focus-files(root.active-pane); } }
-    changed viewer-visible => { if !root.viewer-visible { root.focus-files(root.active-pane); } }
+    changed viewer-visible => { if !root.viewer-visible { root.viewer-find-visible=false;root.viewer-native-tools-open=false; viewer-tools.close(); root.focus-files(root.active-pane); } }
     public function scroll-to-cursor(side:int) {if side==0{left.scroll-to-cursor();}else{right.scroll-to-cursor();}}
     public function reset-native-drag() {left.reset-native-drag();right.reset-native-drag();}
     public function drop-side(x:float,y:float)->int {
@@ -1027,51 +1065,100 @@ export component CommanderWindow inherits Window {
         visible:root.viewer-visible;
         key-event(event) => { return root.global-key(event); }
         Rectangle {
-            x: 35px; y: 35px; width: parent.width - 70px; height: parent.height - 70px;
-            background: Palette.background; border-radius: 10px;
-            VerticalBox {
-                HorizontalBox {
-                    max-height:32px;
-                    Text { text: root.viewer-title; font-weight: 600; color: Palette.foreground; overflow: elide; }
-                    if root.viewer-text-controls: DialogChoice {accessible-label:"Text encoding";model:["UTF-8","UTF-16 LE","UTF-16 BE","Windows-1252","ISO-8859-1"];current-value:root.viewer-encoding;selected(value)=>{root.viewer-action("encoding:"+value);}}
-                    if root.viewer-editable: DialogChoice {accessible-label:"Save text encoding";model:["UTF-8","UTF-16 LE","UTF-16 BE","Windows-1252","ISO-8859-1"];current-value:root.viewer-save-encoding;selected(value)=>{root.viewer-action("save-encoding:"+value);}}
-                    if root.viewer-pdf: Button { width:32px; enabled: root.viewer-has-previous; text: Words.translate("‹", Words.version); clicked => { root.viewer-action("previous"); } }
-                    if root.viewer-pdf: Text { text: root.viewer-page; color: Palette.foreground; }
-                    if root.viewer-pdf: Button { width:32px; enabled: root.viewer-has-next; text: Words.translate("›", Words.version); clicked => { root.viewer-action("next"); } }
-                    Button { width:80px;text: Words.translate("Close", Words.version); clicked => { root.viewer-action("close"); } }
+            x: 20px; y: 20px; width: parent.width - 40px; height: parent.height - 40px;
+            background: Chrome.toolbar; border-radius: 10px;
+            border-width: 1px; border-color: Chrome.separator;
+            clip: true;
+            VerticalLayout {
+                padding: 1px; spacing: 0px;
+                Rectangle {
+                    height: 64px;
+                        Rectangle {
+                            x:16px;y:16px;height:32px;
+                            width:max(80px,parent.width - (root.viewer-native?root.viewer-native-toolbar-width*1px:fallback-viewer-toolbar.preferred-width) - 38px);
+                            VerticalLayout {
+                                spacing: 3px;
+                                Text { text: root.viewer-title; font-weight: 600; color: Chrome.foreground; overflow: elide; min-width: 0px; }
+                                Text { text: root.viewer-path; font-size: 11px; color: Chrome.secondary; overflow: elide; min-width: 0px; }
+                            }
+                            Tooltip { text: @markdown("\{root.viewer-path}"); }
+                        }
+                        native-viewer-toolbar := Rectangle {x:parent.width - self.width - 12px;y:16px;height:32px;width:root.viewer-native?root.viewer-native-toolbar-width*1px:0px;}
+                        fallback-viewer-toolbar := HorizontalLayout {visible:!root.viewer-native;x:parent.width - self.width - 12px;y:16px;width:self.preferred-width;height:32px;spacing:10px;
+                        if root.viewer-source: Rectangle {
+                            width: root.viewer-source-modes.length == 3 ? 250px : root.viewer-source-modes.length == 2 ? 180px : 80px;
+                            height: 32px; vertical-stretch: 0;
+                            border-radius: Chrome.control-radius; background: Chrome.pressed;
+                            HorizontalLayout {
+                                padding: 3px; spacing: 2px;
+                                for mode in root.viewer-source-modes: ChromeButton {
+                                    label: mode == "Plain original" ? "Original" : mode == "Highlighted original" ? "Highlighted" : "Pretty";
+                                    accessible-label: mode; show-label: true; checkable: true;
+                                    checked: root.viewer-source-mode == mode; tab-style: true;
+                                    horizontal-stretch: 1;
+                                    clicked => {root.viewer-action("source-mode:" + mode);}
+                                }
+                            }
+                        }
+                        if root.viewer-pdf: HorizontalLayout {
+                            spacing: 4px; horizontal-stretch: 0;
+                            ChromeButton { label: "Previous page"; icon: Glyphs.action("Back"); enabled: root.viewer-has-previous; clicked => {root.viewer-action("previous");} }
+                            Text {text: root.viewer-page; min-width:0px;max-width:180px;overflow:elide;color: Chrome.secondary; vertical-alignment: center; font-size: 12px;Tooltip {text:@markdown("\{root.viewer-page}");}}
+                            ChromeButton { label: "Next page"; icon: Glyphs.action("Forward"); enabled: root.viewer-has-next; clicked => {root.viewer-action("next");} }
+                        }
+                        if root.viewer-pdf-document && !root.viewer-locked: ChromeButton {
+                            label: root.viewer-pdf-text ? "Page view" : "Text view"; show-label: true;
+                            clicked => {root.viewer-action("pdf-text");}
+                        }
+                        if root.viewer-text-controls || (root.viewer-pdf-document && !root.viewer-locked): ChromeButton {
+                            label: "Find"; icon: Glyphs.action("Search"); show-label: true;
+                            checkable: true; checked: root.viewer-find-visible;
+                            clicked => {if root.viewer-find-visible {root.viewer-find-visible=false;root.focus-viewer();} else {root.focus-viewer-search();}}
+                        }
+                        if root.viewer-can-save: Button {
+                            text: Words.translate("Save", Words.version); accessible-label: "Save";
+                            enabled: root.viewer-dirty && !root.busy;
+                            clicked => {root.viewer-action("save");}
+                            Tooltip {text: @markdown("\{root.viewer-save-key}");}
+                        }
+                        viewer-more := ChromeButton {
+                            visible: root.viewer-text-controls || (root.viewer-pdf-document && !root.viewer-locked);
+                            preferred-width: self.visible ? 28px : 0px; max-width: self.visible ? 28px : 0px; min-width: 0px;
+                            label: "More viewer tools";
+                            checkable: true; checked: viewer-tools.is-open;
+                            clicked => {if viewer-tools.is-open {viewer-tools.close();} else {root.show-viewer-tools();}}
+                            Text {text:"…";width:parent.width;height:parent.height;horizontal-alignment:center;vertical-alignment:center;font-size:20px;color:viewer-more.icon-color;accessible-role:none;}
+                        }
+                        Button {width: 66px; text: Words.translate("Close", Words.version); clicked => {root.viewer-action("close");}}
+                        }
                 }
-                if root.viewer-locked: HorizontalBox {max-height:32px;
-                    StandardDialogField {text <=> root.viewer-password;input-type:InputType.password;label:"PDF password";placeholder:"PDF password";accepted(value)=>{root.viewer-action("unlock:"+value);}}
-                    Button {text:"Unlock";enabled:!root.viewer-busy;clicked=>{root.viewer-action("unlock:"+root.viewer-password);root.viewer-password="";}}
+                Rectangle {height: 1px; background: Chrome.separator;}
+                viewer-find-bar := Rectangle {
+                    visible: root.viewer-find-visible;
+                    height: self.visible ? 44px : 0px;
+                    background: Chrome.toolbar;
+                    HorizontalLayout {
+                        visible: !root.viewer-native;
+                        padding-left: 16px; padding-right: 12px; padding-top:8px; padding-bottom:8px; spacing: 8px;
+                        viewer-search := ChromeField {
+                            text <=> root.viewer-query;
+                            placeholder: root.viewer-pdf-document ? "Find in PDF" : "Find in file";
+                            label: "Find in file"; icon: Glyphs.action("Search");
+                            accepted(value) => {root.find-in-viewer();}
+                            key-event(event) => {return root.global-key(event);}
+                        }
+                        if root.viewer-pdf-document: ChromeButton {label: "Find previous"; icon: Glyphs.action("ReorderUp"); enabled: !root.viewer-busy && root.viewer-query!=""; clicked => {root.viewer-action("pdf-find-previous:"+root.viewer-query);}}
+                        ChromeButton {label: "Find next"; show-label: true; enabled: !root.viewer-busy && root.viewer-query!=""; clicked => {root.find-in-viewer();}}
+                        if root.viewer-busy: ChromeButton {label: "Cancel search"; show-label: true; clicked => {root.viewer-action("cancel-search");}}
+                        ChromeButton {label: "Close find bar"; icon: Glyphs.action("CloseTab"); clicked => {root.viewer-find-visible=false;root.focus-viewer();}}
+                    }
                 }
-                if root.viewer-source: HorizontalBox {max-height:32px;
-                    DialogChoice {accessible-label:"Source view";model:root.viewer-source-modes;current-value <=> root.viewer-source-mode;selected(value)=>{root.viewer-action("source-mode:"+value);}}
-                    Text {text:root.viewer-source-language;color:Palette.foreground;vertical-alignment:center;}
-                    Rectangle {horizontal-stretch:1;}
-                }
-                if root.viewer-pdf-document && !root.viewer-locked: HorizontalBox {max-height:32px;
-                    LineEdit {text <=> root.viewer-page-input;placeholder-text:"Page";accessible-label:"Go to PDF page";width:90px;accepted(value)=>{root.viewer-action("page:"+value);}}
-                    Button {text:"Go";enabled:!root.viewer-busy;clicked=>{root.viewer-action("page:"+root.viewer-page-input);}}
-                    Button {text:"Rotate";enabled:!root.viewer-busy;clicked=>{root.viewer-action("rotate");}}
-                    Button {text:"Fit width";clicked=>{root.viewer-action("fit-width");}}
-                    Button {text:Words.translate(root.viewer-pdf-text?"Page view":"Text view",Words.version);clicked=>{root.viewer-action("pdf-text");}}
-                    Button {text:Words.translate("Copy selection",Words.version);enabled:root.viewer-pdf-text || root.viewer-pdf-copy;clicked=>{root.copy-viewer();}}
-                    Rectangle {horizontal-stretch:1;}
-                }
-                HorizontalBox {visible:root.viewer-pdf-document && !root.viewer-locked;max-height:self.visible?36px:0px;min-height:0px;
-                    pdf-search := LineEdit {text <=> root.viewer-query;placeholder-text:Words.translate("Find PDF text",Words.version);accessible-label:"Find PDF text";accepted(value)=>{root.viewer-action("pdf-find:"+value);}}
-                    Button {text:Words.translate("Find previous",Words.version);enabled:!root.viewer-busy;clicked=>{root.viewer-action("pdf-find-previous:"+root.viewer-query);}}
-                    Button {text:Words.translate("Find next",Words.version);enabled:!root.viewer-busy;clicked=>{root.viewer-action("pdf-find:"+root.viewer-query);}}
-                    if root.viewer-busy: Button {text:Words.translate("Cancel search",Words.version);clicked=>{root.viewer-action("cancel-search");}}
-                }
-                HorizontalBox {
-                    visible:root.viewer-text-controls;max-height:root.viewer-text-controls?40px:0px;min-height:0px;
-                    viewer-search := LineEdit {text <=> root.viewer-query;placeholder-text:"Find text or hexadecimal bytes";accessible-label:"Find in file";accepted(value)=>{root.viewer-action("find:"+value);}}
-                    Button {text:"Find next";enabled:!root.viewer-busy;clicked=>{root.viewer-action("find:"+root.viewer-query);}}
-                    Button {text:"Find hex";enabled:!root.viewer-busy;clicked=>{root.viewer-action("hex-find:"+root.viewer-query);}}
-                    LineEdit {text <=> root.viewer-jump;placeholder-text:"Byte / 0x…";accessible-label:"Jump to byte offset";width:130px;accepted(value)=>{root.viewer-action("jump:"+value);}}
-                    Button {text:"Go";clicked=>{root.viewer-action("jump:"+root.viewer-jump);}}
-                    if root.viewer-busy: Button {text:"Cancel search";clicked=>{root.viewer-action("cancel-search");}}
+                if root.viewer-locked: Rectangle {
+                    height: 52px; background: Chrome.toolbar;
+                    HorizontalLayout {padding: 10px; spacing: 8px;
+                        StandardDialogField {text <=> root.viewer-password;input-type:InputType.password;label:"PDF password";placeholder:"PDF password";accepted(value)=>{root.viewer-action("unlock:"+value);}}
+                        Button {text:"Unlock";enabled:!root.viewer-busy;clicked=>{root.viewer-action("unlock:"+root.viewer-password);root.viewer-password="";}}
+                    }
                 }
                 image-scroll := ScrollView {
                     visible:root.viewer-image.width>0;max-height:self.visible?100000px:0px;min-height:0px;
@@ -1112,17 +1199,83 @@ export component CommanderWindow inherits Window {
                     text <=> root.viewer-text; read-only: !root.viewer-editable; font-family: root.source-font-family;wrap:no-wrap;
                     edited => { root.viewer-edit(root.viewer-text); }
                 }
-                if root.viewer-image.width > 0: Slider { minimum: 0.1; maximum: 4; value <=> root.viewer-zoom; }
-                if root.viewer-notice != "": Text {text:root.viewer-notice;color:Palette.foreground;}
-                if root.viewer-source-notice != "": Text {text:root.viewer-source-notice;color:Palette.foreground;wrap:word-wrap;}
-                if root.viewer-busy: ProgressIndicator {indeterminate:true;}
-                if root.viewer-error != "": Text { text: root.viewer-error; color: #c74343; wrap: word-wrap; }
-                if root.viewer-confirm-close: HorizontalBox {
+                if root.viewer-image.width > 0: Rectangle {
+                    height: 36px; background: Chrome.toolbar;
+                    HorizontalLayout {padding-left: 16px; padding-right: 16px; padding-top:4px; padding-bottom:4px; spacing: 10px;
+                        Text {text: "Zoom"; color: Chrome.secondary; font-size: 12px; vertical-alignment: center;}
+                        Slider {minimum: 0.1; maximum: 4; value <=> root.viewer-zoom; enabled: !root.viewer-fit-width; max-width: 240px;}
+                        ChromeButton {label: "Fit width"; show-label: true; checkable: true; checked: root.viewer-fit-width; clicked => {root.viewer-action("fit-width");}}
+                        Rectangle {horizontal-stretch: 1;}
+                    }
+                }
+                if root.viewer-busy: ProgressIndicator {indeterminate:true;height:3px;}
+                if root.viewer-source-notice != "": Rectangle {
+                    height: source-notice.preferred-height + 16px; background: Chrome.toolbar;
+                    source-notice := Text {x:16px;y:8px;width:parent.width - 32px;text:root.viewer-source-notice;color:Chrome.secondary;wrap:word-wrap;font-size:12px;}
+                }
+                if root.viewer-error != "": Rectangle {
+                    height: viewer-error-text.preferred-height + 16px; background: Chrome.toolbar;
+                    viewer-error-text := Text {x:16px;y:8px;width:parent.width - 32px;text:root.viewer-error;color:Chrome.high-contrast?Chrome.foreground:#c74343;wrap:word-wrap;}
+                }
+                if root.viewer-confirm-close: HorizontalBox {height:44px;spacing:8px;
                     Text { text: Words.translate("Discard unsaved changes?", Words.version); color: Palette.foreground; }
                     Button { text: Words.translate("Keep editing", Words.version); clicked => { root.viewer-action("keep"); } }
                     Button { text: Words.translate("Discard changes", Words.version); clicked => { root.viewer-action("discard"); } }
                 }
-                if root.viewer-editable: Button { text: Words.translate("Save", Words.version)+(root.viewer-save-key == "" ? "":"  "+root.viewer-save-key); accessible-label:"Save"; enabled: root.viewer-dirty && !root.busy; clicked => { root.viewer-action("save"); } }
+                Rectangle {height:1px;background:Chrome.separator;}
+                Rectangle {
+                    height: 28px;
+                    HorizontalLayout {padding-left:16px;padding-right:16px;spacing:16px;
+                        Text {text:root.viewer-source && root.viewer-source-language!=""?root.viewer-source-language:root.viewer-kind;color:Chrome.secondary;font-size:11px;vertical-alignment:center;}
+                        if root.viewer-text-controls: Text {text:root.viewer-encoding;color:Chrome.secondary;font-size:11px;vertical-alignment:center;}
+                        Text {text:root.viewer-notice;horizontal-stretch:1;min-width:0px;overflow:elide;color:Chrome.secondary;font-size:11px;vertical-alignment:center;Tooltip {text:@markdown("\{root.viewer-notice}");}}
+                        Text {text:root.viewer-dirty?"Unsaved changes":root.viewer-editable?"Editable":root.viewer-source-mode=="Pretty view"&&root.viewer-source?"Formatted · Read only":"Read only";color:root.viewer-dirty?Chrome.foreground:Chrome.secondary;font-size:11px;vertical-alignment:center;}
+                    }
+                }
+            }
+        }
+        viewer-tools := PopupWindow {
+            x: root.width - self.width - 32px; y: 80px; width: 360px;
+            height: viewer-tools-content.preferred-height;
+            close-policy: close-on-click-outside;
+            forward-focus: viewer-tool-keys;
+            viewer-tool-keys := FocusScope {
+                key-pressed(event) => {
+                    if event.text == Key.Escape {viewer-tools.close();root.focus-viewer();return EventResult.accept;}
+                    return root.global-key(event) ? EventResult.accept : EventResult.reject;
+                }
+                Rectangle {
+                    background: Chrome.toolbar; border-width:1px; border-color:Chrome.separator; border-radius:8px;
+                    viewer-tools-content := VerticalLayout {
+                        padding:16px;spacing:10px;alignment:start;
+                        Text {text:"Viewer tools";font-weight:600;color:Chrome.foreground;}
+                        if root.viewer-text-controls: VerticalLayout {spacing:6px;
+                            Text {text:"Text encoding";font-size:12px;color:Chrome.secondary;}
+                            DialogChoice {height:30px;accessible-label:"Text encoding";model:["UTF-8","UTF-16 LE","UTF-16 BE","Windows-1252","ISO-8859-1"];current-value:root.viewer-encoding;selected(value)=>{root.viewer-action("encoding:"+value);}}
+                        }
+                        if root.viewer-can-save: VerticalLayout {spacing:6px;
+                            Text {text:"Save encoding";font-size:12px;color:Chrome.secondary;}
+                            DialogChoice {height:30px;accessible-label:"Save text encoding";model:["UTF-8","UTF-16 LE","UTF-16 BE","Windows-1252","ISO-8859-1"];current-value:root.viewer-save-encoding;selected(value)=>{root.viewer-action("save-encoding:"+value);}}
+                        }
+                        if root.viewer-text-controls: Rectangle {height:1px;background:Chrome.separator;}
+                        if root.viewer-text-controls: Text {text:"File bytes · uses original contents";font-size:12px;color:Chrome.secondary;}
+                        if root.viewer-text-controls: HorizontalLayout {spacing:8px;
+                            ChromeField {text <=> root.viewer-hex-query;label:"Find hexadecimal bytes";placeholder:"Hex bytes, e.g. 4A 53";accepted(value)=>{root.viewer-action("hex-find:"+value);viewer-tools.close();}}
+                            Button {text:"Find hex";enabled:!root.viewer-busy;clicked=>{root.viewer-action("hex-find:"+root.viewer-hex-query);viewer-tools.close();}}
+                        }
+                        if root.viewer-text-controls: HorizontalLayout {spacing:8px;
+                            ChromeField {text <=> root.viewer-jump;label:"Jump to byte offset";placeholder:"Byte offset, e.g. 0x100";accepted(value)=>{root.viewer-action("jump:"+value);viewer-tools.close();}}
+                            Button {text:"Go";enabled:!root.viewer-busy;clicked=>{root.viewer-action("jump:"+root.viewer-jump);viewer-tools.close();}}
+                        }
+                        if root.viewer-pdf-document && !root.viewer-locked: HorizontalLayout {spacing:8px;
+                            ChromeField {text <=> root.viewer-page-input;label:"Go to PDF page";placeholder:"Page number";accepted(value)=>{root.viewer-action("page:"+value);viewer-tools.close();}}
+                            Button {text:"Go";enabled:!root.viewer-busy;clicked=>{root.viewer-action("page:"+root.viewer-page-input);viewer-tools.close();}}
+                        }
+                        if root.viewer-pdf-document && !root.viewer-locked: ChromeButton {label:"Rotate clockwise";show-label:true;enabled:!root.viewer-busy;clicked=>{root.viewer-action("rotate");viewer-tools.close();}}
+                        if root.viewer-pdf-document && !root.viewer-locked: ChromeButton {label:"Copy selection";show-label:true;enabled:root.viewer-pdf-text || root.viewer-pdf-copy;clicked=>{root.copy-viewer();viewer-tools.close();}}
+                        if !root.viewer-text-controls && !root.viewer-pdf-document: Text {text:root.viewer-kind;color:Chrome.secondary;}
+                    }
+                }
             }
         }
     }

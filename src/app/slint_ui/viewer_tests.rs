@@ -314,6 +314,117 @@ fn source_modes_preserve_original_bytes_and_search_the_displayed_text() {
 }
 
 #[test]
+fn native_viewer_events_search_the_display_and_reject_previous_documents() {
+    let original = br#"{"snow":"value"}"#;
+    let (_root, ui, state, path) = setup("native.json", original);
+    open(&ui, "Text");
+    wait(&state, &ui);
+    let document = state.borrow().app.editor.as_ref().unwrap().navigation.id;
+    state
+        .borrow()
+        .native_viewer
+        .test_event(document, "mode", Some("Pretty view"));
+    wait(&state, &ui);
+    let query = "\n  \"snow\"";
+    state
+        .borrow()
+        .native_viewer
+        .test_event(document, "query", Some(query));
+    state
+        .borrow()
+        .native_viewer
+        .test_event(document, "find-next", None);
+    wait(&state, &ui);
+    assert_eq!(
+        state.borrow().app.editor.as_ref().unwrap().navigation.last,
+        Some(ui.get_viewer_text().find(query).unwrap() as u64)
+    );
+    ui.invoke_viewer_action("close".into());
+    assert!(state.borrow().app.editor.is_none());
+    {
+        let entry = filesystem::list(&Location::Local(path.parent().unwrap().to_path_buf()))
+            .unwrap()
+            .into_iter()
+            .find(|e| e.path == path)
+            .unwrap();
+        let mut a = state.borrow_mut();
+        let ctx = a.ctx.clone();
+        a.app.view(entry, false, &ctx);
+    }
+    wait(&state, &ui);
+    let reopened = state.borrow().app.editor.as_ref().unwrap().navigation.id;
+    assert_ne!(document, reopened);
+    state
+        .borrow()
+        .native_viewer
+        .test_event(document, "close", None);
+    state
+        .borrow()
+        .native_viewer
+        .test_event(document, "mode", Some("Plain original"));
+    wait(&state, &ui);
+    assert_eq!(
+        state.borrow().app.editor.as_ref().unwrap().navigation.id,
+        reopened
+    );
+    assert_eq!(ui.get_viewer_source_mode(), "Highlighted original");
+    assert!(!ui.get_viewer_dirty());
+    assert_eq!(std::fs::read(path).unwrap(), original);
+}
+
+#[test]
+fn viewer_toolbar_keeps_original_accessible_and_find_dismisses_before_closing() {
+    let original = br#"{"value":1}"#;
+    let (_root, ui, state, path) = setup("toolbar.json", original);
+    open(&ui, "Text");
+    wait(&state, &ui);
+    assert_eq!(ui.get_viewer_title(), "toolbar.json");
+    assert!(ui.get_viewer_path().ends_with("toolbar.json"));
+    assert!(!ui.get_viewer_find_visible());
+
+    ElementHandle::find_by_accessible_label(&ui, "Plain original")
+        .next()
+        .unwrap()
+        .mock_single_click(slint::platform::PointerEventButton::Left);
+    wait(&state, &ui);
+    assert_eq!(ui.get_viewer_source_mode(), "Plain original");
+    assert_eq!(ui.get_viewer_text(), String::from_utf8_lossy(original));
+
+    let mut find = slint::language::KeyEvent::default();
+    find.text = "f".into();
+    find.modifiers.control = true;
+    assert!(ui.invoke_global_key(find));
+    assert!(ui.get_viewer_find_visible());
+    let mut escape = slint::language::KeyEvent::default();
+    escape.text = slint::platform::Key::Escape.into();
+    assert!(ui.invoke_global_key(escape.clone()));
+    assert!(!ui.get_viewer_find_visible());
+    assert!(ui.get_viewer_visible());
+    assert!(ui.invoke_global_key(escape));
+    assert!(!ui.get_viewer_visible());
+    assert_eq!(std::fs::read(path).unwrap(), original);
+}
+
+#[test]
+fn viewer_tools_are_transient_and_do_not_modify_the_source() {
+    let original = br#"{"value":1}"#;
+    let (_root, ui, state, path) = setup("tools.json", original);
+    open(&ui, "Text");
+    wait(&state, &ui);
+    ui.invoke_show_viewer_tools();
+    assert!(ui.get_viewer_tools_visible());
+    assert!(ui.invoke_dismiss_viewer_tools());
+    assert!(!ui.get_viewer_tools_visible());
+    ui.invoke_show_viewer_tools();
+    ui.invoke_focus_viewer_search();
+    assert!(!ui.get_viewer_tools_visible());
+    assert!(ui.get_viewer_find_visible());
+    assert_eq!(ui.get_viewer_source_mode(), "Highlighted original");
+    assert!(!ui.get_viewer_dirty());
+    assert_eq!(std::fs::read(path).unwrap(), original);
+}
+
+#[test]
 fn editing_and_saving_never_use_the_pretty_buffer() {
     let original = r#"{"z":1,"z":2}"#;
     let edited = r#"{"z":1,"z":2,"unsaved":true}"#;
@@ -363,7 +474,17 @@ fn editing_and_saving_never_use_the_pretty_buffer() {
     }
     assert!(!ui.get_viewer_editable());
     assert!(ui.get_viewer_dirty());
+    assert!(ui.get_viewer_can_save());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+    ui.invoke_focus_viewer_search();
+    ui.invoke_viewer_action("close".into());
+    assert!(ui.get_viewer_confirm_close());
+    let mut escape = slint::language::KeyEvent::default();
+    escape.text = slint::platform::Key::Escape.into();
+    assert!(ui.invoke_global_key(escape));
+    assert!(!ui.get_viewer_confirm_close());
+    assert!(ui.get_viewer_find_visible());
+    assert!(ui.get_viewer_dirty());
     // Even the Save shortcut from a read-only presentation saves only the source.
     ui.invoke_viewer_action("save".into());
     for _ in 0..1500 {

@@ -32,7 +32,11 @@ detection and encryption support.
 
 ## Source highlighting and pretty views
 
-The full viewer and preview pane offer a source-view selector:
+The full viewer keeps the filename, compact view buttons, **Find**, and **More
+viewer tools (···)** in one toolbar. The document fills the remaining space;
+language, encoding and edit status appear in the bottom status strip. Choose
+**Original**, **Highlighted**, or **Pretty** directly from the toolbar. The preview
+pane offers the same modes in its source-view selector:
 
 - **Highlighted original** opens recognized source/configuration files with
   syntax colors and their original layout.
@@ -40,6 +44,13 @@ The full viewer and preview pane offer a source-view selector:
   **Open As → Hexadecimal** to inspect exact file bytes, including encoding/BOM.
 - **Pretty view** displays JSON or XML with two-space indentation. This is a
   read-only presentation: it never changes the file or the editor/save buffer.
+
+The full viewer's toolbar, find bar and tools panel use real AppKit controls on
+macOS (including a segmented view selector, buttons, search field and popover)
+and Win32/common controls on Windows. The document continues to use the shared
+Slint source renderer. Linux and environments without a usable native window
+handle retain the Slint controls. Native callbacks are scoped to the open
+document; delayed actions from an earlier file cannot affect a later file.
 
 Source views use monospace text with horizontal scrolling. Selection, copying,
 and ordinary text search use the displayed text. Hex search and byte-offset
@@ -49,6 +60,13 @@ unsaved source. Switching views preserves edits and does not mark a clean
 document dirty. Save and draft recovery always use the source buffer.
 Tabs in enhanced views expand to four-column stops for display; copying
 retains the original tabs and line endings.
+
+**Find** or **Mod+F** opens the find bar. Enter searches the displayed text; Escape
+closes the bar and returns focus to the document. A second Escape closes the
+viewer. **More viewer tools (···)** contains text/save encoding, hexadecimal search
+and byte-offset navigation. These tools keep their existing source-byte behavior.
+Save stays in the toolbar while editing, including when inspecting an unsaved
+document in a read-only highlighted or pretty view.
 
 JSON formatting preserves key order, duplicate keys, number spellings, and
 string escapes. XML formatting retains mixed-content and preserved-whitespace
@@ -74,7 +92,7 @@ preparation work and reset the source mode for the new selection.
 - **Text view** displays the current page in a read-only, selectable text field.
   Use normal mouse/keyboard selection and copying there. **Page view** returns
   to the rendered page.
-- **Mod+F** focuses **Find PDF text**. Enter a literal search and use **Find next**
+- **Find** or **Mod+F** opens the find bar. Enter a literal search and use **Find next**
   or **Find previous**. Searches ignore case, cross page boundaries, wrap around
   the document, navigate to the match and highlight it. Wrapping is reported in
   the status. Matches within a page can include line breaks when those are in the
@@ -82,6 +100,10 @@ preparation work and reset the source mode for the new selection.
 - Search runs on a worker, can be cancelled, and is cancelled when the viewer
   closes. Password-protected PDFs use the password entered to unlock the viewer;
   the password is held in memory only.
+
+Page navigation and the page/text view toggle stay in the toolbar. **More viewer
+tools (···)** contains go-to-page, rotation and copy selection; zoom and fit-width
+controls sit below the page.
 
 Extraction uses the same Hayro interpreter and page transform as rendering.
 Unicode mappings, ligatures and surrogate pairs retain UTF-8 selection offsets.

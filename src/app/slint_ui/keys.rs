@@ -6,7 +6,7 @@ fn key_is(text: &str, key: slint::platform::Key) -> bool {
     text == value.as_str()
 }
 
-fn normalized_key(text: &str) -> Option<Key> {
+pub(super) fn normalized_key(text: &str) -> Option<Key> {
     if text.chars().count() == 1
         && let Some(code) = text.chars().next().map(u32::from)
         && (0xF704..=0xF726).contains(&code)
@@ -131,6 +131,16 @@ impl Adapter {
         }
         if self.blocked() {
             if key_is(text, slint::platform::Key::Escape) {
+                if !self.app.confirm_exit
+                    && self
+                        .app
+                        .editor
+                        .as_ref()
+                        .is_some_and(|editor| !editor.confirm_close)
+                    && ui.invoke_dismiss_viewer_tools()
+                {
+                    return true;
+                }
                 if self.app.editor.is_some() && !self.app.confirm_exit {
                     self.viewer_action(
                         if self

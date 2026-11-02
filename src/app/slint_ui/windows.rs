@@ -238,6 +238,32 @@ pub(super) fn native_extract_snapshot(path: &std::path::Path) -> bool {
     })
 }
 #[cfg(all(
+    any(target_os = "macos", target_os = "windows"),
+    feature = "screenshot"
+))]
+pub(super) fn native_viewer_snapshot(path: &std::path::Path) -> bool {
+    SESSIONS.with(|sessions| {
+        sessions
+            .borrow()
+            .iter()
+            .any(|s| s.state.borrow().native_viewer.snapshot(&s.ui, path))
+    })
+}
+#[cfg(all(
+    any(target_os = "macos", target_os = "windows"),
+    feature = "screenshot"
+))]
+pub(super) fn native_viewer_smoke(id: &str, value: &str) {
+    SESSIONS.with(|sessions| {
+        for session in sessions.borrow().iter() {
+            if session.ui.get_viewer_native() {
+                session.state.borrow().native_viewer.smoke(id, value);
+                break;
+            }
+        }
+    });
+}
+#[cfg(all(
     any(target_os = "windows", target_os = "linux"),
     feature = "screenshot"
 ))]

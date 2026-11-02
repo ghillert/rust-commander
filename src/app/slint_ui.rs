@@ -19,6 +19,7 @@ mod management;
 mod parity;
 mod security;
 mod source_views;
+mod viewer_native;
 pub(in crate::app) mod viewer_tools;
 mod windows;
 
@@ -96,6 +97,7 @@ pub(super) struct Adapter {
     preview_stamp: Option<String>,
     viewer_source_cache: source_views::Cache,
     preview_source_cache: source_views::Cache,
+    native_viewer: viewer_native::Host,
     security: Option<security::Form>,
     drafts: drafts::State,
     dark: bool,
@@ -291,6 +293,7 @@ impl Adapter {
             preview_stamp: None,
             viewer_source_cache: Default::default(),
             preview_source_cache: Default::default(),
+            native_viewer: Default::default(),
             security: None,
             drafts: Default::default(),
             dark: false,
@@ -685,6 +688,7 @@ impl Adapter {
     }
 
     fn sync(&mut self, ui: &CommanderWindow) {
+        self.native_viewer_events(ui);
         #[cfg(any(target_os = "linux", target_os = "windows"))]
         for event in self.native_forms.events() {
             use dialogs::native_host::Event;
@@ -1625,7 +1629,18 @@ impl Adapter {
         let opening = self.app.editor.is_some() && !ui.get_viewer_visible();
         ui.set_viewer_visible(self.app.editor.is_some());
         if let Some(editor) = &self.app.editor {
-            ui.set_viewer_title(format!("{} · {}", editor.title, editor.kind).into());
+            ui.set_viewer_title(
+                editor
+                    .navigation
+                    .path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| editor.title.clone())
+                    .into(),
+            );
+            ui.set_viewer_path(editor.title.clone().into());
+            ui.set_viewer_kind(editor.kind.into());
+            ui.set_viewer_can_save(editor.editable);
             ui.set_viewer_pdf_document(editor.pdf.is_some());
             ui.set_viewer_locked(editor.pdf.as_ref().is_some_and(|p| p.locked));
             ui.set_viewer_busy(
@@ -1821,6 +1836,12 @@ impl Adapter {
         if opening {
             ui.invoke_focus_viewer();
         }
+        self.native_viewer.sync(
+            ui,
+            self.app.editor.as_ref().map(|e| e.navigation.id),
+            self.dark,
+            &self.app.preferences,
+        );
         ui.set_preview_visible(self.app.preferences.preview);
         if self.app.preferences.preview {
             ui.set_preview_title(
@@ -2094,7 +2115,8 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                     delay: interval,
                     action: Box::new(move || {
                         let callback = &payload.as_ref().unwrap().0;
-                        let native = callback.starts_with("native-")
+                        let native = (callback.starts_with("native-")
+                            && callback != "native-viewer")
                             || (cfg!(target_os = "macos") && callback == "settings-page");
                         if native && !windows::native_form_ready() {
                             return false;
@@ -2122,6 +2144,65 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                                 }
                                 "select" => ui.invoke_dialog_select(value.into()),
                                 "viewer" => ui.invoke_viewer_action(value.into()),
+                                "viewer-edit" => ui.invoke_viewer_edit(value.into()),
+                                "viewer-assert" => {
+                                    let expected: serde_json::Value = serde_json::from_str(&value)
+                                        .expect("Viewer assertions must be an object");
+                                    for (key, value) in expected
+                                        .as_object()
+                                        .expect("Viewer assertions must be an object")
+                                    {
+                                        match key.as_str() {
+                                            "native" => assert_eq!(
+                                                ui.get_viewer_native(),
+                                                value.as_bool().unwrap()
+                                            ),
+                                            "dirty" => assert_eq!(
+                                                ui.get_viewer_dirty(),
+                                                value.as_bool().unwrap()
+                                            ),
+                                            "query" => assert_eq!(
+                                                ui.get_viewer_query().as_str(),
+                                                value.as_str().unwrap()
+                                            ),
+                                            "find" => assert_eq!(
+                                                ui.get_viewer_find_visible(),
+                                                value.as_bool().unwrap()
+                                            ),
+                                            "tools" => assert_eq!(
+                                                ui.get_viewer_tools_visible(),
+                                                value.as_bool().unwrap()
+                                            ),
+                                            "mode" => assert_eq!(
+                                                ui.get_viewer_source_mode().as_str(),
+                                                value.as_str().unwrap()
+                                            ),
+                                            _ => panic!("Unknown viewer assertion"),
+                                        }
+                                    }
+                                }
+                                "viewer-find" => ui.invoke_focus_viewer_search(),
+                                "viewer-tools" => ui.invoke_show_viewer_tools(),
+                                "native-viewer" => {
+                                    #[cfg(any(target_os = "macos", target_os = "windows"))]
+                                    {
+                                        let (id, value): (String, String) = serde_json::from_str(
+                                            &value,
+                                        )
+                                        .expect("Native viewer smoke needs a control/value pair");
+                                        windows::native_viewer_smoke(&id, &value);
+                                    }
+                                }
+                                "resize" => {
+                                    let (width, height): (f32, f32) = serde_json::from_str(&value)
+                                        .expect("Screenshot resize must be a width/height pair");
+                                    // Honor the screenshot scale override on Retina displays.
+                                    let scale = ui.window().scale_factor();
+                                    ui.window().set_size(slint::PhysicalSize::new(
+                                        (width * scale).round() as u32,
+                                        (height * scale).round() as u32,
+                                    ));
+                                }
                                 "sort" => {
                                     let (side, column): (i32, i32) = serde_json::from_str(&value)
                                         .expect("Screenshot sort must be a pane/column pair");
@@ -2239,6 +2320,13 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                     }
                     #[cfg(any(target_os = "windows", target_os = "linux"))]
                     if windows::native_form_snapshot(Path::new(&path)) {
+                        if std::env::var_os("RUST_COMMANDER_SMOKE_KEEP_OPEN").is_none() {
+                            let _ = slint::quit_event_loop();
+                        }
+                        return;
+                    }
+                    #[cfg(any(target_os = "macos", target_os = "windows"))]
+                    if windows::native_viewer_snapshot(Path::new(&path)) {
                         if std::env::var_os("RUST_COMMANDER_SMOKE_KEEP_OPEN").is_none() {
                             let _ = slint::quit_event_loop();
                         }
