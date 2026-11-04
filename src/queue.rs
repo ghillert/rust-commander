@@ -8,7 +8,13 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
+    sync::RwLock,
 };
+
+// Windows can reject replacement while another reader/writer still holds the
+// current snapshot open. Keep handles within the same coordinated access.
+static STORAGE: RwLock<()> = RwLock::new(());
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Queue {
@@ -48,6 +54,9 @@ impl Queue {
         }
     }
     pub fn load_in(path: &Path) -> Result<Self> {
+        let _storage = STORAGE
+            .read()
+            .map_err(|_| anyhow::anyhow!("Queue storage lock failed"))?;
         let mut q: Self = match fs::read(path) {
             Ok(data) => serde_json::from_slice(&data)?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
@@ -66,6 +75,9 @@ impl Queue {
         self.save_in(&Self::path()?)
     }
     pub fn save_in(&self, path: &Path) -> Result<()> {
+        let _storage = STORAGE
+            .write()
+            .map_err(|_| anyhow::anyhow!("Queue storage lock failed"))?;
         let parent = path.parent().context("Missing queue folder")?;
         fs::create_dir_all(parent)?;
         let mut f = tempfile::NamedTempFile::new_in(parent)?;
@@ -343,6 +355,43 @@ pub fn discard_checkpoint(op: &Operation) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn concurrent_snapshots_can_be_loaded_and_replaced() {
+        use std::sync::{Arc, Barrier};
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("queue.json");
+        let initial = Queue {
+            waiting: VecDeque::from([Operation::Mkdir("initial".into())]),
+            ..Default::default()
+        };
+        initial.save_in(&path).unwrap();
+        let barrier = Arc::new(Barrier::new(8));
+        std::thread::scope(|scope| {
+            for worker in 0..8 {
+                let barrier = barrier.clone();
+                let path = &path;
+                scope.spawn(move || {
+                    barrier.wait();
+                    for snapshot in 0..100 {
+                        if worker < 4 {
+                            let queue = Queue {
+                                waiting: VecDeque::from([Operation::Mkdir(
+                                    format!("worker-{worker}-{snapshot}").into(),
+                                )]),
+                                ..Default::default()
+                            };
+                            queue.save_in(path).expect("Concurrent queue save");
+                        } else {
+                            let queue = Queue::load_in(path).expect("Concurrent queue load");
+                            assert_eq!(queue.waiting.len(), 1);
+                            assert!(matches!(queue.waiting[0], Operation::Mkdir(_)));
+                        }
+                    }
+                });
+            }
+        });
+        assert_eq!(Queue::load_in(&path).unwrap().waiting.len(), 1);
+    }
     #[test]
     fn interrupted_jobs_restore_paused_without_passwords() {
         let d = tempfile::tempdir().unwrap();

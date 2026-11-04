@@ -36,6 +36,33 @@ class IconCatalogTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             icons.validate_catalog(broken)
 
+    def test_regeneration_preserves_notices_before_and_after_icon_section(self):
+        original = (ROOT / "NOTICE").read_text(encoding="utf-8")
+        begin = "--- BEGIN VENDORED ICON NOTICES ---"
+        end = "--- END VENDORED ICON NOTICES ---"
+        prefix, remaining = original.split(begin, 1)
+        _, suffix = remaining.split(end, 1)
+        suffix += "\nAdditional dependency notice: café © contributors.\n"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            local = root / "ui/icons"
+            shutil.copytree(icons.ICONS, local)
+            notice = root / "NOTICE"
+            notice.write_text(prefix + begin + "\nStale icon notices\n" + end + suffix, encoding="utf-8")
+            with mock.patch.multiple(
+                icons, ROOT=root, ICONS=local, MANIFEST=local / "catalog.json",
+                RUST=root / "src/icons/catalog.rs", SLINT=local / "catalog.slint",
+            ), mock.patch.object(sys, "argv", ["icons.py"]), mock.patch.object(
+                icons, "download", side_effect=AssertionError("regeneration must stay offline")
+            ):
+                icons.main()
+                regenerated = notice.read_text(encoding="utf-8")
+                self.assertEqual(regenerated.split(begin, 1)[0], prefix)
+                self.assertEqual(regenerated.split(end, 1)[1], suffix)
+                self.assertNotIn("Stale icon notices", regenerated)
+                with mock.patch.object(sys, "argv", ["icons.py", "--check"]):
+                    icons.main()
+
     def test_duplicate_filename_rules_are_rejected(self):
         broken = copy.deepcopy(self.catalog)
         broken["file_rules"].append({"icon": "file", "extensions": ["pdf"]})

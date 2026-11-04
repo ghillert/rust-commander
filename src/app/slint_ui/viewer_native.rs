@@ -281,13 +281,18 @@ fn header(ui: &CommanderWindow, widths: &[(&str, f32)]) -> Vec<Control> {
     controls
 }
 fn tools(ui: &CommanderWindow, values: &HashMap<String, String>) -> (Vec<Control>, f32) {
+    const INSET: f32 = 20.0;
+    const WIDTH: f32 = 352.0 - 2.0 * INSET;
+    const GAP: f32 = 10.0;
+    const BUTTON: f32 = 82.0;
+    const FIELD: f32 = WIDTH - GAP - BUTTON;
     let mut v = vec![Control::new(
         "tools-title",
         Kind::Label,
         "Viewer tools",
-        [16.0, 14.0, 320.0, 20.0],
+        [INSET, INSET, WIDTH, 20.0],
     )];
-    let mut y = 42.0;
+    let mut y = INSET + 32.0;
     if ui.get_viewer_text_controls() {
         for (id, label, value) in [
             ("encoding", "Text encoding", ui.get_viewer_encoding()),
@@ -304,10 +309,10 @@ fn tools(ui: &CommanderWindow, values: &HashMap<String, String>) -> (Vec<Control
                 &format!("{id}-label"),
                 Kind::Label,
                 label,
-                [16.0, y, 320.0, 18.0],
+                [INSET, y, WIDTH, 18.0],
             ));
-            y += 22.0;
-            let mut c = Control::new(id, Kind::Choice, label, [16.0, y, 320.0, 28.0]);
+            y += 24.0;
+            let mut c = Control::new(id, Kind::Choice, label, [INSET, y, WIDTH, 28.0]);
             c.value = value.into();
             c.choices = [
                 "UTF-8",
@@ -319,49 +324,54 @@ fn tools(ui: &CommanderWindow, values: &HashMap<String, String>) -> (Vec<Control
             .map(String::from)
             .to_vec();
             v.push(c);
-            y += 40.0;
+            y += 44.0;
         }
         v.push(Control::new(
             "bytes-label",
             Kind::Label,
             "File bytes · uses original contents",
-            [16.0, y, 320.0, 20.0],
+            [INSET, y, WIDTH, 18.0],
         ));
-        y += 28.0;
+        y += 26.0;
         for (id, label, button, title) in [
             ("hex", "Hex bytes, e.g. 4A 53", "hex-find", "Find hex"),
             ("offset", "Byte offset, e.g. 0x100", "jump", "Go"),
         ] {
-            let mut c = Control::new(id, Kind::Field, label, [16.0, y, 230.0, 28.0]);
+            let mut c = Control::new(id, Kind::Field, label, [INSET, y, FIELD, 28.0]);
             c.value = values.get(id).cloned().unwrap_or_default();
             v.push(c);
-            let mut c = Control::new(button, Kind::Button, title, [254.0, y, 82.0, 28.0]);
+            let mut c = Control::new(
+                button,
+                Kind::Button,
+                title,
+                [INSET + FIELD + GAP, y, BUTTON, 28.0],
+            );
             c.enabled = !ui.get_viewer_busy();
             v.push(c);
-            y += 38.0;
+            y += 40.0;
         }
     } else if ui.get_viewer_pdf_document() {
-        let mut c = Control::new("page", Kind::Field, "Page number", [16.0, y, 230.0, 28.0]);
+        let mut c = Control::new("page", Kind::Field, "Page number", [INSET, y, FIELD, 28.0]);
         c.value = values.get("page").cloned().unwrap_or_default();
         v.push(c);
         v.push(Control::new(
             "page-go",
             Kind::Button,
             "Go",
-            [254.0, y, 82.0, 28.0],
+            [INSET + FIELD + GAP, y, BUTTON, 28.0],
         ));
-        y += 38.0;
+        y += 40.0;
         for (id, label) in [
             ("rotate", "Rotate clockwise"),
             ("pdf-copy", "Copy selection"),
         ] {
-            let mut c = Control::new(id, Kind::Button, label, [16.0, y, 320.0, 28.0]);
+            let mut c = Control::new(id, Kind::Button, label, [INSET, y, WIDTH, 28.0]);
             c.enabled = id != "pdf-copy" || ui.get_viewer_pdf_text() || ui.get_viewer_pdf_copy();
             v.push(c);
-            y += 38.0;
+            y += 40.0;
         }
     }
-    (v, y + 8.0)
+    (v, y - 12.0 + INSET)
 }
 impl Adapter {
     pub(super) fn native_viewer_events(&mut self, ui: &CommanderWindow) {

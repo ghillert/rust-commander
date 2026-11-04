@@ -41,7 +41,7 @@ def main():
                     "color_scheme": scheme.title(), "language": args.language,
                     "font_size": args.font_size,
                     "mail": {"host": "smtp.example.org", "port": 587, "sender": "sender@example.org", "username": "sender@example.org"},
-                }}))
+                }}), encoding="utf-8")
                 target = args.output.resolve() / (tag + ".png")
                 target.unlink(missing_ok=True)
                 env = os.environ.copy()
@@ -55,8 +55,8 @@ def main():
                            RUST_COMMANDER_SCREENSHOT_TO=str(target), RUST_COMMANDER_SCREENSHOT_ACTION="Preferences",
                            RUST_COMMANDER_SCREENSHOT_SEQUENCE=json.dumps(steps), SLINT_SCALE_FACTOR="1")
                 result = subprocess.run([str(args.binary.resolve()), str(left), str(right)], env=env,
-                                        capture_output=True, text=True, timeout=30)
-                (args.output / (tag + ".log")).write_text(result.stdout + result.stderr)
+                                        capture_output=True, text=True, timeout=30, encoding="utf-8")
+                (args.output / (tag + ".log")).write_text(result.stdout + result.stderr, encoding="utf-8")
                 if result.returncode:
                     raise RuntimeError(f"{tag}: {result.returncode}: {result.stderr}")
                 data = target.read_bytes()
@@ -78,7 +78,7 @@ def exercise(args, renderer, scheme):
             config, left, right = [root / name for name in ["config", "left", "right"]]
             for path in [config, left, right]: path.mkdir()
             settings = config / "settings.json"
-            settings.write_text(json.dumps({"preferences": {"font_size": 14, "color_scheme": scheme.title()}}))
+            settings.write_text(json.dumps({"preferences": {"font_size": 14, "color_scheme": scheme.title()}}), encoding="utf-8")
             sequence = [[900, "settings-page", "2"],
                 [1800, "native-field", json.dumps(["font", "18" if case == "apply-cancel" else "invalid"])]]
             if case == "apply-cancel":
@@ -95,10 +95,10 @@ def exercise(args, renderer, scheme):
                 RUST_COMMANDER_SCREENSHOT_SEQUENCE=json.dumps(sequence), RUST_COMMANDER_SCREENSHOT_DELAY_MS="4300")
             env.pop("RUST_COMMANDER_SMOKE_KEEP_OPEN", None)
             result = subprocess.run([str(args.binary.resolve()), str(left), str(right)], env=env,
-                capture_output=True, text=True, timeout=30)
-            (args.output / (tag + ".log")).write_text(result.stdout + result.stderr)
+                capture_output=True, text=True, timeout=30, encoding="utf-8")
+            (args.output / (tag + ".log")).write_text(result.stdout + result.stderr, encoding="utf-8")
             if result.returncode: raise RuntimeError(f"{tag}: {result.stderr}")
-            actual = json.loads(settings.read_text())["preferences"]["font_size"]
+            actual = json.loads(settings.read_text(encoding="utf-8"))["preferences"]["font_size"]
             assert actual == (18 if case == "apply-cancel" else 14), (tag, actual)
             print(f"{tag}: native draft persistence passed", flush=True)
 

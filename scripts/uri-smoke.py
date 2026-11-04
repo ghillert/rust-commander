@@ -21,7 +21,7 @@ def main():
         files = root / "files"
         files.mkdir()
         (files / "Folder").mkdir()
-        (files / "café notes.txt").write_text("URI navigation fixture")
+        (files / "café notes.txt").write_text("URI navigation fixture", encoding="utf-8")
         (files / "Example.pdf").write_bytes((project / "tests/fixtures/two-pages.pdf").read_bytes())
 
         class Handler(http.server.SimpleHTTPRequestHandler):
@@ -38,7 +38,7 @@ def main():
                         name = f"{renderer}-{mode.lower()}-{scheme.lower()}-{scale}x"
                         config = root / name
                         config.mkdir()
-                        (config / "settings.json").write_text(json.dumps({"preferences": {"location_bar": mode, "color_scheme": scheme}}))
+                        (config / "settings.json").write_text(json.dumps({"preferences": {"location_bar": mode, "color_scheme": scheme}}), encoding="utf-8")
                         target = output / (name + ".png")
                         env = dict(os.environ, RUST_COMMANDER_CONFIG_DIR=str(config), SLINT_BACKEND="winit-" + renderer,
                             SLINT_SCALE_FACTOR=scale, RUST_COMMANDER_SCREENSHOT_TO=str(target),
@@ -46,9 +46,9 @@ def main():
                             RUST_COMMANDER_SCREENSHOT_DELAY_MS="2500")
                         env.pop("RUST_COMMANDER_SMOKE_KEEP_OPEN", None)
                         env.pop("RUST_COMMANDER_SCREENSHOT_VIEWER_ACTION", None)
-                        result = subprocess.run([str(binary), str(root), str(root)], env=env, capture_output=True, text=True, timeout=30)
+                        result = subprocess.run([str(binary), str(root), str(root)], env=env, capture_output=True, text=True, timeout=30, encoding="utf-8")
                         log = result.stdout + result.stderr
-                        (output / (name + ".log")).write_text(log)
+                        (output / (name + ".log")).write_text(log, encoding="utf-8")
                         if result.returncode or f"Location snapshot: HTTP · 3 rows · {mode.lower()}" not in log:
                             raise RuntimeError(f"{name} URI navigation failed: {log}")
                         pixels = target.read_bytes()

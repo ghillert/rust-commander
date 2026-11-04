@@ -880,6 +880,14 @@ pub fn extraction_conflicts(
     merge: bool,
 ) -> Result<Vec<crate::transfer::Conflict>> {
     use std::collections::BTreeMap;
+    match fs::symlink_metadata(destination) {
+        Ok(metadata) if !metadata.is_dir() || metadata.file_type().is_symlink() => {
+            bail!("Choose a real destination directory");
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
     let mut members = BTreeMap::new();
     visit(file, |member, _| {
         if !included(&member.path, selected, prefix) {

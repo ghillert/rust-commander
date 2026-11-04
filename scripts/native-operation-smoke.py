@@ -5,9 +5,9 @@ import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import tempfile
 import zipfile
+from smoke_process import run_smoke
 
 
 def main():
@@ -34,9 +34,9 @@ def run_case(args, binary, renderer, case):
         for path in [config, left, right]:
             path.mkdir()
         (config / 'settings.json').write_text(json.dumps({'preferences': {
-            'color_scheme': 'Dark' if renderer == 'femtovg' else 'Light'}}))
+            'color_scheme': 'Dark' if renderer == 'femtovg' else 'Light'}}), encoding="utf-8")
         source = left / 'café source.txt'
-        source.write_text('Native operation fixture\n')
+        source.write_text('Native operation fixture\n', encoding="utf-8")
         action = {'move': 'Move', 'rename': 'Rename'}.get(case, 'Pack' if case.startswith('pack') else 'Copy')
         destination = right / ('result.zip' if case.startswith('pack') else 'renamed.txt' if case == 'rename' else source.name)
         if case == 'rename':
@@ -44,7 +44,7 @@ def run_case(args, binary, renderer, case):
         if case == 'pack-7z':
             destination = destination.with_suffix('.7z')
         if case == 'conflict':
-            destination.write_text('Keep original\n')
+            destination.write_text('Keep original\n', encoding="utf-8")
         value = destination.name if case == 'rename' else str(destination) if case.startswith('pack') else str(right)
         sequence = [[350, 'click', str(source)], [800, 'action', action],
                     [1250, 'native-field', json.dumps(['prompt', value])],
@@ -79,14 +79,13 @@ def run_case(args, binary, renderer, case):
                    RUST_COMMANDER_SCREENSHOT_SEQUENCE=json.dumps(sequence),
                    RUST_COMMANDER_SCREENSHOT_DELAY_MS='4600')
         env.pop('RUST_COMMANDER_SMOKE_KEEP_OPEN', None)
-        result = subprocess.run([str(binary), str(left), str(right)], env=env,
-                                capture_output=True, text=True, timeout=60)
-        (args.output / f'{renderer}-{case}.log').write_text(result.stdout + result.stderr)
+        result = run_smoke([str(binary), str(left), str(right)], env=env,
+                           log_path=args.output / f'{renderer}-{case}.log', timeout=60)
         if result.returncode:
             raise RuntimeError(f'{renderer}/{case}: {result.stderr}')
         assert target.is_file() and target.stat().st_size > 1000, target
         if case in ['copy', 'move', 'rename', 'return-fast']:
-            assert destination.read_text() == 'Native operation fixture\n', list(right.iterdir())
+            assert destination.read_text(encoding="utf-8") == 'Native operation fixture\n', list(right.iterdir())
             assert source.exists() == (case not in ['move', 'rename'])
         elif case in ['pack', 'pack-encrypted', 'pack-background']:
             with zipfile.ZipFile(destination) as archive:
@@ -100,7 +99,7 @@ def run_case(args, binary, renderer, case):
         elif case == 'pack-7z':
             assert destination.read_bytes().startswith(b"7z\xbc\xaf\x27\x1c")
         elif case == 'conflict':
-            assert destination.read_text() == 'Keep original\n'
+            assert destination.read_text(encoding="utf-8") == 'Keep original\n'
             assert len(list(right.iterdir())) == 2
         else:
             assert not destination.exists()

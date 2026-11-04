@@ -55,18 +55,13 @@ impl Adapter {
         }
         if form.saving && self.app.job.is_none() && self.app.queue.is_empty() {
             form.saving = false;
-            if self.app.history.last().is_some_and(|r| r.success) {
+            // History is shared across windows and can end with another job.
+            // The owning app's status reflects this operation's completion.
+            if !self.app.status_error {
                 self.security = None;
                 self.app.refresh(&self.ctx);
             } else {
-                form.error = self
-                    .app
-                    .history
-                    .last()
-                    .map(|r| r.result.clone())
-                    .unwrap_or_else(|| {
-                        "Security update failed; reload the metadata before retrying".into()
-                    });
+                form.error = self.app.status.clone();
             }
         }
     }
@@ -148,6 +143,39 @@ impl Adapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn completed_security_changes_do_not_use_unrelated_history_results() {
+        let (_root, ui, state, left, _) = super::super::context_menus::setup();
+        let snapshot = crate::security_metadata::read(&left.join("alpha.txt")).unwrap();
+        let mut a = state.borrow_mut();
+        a.security = Some(Form {
+            snapshot: Some(snapshot),
+            owner: "invalid-owner".into(),
+            saving: true,
+            ..Default::default()
+        });
+        a.app.history.push(
+            serde_json::from_str(
+                r#"{"id":"unrelated","label":"Save text","result":"Saved text.","success":true,"undone":false,"changes":[]}"#,
+            )
+            .unwrap(),
+        );
+        a.app.status_error = true;
+        a.app.status = "Unknown owner name".into();
+        a.security_tick();
+        a.sync(&ui);
+        assert_eq!(ui.get_dialog_title(), "Ownership and ACL");
+        assert_eq!(ui.get_dialog_error(), "Unknown owner name");
+        assert_eq!(a.security.as_ref().unwrap().owner, "invalid-owner");
+
+        a.security.as_mut().unwrap().saving = true;
+        a.app.history.last_mut().unwrap().success = false;
+        a.app.status_error = false;
+        a.app.status = "Security metadata updated.".into();
+        a.security_tick();
+        assert!(a.security.is_none());
+    }
 
     #[test]
     fn metadata_loading_presents_only_the_completed_dialog_and_can_be_cancelled() {

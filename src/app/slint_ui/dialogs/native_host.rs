@@ -31,7 +31,7 @@ pub(super) struct Model {
     pub scheme: crate::appearance::ColorScheme,
     pub language: crate::i18n::Language,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub(super) enum Request {
     Update(Box<Model>),
     Close,
@@ -113,7 +113,7 @@ pub(super) fn incoming() -> Incoming {
         while let Ok(Some(request)) = read_message::<Request>(&mut stdin) {
             match request {
                 Request::Update(model) => *updates.lock().unwrap() = Some(*model),
-                Request::Close => std::process::exit(0),
+                Request::Close => exit_helper(),
                 #[cfg(feature = "screenshot")]
                 request => {
                     if sender.send(request).is_err() {
@@ -124,7 +124,7 @@ pub(super) fn incoming() -> Incoming {
         }
         // A blocked native file chooser must also disappear if its owner dies.
         // This process performs no file operations; the OS reclaims its windows.
-        std::process::exit(0);
+        exit_helper();
     });
     #[cfg(not(feature = "screenshot"))]
     let _ = sender;
@@ -133,6 +133,19 @@ pub(super) fn incoming() -> Incoming {
         latest,
     }
 }
+
+fn exit_helper() -> ! {
+    // This disposable process has no application state or file operations to
+    // flush. GTK's C exit handlers must not run on this reader thread while
+    // the main thread is using GTK or displaying a native chooser.
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::_exit(0)
+    }
+    #[cfg(target_os = "windows")]
+    std::process::exit(0)
+}
+
 pub(in super::super) fn run_helper() -> i32 {
     let incoming = incoming();
     let Some(model) = incoming.first_model() else {
@@ -148,7 +161,7 @@ pub(in super::super) fn run_helper() -> i32 {
 }
 
 struct Process {
-    child: Child,
+    child: Option<Child>,
     sender: SyncSender<Request>,
     events: Receiver<Event>,
     model: Model,
@@ -190,7 +203,7 @@ impl Process {
             .send(Request::Update(Box::new(model.clone())))
             .map_err(|_| std::io::ErrorKind::BrokenPipe)?;
         Ok(Self {
-            child,
+            child: Some(child),
             sender,
             events,
             model,
@@ -201,9 +214,15 @@ impl Process {
 }
 impl Drop for Process {
     fn drop(&mut self) {
-        let _ = self.sender.try_send(Request::Close);
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Some(mut child) = self.child.take() {
+            // The disposable helper has no application state to flush. Kill it
+            // before closing its pipes, then reap away from the UI thread:
+            // Win32 window teardown can synchronously message its owner.
+            let _ = child.kill();
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
     }
 }
 #[derive(Default)]
@@ -212,10 +231,23 @@ pub(in super::super) struct Host {
     failed_kind: Option<String>,
     #[cfg(feature = "screenshot")]
     pending: Vec<Event>,
+    #[cfg(feature = "screenshot")]
+    fixture: Option<Fixture>,
+}
+#[cfg(feature = "screenshot")]
+struct Fixture {
+    request: Request,
+    capture: bool,
+    started: Instant,
+    reply: Option<bool>,
 }
 impl Host {
     pub fn active(&self) -> bool {
         self.process.is_some()
+    }
+    #[cfg(feature = "screenshot")]
+    pub fn fixture_active(&self) -> bool {
+        self.active() || self.fixture.is_some()
     }
     pub fn events(&mut self) -> Vec<Event> {
         let mut events = Vec::new();
@@ -227,10 +259,25 @@ impl Host {
                 match event {
                     Event::Ready => process.ready = true,
                     Event::Failed => failed = true,
+                    #[cfg(feature = "screenshot")]
+                    Event::Checked(ok) if self.fixture.as_ref().is_some_and(|f| !f.capture) => {
+                        self.fixture.as_mut().unwrap().reply = Some(ok);
+                    }
+                    #[cfg(feature = "screenshot")]
+                    Event::Captured(ok) if self.fixture.as_ref().is_some_and(|f| f.capture) => {
+                        self.fixture.as_mut().unwrap().reply = Some(ok);
+                    }
                     event => events.push(event),
                 }
             }
-            if process.child.try_wait().ok().flatten().is_some()
+            if process
+                .child
+                .as_mut()
+                .unwrap()
+                .try_wait()
+                .ok()
+                .flatten()
+                .is_some()
                 || (!process.ready && process.started.elapsed() > Duration::from_secs(4))
             {
                 failed = true;
@@ -244,47 +291,56 @@ impl Host {
     }
     #[cfg(feature = "screenshot")]
     fn test_request(&mut self, request: Request, capture: bool) -> bool {
-        let Some(process) = &mut self.process else {
-            return false;
-        };
-        if process.sender.send(request).is_err() {
+        // Never wait on the UI thread: the helper can synchronously message its
+        // Win32 owner while rebuilding controls, changing focus or capturing.
+        // Preserve normal field/action events for the next application tick.
+        let events = self.events();
+        self.pending.extend(events);
+        if let Some(fixture) = self.fixture.as_ref() {
+            assert!(fixture.request == request && fixture.capture == capture);
+            if let Some(ok) = fixture.reply {
+                self.fixture = None;
+                assert!(ok, "Native control fixture failed");
+                return true;
+            }
+            assert!(
+                fixture.started.elapsed() < Duration::from_secs(4),
+                "Native helper fixture response timed out"
+            );
+            assert!(self.active(), "Native helper must stay active");
             return false;
         }
-        let deadline = Instant::now() + Duration::from_secs(4);
-        while Instant::now() < deadline {
-            match process.events.recv_timeout(Duration::from_millis(100)) {
-                Ok(Event::Ready) => process.ready = true,
-                Ok(Event::Captured(ok)) if capture => return ok,
-                Ok(Event::Checked(ok)) if !capture => return ok,
-                Ok(event) => self.pending.push(event),
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(_) => return false,
+        let process = self
+            .process
+            .as_mut()
+            .expect("Native helper must stay active");
+        match process.sender.try_send(request.clone()) {
+            Ok(()) => {
+                self.fixture = Some(Fixture {
+                    request,
+                    capture,
+                    started: Instant::now(),
+                    reply: None,
+                });
             }
+            Err(TrySendError::Full(_)) => {}
+            Err(TrySendError::Disconnected(_)) => panic!("Native helper pipe closed"),
         }
         false
     }
     #[cfg(feature = "screenshot")]
-    pub fn snapshot(&mut self, path: &std::path::Path) -> bool {
-        if !self.active() {
-            return false;
-        }
-        assert!(
-            self.test_request(Request::Capture(path.to_string_lossy().into()), true),
-            "Native window capture must succeed"
-        );
-        true
+    pub fn snapshot(&mut self, path: &std::path::Path) -> Option<bool> {
+        self.fixture_active()
+            .then(|| self.test_request(Request::Capture(path.to_string_lossy().into()), true))
     }
     #[cfg(feature = "screenshot")]
-    pub fn smoke(&mut self, callback: &str, value: &str) {
+    pub fn smoke(&mut self, callback: &str, value: &str) -> bool {
         let request = if callback == "native-page" {
             Request::Page(value.parse().unwrap())
         } else {
             Request::Smoke(callback.into(), value.into())
         };
-        assert!(
-            self.test_request(request, false),
-            "Native control fixture failed: {callback}"
-        );
+        self.test_request(request, false)
     }
     pub fn sync(
         &mut self,
@@ -292,7 +348,7 @@ impl Host {
         form: Option<&Dialog>,
         scheme: crate::appearance::ColorScheme,
         language: crate::i18n::Language,
-        wayland_parent: Option<&str>,
+        _wayland_parent: Option<&str>,
     ) -> bool {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
         use slint::ComponentHandle;
@@ -313,13 +369,17 @@ impl Host {
             return false;
         };
         let parent = match handle {
+            #[cfg(target_os = "windows")]
             RawWindowHandle::Win32(h) => Parent::Windows(h.hwnd.get() as usize),
+            #[cfg(target_os = "linux")]
             RawWindowHandle::Xlib(h) => match u32::try_from(h.window) {
                 Ok(id) => Parent::X11(id),
                 Err(_) => return false,
             },
+            #[cfg(target_os = "linux")]
             RawWindowHandle::Xcb(h) => Parent::X11(h.window.get()),
-            RawWindowHandle::Wayland(_) => match wayland_parent {
+            #[cfg(target_os = "linux")]
+            RawWindowHandle::Wayland(_) => match _wayland_parent {
                 Some(handle) => Parent::Wayland(handle.into()),
                 None => return false,
             },
@@ -376,6 +436,25 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "screenshot")]
+    #[test]
+    fn completed_action_is_acknowledged_after_the_form_closes() {
+        // The application can close the helper on Action before the screenshot
+        // timer next polls the Checked reply. Do not send the action twice.
+        let mut host = Host {
+            fixture: Some(Fixture {
+                request: Request::Smoke("native-action".into(), "cancel".into()),
+                capture: false,
+                started: Instant::now(),
+                reply: Some(true),
+            }),
+            ..Default::default()
+        };
+        assert!(!host.active());
+        assert!(host.fixture_active());
+        assert!(host.smoke("native-action", "cancel"));
+        assert!(!host.fixture_active());
+    }
     #[test]
     fn protocol_rejects_unterminated_and_oversized_messages() {
         assert!(read_message::<Event>(&mut &b"{\"Action\":\"accept\"}"[..]).is_err());

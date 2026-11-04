@@ -108,6 +108,11 @@ fn pack_from_a_virtual_pane_freezes_selection_and_uses_the_normal_worker() {
         ui.invoke_dialog_action("accept".into());
         assert!(state.borrow().app.prompt.is_none());
         assert!(
+            !state.borrow().app.status_error,
+            "Virtual packing failed before the worker started: {}",
+            state.borrow().app.status
+        );
+        assert!(
             matches!(&state.borrow().app.queue.active, Some(Operation::PackSelection { selection, .. }) if selection.from == location && selection.entries.len() == 2)
         );
         assert_eq!(

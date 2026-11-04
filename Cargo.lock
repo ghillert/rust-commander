@@ -7004,6 +7004,7 @@ dependencies = [
  "bzip2",
  "chrono",
  "clipboard-rs",
+ "clipboard-win",
  "compress-tools",
  "directories",
  "drag",

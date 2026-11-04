@@ -9,6 +9,9 @@ runs:
     - name: Check release automation
       shell: bash
       run: python scripts/release/tests/test_release.py
+    - name: Check smoke-process cleanup and diagnostics
+      shell: bash
+      run: python scripts/tests/test_smoke_process.py
     - name: Check formatting
       shell: bash
       run: cargo fmt --all -- --check
@@ -121,6 +124,7 @@ runs:
           target/native-extract-smoke/*.log
           target/native-operation-smoke/*.png
           target/native-operation-smoke/*.log
+          target/native-helper-smoke/*.log
           target/settings-smoke/*.png
           target/settings-smoke/*.log
         if-no-files-found: ignore

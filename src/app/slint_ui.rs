@@ -2111,6 +2111,8 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                 previous = delay;
                 let step_ui = smoke_ui.as_weak();
                 let mut payload = Some((callback, value));
+                #[cfg(any(target_os = "windows", target_os = "linux"))]
+                let mut field_entered = false;
                 scheduled.push_back(SmokeStep {
                     delay: interval,
                     action: Box::new(move || {
@@ -2121,7 +2123,7 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                         if native && !windows::native_form_ready() {
                             return false;
                         }
-                        let (callback, value) = payload.take().unwrap();
+                        let (callback, value) = payload.as_ref().unwrap().clone();
                         if let Some(ui) = step_ui.upgrade() {
                             match callback.as_str() {
                                 "navigate" => ui.invoke_navigate(0, value.into()),
@@ -2136,10 +2138,12 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                                     #[cfg(target_os = "macos")]
                                     windows::native_extract_smoke("native-page", &value);
                                     #[cfg(any(target_os = "windows", target_os = "linux"))]
-                                    if !windows::native_form_smoke("native-page", &value) {
-                                        ui.invoke_show_settings_page(
+                                    match windows::native_form_smoke("native-page", &value) {
+                                        Some(false) => return false,
+                                        Some(true) => {}
+                                        None => ui.invoke_show_settings_page(
                                             value.parse().expect("Settings page must be a number"),
-                                        );
+                                        ),
                                     }
                                 }
                                 "select" => ui.invoke_dialog_select(value.into()),
@@ -2221,19 +2225,29 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                                     windows::native_extract_smoke(&callback, &value);
                                     #[cfg(any(target_os = "windows", target_os = "linux"))]
                                     {
-                                        assert!(windows::native_form_smoke(
-                                            if callback == "native-field-return" {
-                                                "native-field"
-                                            } else {
-                                                &callback
-                                            },
-                                            &value
-                                        ));
-                                        if callback == "native-field-return" {
-                                            assert!(windows::native_form_smoke(
+                                        if !field_entered {
+                                            if !windows::native_form_smoke(
+                                                if callback == "native-field-return" {
+                                                    "native-field"
+                                                } else {
+                                                    &callback
+                                                },
+                                                &value,
+                                            )
+                                            .expect("Native form must be active")
+                                            {
+                                                return false;
+                                            }
+                                            field_entered = true;
+                                        }
+                                        if callback == "native-field-return"
+                                            && !windows::native_form_smoke(
                                                 "native-action",
-                                                "return"
-                                            ));
+                                                "return",
+                                            )
+                                            .expect("Native form must be active")
+                                        {
+                                            return false;
                                         }
                                     }
                                 }
@@ -2246,6 +2260,7 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                                 _ => panic!("Unsupported screenshot callback"),
                             }
                         }
+                        payload.take();
                         true
                     }),
                 });
@@ -2277,10 +2292,22 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                 if !sequence_done.get() || std::time::Instant::now() < capture_at {
                     return;
                 }
-                if let Some(timer) = capture_timer.upgrade() {
-                    timer.stop();
-                }
                 if let Some(ui) = weak.upgrade() {
+                    #[cfg(any(target_os = "windows", target_os = "linux"))]
+                    if let Some(complete) = windows::native_form_snapshot(Path::new(&path)) {
+                        if complete {
+                            if let Some(timer) = capture_timer.upgrade() {
+                                timer.stop();
+                            }
+                            if std::env::var_os("RUST_COMMANDER_SMOKE_KEEP_OPEN").is_none() {
+                                let _ = slint::quit_event_loop();
+                            }
+                        }
+                        return;
+                    }
+                    if let Some(timer) = capture_timer.upgrade() {
+                        timer.stop();
+                    }
                     eprintln!(
                         "Location snapshot: {} · {} rows · {}",
                         ui.get_left_protocol(),
@@ -2313,13 +2340,6 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                     #[cfg(target_os = "macos")]
                     if windows::native_extract_snapshot(Path::new(&path)) {
                         eprintln!("Native Extract sheet snapshot saved");
-                        if std::env::var_os("RUST_COMMANDER_SMOKE_KEEP_OPEN").is_none() {
-                            let _ = slint::quit_event_loop();
-                        }
-                        return;
-                    }
-                    #[cfg(any(target_os = "windows", target_os = "linux"))]
-                    if windows::native_form_snapshot(Path::new(&path)) {
                         if std::env::var_os("RUST_COMMANDER_SMOKE_KEEP_OPEN").is_none() {
                             let _ = slint::quit_event_loop();
                         }

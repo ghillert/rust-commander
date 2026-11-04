@@ -8,6 +8,35 @@ use rust_commander::{
 use std::fs;
 
 #[test]
+fn concurrent_history_readers_and_writers_preserve_complete_records() {
+    let root = tempfile::tempdir().unwrap();
+    let record: history::Record = serde_json::from_str(
+        r#"{"id":"operation-concurrent","label":"Save text","result":"Saved.","success":true,"undone":false,"changes":[]}"#,
+    )
+    .unwrap();
+    history::save_in(std::slice::from_ref(&record), root.path()).unwrap();
+    let barrier = std::sync::Barrier::new(8);
+    std::thread::scope(|scope| {
+        for index in 0..8 {
+            let (root, record, barrier) = (&root, &record, &barrier);
+            scope.spawn(move || {
+                barrier.wait();
+                for _ in 0..100 {
+                    if index % 2 == 0 {
+                        history::save_in(std::slice::from_ref(record), root.path()).unwrap();
+                    } else {
+                        let loaded = history::load_in(root.path()).unwrap();
+                        assert_eq!(loaded.len(), 1);
+                        assert_eq!(loaded[0].id, record.id);
+                        assert_eq!(loaded[0].result, record.result);
+                    }
+                }
+            });
+        }
+    });
+}
+
+#[test]
 fn multi_file_recovery_preflights_all_items_and_cleans_each_group_once() {
     let root = tempfile::tempdir().unwrap();
     let config = root.path().join("config");

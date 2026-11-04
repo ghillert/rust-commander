@@ -5,9 +5,9 @@ import json
 import os
 import shutil
 from pathlib import Path
-import subprocess
 import tempfile
 import zipfile
+from smoke_process import run_smoke
 
 
 def main():
@@ -36,20 +36,20 @@ def run_cases(args, binary):
                     path.mkdir()
                 (config / 'settings.json').write_text(json.dumps({'preferences': {
                     'color_scheme': 'Dark' if renderer == 'femtovg' else 'Light',
-                }}))
+                }}), encoding="utf-8")
                 archive = left / 'source.zip'
                 names = ['report.txt'] if case != 'scroll' else [f'report-{i:02d}.txt' for i in range(30)]
                 destination = right / 'résultats with spaces'
                 if case in ['conflicts', 'scroll', 'skip', 'apply-all']:
                     destination.mkdir()
                     for name in names:
-                        (destination / name).write_text('Original contents\n')
+                        (destination / name).write_text('Original contents\n', encoding="utf-8")
                 with zipfile.ZipFile(archive, 'w') as output:
                     for name in names:
                         output.writestr(name, 'Extracted café contents\n')
                 if case == 'validation':
                     # A file used as a directory produces an inline preflight error.
-                    destination.write_text('Must remain untouched\n')
+                    destination.write_text('Must remain untouched\n', encoding="utf-8")
                 sequence = [[300, 'open', str(archive)], [900, 'action', 'Extract'],
                             [1300, 'native-field', json.dumps(['prompt', str(destination)])],
                             [1900, 'native-check', '']]
@@ -71,7 +71,7 @@ def run_cases(args, binary):
                 elif case in ['cancel', 'close']:
                     sequence += [[2200, 'native-action', case]]
                 elif case == 'validation':
-                    sequence += [[2200, 'native-check', 'Not a directory']]
+                    sequence += [[2200, 'native-check', 'Choose a real destination directory']]
                 elif case == 'reopen':
                     sequence += [[2100, 'native-action', 'cancel'], [2400, 'action', 'Extract'],
                                  [3000, 'native-check', '']]
@@ -83,8 +83,8 @@ def run_cases(args, binary):
                            RUST_COMMANDER_SCREENSHOT_SEQUENCE=json.dumps(sequence),
                            RUST_COMMANDER_SCREENSHOT_DELAY_MS='4200')
                 env.pop('RUST_COMMANDER_SMOKE_KEEP_OPEN', None)
-                result = subprocess.run([str(binary), str(left), str(right)], env=env, capture_output=True, text=True, timeout=60)
-                (args.output / f'{renderer}-{case}.log').write_text(result.stdout + result.stderr)
+                result = run_smoke([str(binary), str(left), str(right)], env=env,
+                                   log_path=args.output / f'{renderer}-{case}.log', timeout=60)
                 if result.returncode:
                     raise RuntimeError(f'{renderer}/{case}: {result.stderr}')
                 if case != 'quit' and (not target.is_file() or target.stat().st_size < 1000):
@@ -92,17 +92,17 @@ def run_cases(args, binary):
                 if case == 'return-fast':
                     sequence = sequence[:2] + [[1300, 'native-field-return', json.dumps(['prompt', str(destination)])]]
                 if case in ['extract', 'return', 'return-fast']:
-                    assert (destination / 'report.txt').read_text() == 'Extracted café contents\n'
+                    assert (destination / 'report.txt').read_text(encoding="utf-8") == 'Extracted café contents\n'
                 elif case == 'conflicts':
-                    assert (destination / 'report.txt').read_text() == 'Original contents\n'
+                    assert (destination / 'report.txt').read_text(encoding="utf-8") == 'Original contents\n'
                     assert len(list(destination.glob('report*'))) == 2, list(destination.iterdir())
                 elif case in ['skip', 'apply-all']:
-                    assert (destination / 'report.txt').read_text() == 'Original contents\n'
+                    assert (destination / 'report.txt').read_text(encoding="utf-8") == 'Original contents\n'
                     assert len(list(destination.iterdir())) == 1
                 elif case in ['cancel', 'close', 'reopen', 'form', 'quit']:
                     assert not destination.exists(), 'Cancellation/form preview must not extract files'
                 elif case == 'validation':
-                    assert destination.read_text() == 'Must remain untouched\n'
+                    assert destination.read_text(encoding="utf-8") == 'Must remain untouched\n'
                 print(f'{renderer}/{case}: passed', flush=True)
 
 

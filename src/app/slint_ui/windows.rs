@@ -267,28 +267,27 @@ pub(super) fn native_viewer_smoke(id: &str, value: &str) {
     any(target_os = "windows", target_os = "linux"),
     feature = "screenshot"
 ))]
-pub(super) fn native_form_smoke(command: &str, value: &str) -> bool {
+pub(super) fn native_form_smoke(command: &str, value: &str) -> Option<bool> {
     SESSIONS.with(|sessions| {
         for session in sessions.borrow().iter() {
             let mut state = session.state.borrow_mut();
-            if state.native_forms.active() {
-                state.native_forms.smoke(command, value);
-                return true;
+            if state.native_forms.fixture_active() {
+                return Some(state.native_forms.smoke(command, value));
             }
         }
-        false
+        None
     })
 }
 #[cfg(all(
     any(target_os = "windows", target_os = "linux"),
     feature = "screenshot"
 ))]
-pub(super) fn native_form_snapshot(path: &std::path::Path) -> bool {
+pub(super) fn native_form_snapshot(path: &std::path::Path) -> Option<bool> {
     SESSIONS.with(|sessions| {
         sessions
             .borrow()
             .iter()
-            .any(|session| session.state.borrow_mut().native_forms.snapshot(path))
+            .find_map(|session| session.state.borrow_mut().native_forms.snapshot(path))
     })
 }
 pub(super) fn open(paths: &[PathBuf], loaded: Result<Settings>) -> Result<CommanderWindow> {
@@ -664,11 +663,95 @@ pub(super) fn native_form_ready() -> bool {
             #[cfg(target_os = "macos")]
             return state.native_extract.active();
             #[cfg(any(target_os = "windows", target_os = "linux"))]
-            return state.native_forms.active();
+            return state.native_forms.fixture_active();
             #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
             false
         })
     })
+}
+
+#[cfg(target_os = "windows")]
+fn native_menu_tick(id: usize, ui: &CommanderWindow, state: &Rc<RefCell<Adapter>>) {
+    use raw_window_handle::HasWindowHandle;
+    let mut menu = SESSIONS.with(|sessions| {
+        sessions
+            .borrow_mut()
+            .iter_mut()
+            .find(|s| s.id == id)
+            .and_then(|s| s.menu.take())
+    });
+    if menu.is_none()
+        && let Ok(handle) = ui.window().window_handle().window_handle()
+        && let raw_window_handle::RawWindowHandle::Win32(handle) = handle.as_raw()
+    {
+        menu = crate::windows_menu::Menu::attach(handle.hwnd.get() as _);
+    }
+    if let Some(menu) = &mut menu {
+        for command in menu.poll() {
+            with_state(state, |a| a.action(&command));
+        }
+        let model = with_state(state, |a| {
+            let mut used = std::collections::BTreeSet::new();
+            action_menus()
+                .into_iter()
+                .filter(|(title, _)| *title != "More tools")
+                .map(|(title, entries)| {
+                    let title = tr(title).into_owned();
+                    let mnemonic = title
+                        .chars()
+                        .find(|c| c.is_alphabetic() && used.insert(c.to_ascii_lowercase()));
+                    let mut label = String::new();
+                    let mut marked = false;
+                    for ch in title.chars() {
+                        if !marked && Some(ch) == mnemonic {
+                            label.push('&');
+                            marked = true;
+                        }
+                        label.push(ch);
+                        if ch == '&' {
+                            label.push('&');
+                        }
+                    }
+                    let mut entry_used = std::collections::BTreeSet::new();
+                    let entries = entries
+                        .into_iter()
+                        .map(|(title, action)| {
+                            let action = format!("{action:?}");
+                            let caption = parity::caption(&action, title, &a.app.preferences);
+                            let mut label = String::new();
+                            let mut marked = false;
+                            for ch in caption.chars() {
+                                if !marked
+                                    && ch.is_alphabetic()
+                                    && entry_used.insert(ch.to_ascii_lowercase())
+                                {
+                                    label.push('&');
+                                    marked = true;
+                                }
+                                label.push(ch);
+                                if ch == '&' {
+                                    label.push('&');
+                                }
+                            }
+                            crate::windows_menu::Entry {
+                                enabled: !a.blocked() && a.action_available(&action),
+                                action,
+                                label,
+                            }
+                        })
+                        .collect();
+                    (label, entries)
+                })
+                .collect()
+        });
+        menu.update(model);
+        ui.set_system_menubar(true);
+    }
+    SESSIONS.with(|sessions| {
+        if let Some(s) = sessions.borrow_mut().iter_mut().find(|s| s.id == id) {
+            s.menu = menu;
+        }
+    });
 }
 
 #[cfg(test)]
@@ -873,88 +956,4 @@ mod tests {
             )
         });
     }
-}
-
-#[cfg(target_os = "windows")]
-fn native_menu_tick(id: usize, ui: &CommanderWindow, state: &Rc<RefCell<Adapter>>) {
-    use raw_window_handle::HasWindowHandle;
-    let mut menu = SESSIONS.with(|sessions| {
-        sessions
-            .borrow_mut()
-            .iter_mut()
-            .find(|s| s.id == id)
-            .and_then(|s| s.menu.take())
-    });
-    if menu.is_none()
-        && let Ok(handle) = ui.window().window_handle().window_handle()
-        && let raw_window_handle::RawWindowHandle::Win32(handle) = handle.as_raw()
-    {
-        menu = crate::windows_menu::Menu::attach(handle.hwnd.get() as _);
-    }
-    if let Some(menu) = &mut menu {
-        for command in menu.poll() {
-            with_state(state, |a| a.action(&command));
-        }
-        let model = with_state(state, |a| {
-            let mut used = std::collections::BTreeSet::new();
-            action_menus()
-                .into_iter()
-                .filter(|(title, _)| *title != "More tools")
-                .map(|(title, entries)| {
-                    let title = tr(title).into_owned();
-                    let mnemonic = title
-                        .chars()
-                        .find(|c| c.is_alphabetic() && used.insert(c.to_ascii_lowercase()));
-                    let mut label = String::new();
-                    let mut marked = false;
-                    for ch in title.chars() {
-                        if !marked && Some(ch) == mnemonic {
-                            label.push('&');
-                            marked = true;
-                        }
-                        label.push(ch);
-                        if ch == '&' {
-                            label.push('&');
-                        }
-                    }
-                    let mut entry_used = std::collections::BTreeSet::new();
-                    let entries = entries
-                        .into_iter()
-                        .map(|(title, action)| {
-                            let action = format!("{action:?}");
-                            let caption = parity::caption(&action, title, &a.app.preferences);
-                            let mut label = String::new();
-                            let mut marked = false;
-                            for ch in caption.chars() {
-                                if !marked
-                                    && ch.is_alphabetic()
-                                    && entry_used.insert(ch.to_ascii_lowercase())
-                                {
-                                    label.push('&');
-                                    marked = true;
-                                }
-                                label.push(ch);
-                                if ch == '&' {
-                                    label.push('&');
-                                }
-                            }
-                            crate::windows_menu::Entry {
-                                enabled: !a.blocked() && a.action_available(&action),
-                                action,
-                                label,
-                            }
-                        })
-                        .collect();
-                    (label, entries)
-                })
-                .collect()
-        });
-        menu.update(model);
-        ui.set_system_menubar(true);
-    }
-    SESSIONS.with(|sessions| {
-        if let Some(s) = sessions.borrow_mut().iter_mut().find(|s| s.id == id) {
-            s.menu = menu;
-        }
-    });
 }

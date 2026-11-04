@@ -311,14 +311,35 @@ impl Host {
                     "Expected native error {value:?}, got {}",
                     sheet.error.stringValue()
                 );
-                assert_eq!(
-                    sheet.window.defaultButtonCell().is_some(),
-                    sheet
+                // AppKit temporarily clears the default key equivalent when
+                // another button has focus. Verify the default cell's identity
+                // instead of requiring a key equivalent throughout focus changes.
+                let default_cell = sheet.window.defaultButtonCell();
+                let default_button = default_cell.as_ref().map(|cell| {
+                    let (id, button) = sheet
                         .buttons
                         .iter()
-                        .any(|(_, button)| button.keyEquivalent().to_string() == "\r"),
-                    "Native default action must match its Return binding"
-                );
+                        .find(|(_, button)| {
+                            button.cell().is_some_and(|candidate| {
+                                std::ptr::eq(
+                                    &*candidate as *const _ as *const (),
+                                    &**cell as *const _ as *const (),
+                                )
+                            })
+                        })
+                        .expect("Native default cell must belong to a form button");
+                    assert_eq!(id, "accept", "Native default action must be affirmative");
+                    button
+                });
+                for (_, button) in &sheet.buttons {
+                    if button.keyEquivalent().to_string() == "\r" {
+                        assert!(
+                            default_button
+                                .is_some_and(|default| std::ptr::eq(&**default, &**button)),
+                            "Return must belong to the native default action"
+                        );
+                    }
+                }
                 assert_eq!(
                     sheet
                         .buttons

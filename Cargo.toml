@@ -137,7 +137,7 @@ path = "src/main.rs"
 [target.'cfg(target_os = "macos")'.dependencies]
 # Disable Slint's default AppKit menu in favor of our localized command menus.
 i-slint-backend-winit = { version = "=1.18.1", default-features = false }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSView", "NSEvent", "NSResponder", "NSButton", "NSButtonCell", "NSControl", "NSSegmentedControl", "NSSegmentedCell", "NSSearchField", "NSSearchFieldCell", "NSPopover", "NSViewController", "NSWorkspace", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "NSApplication", "NSAccessibilityProtocols", "NSAppearance", "NSColor", "NSFont", "NSScrollView", "NSClipView", "NSText", "NSTextView", "NSSecureTextField", "NSTextField", "NSTextFieldCell", "NSPopUpButton", "NSProgressIndicator", "NSTabView", "NSTabViewItem", "NSOpenPanel", "NSSavePanel", "block2", "objc2-core-graphics", "objc2-uniform-type-identifiers"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSView", "NSEvent", "NSResponder", "NSButton", "NSButtonCell", "NSControl", "NSSegmentedControl", "NSSegmentedCell", "NSSearchField", "NSSearchFieldCell", "NSPopover", "NSViewController", "NSLayoutConstraint", "NSWorkspace", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "NSApplication", "NSAccessibilityProtocols", "NSAppearance", "NSColor", "NSFont", "NSScrollView", "NSClipView", "NSText", "NSTextView", "NSSecureTextField", "NSTextField", "NSTextFieldCell", "NSPopUpButton", "NSProgressIndicator", "NSTabView", "NSTabViewItem", "NSOpenPanel", "NSSavePanel", "block2", "objc2-core-graphics", "objc2-uniform-type-identifiers"] }
 objc2 = "0.6"
 block2 = "0.6"
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGWindow", "CGImage"] }
@@ -169,6 +169,9 @@ slint-build = { version = "=1.18.1", default-features = false, features = ["comp
 
 [dev-dependencies]
 i-slint-backend-testing = "=1.18.1"
+
+[target.'cfg(windows)'.dev-dependencies]
+clipboard-win = "5.4"
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 x11rb = { version = "0.13", default-features = false, features = ["xtest"] }

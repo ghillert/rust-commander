@@ -7,9 +7,13 @@ use std::{
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+// Atomic replacement on Windows can fail while another thread is reading the
+// target. Keep journal snapshots and replacements from overlapping.
+static STORAGE: RwLock<()> = RwLock::new(());
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Change {
@@ -66,6 +70,9 @@ pub fn load() -> Result<Vec<Record>> {
 }
 
 pub fn load_in(root: &Path) -> Result<Vec<Record>> {
+    let _storage = STORAGE
+        .read()
+        .map_err(|_| anyhow::anyhow!("History storage lock failed"))?;
     let mut records = match fs::read(root.join("index.json")) {
         Ok(data) => serde_json::from_slice::<Vec<Record>>(&data).unwrap_or_default(),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
@@ -101,6 +108,13 @@ pub fn load_in(root: &Path) -> Result<Vec<Record>> {
 }
 
 fn write_record(path: &Path, record: &Record) -> Result<()> {
+    let _storage = STORAGE
+        .write()
+        .map_err(|_| anyhow::anyhow!("History storage lock failed"))?;
+    write_record_locked(path, record)
+}
+
+fn write_record_locked(path: &Path, record: &Record) -> Result<()> {
     let parent = path.parent().context("Missing history directory")?;
     fs::create_dir_all(parent)?;
     let mut file = tempfile::NamedTempFile::new_in(parent)?;
@@ -115,10 +129,13 @@ pub fn save(records: &[Record]) -> Result<()> {
 }
 
 pub fn save_in(records: &[Record], directory: &Path) -> Result<()> {
+    let _storage = STORAGE
+        .write()
+        .map_err(|_| anyhow::anyhow!("History storage lock failed"))?;
     fs::create_dir_all(directory)?;
     for record in records {
         crate::filesystem::validate_name(&record.id)?;
-        write_record(&directory.join(&record.id).join("record.json"), record)?;
+        write_record_locked(&directory.join(&record.id).join("record.json"), record)?;
     }
     let index = directory.join("index.json");
     if let Ok(data) = fs::read(&index)

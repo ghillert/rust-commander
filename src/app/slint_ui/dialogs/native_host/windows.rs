@@ -1437,6 +1437,10 @@ pub(super) fn run(model: Model, incoming: Incoming) -> i32 {
                     }
                     #[cfg(feature = "screenshot")]
                     Request::Page(page) => {
+                        // Controls may synchronously message their owner. Make
+                        // the fixture verify that its UI thread stays responsive
+                        // while waiting for this helper's acknowledgment.
+                        SendMessageW(owner as HWND, WM_NULL, 0, 0);
                         data.borrow_mut().show_page(page);
                         emit(&Event::Checked(true));
                     }

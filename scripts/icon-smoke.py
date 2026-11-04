@@ -33,7 +33,7 @@ def main():
                            ("Main.java", "class Main {}\n"), ("main.rs", "fn main() {}\n"),
                            ("Cargo.toml", "[package]\n"), (".env.local", "KEY=value\n"),
                            ("Data.json", "{}\n"), ("Unknown.unregistered-6c9e42ba7d3f", "\0")]:
-            (left / name).write_text(text)
+            (left / name).write_text(text, encoding="utf-8")
         shutil.copyfile(repo / "tests/fixtures/two-pages.pdf", left / "Document.pdf")
         shutil.copyfile(repo / "assets/icons/rust-commander.png", left / "Image.png")
         with zipfile.ZipFile(left / "Archive.tar.gz.zip", "w") as archive:
@@ -49,8 +49,8 @@ def main():
             else:
                 env["RUST_COMMANDER_SCREENSHOT_TO"] = str(path)
             result = subprocess.run([str(args.binary.resolve()), *map(str, directories)], env=env,
-                                    capture_output=True, text=True, timeout=45)
-            (args.output / (name + ".log")).write_text(result.stdout + result.stderr)
+                                    capture_output=True, text=True, timeout=45, encoding="utf-8")
+            (args.output / (name + ".log")).write_text(result.stdout + result.stderr, encoding="utf-8")
             if result.returncode:
                 raise RuntimeError(f"{name}: {result.returncode}: {result.stderr}")
             data = path.read_bytes()
@@ -75,7 +75,7 @@ def main():
                 config = root / f"config-{renderer}-{scheme}-{source}"
                 config.mkdir()
                 (config / "settings.json").write_text(json.dumps({"show_hidden": True, "preferences": {
-                    "file_icon_source": source, "color_scheme": scheme.title()}}))
+                    "file_icon_source": source, "color_scheme": scheme.title()}}), encoding="utf-8")
                 env = dict(base, SLINT_BACKEND="winit-" + renderer, SLINT_SCALE_FACTOR="1",
                            RUST_COMMANDER_CONFIG_DIR=str(config))
                 if scheme == "dark":

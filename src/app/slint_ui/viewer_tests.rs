@@ -44,10 +44,9 @@ fn wait(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
             a.app.pending_view.is_none()
                 && a.app.pending_pdf.is_none()
                 && a.app.pending_archive.is_none()
-                && a.app
-                    .editor
-                    .as_ref()
-                    .is_none_or(|e| !e.navigation.presentation.busy())
+                && a.app.editor.as_ref().is_none_or(|e| {
+                    e.navigation.pending.is_none() && !e.navigation.presentation.busy()
+                })
                 && a.app
                     .editor
                     .as_ref()

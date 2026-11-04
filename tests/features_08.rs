@@ -97,6 +97,31 @@ fn native_moves_preserve_file_identity_and_remain_undoable() {
     assert!(!destination.join("file").exists());
 }
 #[test]
+fn extraction_preflight_rejects_a_file_destination_without_changing_it() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("report.txt");
+    fs::write(&source, b"archive contents").unwrap();
+    let archive_path = root.path().join("files.zip");
+    archive::pack(&[source], &archive_path, &mut Task::default()).unwrap();
+    let destination = root.path().join("destination");
+    fs::write(&destination, b"preserve original").unwrap();
+    for merge in [false, true] {
+        let error =
+            archive::extraction_conflicts(&archive_path, &[], Path::new(""), &destination, merge)
+                .err()
+                .unwrap();
+        assert_eq!(error.to_string(), "Choose a real destination directory");
+        assert_eq!(fs::read(&destination).unwrap(), b"preserve original");
+    }
+    let missing = root.path().join("new-directory");
+    assert!(
+        archive::extraction_conflicts(&archive_path, &[], Path::new(""), &missing, false)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(!missing.exists());
+}
+#[test]
 fn extraction_merges_with_per_file_choices_and_undo_restores_targets() {
     let root = tempfile::tempdir().unwrap();
     let source = root.path().join("source");

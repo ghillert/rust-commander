@@ -16,6 +16,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(windows)]
+#[path = "support/windows_clipboard.rs"]
+mod windows_clipboard;
+
 fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
     let root = tempfile::tempdir().unwrap();
     let source = root.path().join("source");
@@ -764,7 +768,7 @@ fn consecutive_undo_restores_directory_metadata_for_older_records() {
 #[test]
 #[ignore = "Requires an interactive desktop clipboard; preserves current content in memory"]
 fn native_clipboard_copy_cut_and_external_change_round_trip() {
-    use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext};
+    use clipboard_rs::{Clipboard, ClipboardContext};
     let context = ClipboardContext::new().unwrap();
     // A format snapshot represents one item. Preserve an existing multi-file selection intact.
     let old_files = context.get_files().ok();
@@ -772,35 +776,43 @@ fn native_clipboard_copy_cut_and_external_change_round_trip() {
         old_files.as_ref().is_none_or(|files| files.len() <= 1),
         "Keep the current multiple-file selection intact; rerun with a single clipboard item."
     );
-    let formats = context.available_formats().unwrap();
-    let saved = formats
-        .iter()
-        .map(|format| {
-            ClipboardContent::Other(
-                match format.as_str() {
-                    "NSStringPboardType" => "public.utf8-plain-text".into(),
-                    "NSRTFPboardType" => "public.rtf".into(),
-                    "NSHTMLPboardType" => "public.html".into(),
-                    _ => format.clone(),
-                },
-                context
-                    .get_buffer(format)
-                    .expect("Read every format before modifying clipboard"),
-            )
-        })
-        .collect::<Vec<_>>();
-    struct Restore {
-        context: ClipboardContext,
-        saved: Vec<ClipboardContent>,
-    }
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            self.context
-                .set(std::mem::take(&mut self.saved))
-                .expect("Restore clipboard");
+    #[cfg(windows)]
+    let old_text = context.get_text().ok();
+    #[cfg(windows)]
+    let _restore = windows_clipboard::Snapshot::capture();
+    #[cfg(not(windows))]
+    let _restore = {
+        use clipboard_rs::ClipboardContent;
+        let formats = context.available_formats().unwrap();
+        let saved = formats
+            .iter()
+            .map(|format| {
+                ClipboardContent::Other(
+                    match format.as_str() {
+                        "NSStringPboardType" => "public.utf8-plain-text".into(),
+                        "NSRTFPboardType" => "public.rtf".into(),
+                        "NSHTMLPboardType" => "public.html".into(),
+                        _ => format.clone(),
+                    },
+                    context
+                        .get_buffer(format)
+                        .expect("Read every format before modifying clipboard"),
+                )
+            })
+            .collect::<Vec<_>>();
+        struct Restore {
+            context: ClipboardContext,
+            saved: Vec<ClipboardContent>,
         }
-    }
-    let _restore = Restore { context, saved };
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                self.context
+                    .set(std::mem::take(&mut self.saved))
+                    .expect("Restore clipboard");
+            }
+        }
+        Restore { context, saved }
+    };
     let root = tempfile::tempdir().unwrap();
     let paths = vec![
         root.path().join("spaces ä.txt"),
@@ -837,6 +849,12 @@ fn native_clipboard_copy_cut_and_external_change_round_trip() {
     assert!(files.owns_selection());
     external.set_text("clipboard test".into()).unwrap();
     assert!(!files.owns_selection());
+    #[cfg(windows)]
+    {
+        drop(_restore);
+        assert_eq!(context.get_text().ok(), old_text);
+        assert_eq!(context.get_files().ok(), old_files);
+    }
 }
 
 #[test]

@@ -541,11 +541,17 @@ mod tests {
     }
     #[test]
     fn resolved_aliases_keep_explicit_fields_and_known_hosts_with_spaces() {
+        let root = tempfile::tempdir().unwrap();
+        let known_hosts = root.path().join("keys with spaces");
         let c = crate::remote::Connection {
             username: "explicit".into(),
             ..Default::default()
         };
-        let resolved=Config::from_effective(&c,"alias",Some(2222),"hostname real.example\nuser config\nport 22\nidentityfile ~/.ssh/%r-%h\nuserknownhostsfile \"/tmp/keys with spaces\"\nidentitiesonly yes\n").unwrap();
+        let effective = format!(
+            "hostname real.example\nuser config\nport 22\nidentityfile ~/.ssh/%r-%h\nuserknownhostsfile \"{}\"\nidentitiesonly yes\n",
+            known_hosts.display()
+        );
+        let resolved = Config::from_effective(&c, "alias", Some(2222), &effective).unwrap();
         assert_eq!(
             (
                 resolved.host.as_str(),
@@ -554,10 +560,7 @@ mod tests {
             ),
             ("real.example", 2222, "explicit")
         );
-        assert_eq!(
-            resolved.known_hosts[0],
-            PathBuf::from("/tmp/keys with spaces")
-        );
+        assert_eq!(resolved.known_hosts[0], known_hosts);
         assert!(resolved.identities_only);
         assert!(resolved.identities[0].ends_with("explicit-real.example"));
     }
@@ -581,15 +584,18 @@ mod tests {
     }
     #[test]
     fn explicit_paths_keep_percent_tokens_literal() {
+        let root = tempfile::tempdir().unwrap();
+        let key_file = root.path().join("100% ready key");
+        let known_hosts = root.path().join("hosts %h");
         let c = crate::remote::Connection {
             username: "fixture".into(),
-            key_file: "/tmp/100% ready key".into(),
-            known_hosts_file: "/tmp/hosts %h".into(),
+            key_file: key_file.display().to_string(),
+            known_hosts_file: known_hosts.display().to_string(),
             ..Default::default()
         };
         let resolved = Config::from_effective(&c, "host", None, "").unwrap();
-        assert_eq!(resolved.identities[0], PathBuf::from("/tmp/100% ready key"));
-        assert_eq!(resolved.known_hosts[0], PathBuf::from("/tmp/hosts %h"));
+        assert_eq!(resolved.identities[0], key_file);
+        assert_eq!(resolved.known_hosts[0], known_hosts);
     }
     #[test]
     fn remembering_a_review_does_not_replace_an_existing_key() {

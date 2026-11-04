@@ -289,6 +289,10 @@ impl Adapter {
                         editor.text = document.text.clone();
                         editor.original = editor.text.clone();
                         editor.document = Some(document);
+                        // The complete editable buffer uses its original bytes
+                        // as the save guard. A pinned viewer handle can prevent
+                        // replacing that file on Windows.
+                        editor.navigation.source = None;
                         editor.kind = "Text viewer";
                         editor.editable = editor.can_edit;
                     }

@@ -57,7 +57,7 @@ def main():
                 config, left, right = [root / name for name in ["config", "left", "right"]]
                 for path in [config, left, right]:
                     path.mkdir(parents=True)
-                (config / "settings.json").write_text(json.dumps({"preferences": {"color_scheme": scheme}}))
+                (config / "settings.json").write_text(json.dumps({"preferences": {"color_scheme": scheme}}), encoding="utf-8")
                 sequence = [[500, "navigate", f"http://127.0.0.1:{server.server_port}/"],
                             [2000, "action", "Copy"], [2500, "dialog", "accept"]]
                 env = dict(os.environ, RUST_COMMANDER_CONFIG_DIR=str(config),
@@ -70,9 +70,9 @@ def main():
                     env.pop(key, None)
                 binary = project / "target/debug" / ("rust-commander.exe" if os.name == "nt" else "rust-commander")
                 result = subprocess.run([str(binary), str(left), str(right)], env=env,
-                                        capture_output=True, text=True, timeout=35)
+                                        capture_output=True, text=True, timeout=35, encoding="utf-8")
                 log = result.stdout + result.stderr
-                (output / (renderer + ".log")).write_text(log)
+                (output / (renderer + ".log")).write_text(log, encoding="utf-8")
                 match = re.search(r"Progress snapshot: indeterminate=false value=([0-9.]+) text=(\d+)% speed=(.+/s)", log)
                 if result.returncode or not match or not 0.05 < float(match[1]) < 0.95:
                     raise RuntimeError(f"{renderer} did not show an active determinate transfer: {log}")

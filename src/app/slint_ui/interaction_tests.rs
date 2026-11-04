@@ -470,7 +470,7 @@ fn ownership_acl_form_loads_async_and_retains_invalid_drafts() {
         let mut a = state.borrow_mut();
         a.security_tick();
         a.sync(&ui);
-        if a.security.is_some() && !a.dialog().busy {
+        if a.security_dialog().is_some_and(|dialog| !dialog.busy) {
             break;
         }
         drop(a);
