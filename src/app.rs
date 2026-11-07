@@ -176,6 +176,7 @@ pub(crate) enum Action {
     NewTab,
     DuplicateTab,
     CloseTab,
+    Home,
     Parent,
 }
 
@@ -331,6 +332,7 @@ pub(crate) fn all_actions() -> Vec<Action> {
         Action::NewTab,
         Action::DuplicateTab,
         Action::CloseTab,
+        Action::Home,
         Action::Parent,
     ]
 }
@@ -450,6 +452,7 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("Preview pane", Action::Preview),
                 ("Quick Look", Action::QuickLook),
                 ("Workspaces…", Action::Workspaces),
+                ("Home", Action::Home),
                 ("Parent folder", Action::Parent),
                 ("New tab", Action::NewTab),
                 ("Duplicate tab", Action::DuplicateTab),
@@ -1911,6 +1914,11 @@ impl Commander {
             Action::CloseTab => {
                 let i = self.panes[self.active].active;
                 self.panes[self.active].close_tab(i);
+                return;
+            }
+            Action::Home => {
+                self.tab_mut()
+                    .navigate(Location::Local(filesystem::home()), ctx);
                 return;
             }
             Action::Parent => {

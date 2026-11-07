@@ -72,6 +72,7 @@ export global IconCatalog {
         if id == "ui-forward" { return @image-url("vendor/ui-forward-default.svg"); }
         if id == "ui-help" { return @image-url("vendor/ui-help-default.svg"); }
         if id == "ui-history" { return @image-url("vendor/ui-history-default.svg"); }
+        if id == "ui-home" { return @image-url("vendor/ui-home-default.svg"); }
         if id == "ui-link" { return @image-url("vendor/ui-link-default.svg"); }
         if id == "ui-move" { return @image-url("vendor/ui-move-default.svg"); }
         if id == "ui-new-folder" { return @image-url("vendor/ui-new-folder-default.svg"); }
@@ -127,6 +128,7 @@ export global IconCatalog {
         if id == "ui-forward" { return true; }
         if id == "ui-help" { return true; }
         if id == "ui-history" { return true; }
+        if id == "ui-home" { return true; }
         if id == "ui-link" { return true; }
         if id == "ui-move" { return true; }
         if id == "ui-new-folder" { return true; }
@@ -145,6 +147,7 @@ export global IconCatalog {
     public pure function action(id: string) -> string {
         if id == "Back" { return "ui-back"; }
         if id == "Forward" { return "ui-forward"; }
+        if id == "Home" { return "ui-home"; }
         if id == "Refresh" { return "ui-refresh"; }
         if id == "Parent" { return "ui-up"; }
         if id == "Mkdir" { return "ui-new-folder"; }

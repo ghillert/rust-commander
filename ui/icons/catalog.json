@@ -39,6 +39,16 @@
         }
       }
     },
+    "ui-home": {
+      "source": "fluent",
+      "treatment": "monochrome",
+      "variants": {
+        "default": {
+          "path": "assets/Home/SVG/ic_fluent_home_20_regular.svg",
+          "sha256": "b810b7e896c6ef2b4cfa0b693650e0f94b4a6760b222531d60e55ee38212a861"
+        }
+      }
+    },
     "ui-refresh": {
       "source": "fluent",
       "treatment": "monochrome",
@@ -1004,6 +1014,7 @@
   "actions": {
     "Back": "ui-back",
     "Forward": "ui-forward",
+    "Home": "ui-home",
     "Refresh": "ui-refresh",
     "Parent": "ui-up",
     "Mkdir": "ui-new-folder",

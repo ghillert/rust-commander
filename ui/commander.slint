@@ -737,6 +737,7 @@ export component CommanderWindow inherits Window {
                     padding-left: root.native-menus ? 86px : 10px; padding-right: 10px; spacing: 3px;
                     ChromeButton {label:Words.translate("Back",Words.version);icon:Glyphs.action("Back");clicked=>{root.action("Back");}}
                     ChromeButton {label:Words.translate("Forward",Words.version);icon:Glyphs.action("Forward");clicked=>{root.action("Forward");}}
+                    ChromeButton {label:Words.translate("Home",Words.version);icon:Glyphs.action("Home");clicked=>{root.action("Home");}}
                     ChromeButton {label:Words.translate("Refresh",Words.version);icon:Glyphs.action("Refresh");clicked=>{root.action("Refresh");}}
                     ChromeButton {
                         label:Words.translate("Swap panes",Words.version);

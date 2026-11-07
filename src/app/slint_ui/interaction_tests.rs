@@ -441,6 +441,30 @@ fn permission_fields_sync_octal_symbolic_and_each_checkbox() {
 }
 
 #[test]
+fn home_toolbar_button_navigates_the_active_pane_with_the_sidebar_hidden() {
+    let (_root, ui, state, left, right) = setup();
+    element(&ui, "right.txt").mock_single_click(Left);
+    ui.invoke_action("ToggleSidebar".into());
+    assert!(!ui.get_sidebar_visible());
+
+    element(&ui, "Home").mock_single_click(Left);
+    assert_eq!(
+        state.borrow().app.panes[1].tab().location,
+        Location::Local(filesystem::home())
+    );
+    assert_eq!(
+        state.borrow().app.panes[0].tab().location,
+        Location::Local(left)
+    );
+
+    element(&ui, "Back").mock_single_click(Left);
+    assert_eq!(
+        state.borrow().app.panes[1].tab().location,
+        Location::Local(right)
+    );
+}
+
+#[test]
 fn alt_menu_navigation_moves_between_headings_and_restores_pane_focus() {
     let (_root, ui, state, _left, _right) = setup();
     ui.set_system_menubar(false);
@@ -454,6 +478,7 @@ fn alt_menu_navigation_moves_between_headings_and_restores_pane_focus() {
     assert!(ui.get_menu_items().iter().any(|i| i.id == "Copy"));
     press(&ui, Key::RightArrow);
     assert_eq!(ui.get_menu_heading_index(), 2);
+    assert!(ui.get_menu_items().iter().any(|i| i.id == "Home"));
     assert!(ui.get_menu_items().iter().any(|i| i.id == "Parent"));
     press(&ui, Key::Escape);
     assert!(ui.get_menu_heading_active());
