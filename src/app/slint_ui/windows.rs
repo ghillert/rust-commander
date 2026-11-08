@@ -13,6 +13,11 @@ pub(super) enum Request {
     Minimize,
     Maximize,
 }
+pub(super) struct QuitConfirmation {
+    pub window_count: usize,
+    pub show_next_time: bool,
+    pub has_pending_work: bool,
+}
 struct Runtime {
     queue: crate::queue::Queue,
     job: Option<Job>,
@@ -469,6 +474,15 @@ fn raise(id: usize) {
         }
     });
 }
+pub(super) fn is_last_window(id: usize) -> bool {
+    SESSIONS.with(|sessions| {
+        let sessions = sessions.borrow();
+        sessions.iter().any(|s| s.id == id)
+            && sessions
+                .iter()
+                .all(|s| s.id == id || s.state.borrow().app.exiting)
+    })
+}
 pub(super) fn tick() {
     let sessions = SESSIONS.with(|s| {
         s.borrow()
@@ -502,6 +516,15 @@ pub(super) fn tick() {
             requests.push((*id, request));
         }
     }
+    let quit_has_pending_work = || {
+        RUNTIME.with(|r| r.borrow().as_ref().is_some_and(|r| r.job.is_some()))
+            || sessions.iter().any(|(_, _, state)| {
+                let adapter = state.borrow();
+                adapter.app.editor.as_ref().is_some_and(Editor::dirty)
+                    || adapter.enhancements.external.is_some()
+                    || adapter.drag.preparation.is_some()
+            })
+    };
     for (source, request) in requests {
         if matches!(&request, Request::Quit | Request::ConfirmQuit)
             && sessions
@@ -510,7 +533,7 @@ pub(super) fn tick() {
         {
             if let Some((_, ui, state)) = sessions.iter().find(|(id, _, _)| *id == source) {
                 with_state(state, |adapter| {
-                    adapter.app.confirm_exit = false;
+                    adapter.quit_confirmation = None;
                     adapter.app.fail("Close Email files in all windows before quitting; wait for any pending delivery result");
                     adapter.sync(ui);
                 });
@@ -567,21 +590,32 @@ pub(super) fn tick() {
                 }
             }
             Request::Quit => {
-                let job = RUNTIME.with(|r| r.borrow().as_ref().is_some_and(|r| r.job.is_some()));
-                let dirty = sessions.iter().any(|(_, _, s)| {
-                    s.borrow().app.editor.as_ref().is_some_and(Editor::dirty)
-                        || s.borrow().enhancements.external.is_some()
-                        || s.borrow().drag.preparation.is_some()
-                });
-                if job || dirty {
-                    if let Some((_, ui, state)) = sessions.iter().find(|(id, _, _)| *id == source) {
-                        with_state(state, |a| {
-                            a.extra.quit_all = true;
-                            a.app.confirm_exit = true;
-                            a.sync(ui);
-                        });
-                        raise(source);
-                    }
+                if let Some((id, _, _)) = sessions
+                    .iter()
+                    .find(|(_, _, state)| state.borrow().quit_confirmation.is_some())
+                {
+                    raise(*id);
+                    continue;
+                }
+                let Some((_, ui, state)) = sessions.iter().find(|(id, _, _)| *id == source) else {
+                    continue;
+                };
+                if state.borrow().app.exiting {
+                    continue;
+                }
+                let show_next_time = state.borrow().app.preferences.confirm_quit;
+                let has_pending_work = quit_has_pending_work();
+                if show_next_time || has_pending_work {
+                    state.borrow_mut().quit_confirmation = Some(QuitConfirmation {
+                        window_count: sessions
+                            .iter()
+                            .filter(|(_, _, state)| !state.borrow().app.exiting)
+                            .count(),
+                        show_next_time,
+                        has_pending_work,
+                    });
+                    with_state(state, |a| a.sync(ui));
+                    raise(source);
                 } else {
                     for (_, _, state) in &sessions {
                         with_state(state, |a| a.app.exiting = true);
@@ -589,6 +623,21 @@ pub(super) fn tick() {
                 }
             }
             Request::ConfirmQuit => {
+                let Some((_, ui, state)) = sessions.iter().find(|(id, _, _)| *id == source) else {
+                    continue;
+                };
+                let Some(mut confirmation) = state.borrow_mut().quit_confirmation.take() else {
+                    continue;
+                };
+                if !confirmation.has_pending_work && quit_has_pending_work() {
+                    confirmation.has_pending_work = true;
+                    state.borrow_mut().quit_confirmation = Some(confirmation);
+                    with_state(state, |a| a.sync(ui));
+                    continue;
+                }
+                with_state(state, |a| {
+                    a.app.preferences.confirm_quit = confirmation.show_next_time;
+                });
                 for (_, _, state) in &sessions {
                     with_state(state, |a| {
                         if let Some(job) = &a.app.job {
@@ -854,6 +903,49 @@ mod tests {
         assert!(!root.path().join("never-run").exists());
     }
     #[test]
+    fn quit_confirmation_counts_windows_and_saves_the_choice_only_on_quit() {
+        i_slint_backend_testing::init_no_event_loop();
+        let _reset = Reset;
+        let root = tempfile::tempdir().unwrap();
+        let ui = open(&[root.path().into()], Ok(Settings::default())).unwrap();
+        RUNTIME.with(|r| r.borrow_mut().as_mut().unwrap().settings_valid = false);
+        let other = open(&[root.path().into()], Ok(Settings::default())).unwrap();
+
+        ui.invoke_action("Quit".into());
+        tick();
+        assert_eq!(ui.get_dialog_title(), "Quit Rust Commander?");
+        assert!(ui.get_dialog_description().contains("2 windows"));
+        assert_eq!(entries().len(), 2);
+        ui.invoke_dialog_action("accept".into());
+        tick();
+        assert_eq!(entries().len(), 2);
+        other.invoke_action("Quit".into());
+        tick();
+        assert!(other.get_dialog_title().is_empty());
+
+        ui.invoke_dialog_field("quit-show-next-time".into(), "false".into());
+        ui.invoke_dialog_action("cancel".into());
+        ui.invoke_action("Quit".into());
+        tick();
+        assert!(
+            ui.get_dialog_fields()
+                .iter()
+                .any(|field| { field.id == "quit-show-next-time" && field.value == "true" })
+        );
+        ui.invoke_dialog_field("quit-show-next-time".into(), "false".into());
+        ui.invoke_dialog_action("confirm-quit".into());
+        tick();
+        assert!(entries().is_empty());
+        let settings = RUNTIME.with(|r| r.borrow().as_ref().unwrap().settings.clone());
+        assert!(!settings.preferences.confirm_quit);
+
+        let ui = open(&[root.path().into()], Ok(settings)).unwrap();
+        ui.invoke_action("Quit".into());
+        tick();
+        assert!(entries().is_empty());
+    }
+
+    #[test]
     fn closing_another_window_does_not_cancel_the_job_owner() {
         i_slint_backend_testing::init_no_event_loop();
         let _reset = Reset;
@@ -876,7 +968,10 @@ mod tests {
         let (_sender, receiver) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         RUNTIME.with(|r| {
-            r.borrow_mut().as_mut().unwrap().job = Some(Job {
+            let mut runtime = r.borrow_mut();
+            let runtime = runtime.as_mut().unwrap();
+            runtime.settings.preferences.confirm_quit = false;
+            runtime.job = Some(Job {
                 owner: states[0].0,
                 foreground: false,
                 label: "Fixture job".into(),
@@ -894,9 +989,19 @@ mod tests {
         assert!(!cancel.load(Ordering::Relaxed));
         with_state(&states[0].1, |a| {
             a.request_close();
-            assert!(a.app.confirm_exit);
+            assert!(matches!(a.extra.window_request, Some(Request::Quit)));
             assert!(!a.app.exiting);
         });
+        tick();
+        assert!(
+            states[0]
+                .1
+                .borrow()
+                .quit_confirmation
+                .as_ref()
+                .unwrap()
+                .has_pending_work
+        );
         assert!(!cancel.load(Ordering::Relaxed));
     }
     #[test]

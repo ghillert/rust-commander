@@ -28,6 +28,16 @@ impl Adapter {
     }
 
     pub(in super::super) fn dialog_action(&mut self, id: &str) {
+        if self.quit_confirmation.is_some() {
+            match id {
+                "cancel" => self.quit_confirmation = None,
+                "confirm-quit" => {
+                    self.extra.window_request = Some(super::super::windows::Request::ConfirmQuit);
+                }
+                _ => {}
+            }
+            return;
+        }
         if !self.app.confirm_exit && self.drafts_action(id) {
             return;
         }
@@ -77,13 +87,6 @@ impl Adapter {
             let idle = self.app.job.is_none() && self.app.queue.is_empty();
             match self.dialog_kind.as_str() {
                 "exit" if id == "accept" => {
-                    if self.extra.quit_all {
-                        self.extra.window_request =
-                            Some(super::super::windows::Request::ConfirmQuit);
-                        self.extra.quit_all = false;
-                        self.app.confirm_exit = false;
-                        return Ok(());
-                    }
                     if let Some(job) = &self.app.job
                         && job.owner == self.app.window_id
                     {
@@ -573,7 +576,6 @@ impl Adapter {
         match self.dialog_kind.as_str() {
             "exit" => {
                 self.app.confirm_exit = false;
-                self.extra.quit_all = false;
             }
             "message" => self.app.message = None,
             "help" => self.app.help = false,

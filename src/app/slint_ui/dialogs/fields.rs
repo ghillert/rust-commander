@@ -19,6 +19,12 @@ fn checked(value: &str) -> bool {
 
 impl Adapter {
     pub(in super::super) fn edit_field(&mut self, id: &str, value: &str) {
+        if let Some(confirmation) = &mut self.quit_confirmation {
+            if id == "quit-show-next-time" {
+                confirmation.show_next_time = checked(value);
+            }
+            return;
+        }
         if self.security_edit(id, value) {
             return;
         }
@@ -217,6 +223,7 @@ impl Adapter {
                             "status" => p.status_bar = checked(value),
                             "single" => p.single_pane = checked(value),
                             "auto-refresh" => p.auto_refresh = checked(value),
+                            "confirm-quit" => p.confirm_quit = checked(value),
                             "folders-first" => p.folders_first = checked(value),
                             "preview" => p.preview = checked(value),
                             "directory-tree" => p.directory_tree = checked(value),

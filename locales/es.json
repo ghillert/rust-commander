@@ -572,5 +572,12 @@
   "Visible columns": "Columnas visibles",
   "Width (px)": "Ancho (px)",
   "Window layout": "Distribución de la ventana",
-  "Your password is requested in Email files. It is not stored in Settings.": "La contraseña se solicita al enviar archivos por correo. No se guarda en Ajustes."
+  "Your password is requested in Email files. It is not stored in Settings.": "La contraseña se solicita al enviar archivos por correo. No se guarda en Ajustes.",
+  "Application": "Aplicación",
+  "Confirm before quitting": "Confirmar antes de salir",
+  "Quit Rust Commander?": "¿Salir de Rust Commander?",
+  "Running operations will be cancelled and unsaved changes will be discarded.": "Se cancelarán las operaciones en curso y se descartarán los cambios sin guardar.",
+  "Show next time": "Mostrar la próxima vez",
+  "You have one window open. Are you sure you want to quit?": "Hay una ventana abierta. ¿Quieres salir?",
+  "You have {count} windows open. Are you sure you want to quit?": "Hay {count} ventanas abiertas. ¿Quieres salir?"
 }

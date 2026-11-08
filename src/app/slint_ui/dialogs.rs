@@ -244,6 +244,7 @@ pub(super) fn native_supported(dialog: &Dialog) -> bool {
             | "open-as"
             | "open-with"
             | "exit"
+            | "quit"
             | "message"
             | "browser-url"
             | "donate"
@@ -291,7 +292,7 @@ fn parse_policy(value: &str) -> crate::transfer::ConflictPolicy {
 impl Adapter {
     pub(super) fn native_dialog(&self, spec: &Dialog) -> Dialog {
         let mut native = spec.clone();
-        native.default_action = !matches!(spec.kind.as_str(), "exit" | "empty-trash")
+        native.default_action = !matches!(spec.kind.as_str(), "exit" | "quit" | "empty-trash")
             && !self.app.prompt.as_ref().is_some_and(|p| {
                 matches!(
                     p.kind,
@@ -323,6 +324,31 @@ impl Adapter {
         native
     }
     pub(super) fn dialog(&self) -> Dialog {
+        if let Some(confirmation) = &self.quit_confirmation {
+            let mut dialog = Dialog::new("quit", "Quit Rust Commander?");
+            dialog.description = if confirmation.window_count == 1 {
+                tr("You have one window open. Are you sure you want to quit?").into_owned()
+            } else {
+                tr("You have {count} windows open. Are you sure you want to quit?")
+                    .replace("{count}", &confirmation.window_count.to_string())
+            };
+            if confirmation.has_pending_work {
+                dialog.description.push_str("\n\n");
+                dialog.description.push_str(&tr(
+                    "Running operations will be cancelled and unsaved changes will be discarded.",
+                ));
+            }
+            dialog.fields.push(Field::check(
+                "quit-show-next-time",
+                "Show next time",
+                confirmation.show_next_time,
+            ));
+            dialog.buttons = vec![
+                ("cancel".into(), "Cancel".into(), true),
+                ("confirm-quit".into(), "Quit".into(), true),
+            ];
+            return dialog;
+        }
         if !self.app.confirm_exit {
             if let Some(dialog) = self.drafts_dialog() {
                 return dialog;
@@ -352,11 +378,7 @@ impl Adapter {
         let idle = self.app.job.is_none() && self.app.queue.is_empty();
         if self.app.confirm_exit {
             let mut d = Dialog::new("exit", "Close Rust Commander?");
-            d.description = if self.extra.quit_all {
-                "Quit every Rust Commander window? Running work will be cancelled and unsaved text in all windows discarded.".into()
-            } else {
-                tr("There is a running operation or unsaved text. Closing cancels the operation and discards unsaved text.").into_owned()
-            };
+            d.description = tr("There is a running operation or unsaved text. Closing cancels the operation and discards unsaved text.").into_owned();
             d.buttons = vec![
                 ("cancel".into(), "Keep working".into(), true),
                 ("accept".into(), "Cancel work and close".into(), true),

@@ -91,6 +91,7 @@ pub(super) struct Adapter {
     dialog_kind: String,
     field_error: Option<String>,
     invalid_fields: std::collections::BTreeMap<String, (String, String)>,
+    quit_confirmation: Option<windows::QuitConfirmation>,
     last_terminal: String,
     viewer_stamp: Option<(String, usize)>,
     pdf_marks_stamp: Option<(u64, u64, Option<std::ops::Range<usize>>)>,
@@ -287,6 +288,7 @@ impl Adapter {
             dialog_kind: String::new(),
             field_error: None,
             invalid_fields: Default::default(),
+            quit_confirmation: None,
             last_terminal: String::new(),
             viewer_stamp: None,
             pdf_marks_stamp: None,
@@ -319,6 +321,7 @@ impl Adapter {
             || self.app.help
             || self.app.message.is_some()
             || self.app.confirm_exit
+            || self.quit_confirmation.is_some()
             || self.app.connection_form.is_some()
             || self.app.archive_form.is_some()
             || self.app.show_history
@@ -568,6 +571,13 @@ impl Adapter {
     }
 
     fn request_close(&mut self) {
+        if self.quit_confirmation.is_some() {
+            return;
+        }
+        if windows::is_last_window(self.app.window_id) {
+            self.extra.window_request = Some(windows::Request::Quit);
+            return;
+        }
         if self.desktop_commands.email_open() {
             self.app
                 .fail("Close Email files before closing this window; wait for any pending delivery result");
@@ -719,6 +729,7 @@ impl Adapter {
             if !self.native_forms.active()
                 || self.app.exiting
                 || self.app.confirm_exit
+                || self.quit_confirmation.is_some()
                 || self.app.message.is_some()
                 || self.native_forms_accept != dialogs::native_intent::Intent::capture(self)
             {
@@ -778,6 +789,7 @@ impl Adapter {
         if self.native_extract_accept.is_some() {
             if self.app.exiting
                 || self.app.confirm_exit
+                || self.quit_confirmation.is_some()
                 || self.app.message.is_some()
                 || self.native_extract_accept != dialogs::native_extract::Intent::capture(self)
             {
@@ -1353,7 +1365,7 @@ impl Adapter {
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         let native_extract = false;
         ui.set_dialog_preferred_height(match spec.kind.as_str() {
-            "exit" => 240.0,
+            "exit" | "quit" => 240.0,
             "prompt" => {
                 let macos = env!("RUST_COMMANDER_WIDGET_STYLE") == "cupertino";
                 let fields: f32 = spec
@@ -1436,7 +1448,7 @@ impl Adapter {
         ui.set_dialog_pack(matches!(spec.kind.as_str(), "pack" | "pack-progress"));
         ui.set_dialog_simple(matches!(
             spec.kind.as_str(),
-            "prompt" | "exit" | "open-with" | "open-as" | "donate" | "browser-url"
+            "prompt" | "exit" | "quit" | "open-with" | "open-as" | "donate" | "browser-url"
         ));
         ui.set_dialog_primary(
             spec.buttons.iter().any(|(id, _, _)| id == "accept")

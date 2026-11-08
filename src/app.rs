@@ -423,6 +423,8 @@ pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)>
                 ("New folder  F7", Action::Mkdir),
                 ("Move to Trash  F8", Action::Trash),
                 ("Permanently delete…", Action::PermanentDelete),
+                #[cfg(not(target_os = "macos"))]
+                ("Quit Rust Commander", Action::Quit),
             ],
         ),
         (

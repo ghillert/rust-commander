@@ -54,6 +54,16 @@ impl Adapter {
         );
         section(
             &mut d,
+            GENERAL,
+            "Application",
+            [Field::check(
+                "confirm-quit",
+                "Confirm before quitting",
+                p.confirm_quit,
+            )],
+        );
+        section(
+            &mut d,
             FOLDERS,
             "Browsing",
             [

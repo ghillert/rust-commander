@@ -76,6 +76,13 @@ impl Adapter {
     ) -> bool {
         // Slint maps macOS Command to `control` and physical Control to `meta`.
         let text = event.text.as_str();
+        if self.quit_confirmation.is_some() {
+            if key_is(text, slint::platform::Key::Escape) {
+                self.dialog_action("cancel");
+                return true;
+            }
+            return false;
+        }
         if self.menubar_key(ui, &event) {
             return true;
         }

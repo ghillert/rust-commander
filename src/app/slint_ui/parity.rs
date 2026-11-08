@@ -48,7 +48,6 @@ pub(super) struct State {
     page_rows: [usize; 2],
     focus_request: Option<usize>,
     context_request: bool,
-    pub quit_all: bool,
     pub window_request: Option<super::windows::Request>,
     native_pending: Option<Receiver<Result<(), String>>>,
 }

@@ -546,6 +546,8 @@ impl Sheet {
         let mut buttons = Vec::new();
         let mut x = if spec.kind == "preferences" {
             796.0
+        } else if spec.kind == "quit" {
+            376.0
         } else {
             596.0
         };
@@ -664,10 +666,17 @@ impl Sheet {
                     .map(|editor| (id.clone(), editor.selectedRange())),
             });
         let mtm = self.window.mtm();
+        let compact = spec.kind == "quit";
+        let (width, footer_height, minimum_body_height, chars_per_line) = if compact {
+            (400.0, 52.0, 0.0, 45)
+        } else {
+            (620.0, 100.0, 180.0, 75)
+        };
+        let text_width = width - 68.0;
         let text_height = (spec
             .description
             .lines()
-            .map(|line| line.chars().count().div_ceil(75).max(1))
+            .map(|line| line.chars().count().div_ceil(chars_per_line).max(1))
             .sum::<usize>() as f64
             * 17.0)
             .max(24.0);
@@ -676,18 +685,19 @@ impl Sheet {
             + spec.fields.iter().map(field_height).sum::<f64>()
             + spec.rows.len() as f64 * 74.0
             + 16.0;
-        let viewport = total.clamp(180.0, 480.0);
+        let viewport = total.clamp(minimum_body_height, 480.0);
         self.window
-            .setContentSize(NSSize::new(620.0, viewport + 116.0));
-        self.body.setFrame(rect(16.0, 100.0, 588.0, viewport));
-        let doc = NSView::initWithFrame(NSView::alloc(mtm), rect(0.0, 0.0, 568.0, total));
-        let title = label(mtm, &spec.title, rect(8.0, total - 26.0, 552.0, 24.0));
+            .setContentSize(NSSize::new(width, viewport + footer_height + 16.0));
+        self.body
+            .setFrame(rect(16.0, footer_height, width - 32.0, viewport));
+        let doc = NSView::initWithFrame(NSView::alloc(mtm), rect(0.0, 0.0, width - 52.0, total));
+        let title = label(mtm, &spec.title, rect(8.0, total - 26.0, text_width, 24.0));
         title.setFont(Some(&NSFont::boldSystemFontOfSize(17.0)));
         doc.addSubview(&title);
         let description = label(
             mtm,
             &spec.description,
-            rect(8.0, total - description_height, 552.0, text_height),
+            rect(8.0, total - description_height, text_width, text_height),
         );
         doc.addSubview(&description);
         let mut y = total - description_height - 8.0;
@@ -794,7 +804,7 @@ impl Sheet {
                                 mtm,
                             )
                         };
-                        button.setFrame(rect(8.0, y + 6.0, 552.0, 24.0));
+                        button.setFrame(rect(8.0, y + 6.0, text_width, 24.0));
                         button
                     };
                     Widget::Check(check)

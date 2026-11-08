@@ -572,5 +572,12 @@
   "Visible columns": "Sichtbare Spalten",
   "Width (px)": "Breite (px)",
   "Window layout": "Fensteraufteilung",
-  "Your password is requested in Email files. It is not stored in Settings.": "Das Passwort wird beim Versenden von Dateien abgefragt und nicht in den Einstellungen gespeichert."
+  "Your password is requested in Email files. It is not stored in Settings.": "Das Passwort wird beim Versenden von Dateien abgefragt und nicht in den Einstellungen gespeichert.",
+  "Application": "Anwendung",
+  "Confirm before quitting": "Beenden bestätigen",
+  "Quit Rust Commander?": "Rust Commander beenden?",
+  "Running operations will be cancelled and unsaved changes will be discarded.": "Laufende Vorgänge werden abgebrochen und ungespeicherte Änderungen werden verworfen.",
+  "Show next time": "Beim nächsten Mal anzeigen",
+  "You have one window open. Are you sure you want to quit?": "Ein Fenster ist geöffnet. Möchten Sie Rust Commander wirklich beenden?",
+  "You have {count} windows open. Are you sure you want to quit?": "{count} Fenster sind geöffnet. Möchten Sie Rust Commander wirklich beenden?"
 }

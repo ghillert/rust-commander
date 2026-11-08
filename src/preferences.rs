@@ -42,6 +42,7 @@ pub struct Preferences {
     pub status_bar: bool,
     pub single_pane: bool,
     pub auto_refresh: bool,
+    pub confirm_quit: bool,
     pub folders_first: bool,
     pub shortcuts: BTreeMap<String, String>,
     pub language: crate::i18n::Language,
@@ -87,6 +88,7 @@ impl Default for Preferences {
             status_bar: true,
             single_pane: false,
             auto_refresh: true,
+            confirm_quit: true,
             folders_first: true,
             language: Default::default(),
             columns: vec![
