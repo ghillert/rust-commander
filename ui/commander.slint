@@ -12,8 +12,8 @@ export struct CommandButton {id:string,title:string,key:string,enabled:bool}
 import { Command, FormField, FormRow, FormPage } from "form-types.slint";
 export { Command, FormField, FormRow, FormPage } from "form-types.slint";
 import { SettingsView } from "settings.slint";
-import { SourceView, SourceRun } from "source-view.slint";
-export { SourceRun } from "source-view.slint";
+import { SourceView, SourceLineGroup } from "source-view.slint";
+export { SourceLine } from "source-view.slint";
 export struct MenuEntry {id:string,title:string,enabled:bool,checkable:bool,checked:bool}
 export struct TreeRow { index:int, title:string, depth:int, expanded:bool, selected:bool, detail:string }
 export struct Place { id: string, title: string, detail: string, heading: bool, section: string, expanded: bool }
@@ -492,7 +492,7 @@ export component CommanderWindow inherits Window {
     in-out property <string> preview-source-mode;
     in property <[string]> preview-source-modes;
     in property <string> preview-source-notice;
-    in property <[SourceRun]> preview-source-runs;
+    in property <[SourceLineGroup]> preview-source-groups;
     in property <int> preview-source-lines: 1;
     in property <int> preview-source-revision;
     in property <color> preview-source-background;
@@ -632,7 +632,7 @@ export component CommanderWindow inherits Window {
     in property <[string]> viewer-source-modes;
     in property <string> viewer-source-language;
     in property <string> viewer-source-notice;
-    in property <[SourceRun]> viewer-source-runs;
+    in property <[SourceLineGroup]> viewer-source-groups;
     in property <int> viewer-source-lines: 1;
     in property <int> viewer-source-revision;
     in property <color> viewer-source-background;
@@ -961,7 +961,7 @@ export component CommanderWindow inherits Window {
                     Image { source: root.preview-image; image-fit: contain; height: self.source.height > 0 ? 200px : 0px; }
                     preview-source-view := SourceView {
                         visible:root.preview-source-active;max-height:self.visible?100000px:0px;min-height:0px;
-                        text:root.preview-text;runs:root.preview-source-runs;line-count:root.preview-source-lines;
+                        text:root.preview-text;groups:root.preview-source-groups;line-count:root.preview-source-lines;
                         revision:root.preview-source-revision;page-color:root.preview-source-background;high-contrast:Chrome.high-contrast;
                         font-family:root.source-font-family;font-size:root.text-size * 1px;
                         layout-text:root.preview-source-layout;foreground:root.preview-source-foreground;
@@ -1249,7 +1249,7 @@ export component CommanderWindow inherits Window {
                 }
                 viewer-source-view := SourceView {
                     visible:root.viewer-source-active;max-height:self.visible?100000px:0px;min-height:0px;
-                    text:root.viewer-text;runs:root.viewer-source-runs;line-count:root.viewer-source-lines;
+                    text:root.viewer-text;groups:root.viewer-source-groups;line-count:root.viewer-source-lines;
                     revision:root.viewer-source-revision;page-color:root.viewer-source-background;high-contrast:Chrome.high-contrast;
                     font-family:root.source-font-family;font-size:root.text-size * 1px;
                     layout-text:root.viewer-source-layout;foreground:root.viewer-source-foreground;

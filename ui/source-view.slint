@@ -1,17 +1,18 @@
 import { ScrollView } from "std-widgets.slint";
 import { Chrome } from "chrome.slint";
 
-export struct SourceRun { line: int, prefix: string, through: string, text: string, color: color }
+export struct SourceLine { line: int, text: styled-text }
+export struct SourceLineGroup { lines: [SourceLine] }
 
 // The input owns the exact text, selection, copying, and accessibility. Colored
-// runs underneath it share its font, line height, origin, and scroll viewport.
+// lines underneath it share its font, line height, origin, and scroll viewport.
 export component SourceView inherits Rectangle {
     in property <string> text;
     in property <string> layout-text;
     in property <[int]> to-layout;
     in property <[int]> to-source;
     in property <color> foreground;
-    in property <[SourceRun]> runs;
+    in property <[SourceLineGroup]> groups;
     in property <int> line-count: 1;
     in property <bool> high-contrast;
     in property <color> page-color;
@@ -54,6 +55,7 @@ export component SourceView inherits Rectangle {
             Rectangle {
                 x:0px; y:0px;
                 width: scroll.content-width; height: scroll.content-height;
+                // Lines outside the highlight cache are still readable while it catches up.
                 Text {
                     visible:!root.high-contrast;
                     z:0;
@@ -61,40 +63,27 @@ export component SourceView inherits Rectangle {
                     font-family:input.font-family;font-size:input.font-size;line-height-factor:input.line-height-factor;
                     wrap:no-wrap;vertical-alignment:top;width:input.width;height:input.height;accessible-role:none;
                 }
-                for run in root.runs: Rectangle {
+                for group in root.groups: Rectangle {
                     z:1;
                     visible: !root.high-contrast;
-                    x: prefix.preferred-width;
-                    y: run.line * root.line-height;
-                    width: max(0px, through.preferred-width - prefix.preferred-width);
-                    height: root.line-height; clip: true;
-                    background: root.page-color;
-                    // Prefix widths are measured by the same renderer, including
-                    // whitespace, tabs, and Unicode fallback glyphs.
-                    prefix := Text {
-                        x:0px;y:0px;
-                        text: run.prefix; color: transparent;
-                        font-family: input.font-family; font-size: input.font-size;
-                        line-height-factor:input.line-height-factor;
-                        wrap: no-wrap; width: self.preferred-width; height: parent.height;
-                        vertical-alignment: top; accessible-role: none;
-                    }
-                    through := Text {
-                        x:0px;y:0px;
-                        text: run.through; color: transparent;
-                        font-family: input.font-family; font-size: input.font-size;
-                        line-height-factor:input.line-height-factor;
-                        wrap: no-wrap; width: self.preferred-width; height: parent.height;
-                        vertical-alignment: top; accessible-role: none;
-                    }
-                    Text {
-                        // Shape the whole line, then clip to this run. Tabs,
-                        // ligatures and fallback glyphs keep their source positions.
-                        x: -prefix.preferred-width; y:0px;text: run.text; color: run.color;
-                        font-family: input.font-family; font-size: input.font-size;
-                        line-height-factor:input.line-height-factor;
-                        wrap: no-wrap; width: self.preferred-width; height: parent.height;
-                        vertical-alignment: top; accessible-role: none;
+                    for line in group.lines: Rectangle {
+                        x: 0px;
+                        y: line.line * root.line-height;
+                        width: parent.width;
+                        height: root.line-height;
+                        background: root.page-color;
+                        StyledText {
+                            x: 0px; y: 0px;
+                            width: parent.width; height: parent.height;
+                            text: line.text;
+                            default-color: root.foreground;
+                            default-font-family: input.font-family;
+                            default-font-size: input.font-size;
+                            // Center the natural font height within the input's taller line box.
+                            vertical-alignment: center;
+                            max-lines: 1;
+                            accessible-role: none;
+                        }
                     }
                 }
                 input := TextInput {

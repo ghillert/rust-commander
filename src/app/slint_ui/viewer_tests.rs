@@ -251,7 +251,11 @@ fn source_modes_preserve_original_bytes_and_search_the_displayed_text() {
     wait(&state, &ui);
     assert_eq!(ui.get_viewer_source_mode(), "Highlighted original");
     assert!(ui.get_viewer_source_active());
-    assert!(ui.get_viewer_source_runs().row_count() > 0);
+    assert!(
+        ui.get_viewer_source_groups()
+            .iter()
+            .any(|group| group.lines.row_count() > 0)
+    );
     assert_eq!(ui.get_viewer_text(), original);
     assert!(!ui.get_viewer_dirty());
     ui.invoke_select_all_viewer();
