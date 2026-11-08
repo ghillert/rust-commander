@@ -731,6 +731,98 @@ fn sidebar_toggle_hides_places_and_preserves_the_tree_setting() {
 }
 
 #[test]
+fn terminal_toolbar_toggles_and_resizes_the_shell() {
+    use i_slint_backend_testing::{AccessibleRole, ElementHandle};
+    use slint::platform::{PointerEventButton, WindowEvent};
+
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, adapter, _left, _right) = fixture();
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    ui.window().set_size(slint::LogicalSize::new(1240.0, 780.0));
+    state.borrow_mut().sync(&ui);
+    ui.show().unwrap();
+
+    let open = ElementHandle::find_by_accessible_label(&ui, "Open terminal")
+        .find(|item| item.accessible_role() == Some(AccessibleRole::Button))
+        .unwrap();
+    let toolbar_position = open.absolute_position();
+    open.invoke_accessible_default_action();
+    slint::platform::update_timers_and_animations();
+    assert!(ui.get_terminal_visible());
+    assert!(ui.get_terminal_focused());
+    let drawn_cells = ui
+        .get_terminal_rows()
+        .iter()
+        .map(|row| row.cells.row_count())
+        .sum::<usize>();
+    assert_eq!(
+        drawn_cells, 1,
+        "A blank terminal only needs the cursor cell"
+    );
+
+    let terminal = ElementHandle::find_by_accessible_label(&ui, "Terminal")
+        .find(|item| item.accessible_role() == Some(AccessibleRole::Groupbox))
+        .unwrap();
+    let screen_size = || {
+        state
+            .borrow()
+            .app
+            .terminal
+            .as_ref()
+            .unwrap()
+            .screen()
+            .size()
+    };
+    let drag = |offset| {
+        let start = slint::LogicalPosition::new(620.0, terminal.absolute_position().y + 3.0);
+        let midpoint = slint::LogicalPosition::new(start.x, start.y + offset / 2.0);
+        let end = slint::LogicalPosition::new(start.x, start.y + offset);
+        let previous_model = ui.get_terminal_rows();
+        let previous_rows = ui.get_terminal_row_count();
+        for event in [
+            WindowEvent::PointerMoved { position: start },
+            WindowEvent::PointerPressed {
+                position: start,
+                button: PointerEventButton::Left,
+            },
+            WindowEvent::PointerMoved { position: midpoint },
+            WindowEvent::PointerMoved { position: end },
+        ] {
+            ui.window().dispatch_event(event);
+            state.borrow_mut().sync(&ui);
+        }
+        assert_ne!(ui.get_terminal_row_count(), previous_rows);
+        assert!(ui.get_terminal_resizing());
+        assert!(ui.get_terminal_rows() == previous_model);
+        assert_eq!(screen_size(), (previous_rows as u16, 155));
+        ui.window().dispatch_event(WindowEvent::PointerReleased {
+            position: end,
+            button: PointerEventButton::Left,
+        });
+        let (rows, cols) = screen_size();
+        assert_eq!((rows, cols), (ui.get_terminal_row_count() as u16, 155));
+        assert_eq!(ui.get_terminal_rows().row_count(), usize::from(rows));
+        rows
+    };
+    assert_eq!(ui.get_terminal_row_count(), 12);
+    assert_eq!(drag(-80.0), 17);
+    assert_eq!(drag(160.0), 7);
+
+    let close = ElementHandle::find_by_accessible_label(&ui, "Close terminal")
+        .find(|item| item.absolute_position() == toolbar_position)
+        .unwrap();
+    assert_eq!(close.accessible_checked(), Some(true));
+    close.invoke_accessible_default_action();
+    assert!(!ui.get_terminal_visible());
+    assert!(state.borrow().app.terminal.is_some());
+    open.invoke_accessible_default_action();
+    assert!(ui.get_terminal_visible());
+    assert_eq!(ui.get_terminal_row_count(), 7);
+}
+
+#[test]
 fn slint_callbacks_preserve_navigation_selection_and_confirmation() {
     i_slint_backend_testing::init_no_event_loop();
     let (_root, adapter, left, right) = fixture();

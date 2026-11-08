@@ -20,7 +20,7 @@ export struct Place { id: string, title: string, detail: string, heading: bool, 
 export struct FileColumn { title: string, width: float }
 export struct FileRow { id: string, name: string, cells: [string], directory: bool, selected: bool, cursor: bool, payload: string, icon: image, native-icon: bool, fallback-icon: string, symlink: bool }
 export struct PdfMark {x:float,y:float,width:float,height:float}
-export struct TerminalCell { text: string, foreground: color, background: color, bold: bool, cursor: bool }
+export struct TerminalCell { column: int, text: string, foreground: color, background: color, bold: bool, cursor: bool }
 export struct TerminalRow { cells: [TerminalCell], text: string }
 
 export global Words {
@@ -507,6 +507,16 @@ export component CommanderWindow inherits Window {
     in-out property <bool> terminal-focused;
     in property <string> terminal-status;
     in property <[TerminalRow]> terminal-rows;
+    private property <length> terminal-grip-height: 6px;
+    private property <length> terminal-header-height: 24px;
+    private property <length> terminal-row-height: 16px;
+    private property <length> terminal-cell-width: 8px;
+    private property <length> terminal-min-height: root.terminal-grip-height + root.terminal-header-height + 2 * root.terminal-row-height;
+    private property <length> terminal-max-height: root.terminal-grip-height + root.terminal-header-height + 100 * root.terminal-row-height;
+    private property <length> terminal-preferred-height: 224px;
+    out property <int> terminal-row-count: floor((terminal-focus.height - root.terminal-grip-height - root.terminal-header-height) / root.terminal-row-height);
+    out property <int> terminal-column-count: clamp(floor(root.width / root.terminal-cell-width), 20, 240);
+    out property <bool> terminal-resizing: terminal-grip.pressed;
     in property <[MenuEntry]> menu-items;
     in-out property <int> menu-index: -1;
     in-out property <int> menu-heading-index: -1;
@@ -677,7 +687,7 @@ export component CommanderWindow inherits Window {
     in property <string> viewer-save-key;
     in property <string> viewer-save-encoding:"UTF-8";
     callback terminal-key(KeyEvent) -> bool;
-    callback terminal-resize(int, int);
+    callback refresh-terminal();
     changed dialog-title => { if root.dialog-title == "" { root.focus-files(root.active-pane); } }
     changed viewer-visible => { if !root.viewer-visible { root.viewer-find-visible=false;root.viewer-native-tools-open=false; viewer-tools.close(); root.focus-files(root.active-pane); } }
     public function scroll-to-cursor(side:int) {if side==0{left.scroll-to-cursor();}else{right.scroll-to-cursor();}}
@@ -755,12 +765,22 @@ export component CommanderWindow inherits Window {
                     Rectangle {horizontal-stretch:1;}
                     ChromeButton {label:Words.translate("Hidden",Words.version);icon:Glyphs.action("ToggleHidden");checkable:true;checked:root.show-hidden;clicked=>{root.action("ToggleHidden");}}
                     ChromeButton {label:Words.translate("Preview",Words.version);icon:Glyphs.action("Preview");checkable:true;checked:root.preview-visible;clicked=>{root.action("Preview");}}
+                    ChromeButton {
+                        label: Words.translate(root.terminal-visible ? "Close terminal" : "Open terminal", Words.version);
+                        icon: Glyphs.action("Terminal");
+                        checkable: true;
+                        checked: root.terminal-visible;
+                        clicked => { root.action("Terminal"); }
+                    }
                     Rectangle {width:9px;Rectangle {x:4px;width:1px;height:20px;y:(parent.height - self.height)/2;background:Chrome.separator;}}
                     ChromeButton {label:Words.translate("Settings…",Words.version);icon:Glyphs.action("Preferences");clicked=>{root.action("Preferences");}}
                 }
                 Rectangle {y:parent.height - 1px;height:1px;background:Chrome.separator;}
             }
-            HorizontalLayout {
+            file-area := HorizontalLayout {
+                min-height: root.terminal-visible ? (root.stacked && !root.single-pane ? 220px : 140px) : 0px;
+                preferred-height: self.min-height;
+                vertical-stretch: 1;
                 spacing: 1px;
                 if root.sidebar-visible: Rectangle {
                     width: 186px; background: Chrome.sidebar;
@@ -957,35 +977,78 @@ export component CommanderWindow inherits Window {
                     if root.preview-source-notice != "": Text {text:root.preview-source-notice;wrap:word-wrap;color:Palette.foreground;}
                 }
             }
-            if root.terminal-visible: terminal-focus := FocusScope {
-                height: 224px;
-                init => {self.focus();}
+            terminal-focus := FocusScope {
+                visible: root.terminal-visible;
+                enabled: self.visible;
+                min-height: self.visible ? root.terminal-min-height : 0px;
+                max-height: self.visible ? root.terminal-preferred-height : 0px;
+                preferred-height: self.max-height;
+                vertical-stretch: 0;
+                changed visible => { if self.visible { self.focus(); } }
                 accessible-role: groupbox;
                 accessible-label: Words.translate("Terminal",Words.version);
                 changed has-focus => {root.terminal-focused=self.has-focus;}
                 key-pressed(event) => { return root.terminal-key(event) ? EventResult.accept : EventResult.reject; }
                 Rectangle {
                     background: #101015;
+                    clip: true;
                     VerticalLayout {
-                        HorizontalBox {height: 24px; padding: 0px; Text {text: root.terminal-status; color: #c6c6ce;} ChromeButton {label:Words.translate("Close terminal",Words.version);icon:Glyphs.action("CloseTab");icon-color:#c6c6ce;width:30px;height:24px;clicked => {root.action("Terminal");}}}
                         spacing: 0px;
+                        Rectangle {
+                            height: root.terminal-grip-height;
+                            background: terminal-grip.has-hover || terminal-grip.pressed ? root.accent : Chrome.separator;
+                            Rectangle {
+                                width: 32px; height: 2px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: 1px; background: #a2a2ac;
+                            }
+                            terminal-grip := TouchArea {
+                                private property <length> start-y;
+                                private property <length> start-height;
+                                mouse-cursor: ns-resize;
+                                pointer-event(event) => {
+                                    if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {
+                                        self.start-y = self.absolute-position.y + self.mouse-y;
+                                        self.start-height = terminal-focus.height;
+                                    }
+                                    if event.kind == PointerEventKind.cancel || (event.kind == PointerEventKind.up && event.button == PointerEventButton.left) {
+                                        root.refresh-terminal();
+                                    }
+                                }
+                                moved => {
+                                    if self.pressed {
+                                        let pointer-y = self.absolute-position.y + self.mouse-y;
+                                        let available = terminal-focus.height + file-area.height - file-area.min-height;
+                                        let maximum = max(root.terminal-min-height, min(available, root.terminal-max-height));
+                                        root.terminal-preferred-height = clamp(self.start-height + self.start-y - pointer-y, root.terminal-min-height, maximum);
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalBox {height: root.terminal-header-height; padding: 0px; Text {text: root.terminal-status; color: #c6c6ce;} ChromeButton {label:Words.translate("Close terminal",Words.version);icon:Glyphs.action("CloseTab");icon-color:#c6c6ce;width:30px;height:root.terminal-header-height;clicked => {root.action("Terminal");}}}
                         for line in root.terminal-rows: Rectangle {
-                            height: 16px;
+                            height: root.terminal-row-height;
                             accessible-role: text;
                             accessible-label: line.text;
-                            HorizontalLayout {
-                                spacing: 0px;
-                                for cell in line.cells: Rectangle {
-                                    width: 8px;
-                                    background: cell.cursor ? #dddddd : cell.background;
-                                    Text { accessible-role: none; text: cell.text; font-family: "monospace"; font-size: 13px; color: cell.cursor ? #101015 : cell.foreground; font-weight: cell.bold ? 700 : 400; }
+                            for cell in line.cells: Rectangle {
+                                x: cell.column * root.terminal-cell-width;
+                                width: root.terminal-cell-width;
+                                height: parent.height;
+                                background: cell.cursor ? #dddddd : cell.background;
+                                Text {
+                                    accessible-role: none;
+                                    text: cell.text;
+                                    font-family: root.source-font-family;
+                                    font-size: 13px;
+                                    color: cell.cursor ? #101015 : cell.foreground;
+                                    font-weight: cell.bold ? 700 : 400;
                                 }
-                                Rectangle { horizontal-stretch: 1; }
                             }
                         }
                         Rectangle { vertical-stretch: 1; }
                     }
-                    TouchArea { y: 24px; height: parent.height - 24px; clicked => { terminal-focus.focus(); } }
+                    TouchArea { y: root.terminal-grip-height + root.terminal-header-height; height: parent.height - self.y; clicked => { terminal-focus.focus(); } }
                 }
             }
             if root.busy: HorizontalBox {

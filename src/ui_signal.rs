@@ -9,6 +9,7 @@ pub struct UiSignal {
     dirty: Arc<AtomicBool>,
     clipboard: Arc<Mutex<Vec<String>>>,
     close: Arc<AtomicBool>,
+    terminal_output: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 impl UiSignal {
     pub fn request_repaint(&self) {
@@ -16,6 +17,14 @@ impl UiSignal {
     }
     pub fn request_repaint_after(&self, _delay: std::time::Duration) {
         self.request_repaint();
+    }
+    pub(crate) fn on_terminal_output(&mut self, notify: impl Fn() + Send + Sync + 'static) {
+        self.terminal_output = Some(Arc::new(notify));
+    }
+    pub(crate) fn terminal_output_ready(&self) {
+        if let Some(notify) = &self.terminal_output {
+            notify();
+        }
     }
     pub fn copy_text(&self, text: String) {
         self.clipboard

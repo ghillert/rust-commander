@@ -2,7 +2,7 @@
 use super::*;
 use base64::Engine;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::atomic::AtomicBool};
 
 slint::include_modules!();
 mod desktop_commands;
@@ -1896,37 +1896,47 @@ impl Adapter {
         let Some(terminal) = &mut self.app.terminal else {
             return;
         };
-        if !self.app.terminal_visible {
+        // Keep the current screen during the drag and reflow it once on release.
+        if !self.app.terminal_visible || ui.get_terminal_resizing() {
             return;
         }
-        let cols = (ui.window().size().width as f32 / ui.window().scale_factor() / 8.0)
-            .clamp(20.0, 240.0) as u16;
-        let _ = terminal.resize(12, cols);
+        let _ = terminal.resize(
+            ui.get_terminal_row_count() as u16,
+            ui.get_terminal_column_count() as u16,
+        );
         terminal.focused = ui.get_terminal_focused();
         ui.set_terminal_status(terminal.status.as_str().into());
         let screen = terminal.screen();
+        let (rows, cols) = screen.size();
+        let cursor_position = screen.cursor_position();
         let stamp = format!(
-            "{}:{:?}",
+            "{rows}x{cols}:{}:{cursor_position:?}",
             String::from_utf8_lossy(&screen.contents_formatted()),
-            screen.cursor_position()
         );
         if self.last_terminal == stamp {
             return;
         }
         self.last_terminal = stamp;
         let mut lines = Vec::new();
-        for row in 0..12 {
+        for row in 0..rows {
             let mut cells = Vec::new();
             for col in 0..cols {
-                if let Some(cell) = screen.cell(row, col) {
-                    cells.push(TerminalCell {
-                        text: cell.contents().into(),
-                        foreground: terminal_color(cell.fgcolor(), true),
-                        background: terminal_color(cell.bgcolor(), false),
-                        bold: cell.bold(),
-                        cursor: screen.cursor_position() == (row, col),
-                    });
+                let Some(cell) = screen.cell(row, col) else {
+                    continue;
+                };
+                let cursor = cursor_position == (row, col);
+                let background = cell.bgcolor();
+                if !cursor && !cell.has_contents() && background == vt100::Color::Default {
+                    continue;
                 }
+                cells.push(TerminalCell {
+                    column: i32::from(col),
+                    text: cell.contents().into(),
+                    foreground: terminal_color(cell.fgcolor(), true),
+                    background: terminal_color(background, false),
+                    bold: cell.bold(),
+                    cursor,
+                });
             }
             lines.push(TerminalRow {
                 text: cells
@@ -2668,10 +2678,37 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
     callback!(on_viewer_pdf_select, |a, w, x, y, begin| {
         a.pdf_select(x, y, begin);
     });
-    callback!(on_terminal_key, |a, w, event| { a.terminal_key(event) });
-    callback!(on_terminal_resize, |a, w, rows, cols| {
-        if let Some(terminal) = &mut a.app.terminal {
-            let _ = terminal.resize(rows.clamp(2, 100) as u16, cols.clamp(20, 240) as u16);
+    let key_state = state.clone();
+    ui.on_terminal_key(move |event| windows::with_state(&key_state, |a| a.terminal_key(event)));
+    let terminal_state = state.clone();
+    let terminal_ui = ui.as_weak();
+    ui.on_refresh_terminal(move || {
+        if let Some(ui) = terminal_ui.upgrade()
+            && let Ok(mut adapter) = terminal_state.try_borrow_mut()
+        {
+            if let Some(terminal) = &mut adapter.app.terminal {
+                terminal.poll();
+            }
+            adapter.sync_terminal(&ui);
+        }
+    });
+    let terminal_ui = ui.as_weak();
+    let refresh_pending = Arc::new(AtomicBool::new(false));
+    state.borrow_mut().ctx.on_terminal_output(move || {
+        if refresh_pending.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        let pending = refresh_pending.clone();
+        if terminal_ui
+            .upgrade_in_event_loop(move |ui| {
+                // Allow another wakeup before draining the queue so new output
+                // can schedule a refresh even if it arrives during this one.
+                pending.store(false, Ordering::Relaxed);
+                ui.invoke_refresh_terminal();
+            })
+            .is_err()
+        {
+            refresh_pending.store(false, Ordering::Relaxed);
         }
     });
     use slint::winit_030::WinitWindowAccessor;

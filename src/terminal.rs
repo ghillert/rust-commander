@@ -47,7 +47,7 @@ impl Terminal {
                         if sender.send(buffer[..n].to_vec()).is_err() {
                             break;
                         }
-                        ctx.request_repaint();
+                        ctx.terminal_output_ready();
                     }
                 }
             }
