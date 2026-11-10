@@ -49,6 +49,39 @@ impl Commander {
             browse_server: false,
         }
     }
+    pub(super) fn open_container(&mut self, entry: Entry, ctx: &UiSignal) {
+        let target = match crate::uri_backend::docker::target_from_entry(&entry.path) {
+            Ok(target) => target,
+            Err(error) => {
+                self.fail(error);
+                return;
+            }
+        };
+        use sha2::{Digest, Sha256};
+        let id = format!(
+            "docker-{:x}",
+            Sha256::digest(entry.path.as_os_str().as_encoded_bytes())
+        );
+        let profile = Connection {
+            id: id.clone(),
+            name: entry.name,
+            service: "docker".into(),
+            listed: false,
+            docker: Some(target),
+            ..Default::default()
+        };
+        crate::remote::register_profiles(std::slice::from_ref(&profile));
+        self.connections.retain(|c| c.id != id);
+        self.connections.push(profile);
+        self.tab_mut().navigate(
+            Location::Remote {
+                connection: id,
+                path: PathBuf::new(),
+            },
+            ctx,
+        );
+    }
+
     pub(super) fn open_network_entry(&mut self, entry: Entry, ctx: &UiSignal) {
         self.tab_mut().stop_network_scan();
         if self.tab().location == (Location::Network { server: None }) && entry.path.is_absolute() {
@@ -120,6 +153,7 @@ impl Commander {
             Ok(uri::Input::Location(location)) => {
                 if let Location::Remote { connection, path } = &location
                     && let Some(c) = crate::remote::profile(connection)
+                    && c.service != "docker"
                 {
                     let ticket = self.uri_ticket(path.clone());
                     self.start_uri(ticket, c, Default::default(), false, false, ctx);
@@ -483,7 +517,7 @@ impl Commander {
             && let Some(mut c) = self
                 .connections
                 .iter()
-                .find(|c| &c.id == connection)
+                .find(|c| &c.id == connection && c.service != "docker")
                 .cloned()
         {
             c.initial_path = path.clone();
@@ -586,6 +620,168 @@ mod tests {
             app.tab().error
         );
         assert_eq!(app.tab().location.parent(), Some(server));
+    }
+
+    #[test]
+    #[ignore = "requires disposable Linux containers in RUST_COMMANDER_DOCKER_FIXTURES"]
+    fn docker_browses_live_and_snapshot_containers_in_either_pane() {
+        use crate::uri_backend::docker;
+
+        let ids: [String; 3] =
+            serde_json::from_str(&std::env::var("RUST_COMMANDER_DOCKER_FIXTURES").unwrap())
+                .unwrap();
+        let (root, mut app, ctx) = app();
+
+        fn wait(tab: &mut Tab) {
+            let deadline = std::time::Instant::now() + Duration::from_secs(125);
+            while tab.loading {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "Docker fixture timed out"
+                );
+                tab.poll(false);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert!(tab.error.is_none(), "{:?}", tab.error);
+        }
+
+        let mut leases = Vec::new();
+        for (index, id) in ids.iter().enumerate() {
+            app.active = index % 2;
+            app.tab_mut().navigate(Location::Containers, &ctx);
+            wait(app.tab_mut());
+            let row = app
+                .tab()
+                .entries
+                .iter()
+                .find(|row| {
+                    docker::target_from_entry(&row.path).is_ok_and(|target| &target.container == id)
+                })
+                .unwrap()
+                .clone();
+            let target = docker::target_from_entry(&row.path).unwrap();
+            let lease = docker::attach(&target);
+            leases.push(Arc::downgrade(&lease));
+            app.open_entry(row, &ctx);
+            wait(app.tab_mut());
+            let location = app.tab().location.clone();
+            let Location::Remote { connection, .. } = &location else {
+                panic!("Expected Docker file pane")
+            };
+            assert!(!crate::remote::profile(connection).unwrap().writable());
+            assert_eq!(location.parent(), Some(Location::Containers));
+            let status = app.tab().docker_status().unwrap();
+            if index == 0 {
+                assert_eq!(status, "Live");
+            } else {
+                assert!(status.starts_with("Snapshot"), "{status}");
+            }
+            let content =
+                crate::viewer::read(&location, Path::new("tmp/rc-docker.txt"), 1024).unwrap();
+            assert_eq!(content, b"fixture content\n");
+            let mount = crate::remote::list(connection, Path::new("mnt/rc-test"));
+            if index == 0 {
+                assert!(
+                    mount
+                        .unwrap()
+                        .iter()
+                        .any(|entry| entry.name == "mounted.txt")
+                );
+                let denied = crate::remote::list(connection, Path::new("root")).unwrap_err();
+                assert!(format!("{denied:#}").contains("Permission denied"));
+                assert_eq!(app.tab().docker_status().as_deref(), Some("Live"));
+                let entries = crate::remote::list(connection, Path::new("tmp")).unwrap();
+                let entry = entries
+                    .into_iter()
+                    .find(|entry| entry.name == "rc-docker.txt")
+                    .unwrap();
+                crate::remote::transfer(
+                    &location,
+                    &[entry],
+                    &Location::Local(root.path().into()),
+                    false,
+                    &mut crate::operations::Task::default(),
+                )
+                .unwrap();
+                assert_eq!(
+                    std::fs::read(root.path().join("rc-docker.txt")).unwrap(),
+                    content
+                );
+            } else {
+                assert!(mount.is_err(), "Mounted paths must be hidden in snapshots");
+            }
+
+            // Change only containers explicitly created by the disposable fixture.
+            let docker = |args: &[&str]| {
+                std::process::Command::new("docker")
+                    .env_remove("DOCKER_CONTEXT")
+                    .env_remove("DOCKER_HOST")
+                    .args(["--host", &target.endpoint])
+                    .args(args)
+                    .output()
+                    .unwrap()
+            };
+            let label = docker(&[
+                "inspect",
+                "--format",
+                "{{index .Config.Labels \"io.github.ghillert.rust-commander.docker-fixture\"}}",
+                id,
+            ]);
+            assert!(label.status.success() && label.stdout.starts_with(b"true"));
+            let updated = root.path().join("refreshed.txt");
+            std::fs::write(&updated, b"refreshed fixture\n").unwrap();
+            let copy = docker(&[
+                "cp",
+                updated.to_str().unwrap(),
+                &format!("{id}:/tmp/rc-docker.txt"),
+            ]);
+            assert!(
+                copy.status.success(),
+                "{}",
+                String::from_utf8_lossy(&copy.stderr)
+            );
+            if index != 0 {
+                assert_eq!(
+                    crate::viewer::read(&location, Path::new("tmp/rc-docker.txt"), 1024).unwrap(),
+                    content
+                );
+            }
+            app.tab_mut().refresh_docker(&ctx);
+            wait(app.tab_mut());
+            assert_eq!(app.tab().location, location);
+            assert_eq!(
+                crate::viewer::read(&location, Path::new("tmp/rc-docker.txt"), 1024).unwrap(),
+                b"refreshed fixture\n"
+            );
+            assert_eq!(
+                app.tab().docker_status().unwrap().starts_with("Snapshot"),
+                index != 0
+            );
+        }
+        let missing = crate::remote::DockerTarget {
+            endpoint: docker::target_from_entry(
+                &docker::list_containers(&Default::default()).unwrap()[0].path,
+            )
+            .unwrap()
+            .endpoint,
+            container: "0".repeat(64),
+        };
+        assert!(
+            docker::attach(&missing)
+                .entries(Path::new(""), false, &Default::default())
+                .is_err()
+        );
+        let offline = crate::remote::DockerTarget {
+            endpoint: format!("unix://{}", root.path().join("missing.sock").display()),
+            ..missing
+        };
+        assert!(
+            docker::attach(&offline)
+                .entries(Path::new(""), false, &Default::default())
+                .is_err()
+        );
+        drop(app);
+        assert!(leases.iter().all(|lease| lease.upgrade().is_none()));
     }
 
     fn completion(app: &mut Commander, ctx: &UiSignal) -> mpsc::Sender<Result<Resolved, String>> {

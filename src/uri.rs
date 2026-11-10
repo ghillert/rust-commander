@@ -65,6 +65,9 @@ pub fn parse(text: &str, base: &Location) -> Result<Input> {
     if text == base.label() {
         return Ok(Input::Location(base.clone()));
     }
+    if text == "containers://" {
+        return Ok(Input::Location(Location::Containers));
+    }
     if let Some(id) = text.strip_prefix("network://") {
         let server = if id.is_empty() {
             None
@@ -421,7 +424,9 @@ pub fn protocol(location: &Location) -> String {
     match location {
         Location::Local(_) => "FILE".into(),
         Location::Network { .. } => "NETWORK".into(),
+        Location::Containers => "DOCKER".into(),
         Location::Archive { .. } => "ARCHIVE".into(),
+        Location::Remote { .. } if location.docker_target().is_some() => "DOCKER".into(),
         Location::Remote { connection, path } => address(connection, path)
             .split(':')
             .next()

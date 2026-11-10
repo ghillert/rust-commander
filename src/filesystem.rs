@@ -13,6 +13,7 @@ pub enum Location {
     Archive { file: PathBuf, prefix: PathBuf },
     Remote { connection: String, path: PathBuf },
     Network { server: Option<String> },
+    Containers,
 }
 
 impl Location {
@@ -21,6 +22,7 @@ impl Location {
             Self::Local(path) => path.display().to_string(),
             Self::Archive { file, prefix } => format!("{}!/{}", file.display(), prefix.display()),
             Self::Remote { connection, path } => crate::uri::address(connection, path),
+            Self::Containers => "containers://".into(),
             Self::Network { server: None } => "network://".into(),
             Self::Network { server: Some(id) } => crate::remote::profile(id)
                 .map_or_else(|| format!("network://{id}"), |profile| profile.endpoint),
@@ -29,6 +31,7 @@ impl Location {
 
     pub fn title(&self) -> String {
         let path = match self {
+            Self::Containers => return crate::i18n::text("Containers").into_owned(),
             Self::Network { server: None } => return crate::i18n::text("Network").into_owned(),
             Self::Network { server: Some(id) } => return crate::remote::connection_name(id),
             Self::Local(path) => path,
@@ -58,7 +61,7 @@ impl Location {
 
     pub fn parent(&self) -> Option<Self> {
         match self {
-            Self::Network { server: None } => None,
+            Self::Network { server: None } | Self::Containers => None,
             Self::Network { server: Some(_) } => Some(Self::Network { server: None }),
             Self::Local(path) => path.parent().map(|p| Self::Local(p.to_owned())),
             Self::Archive { file, prefix } if !prefix.as_os_str().is_empty() => {
@@ -70,9 +73,14 @@ impl Location {
             Self::Archive { file, .. } => crate::archive_tools::origin(file)
                 .or_else(|| file.parent().map(|p| Self::Local(p.to_owned()))),
             Self::Remote { connection, path } if path.as_os_str().is_empty() => {
-                crate::remote::profile(connection)?
-                    .network_parent
-                    .map(|id| Self::Network { server: Some(id) })
+                let profile = crate::remote::profile(connection)?;
+                if profile.docker.is_some() {
+                    Some(Self::Containers)
+                } else {
+                    profile
+                        .network_parent
+                        .map(|id| Self::Network { server: Some(id) })
+                }
             }
             Self::Remote { connection, path } => path.parent().map(|p| Self::Remote {
                 connection: connection.clone(),
@@ -88,11 +96,27 @@ impl Location {
         }
     }
 
+    pub(crate) fn is_virtual_list(&self) -> bool {
+        matches!(self, Self::Network { .. } | Self::Containers)
+    }
+
+    pub(crate) fn docker_target(&self) -> Option<crate::remote::DockerTarget> {
+        let Self::Remote { connection, .. } = self else {
+            return None;
+        };
+        let profile = crate::remote::profile(connection)?;
+        if profile.service == "docker" {
+            profile.docker
+        } else {
+            None
+        }
+    }
+
     pub fn enter(&self, entry: &Entry) -> Option<Self> {
         if entry.is_dir {
             Some(match self {
                 Self::Local(_) => Self::Local(entry.path.clone()),
-                Self::Network { .. } => return None,
+                Self::Network { .. } | Self::Containers => return None,
                 Self::Archive { file, .. } => Self::Archive {
                     file: file.clone(),
                     prefix: entry.path.clone(),
@@ -157,6 +181,7 @@ pub enum Sort {
 
 pub fn list(location: &Location) -> Result<Vec<Entry>> {
     match location {
+        Location::Containers => crate::uri_backend::docker::list_containers(&Default::default()),
         Location::Network { server: None } => crate::discovery::network_entries(|_| {}),
         Location::Network { server: Some(id) } => {
             let profile = crate::remote::profile(id).context("Reopen the server from Network.")?;

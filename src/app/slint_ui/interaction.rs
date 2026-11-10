@@ -122,7 +122,7 @@ impl Adapter {
         if kind != "BackgroundContext" {
             add("Open", "Open", focused.is_some() || tab.parent_focused());
         }
-        if matches!(tab.location, Location::Network { .. }) {
+        if tab.location.is_virtual_list() {
             add("Refresh", "Refresh", true);
             return Some(items);
         }

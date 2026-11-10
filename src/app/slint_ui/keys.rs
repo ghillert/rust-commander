@@ -103,6 +103,9 @@ impl Adapter {
             return true;
         }
         if !self.blocked() && key_is(text, slint::platform::Key::Escape) {
+            if self.app.tab_mut().cancel_docker_listing() {
+                return true;
+            }
             self.app.cancel_uri_navigation(self.app.active);
         }
         if self.parity_list_key(&event) {

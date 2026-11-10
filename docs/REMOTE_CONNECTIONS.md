@@ -88,6 +88,21 @@ NFS and Android connections are read-only. Regular files and folders can be
 browsed and copied out, including via drag and drop. Directory listings omit
 symbolic links and special files.
 
+### Docker containers
+
+Select **Devices → Containers** in either pane to browse Linux containers on
+the active local Docker engine. Rust Commander uses the installed Docker CLI,
+including local Docker Desktop contexts on macOS and Windows. Open a container
+to browse, view, and copy its regular files. A live pane uses the container's
+configured user and shows mounted directories that user can read.
+
+Stopped, paused, or minimal containers use a read-only snapshot, marked with
+its capture time in the pane. Snapshots omit mounted folders, are kept only for
+the current session, and are limited to 4 GiB per export and 8 GiB in total.
+**Refresh** checks for live browsing again or takes a new snapshot. Press
+**Esc** to cancel a listing or export in progress. Both modes omit symlinks,
+special files, and the `/proc`, `/sys`, and `/dev` trees.
+
 ### Credentials and saving connections
 
 Public locations open immediately. Missing credentials, SMB share names or cloud

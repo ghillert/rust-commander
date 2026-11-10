@@ -1103,8 +1103,8 @@ impl Adapter {
                 metadata_revision
             );
             if self.listing_stamp[side] != listing {
-                let network = matches!(tab.location, Location::Network { .. });
-                self.drag.rows[side] = if network {
+                let virtual_list = tab.location.is_virtual_list();
+                self.drag.rows[side] = if virtual_list {
                     Vec::new()
                 } else {
                     visible
@@ -1239,6 +1239,11 @@ impl Adapter {
                     tab.selected.len(),
                     tr("selected")
                 )
+            };
+            let summary = if let Some(status) = tab.docker_status() {
+                format!("{status} · {summary}")
+            } else {
+                summary
             };
             if side == 0 {
                 ui.set_left_parent_selected(tab.parent_focused());
@@ -1588,6 +1593,14 @@ impl Adapter {
             self.places.push((id, bookmark.location.clone()));
         }
         entries.push((String::new(), tr("Devices").into_owned(), true, "devices"));
+        entries.push((
+            "containers".into(),
+            tr("Containers").into_owned(),
+            false,
+            "devices",
+        ));
+        self.places
+            .push(("containers".into(), Location::Containers));
         for (name, path) in crate::native_files::mounted_drives() {
             let id = format!("place:{}", self.places.len());
             entries.push((id.clone(), name, false, "devices"));
@@ -2971,6 +2984,7 @@ fn dispatch_native_drag(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
 
 fn location_breadcrumbs(location: &Location) -> Vec<(String, Location)> {
     match location {
+        Location::Containers => vec![(tr("Containers").into_owned(), Location::Containers)],
         Location::Network { server } => {
             let mut crumbs = vec![(
                 tr("Network").into_owned(),
@@ -3010,10 +3024,16 @@ fn location_breadcrumbs(location: &Location) -> Vec<(String, Location)> {
             crumbs
         }
         Location::Remote { connection, path } => {
-            let mut crumbs = crate::remote::profile(connection)
-                .and_then(|c| c.network_parent)
-                .map(|id| location_breadcrumbs(&Location::Network { server: Some(id) }))
-                .unwrap_or_default();
+            let mut crumbs = match crate::remote::profile(connection) {
+                Some(profile) if profile.docker.is_some() => {
+                    location_breadcrumbs(&Location::Containers)
+                }
+                Some(profile) => profile
+                    .network_parent
+                    .map(|id| location_breadcrumbs(&Location::Network { server: Some(id) }))
+                    .unwrap_or_default(),
+                None => Vec::new(),
+            };
             crumbs.push((
                 crate::remote::connection_name(connection),
                 Location::Remote {

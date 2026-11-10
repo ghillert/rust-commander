@@ -181,7 +181,7 @@ component FilePane inherits Rectangle {
                     }
                 }
                 ChromeButton {label: Words.translate(root.breadcrumbs-mode?"Show editable address":"Show breadcrumbs",Words.version);icon: Glyphs.action(root.breadcrumbs-mode?"Rename":"Forward");width:28px;clicked=>{root.action("ToggleLocationBar");}}
-                if root.protocol!="FILE" && root.protocol!="ARCHIVE" && root.protocol!="NETWORK": ChromeButton {label:Words.translate("Save connection…",Words.version);icon:Glyphs.action("Link");width:28px;clicked=>{root.action("SaveConnection");}}
+                if root.protocol!="FILE" && root.protocol!="ARCHIVE" && root.protocol!="NETWORK" && root.protocol!="DOCKER": ChromeButton {label:Words.translate("Save connection…",Words.version);icon:Glyphs.action("Link");width:28px;clicked=>{root.action("SaveConnection");}}
             }
         }
         Rectangle {

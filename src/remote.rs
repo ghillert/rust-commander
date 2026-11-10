@@ -12,6 +12,12 @@ use std::{
     sync::{Arc, OnceLock, RwLock},
 };
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct DockerTarget {
+    pub endpoint: String,
+    pub container: String,
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Connection {
@@ -32,6 +38,8 @@ pub struct Connection {
     pub initial_path: PathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_parent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docker: Option<DockerTarget>,
     pub ftp_tls: FtpTls,
     pub query_required: bool,
     pub native_sftp: bool,
@@ -63,6 +71,7 @@ impl Default for Connection {
             listed: true,
             initial_path: PathBuf::new(),
             network_parent: None,
+            docker: None,
             ftp_tls: FtpTls::Automatic,
             query_required: false,
             native_sftp: false,
@@ -85,11 +94,11 @@ pub enum FtpTls {
 }
 impl Connection {
     pub fn writable(&self) -> bool {
-        !matches!(self.service.as_str(), "http" | "adb" | "nfs")
+        !matches!(self.service.as_str(), "http" | "adb" | "nfs" | "docker")
     }
 
     pub(crate) fn uses_local_identity(&self) -> bool {
-        matches!(self.service.as_str(), "adb" | "nfs")
+        matches!(self.service.as_str(), "adb" | "nfs" | "docker")
     }
 
     pub fn tls_mode(&self) -> FtpTls {
@@ -223,6 +232,14 @@ pub fn validate(connection: &Connection) -> Result<()> {
     if connection.name.trim().is_empty() || connection.id.is_empty() {
         bail!("Enter a connection name.");
     }
+    if connection.service == "docker" {
+        return crate::uri_backend::docker::validate_target(
+            connection
+                .docker
+                .as_ref()
+                .context("Missing Docker container target")?,
+        );
+    }
     if !SERVICES.contains(&connection.service.as_str()) && connection.service != "fs" {
         bail!("Unsupported storage service.");
     }
@@ -299,6 +316,10 @@ pub(crate) fn clean_error(
 
 pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Result<()> {
     validate(connection)?;
+    anyhow::ensure!(
+        connection.service != "docker",
+        "Open Docker containers from Devices."
+    );
     let mut http_streaming = None;
     let (operator, smb) = if connection.service == "smb" {
         let share = crate::smb::Share::new(connection, &secrets)?;
@@ -376,6 +397,22 @@ fn store_session(id: &str, session: Session) -> Result<()> {
 }
 
 fn session(id: &str) -> Result<Arc<Session>> {
+    if let Some(profile) = profile(id)
+        && profile.service == "docker"
+    {
+        validate(&profile)?;
+        let _runtime = runtime().enter();
+        let secrets = Secrets::default();
+        let operator =
+            crate::uri_backend::operator(&profile, &secrets)?.context("Missing Docker backend")?;
+        return Ok(Arc::new(Session {
+            operator: Some(opendal::blocking::Operator::new(operator)?),
+            http_streaming: None,
+            smb: None,
+            secrets,
+            remember: Default::default(),
+        }));
+    }
     // Serialize reconnects to avoid spending a rotating refresh token twice.
     static RECONNECT: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let existing = sessions()
@@ -796,6 +833,10 @@ pub fn transfer(
     moving: bool,
     task: &mut Task,
 ) -> Result<()> {
+    let _docker = from
+        .docker_target()
+        .as_ref()
+        .map(crate::uri_backend::docker::attach);
     if entries.is_empty() {
         bail!("Select at least one item.");
     }
@@ -1306,6 +1347,10 @@ pub fn transfer_resolved(
             task,
         );
     }
+    let _docker = from
+        .docker_target()
+        .as_ref()
+        .map(crate::uri_backend::docker::attach);
     anyhow::ensure!(!entries.is_empty(), "Select files to transfer");
     anyhow::ensure!(
         !matches!(from, Location::Archive { .. }) && !matches!(to, Location::Archive { .. }),

@@ -12,6 +12,14 @@ use std::{
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
+struct DockerListing(Arc<AtomicBool>);
+
+impl Drop for DockerListing {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
 pub struct Tab {
     pub folders_first: bool,
     watcher: Option<notify::RecommendedWatcher>,
@@ -42,6 +50,8 @@ pub struct Tab {
     history_index: usize,
     pending: Option<Receiver<Result<Vec<Entry>, String>>>,
     network_updates: Option<Receiver<Vec<Entry>>>,
+    docker: Option<Arc<crate::uri_backend::docker::Container>>,
+    docker_listing: Option<DockerListing>,
 }
 
 impl Tab {
@@ -72,6 +82,8 @@ impl Tab {
             error: None,
             pending: None,
             network_updates: None,
+            docker: None,
+            docker_listing: None,
             focus_address: false,
             focus_filter: false,
             scroll_to_cursor: false,
@@ -81,7 +93,57 @@ impl Tab {
     }
 
     pub fn refresh(&mut self, ctx: &crate::ui_signal::UiSignal) {
+        // Routine refreshes from unrelated file jobs must not cancel an export.
+        if self.docker_listing.is_none() {
+            self.refresh_impl(ctx, false);
+        }
+    }
+
+    pub(crate) fn refresh_docker(&mut self, ctx: &crate::ui_signal::UiSignal) {
+        self.refresh_impl(ctx, true);
+    }
+
+    pub(crate) fn cancel_docker_listing(&mut self) -> bool {
+        if self.docker_listing.take().is_none() {
+            return false;
+        }
+        self.pending = None;
+        self.loading = false;
+        self.error = Some(
+            crate::i18n::text("Docker browsing cancelled. Refresh to try again.").into_owned(),
+        );
+        true
+    }
+
+    pub(crate) fn docker_status(&self) -> Option<String> {
+        let status = self.docker.as_ref().and_then(|docker| docker.status());
+        if self.docker_listing.is_some() {
+            let cancel = crate::i18n::text("Esc to cancel");
+            Some(status.map_or_else(
+                || cancel.to_string(),
+                |status| format!("{status} · {cancel}"),
+            ))
+        } else {
+            status
+        }
+    }
+
+    fn refresh_impl(&mut self, ctx: &crate::ui_signal::UiSignal, refresh_docker: bool) {
         use notify::Watcher;
+        self.docker_listing = None;
+        self.docker = self
+            .location
+            .docker_target()
+            .as_ref()
+            .map(crate::uri_backend::docker::attach);
+        let docker = self.docker.clone();
+        let cancel = if docker.is_some() || self.location == Location::Containers {
+            let cancel = Arc::new(AtomicBool::new(false));
+            self.docker_listing = Some(DockerListing(cancel.clone()));
+            Some(cancel)
+        } else {
+            None
+        };
         let watch_path = match &self.location {
             Location::Local(path) => Some(path.clone()),
             Location::Archive { file, .. } => Some(file.clone()),
@@ -130,6 +192,16 @@ impl Tab {
                         ctx.request_repaint();
                     }
                 })
+            } else if let Some(cancel) = cancel {
+                match (&location, docker) {
+                    (Location::Containers, _) => {
+                        crate::uri_backend::docker::list_containers(&cancel)
+                    }
+                    (Location::Remote { path, .. }, Some(container)) => {
+                        container.entries(path, refresh_docker, &cancel)
+                    }
+                    _ => filesystem::list(&location),
+                }
             } else {
                 filesystem::list(&location)
             };
@@ -162,6 +234,7 @@ impl Tab {
 
     pub fn poll(&mut self, hidden: bool) {
         if let Some(result) = crate::background::poll(&mut self.pending) {
+            self.docker_listing = None;
             self.network_updates = None;
             self.parent_cursor = self.parent_focused();
             self.revision = self.revision.wrapping_add(1);
@@ -186,7 +259,7 @@ impl Tab {
     }
 
     pub(crate) fn listing_sort(&self) -> Sort {
-        if matches!(self.location, Location::Network { .. }) {
+        if self.location.is_virtual_list() {
             Sort::Name
         } else {
             self.sort
@@ -239,6 +312,7 @@ impl Tab {
         self.changed.store(false, Ordering::Relaxed);
         self.pending = None;
         self.network_updates = None;
+        self.docker_listing = None;
         self.loading = false;
         self.error = None;
         filesystem::sort_entries_with_options(
@@ -300,12 +374,16 @@ impl Tab {
     fn assign_location(&mut self, location: Location) {
         let returning = self.location.parent().as_ref() == Some(&location);
         let return_cursor = returning.then(|| match &self.location {
+            Location::Containers => PathBuf::new(),
             Location::Network { server } => server
                 .as_deref()
                 .and_then(crate::remote::profile)
                 .map_or_else(PathBuf::new, |profile| PathBuf::from(profile.endpoint)),
             Location::Remote { connection, path } if path.as_os_str().is_empty() => {
                 crate::remote::profile(connection).map_or_else(PathBuf::new, |profile| {
+                    if let Some(target) = profile.docker {
+                        return crate::uri_backend::docker::row_key(&target);
+                    }
                     PathBuf::from(if profile.service == "smb" {
                         profile.bucket
                     } else {
@@ -323,8 +401,12 @@ impl Tab {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
         self.address = location.label();
         self.location = location;
+        if self.location.docker_target().is_none() {
+            self.docker = None;
+        }
         self.pending = None;
         self.network_updates = None;
+        self.docker_listing = None;
         self.loading = false;
         self.entries.clear();
         self.selected.clear();
@@ -391,7 +473,7 @@ impl Tab {
     }
 
     pub fn chosen(&self, hidden: bool) -> Vec<Entry> {
-        if matches!(self.location, Location::Network { .. }) {
+        if self.location.is_virtual_list() {
             return Vec::new();
         }
         let visible = self.visible(hidden);

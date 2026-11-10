@@ -43,7 +43,7 @@ impl Selection {
     }
     pub fn validate(&self) -> Result<()> {
         ensure!(
-            !matches!(self.from, Location::Network { .. }),
+            !matches!(self.from, Location::Network { .. } | Location::Containers),
             "Open a share or export before transferring files."
         );
         ensure!(
@@ -136,7 +136,7 @@ impl Selection {
 }
 pub fn writable(location: &Location) -> bool {
     match location {
-        Location::Network { .. } => false,
+        Location::Network { .. } | Location::Containers => false,
         Location::Local(_) => true,
         Location::Remote { connection, .. } => {
             crate::remote::profile(connection).is_none_or(|c| c.writable())
@@ -302,7 +302,7 @@ pub fn transfer(
     let staged = transient(task, Path::new(""), |task| export(selection, task))?;
     let same_archive = matches!((&selection.from,to),(Location::Archive{file:a,..},Location::Archive{file:b,..}) if a==b);
     let (message, complete) = match to {
-        Location::Network { .. } => {
+        Location::Network { .. } | Location::Containers => {
             anyhow::bail!("Open a share or export before transferring files.")
         }
         Location::Archive { file, prefix } => {
@@ -419,7 +419,7 @@ pub fn transfer(
             .map(|(entry, _)| entry.clone())
             .collect::<Vec<_>>();
         match &selection.from {
-            Location::Network { .. } => {
+            Location::Network { .. } | Location::Containers => {
                 anyhow::bail!("Open a share or export before transferring files.")
             }
             Location::Local(_) => {

@@ -18,7 +18,7 @@ pub struct Node {
 }
 pub fn at(root: &Location, path: &Path) -> Location {
     match root {
-        Location::Network { .. } => root.clone(),
+        Location::Network { .. } | Location::Containers => root.clone(),
         Location::Local(_) => Location::Local(path.into()),
         Location::Remote { connection, .. } => Location::Remote {
             connection: connection.clone(),
@@ -32,7 +32,7 @@ pub fn at(root: &Location, path: &Path) -> Location {
 }
 pub fn path(location: &Location) -> &Path {
     match location {
-        Location::Network { .. } => Path::new(""),
+        Location::Network { .. } | Location::Containers => Path::new(""),
         Location::Local(p)
         | Location::Remote { path: p, .. }
         | Location::Archive { prefix: p, .. } => p,
@@ -53,7 +53,7 @@ pub fn build(
     hidden: bool,
     task: &Task,
 ) -> Result<Vec<Node>> {
-    if matches!(root, Location::Network { .. }) {
+    if matches!(root, Location::Network { .. } | Location::Containers) {
         return Ok(Vec::new());
     }
     fn visit(

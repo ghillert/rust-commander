@@ -131,7 +131,9 @@ pub(crate) fn save(
     let edited = edited.as_ref().as_ref();
     ensure!(original != edited, "The editor copy has no changes");
     match location {
-        Location::Network { .. } => anyhow::bail!("Open a share or export to edit files."),
+        Location::Network { .. } | Location::Containers => {
+            anyhow::bail!("Open a share or export to edit files.")
+        }
         Location::Local(_) => {
             task.capture(path)?;
             crate::operations::save_bytes(path, original, edited)?;

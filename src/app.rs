@@ -820,7 +820,7 @@ pub struct Commander {
 impl Commander {
     fn action_available(&self, id: &str) -> bool {
         let writable = |location: &Location| match location {
-            Location::Network { .. } => false,
+            Location::Network { .. } | Location::Containers => false,
             Location::Remote { connection, .. } => {
                 crate::remote::profile(connection).is_none_or(|c| c.writable())
             }
@@ -832,7 +832,7 @@ impl Commander {
                     && writable(&self.panes[1 - self.active].tab().location)
             }
             "Copy" => {
-                !matches!(self.tab().location, Location::Network { .. })
+                !self.tab().location.is_virtual_list()
                     && writable(&self.panes[1 - self.active].tab().location)
             }
             "OwnershipAcl" => self.tab().location.local().is_some(),
@@ -1255,6 +1255,10 @@ impl Commander {
         }
     }
     fn open_entry(&mut self, entry: Entry, ctx: &UiSignal) {
+        if self.tab().location == Location::Containers {
+            self.open_container(entry, ctx);
+            return;
+        }
         if matches!(self.tab().location, Location::Network { .. }) {
             if !self.tab().loading || self.tab().pending_network_scan() {
                 self.open_network_entry(entry, ctx);
@@ -1943,7 +1947,13 @@ impl Commander {
                 return;
             }
             Action::Refresh => {
-                self.refresh(ctx);
+                if self.tab().location == Location::Containers
+                    || self.tab().location.docker_target().is_some()
+                {
+                    self.tab_mut().refresh_docker(ctx);
+                } else {
+                    self.refresh(ctx);
+                }
                 return;
             }
             Action::Help => {
@@ -3143,8 +3153,8 @@ impl Commander {
         {
             self.active = side;
             match destination {
-                Location::Network { .. } => {
-                    self.fail("Open a share or export before transferring files.")
+                Location::Network { .. } | Location::Containers => {
+                    self.fail("Open a file location before transferring files.")
                 }
                 Location::Archive { file, prefix } => {
                     self.archive_form = Some(crate::feature_ui::ArchiveForm {

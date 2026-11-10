@@ -1,6 +1,7 @@
 //! OpenDAL adapters for URI transports. Blocking socket I/O runs on blocking workers;
 //! file transfers remain streamed and use the same guarded operations as other services.
 pub(crate) mod adb;
+pub(crate) mod docker;
 mod ftp;
 mod http;
 pub(crate) mod nfs;
@@ -35,6 +36,15 @@ pub fn operator(c: &Connection, s: &Secrets) -> anyhow::Result<Option<Operator>>
     let (transport, scheme, writable): (Arc<dyn Transport>, Scheme, bool) = match c.service.as_str()
     {
         "http" => (Arc::new(http::Http::new(c, s)?), Scheme::Http, false),
+        "docker" => (
+            docker::attach(
+                c.docker
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Missing Docker container target"))?,
+            ),
+            Scheme::Custom("docker"),
+            false,
+        ),
         "adb" => (Arc::new(adb::Adb::new(c)?), Scheme::Custom("adb"), false),
         "nfs" => (Arc::new(nfs::Nfs::new(c)?), Scheme::Custom("nfs"), false),
         "ftp" => (Arc::new(ftp::Ftp::new(c, s)?), Scheme::Ftp, true),

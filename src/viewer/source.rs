@@ -14,6 +14,7 @@ pub struct Source {
     stamp: String,
     local: Option<same_file::Handle>,
     archive: Option<Arc<crate::private_bytes::Bytes>>,
+    _docker: Option<Arc<crate::uri_backend::docker::Container>>,
 }
 fn local_stamp(path: &Path) -> Result<String> {
     let m = std::fs::metadata(path)?;
@@ -38,8 +39,14 @@ fn local_stamp(path: &Path) -> Result<String> {
 }
 impl Source {
     pub fn open(location: Location, path: PathBuf) -> Result<Arc<Self>> {
+        let docker = location
+            .docker_target()
+            .as_ref()
+            .map(crate::uri_backend::docker::attach);
         let (total, stamp, archive) = match &location {
-            Location::Network { .. } => anyhow::bail!("Open a share or export to view files."),
+            Location::Network { .. } | Location::Containers => {
+                anyhow::bail!("Open a share or export to view files.")
+            }
             Location::Local(_) => (std::fs::metadata(&path)?.len(), local_stamp(&path)?, None),
             Location::Remote { connection, .. } => {
                 let (size, stamp) = crate::remote::viewer_stamp(connection, &path)?;
@@ -72,6 +79,7 @@ impl Source {
             stamp,
             local,
             archive,
+            _docker: docker,
         }))
     }
     fn verify(&self) -> Result<()> {
@@ -82,7 +90,9 @@ impl Source {
             );
         }
         let current = match &self.location {
-            Location::Network { .. } => anyhow::bail!("Open a share or export to view files."),
+            Location::Network { .. } | Location::Containers => {
+                anyhow::bail!("Open a share or export to view files.")
+            }
             Location::Local(_) => local_stamp(&self.path)?,
             Location::Remote { connection, .. } => {
                 crate::remote::viewer_stamp(connection, &self.path)?.1
@@ -102,7 +112,9 @@ impl Source {
         );
         self.verify()?;
         Ok(match &self.location {
-            Location::Network { .. } => anyhow::bail!("Open a share or export to view files."),
+            Location::Network { .. } | Location::Containers => {
+                anyhow::bail!("Open a share or export to view files.")
+            }
             Location::Local(_) => {
                 let mut file = File::open(&self.path)?;
                 ensure!(
