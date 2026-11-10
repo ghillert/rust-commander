@@ -445,28 +445,55 @@ See [recovery, archive save-back and desktop conveniences](docs/RECOVERY_AND_SUP
 ## Roadmap
 
 The [upstream parity checklist](parity/PARITY.md) tracks 166 actions and 34
-protocol, archive, and viewer modules against a pinned source revision.
-Outstanding work includes:
+protocol, archive, and viewer modules against a pinned muCommander revision.
+Entries marked partial have working behavior with gaps in functionality,
+compatibility, or validation.
 
-- Validation of Windows, Linux, live remote services, and native drag-and-drop.
-- NFS/ADB and virtualization providers, Bonjour discovery, and Windows registry
-  browsing. Direct SMB2/3 access is available; broader NAS/server coverage remains open.
-- Live validation of browser OAuth, keychain prompts, and remote rename/conflicts.
-- Remaining archive limits: packing directly to a remote output, HTTP/format-override editing,
-  links/special files and broader format/metadata fixtures. Guarded writable
-  nested/remote archive editing is available.
-- Broader live-provider coverage for checkpointed transfers and remote synchronization,
-  and Undo/Redo beyond journaled local operations.
-- Large-file editing, large remote/archive viewer paging, archive-aware folder
-  comparison and fuller metadata/ACL presentation.
-- Additional languages, broader upstream XML compatibility, additional text
-  encodings and viewer/terminal compatibility. Manual update checks, diagnostics,
-  reviewable bug reports and the application event console are available.
+### Already implemented
 
-The tracker separates implementation gaps from validation work and includes a
-[complete list of unimplemented entries](parity/PARITY.md#completely-missing-upstream-entries),
-current workflow limits and a
-[drag-and-drop workflow review](parity/PARITY.md#drag-and-drop-parity-partial).
+- Direct SMB2/3, FTP with both FTPS modes, and native SFTP with OpenSSH aliases
+  and host-key review. Cloud adapters, checkpointed copies, and remote folder
+  synchronization are also available. See [remote connections](docs/REMOTE_CONNECTIONS.md).
+- Packing from local, remote, and archive sources to local or configured remote
+  destinations. Remote output uses local staging and a verified upload. Writable
+  nested and remote ZIP/TAR/7z archives support guarded save-back. See
+  [archive operations](docs/FILE_OPERATIONS.md#archives).
+- Read-only text and hex paging and search for local, remote, and archive files,
+  source highlighting in the viewer, editor draft recovery, and local owner/group
+  and ACL editing. Manual update checks, diagnostics, reviewable bug reports, and
+  the application event console are available. See [viewers](docs/VIEWERS.md) and
+  [recovery and support](docs/RECOVERY_AND_SUPPORT.md).
+
+### Remaining functionality gaps
+
+- **Filesystems and discovery.** NFS, Android/ADB browsing, Windows Registry
+  browsing, oVirt, vSphere, LST virtual archives, and guest disk browsing via
+  libguestfs are the seven [missing modules](parity/PARITY.md#completely-missing-upstream-entries).
+  Bonjour discovery is also missing. WebHDFS covers part of Hadoop support, and
+  SFTP still lacks SSH jump hosts and proxy commands, certificates, and
+  keyboard-interactive authentication.
+- **Archives and transfers.** HTTP and format-override archives remain read-only.
+  Formats such as RAR and ISO support browsing and extraction only. Archive
+  links and special files have limited support, and folder comparison excludes
+  archive roots. Undo/Redo is limited to journaled local operations.
+- **Editing and metadata.** The built-in editor is plain text and limited to
+  16 MiB. Reviewed external editing supports files up to 2 GiB. Additional text
+  encodings, image animation, and remote ownership and ACL editing remain open.
+- **Customization and migration.** Additional languages and broader theme,
+  preference, and shortcut coverage remain open. The XML importer handles a
+  subset of upstream bookmarks, keymaps, commands, and preferences. See
+  [import limits](docs/FEATURES_0.7.md#12-mucommander-import).
+
+### Validation still needed
+
+- Real-account OAuth, credential-store prompts, broader NAS and server coverage,
+  and provider-specific transfer recovery and synchronization.
+- Explorer drag-and-drop and broader Wayland, screen-reader, mixed-DPI, and
+  terminal compatibility. Nautilus and Dolphin copy drags already have recorded
+  X11 coverage. See the [drag-and-drop review](parity/PARITY.md#drag-and-drop-parity-partial)
+  and [validation record](parity/VALIDATION.md#real-linux-desktop-evidence).
+- Broader archive format, metadata, encryption, and PDF compatibility fixtures.
+
 Update `parity/status.json` and `parity/OVERVIEW.md`, then regenerate the page
 without changing its pinned upstream baseline:
 
