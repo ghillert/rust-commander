@@ -41,6 +41,7 @@ pub struct Tab {
     history: Vec<Location>,
     history_index: usize,
     pending: Option<Receiver<Result<Vec<Entry>, String>>>,
+    network_updates: Option<Receiver<Vec<Entry>>>,
 }
 
 impl Tab {
@@ -70,6 +71,7 @@ impl Tab {
             loading: false,
             error: None,
             pending: None,
+            network_updates: None,
             focus_address: false,
             focus_filter: false,
             scroll_to_cursor: false,
@@ -113,11 +115,38 @@ impl Tab {
         self.pending = Some(receiver);
         self.loading = true;
         self.error = None;
+        let updates = if location == (Location::Network { server: None }) {
+            let (sender, receiver) = mpsc::sync_channel(1);
+            self.network_updates = Some(receiver);
+            Some(sender)
+        } else {
+            self.network_updates = None;
+            None
+        };
         std::thread::spawn(move || {
-            let result = filesystem::list(&location).map_err(|e| format!("{e:#}"));
-            let _ = sender.send(result);
+            let result = if let Some(updates) = updates {
+                crate::discovery::network_entries(|entries| {
+                    if updates.try_send(entries).is_ok() {
+                        ctx.request_repaint();
+                    }
+                })
+            } else {
+                filesystem::list(&location)
+            };
+            let _ = sender.send(result.map_err(|e| format!("{e:#}")));
             ctx.request_repaint();
         });
+    }
+
+    pub(crate) fn pending_network_scan(&self) -> bool {
+        self.network_updates.is_some()
+    }
+
+    pub(crate) fn stop_network_scan(&mut self) {
+        if self.network_updates.take().is_some() {
+            self.pending = None;
+            self.loading = false;
+        }
     }
 
     pub fn poll_changes(&mut self, ctx: &crate::ui_signal::UiSignal) {
@@ -133,32 +162,12 @@ impl Tab {
 
     pub fn poll(&mut self, hidden: bool) {
         if let Some(result) = crate::background::poll(&mut self.pending) {
+            self.network_updates = None;
             self.parent_cursor = self.parent_focused();
             self.revision = self.revision.wrapping_add(1);
             self.loading = false;
             match result {
-                Ok(mut entries) => {
-                    filesystem::sort_entries_with_options(
-                        &mut entries,
-                        self.sort,
-                        self.descending,
-                        self.folders_first,
-                    );
-                    self.entries = entries;
-                    self.selected
-                        .retain(|path| self.entries.iter().any(|e| &e.path == path));
-                    if !self.parent_focused()
-                        && !self
-                            .entries
-                            .iter()
-                            .any(|e| Some(&e.path) == self.cursor.as_ref())
-                    {
-                        self.cursor = self
-                            .visible(hidden)
-                            .first()
-                            .map(|&i| self.entries[i].path.clone());
-                    }
-                }
+                Ok(entries) => self.apply_listing(entries, hidden),
                 Err(error) => {
                     self.entries.clear();
                     self.selected.clear();
@@ -166,6 +175,44 @@ impl Tab {
                     self.error = Some(error);
                 }
             }
+        } else if let Some(entries) = self
+            .network_updates
+            .as_ref()
+            .and_then(|updates| updates.try_recv().ok())
+        {
+            self.revision = self.revision.wrapping_add(1);
+            self.apply_listing(entries, hidden);
+        }
+    }
+
+    pub(crate) fn listing_sort(&self) -> Sort {
+        if matches!(self.location, Location::Network { .. }) {
+            Sort::Name
+        } else {
+            self.sort
+        }
+    }
+
+    fn apply_listing(&mut self, mut entries: Vec<Entry>, hidden: bool) {
+        filesystem::sort_entries_with_options(
+            &mut entries,
+            self.listing_sort(),
+            self.descending,
+            self.folders_first,
+        );
+        self.entries = entries;
+        self.selected
+            .retain(|path| self.entries.iter().any(|e| &e.path == path));
+        if !self.parent_focused()
+            && !self
+                .entries
+                .iter()
+                .any(|e| Some(&e.path) == self.cursor.as_ref())
+        {
+            self.cursor = self
+                .visible(hidden)
+                .first()
+                .map(|&i| self.entries[i].path.clone());
         }
     }
 
@@ -191,11 +238,12 @@ impl Tab {
         self.watch_path = None;
         self.changed.store(false, Ordering::Relaxed);
         self.pending = None;
+        self.network_updates = None;
         self.loading = false;
         self.error = None;
         filesystem::sort_entries_with_options(
             &mut entries,
-            self.sort,
+            self.listing_sort(),
             self.descending,
             self.folders_first,
         );
@@ -252,6 +300,19 @@ impl Tab {
     fn assign_location(&mut self, location: Location) {
         let returning = self.location.parent().as_ref() == Some(&location);
         let return_cursor = returning.then(|| match &self.location {
+            Location::Network { server } => server
+                .as_deref()
+                .and_then(crate::remote::profile)
+                .map_or_else(PathBuf::new, |profile| PathBuf::from(profile.endpoint)),
+            Location::Remote { connection, path } if path.as_os_str().is_empty() => {
+                crate::remote::profile(connection).map_or_else(PathBuf::new, |profile| {
+                    PathBuf::from(if profile.service == "smb" {
+                        profile.bucket
+                    } else {
+                        profile.root
+                    })
+                })
+            }
             Location::Local(path) | Location::Remote { path, .. } => path.clone(),
             Location::Archive { file, prefix } if prefix.as_os_str().is_empty() => {
                 crate::archive_tools::cached_origin(file)
@@ -262,6 +323,9 @@ impl Tab {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
         self.address = location.label();
         self.location = location;
+        self.pending = None;
+        self.network_updates = None;
+        self.loading = false;
         self.entries.clear();
         self.selected.clear();
         self.cursor = return_cursor;
@@ -327,6 +391,9 @@ impl Tab {
     }
 
     pub fn chosen(&self, hidden: bool) -> Vec<Entry> {
+        if matches!(self.location, Location::Network { .. }) {
+            return Vec::new();
+        }
         let visible = self.visible(hidden);
         let selected: Vec<_> = visible
             .iter()

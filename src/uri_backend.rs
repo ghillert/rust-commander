@@ -3,7 +3,7 @@
 pub(crate) mod adb;
 mod ftp;
 mod http;
-mod nfs;
+pub(crate) mod nfs;
 mod sftp;
 use crate::remote::{Connection, Secrets};
 use opendal::{raw::*, *};

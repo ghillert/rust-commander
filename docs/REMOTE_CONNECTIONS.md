@@ -46,14 +46,21 @@ archive navigation and older `remote://CONNECTION_ID/path` locations still work.
 
 ## Network and device browsing
 
-- **Bonjour.** In **File → Connections**, choose **Browse network**.
-  A short scan looks for SMB, SFTP, FTP, and NFS advertisements on the local
-  network. Select a result to fill in the endpoint, then enter the share name,
-  export path, or credentials if required and choose **Connect**. Discovery
-  works from advertisements on the local link and may require allowing local
-  network access through the OS or firewall.
-- **NFS.** Choose **New connection… → NFS (read-only)**, enter an endpoint such as `nfs://nas.local` and the
-  exact export path, or paste an export URI into the location bar. Rust Commander
+- **Network.** Select **Network** under **Places** to browse in the active pane.
+  SMB, SFTP, FTP, and NFS servers appear as their Bonjour advertisements are
+  found. Open a server to browse its shares or exports, or connect directly for
+  SFTP and FTP. Use **Refresh** to scan again and **Back** or **Parent folder**
+  to return from a share or export. Discovery covers the local link and may
+  require allowing local network access in the OS or firewall.
+- **SMB.** Open a discovered server and sign in if prompted, then open a share.
+  For a server that doesn't advertise, enter its URL in **New connection…**
+  and choose **Browse shares…**. Browsing credentials stay in memory for the
+  session. Use manual setup if a server restricts share enumeration or you
+  already know the share name.
+- **NFS.** Open a discovered server to list its exports. For a known server,
+  choose **New connection… → NFS (read-only)**, enter a URL such as
+  `nfs://nas.local`, and choose **Browse exports…**. You can also enter an exact
+  export path or paste an export URI into the location bar. Rust Commander
   opens the export over NFSv3/TCP without mounting it in the OS. The server must
   offer rpcbind and allow connections from unprivileged ports. AUTH_SYS uses
   the effective UID and primary GID on Unix and anonymous IDs on Windows.
@@ -68,6 +75,11 @@ archive navigation and older `remote://CONNECTION_ID/path` locations still work.
   support file-sync v2. Standard shared storage is typically under
   `/storage/emulated/0`. Large forward seeks may be slow because ADB streams
   from the start of the file.
+
+- **Mounted volumes.** Browse mounted drives under **Devices**. On macOS,
+  OrbStack appears there when it exposes its Docker folders at `~/OrbStack`.
+  Open `docker/images` for image files, `docker/containers` for container files,
+  or `docker/volumes` for volumes. OrbStack exposes images as read-only folders.
 
 NFS and Android connections are read-only. Regular files and folders can be
 browsed and copied out, including via drag and drop. Directory listings omit

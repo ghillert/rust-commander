@@ -122,6 +122,10 @@ impl Adapter {
         if kind != "BackgroundContext" {
             add("Open", "Open", focused.is_some() || tab.parent_focused());
         }
+        if matches!(tab.location, Location::Network { .. }) {
+            add("Refresh", "Refresh", true);
+            return Some(items);
+        }
         if kind == "ParentContext" {
             add("OpenOther", "Open in other pane", true);
             add(

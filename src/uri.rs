@@ -65,6 +65,18 @@ pub fn parse(text: &str, base: &Location) -> Result<Input> {
     if text == base.label() {
         return Ok(Input::Location(base.clone()));
     }
+    if let Some(id) = text.strip_prefix("network://") {
+        let server = if id.is_empty() {
+            None
+        } else {
+            ensure!(
+                id.starts_with("network-") && crate::remote::profile(id).is_some(),
+                "Reopen the server from Network."
+            );
+            Some(id.into())
+        };
+        return Ok(Input::Location(Location::Network { server }));
+    }
     let scheme = text.split_once(':').map(|(s, _)| s).filter(|s| {
         s.len() > 1
             && s.bytes().next().is_some_and(|b| b.is_ascii_alphabetic())
@@ -335,7 +347,7 @@ pub fn address(id: &str, path: &Path) -> String {
 
 pub fn matches_profile(target: &Target, c: &Connection) -> bool {
     let t = &target.connection;
-    if c.query_required {
+    if c.query_required || c.id.starts_with("network-") {
         return false;
     }
     if t.service != c.service || (!t.username.is_empty() && t.username != c.username) {
@@ -408,6 +420,7 @@ pub(crate) fn relative_to_profile(path: &Path, c: &Connection) -> Result<PathBuf
 pub fn protocol(location: &Location) -> String {
     match location {
         Location::Local(_) => "FILE".into(),
+        Location::Network { .. } => "NETWORK".into(),
         Location::Archive { .. } => "ARCHIVE".into(),
         Location::Remote { connection, path } => address(connection, path)
             .split(':')

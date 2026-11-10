@@ -294,6 +294,31 @@ impl Adapter {
                             }
                             self.app.connection_form = Some(form);
                         }
+                    } else if id == "browse-server" && !self.app.uri_connecting() {
+                        if let Some(mut form) = self.app.connection_form.take() {
+                            if matches!(form.connection.service.as_str(), "smb" | "nfs")
+                                && !form.connection.endpoint.trim().is_empty()
+                            {
+                                let mut ticket = form
+                                    .navigation
+                                    .take()
+                                    .unwrap_or_else(|| self.app.uri_ticket(PathBuf::new()));
+                                ticket.path.clear();
+                                ticket.browse_server = true;
+                                form.navigation = Some(ticket);
+                                form.connection.bucket.clear();
+                                form.connection.root = "/".into();
+                                form.connection.listed = false;
+                                form.connection.network_parent = None;
+                                form.connection.credentials_from.clear();
+                                self.app.connect_form(&mut form, false, &self.ctx);
+                                if form.connection.service == "smb" {
+                                    self.app.connection_form = Some(form);
+                                }
+                            } else {
+                                self.app.connection_form = Some(form);
+                            }
+                        }
                     } else if id == "accept"
                         && self
                             .app

@@ -752,9 +752,10 @@ impl Adapter {
             for pane in &mut self.app.panes {
                 for tab in &mut pane.tabs {
                     if matches!(tab.sort, filesystem::Sort::Owner | filesystem::Sort::Group) {
+                        let sort = tab.listing_sort();
                         filesystem::sort_entries_with_options(
                             &mut tab.entries,
-                            tab.sort,
+                            sort,
                             tab.descending,
                             tab.folders_first,
                         );
@@ -1102,15 +1103,20 @@ impl Adapter {
                 metadata_revision
             );
             if self.listing_stamp[side] != listing {
-                self.drag.rows[side] = visible
-                    .iter()
-                    .map(|&index| {
-                        drag::Handle::new(crate::drag_drop::Selection {
-                            from: tab.location.clone(),
-                            entries: vec![tab.entries[index].clone()],
+                let network = matches!(tab.location, Location::Network { .. });
+                self.drag.rows[side] = if network {
+                    Vec::new()
+                } else {
+                    visible
+                        .iter()
+                        .map(|&index| {
+                            drag::Handle::new(crate::drag_drop::Selection {
+                                from: tab.location.clone(),
+                                entries: vec![tab.entries[index].clone()],
+                            })
                         })
-                    })
-                    .collect();
+                        .collect()
+                };
                 let rows = visible
                     .iter()
                     .enumerate()
@@ -1139,7 +1145,10 @@ impl Adapter {
                             directory: entry.is_dir,
                             selected: tab.selected.contains(&entry.path),
                             cursor: tab.cursor.as_ref() == Some(&entry.path),
-                            payload: self.drag.rows[side][row_index].token.clone(),
+                            payload: self.drag.rows[side]
+                                .get(row_index)
+                                .map(|handle| handle.token.clone())
+                                .unwrap_or_default(),
                         }
                     })
                     .collect();
@@ -1559,6 +1568,14 @@ impl Adapter {
             entries.push((id.clone(), tr(name).into_owned(), false, "places"));
             self.places.push((id, Location::Local(path)));
         }
+        entries.push((
+            "network".into(),
+            tr("Network").into_owned(),
+            false,
+            "places",
+        ));
+        self.places
+            .push(("network".into(), Location::Network { server: None }));
         entries.push((
             String::new(),
             tr("Favorites").into_owned(),
@@ -2637,9 +2654,10 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
             let tab = a.app.panes[side as usize].tab_mut();
             tab.descending = tab.sort == sort && !tab.descending;
             tab.sort = sort;
+            let sort = tab.listing_sort();
             filesystem::sort_entries_with_options(
                 &mut tab.entries,
-                tab.sort,
+                sort,
                 tab.descending,
                 tab.folders_first,
             );
@@ -2953,6 +2971,16 @@ fn dispatch_native_drag(state: &Rc<RefCell<Adapter>>, ui: &CommanderWindow) {
 
 fn location_breadcrumbs(location: &Location) -> Vec<(String, Location)> {
     match location {
+        Location::Network { server } => {
+            let mut crumbs = vec![(
+                tr("Network").into_owned(),
+                Location::Network { server: None },
+            )];
+            if server.is_some() {
+                crumbs.push((location.title(), location.clone()));
+            }
+            crumbs
+        }
         Location::Local(path) => crate::native_files::breadcrumbs(path)
             .into_iter()
             .map(|(name, path)| (name, Location::Local(path)))
@@ -2982,13 +3010,17 @@ fn location_breadcrumbs(location: &Location) -> Vec<(String, Location)> {
             crumbs
         }
         Location::Remote { connection, path } => {
-            let mut crumbs = vec![(
+            let mut crumbs = crate::remote::profile(connection)
+                .and_then(|c| c.network_parent)
+                .map(|id| location_breadcrumbs(&Location::Network { server: Some(id) }))
+                .unwrap_or_default();
+            crumbs.push((
                 crate::remote::connection_name(connection),
                 Location::Remote {
                     connection: connection.clone(),
                     path: PathBuf::new(),
                 },
-            )];
+            ));
             let mut at = PathBuf::new();
             for component in path.components() {
                 at.push(component.as_os_str());

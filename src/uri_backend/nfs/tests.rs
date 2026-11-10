@@ -143,3 +143,37 @@ fn rejects_excessive_or_truncated_xdr_fields() {
     assert!(Decoder(&words.0).opaque(255).is_err());
     assert!(Decoder(&[0, 0, 0, 4, 0, 0]).opaque(255).is_err());
 }
+
+#[test]
+fn lists_exports_via_rpcbind_and_ignores_invalid_paths() {
+    let mapper = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mount = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = mapper.local_addr().unwrap();
+    let fixture = std::thread::spawn(move || {
+        let mut rpc = mapper.accept().unwrap().0;
+        let (xid, args) = request(&mut rpc, PORTMAP, 2, 3);
+        assert_eq!(args, words(&[MOUNT, 3, 6, 0]).0);
+        reply(
+            &mut rpc,
+            xid,
+            words(&[mount.local_addr().unwrap().port().into()]),
+        );
+
+        let mut rpc = mount.accept().unwrap().0;
+        let (xid, args) = request(&mut rpc, MOUNT, 3, 5);
+        assert!(args.is_empty());
+        let mut exports = Xdr::default();
+        for path in ["/media/music", "/backup", "/media/music", "/../invalid"] {
+            exports.word(1);
+            exports.opaque(path.as_bytes());
+            exports.word(1);
+            exports.opaque(b"some-clients");
+            exports.word(0);
+        }
+        exports.word(0);
+        assert!(decode_exports(&exports.0[..exports.0.len() - 1]).is_err());
+        reply(&mut rpc, xid, exports);
+    });
+    assert_eq!(exports_at(address).unwrap(), ["/backup", "/media/music"]);
+    fixture.join().unwrap();
+}

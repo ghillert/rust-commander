@@ -1,10 +1,14 @@
 //! Explicit scans for local DNS-SD advertisements and authorized Android devices.
-use crate::remote::{Connection, FtpTls};
+use crate::{
+    filesystem::Entry,
+    remote::{Connection, FtpTls, Secrets},
+};
 use anyhow::Result;
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use std::{
     collections::BTreeMap,
     net::IpAddr,
+    path::PathBuf,
     time::{Duration, Instant},
 };
 
@@ -23,13 +27,20 @@ pub(crate) fn android() -> Result<Vec<Connection>> {
 }
 
 pub(crate) fn bonjour() -> Result<Vec<Connection>> {
+    browse(|_| {})
+}
+
+fn browse(publish: impl FnMut(&BTreeMap<String, Connection>)) -> Result<Vec<Connection>> {
     let daemon = ServiceDaemon::new()?;
-    let result = scan(&daemon);
+    let result = scan(&daemon, publish);
     let _ = daemon.shutdown();
     result
 }
 
-fn scan(daemon: &ServiceDaemon) -> Result<Vec<Connection>> {
+fn scan(
+    daemon: &ServiceDaemon,
+    mut publish: impl FnMut(&BTreeMap<String, Connection>),
+) -> Result<Vec<Connection>> {
     let types = [
         ("_smb._tcp.local.", "smb", "smb"),
         ("_sftp-ssh._tcp.local.", "sftp", "ssh"),
@@ -43,6 +54,7 @@ fn scan(daemon: &ServiceDaemon) -> Result<Vec<Connection>> {
     let mut connections = BTreeMap::new();
     let deadline = Instant::now() + Duration::from_secs(3);
     while Instant::now() < deadline {
+        let mut changed = false;
         for (ty, service, scheme, browser) in &browsers {
             for event in browser.try_iter().take(256) {
                 match event {
@@ -74,6 +86,9 @@ fn scan(daemon: &ServiceDaemon) -> Result<Vec<Connection>> {
                                 .strip_suffix(ty)
                                 .unwrap_or(fullname)
                                 .trim_end_matches('.');
+                            changed |= connections
+                                .get(&key)
+                                .is_none_or(|c: &Connection| c.endpoint != endpoint);
                             connections.insert(
                                 key,
                                 Connection {
@@ -92,15 +107,60 @@ fn scan(daemon: &ServiceDaemon) -> Result<Vec<Connection>> {
                         }
                     }
                     ServiceEvent::ServiceRemoved(_, name) => {
-                        connections.remove(&name.to_ascii_lowercase());
+                        changed |= connections.remove(&name.to_ascii_lowercase()).is_some();
                     }
                     _ => {}
                 }
             }
         }
+        if changed {
+            publish(&connections);
+        }
         std::thread::sleep(Duration::from_millis(40));
     }
     Ok(connections.into_values().collect())
+}
+
+pub(crate) fn network_entries(mut publish: impl FnMut(Vec<Entry>)) -> Result<Vec<Entry>> {
+    fn entries<'a>(connections: impl IntoIterator<Item = &'a Connection>) -> Vec<Entry> {
+        let mut seen = std::collections::HashSet::new();
+        connections
+            .into_iter()
+            .filter(|c| seen.insert(&c.endpoint))
+            .map(|c| {
+                folder(
+                    format!("{} ({})", c.name, c.service.to_ascii_uppercase()),
+                    c.endpoint.clone(),
+                )
+            })
+            .collect()
+    }
+    let found = browse(|connections| publish(entries(connections.values())))?;
+    Ok(entries(&found))
+}
+
+pub(crate) fn server_entries(profile: &Connection, secrets: &Secrets) -> Result<Vec<Entry>> {
+    let names = match profile.service.as_str() {
+        "smb" => crate::smb::list_shares(profile, secrets)?,
+        "nfs" => crate::uri_backend::nfs::list_exports(&profile.endpoint)?,
+        _ => anyhow::bail!("This service does not have a server listing."),
+    };
+    Ok(names
+        .into_iter()
+        .map(|name| folder(name.clone(), name))
+        .collect())
+}
+
+fn folder(name: String, path: String) -> Entry {
+    Entry {
+        path: PathBuf::from(path),
+        name,
+        is_dir: true,
+        is_symlink: false,
+        size: 0,
+        size_known: false,
+        modified: None,
+    }
 }
 
 #[cfg(test)]
@@ -136,7 +196,7 @@ mod tests {
                 .unwrap(),
             )
             .unwrap();
-        let result = scan(&browser);
+        let result = scan(&browser, |_| {});
         fixture.shutdown().unwrap();
         browser.shutdown().unwrap();
         assert!(result.unwrap().iter().any(|c| {

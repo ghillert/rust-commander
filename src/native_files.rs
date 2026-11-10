@@ -449,6 +449,18 @@ pub fn mounted_drives() -> Vec<(String, PathBuf)> {
             }
         }
     }
+    #[cfg(target_os = "macos")]
+    {
+        let orbstack = crate::filesystem::home().join("OrbStack");
+        if orbstack.join("docker").is_dir()
+            && !result.iter().any(|(_, path)| {
+                path.file_name().is_some_and(|name| name == "OrbStack")
+                    && same_file::is_same_file(path, &orbstack).unwrap_or(false)
+            })
+        {
+            result.push(("OrbStack".into(), orbstack));
+        }
+    }
     #[cfg(target_os = "windows")]
     for letter in b'A'..=b'Z' {
         let path = PathBuf::from(format!("{}:\\", letter as char));

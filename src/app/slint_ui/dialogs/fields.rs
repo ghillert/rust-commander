@@ -360,14 +360,27 @@ impl Adapter {
                                 }
                                 if c.service != value {
                                     self.invalid_fields.clear();
+                                    if c.network_parent.take().is_some() {
+                                        c.credentials_from.clear();
+                                    }
                                 }
                                 c.service = value.into();
                             }
-                            "endpoint" => c.endpoint = value.into(),
+                            "endpoint" => {
+                                if c.endpoint != value && c.network_parent.take().is_some() {
+                                    c.credentials_from.clear();
+                                }
+                                c.endpoint = value.into();
+                            }
                             "root" => c.root = value.into(),
                             "bucket" => c.bucket = value.into(),
                             "region" => c.region = value.into(),
-                            "username" => c.username = value.into(),
+                            "username" => {
+                                if c.username != value && c.network_parent.take().is_some() {
+                                    c.credentials_from.clear();
+                                }
+                                c.username = value.into();
+                            }
                             "key-file" => c.key_file = value.into(),
                             "known-hosts" => c.known_hosts_file = value.into(),
                             "ssh-config" => c.ssh_use_config = checked(value),

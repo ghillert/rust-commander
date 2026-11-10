@@ -43,6 +43,10 @@ impl Selection {
     }
     pub fn validate(&self) -> Result<()> {
         ensure!(
+            !matches!(self.from, Location::Network { .. }),
+            "Open a share or export before transferring files."
+        );
+        ensure!(
             !self.entries.is_empty() && self.entries.len() <= 100_000,
             "Select files to drag."
         );
@@ -132,6 +136,7 @@ impl Selection {
 }
 pub fn writable(location: &Location) -> bool {
     match location {
+        Location::Network { .. } => false,
         Location::Local(_) => true,
         Location::Remote { connection, .. } => {
             crate::remote::profile(connection).is_none_or(|c| c.writable())
@@ -297,6 +302,9 @@ pub fn transfer(
     let staged = transient(task, Path::new(""), |task| export(selection, task))?;
     let same_archive = matches!((&selection.from,to),(Location::Archive{file:a,..},Location::Archive{file:b,..}) if a==b);
     let (message, complete) = match to {
+        Location::Network { .. } => {
+            anyhow::bail!("Open a share or export before transferring files.")
+        }
         Location::Archive { file, prefix } => {
             let (source, original) = crate::archive_tools::persistent_source(file)?;
             let durable_undo = task.before_change.is_some() && source.local().is_some();
@@ -411,6 +419,9 @@ pub fn transfer(
             .map(|(entry, _)| entry.clone())
             .collect::<Vec<_>>();
         match &selection.from {
+            Location::Network { .. } => {
+                anyhow::bail!("Open a share or export before transferring files.")
+            }
             Location::Local(_) => {
                 for entry in entries {
                     task.capture(&entry.path)?;

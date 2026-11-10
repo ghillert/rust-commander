@@ -25,6 +25,21 @@ impl Adapter {
         }
         d.error = form.error.clone().unwrap_or_default();
         d.busy = self.app.uri_connecting() || form.discovery.is_some();
+        if form
+            .navigation
+            .as_ref()
+            .is_some_and(|ticket| ticket.browse_server)
+        {
+            d.title = tr("Browse SMB shares").into_owned();
+            d.description = format!("{} · {}", form.connection.name, form.connection.endpoint);
+            d.buttons[0].1 = "Cancel".into();
+            d.fields.extend([
+                Field::text("username", "Username", &form.connection.username),
+                Field::password("password", "Password", &form.secrets.password),
+            ]);
+            d.button("accept", "Browse shares", !d.busy);
+            return d;
+        }
         if form.save_only {
             d.title = tr("Save connection…").into_owned();
             d.description = crate::uri::address(&form.connection.id, &form.connection.initial_path);
@@ -342,6 +357,17 @@ impl Adapter {
         }
         if c.service == "http" {
             d.button("open-browser", "Open in browser", !d.busy);
+        }
+        if matches!(c.service.as_str(), "smb" | "nfs") {
+            d.button(
+                "browse-server",
+                if c.service == "smb" {
+                    "Browse shares…"
+                } else {
+                    "Browse exports…"
+                },
+                !d.busy && !c.endpoint.trim().is_empty(),
+            );
         }
         d.button("accept", "Connect", !d.busy);
         d

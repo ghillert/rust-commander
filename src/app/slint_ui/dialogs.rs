@@ -315,7 +315,12 @@ impl Adapter {
             .map(|(_, error)| error.clone())
             .or_else(|| self.field_error.clone())
             .unwrap_or_else(|| spec.error.clone());
-        if !native.error.is_empty() {
+        // A connection failure is retryable. Only invalid input blocks a retry.
+        if !native.error.is_empty()
+            && (spec.kind != "connections"
+                || self.field_error.is_some()
+                || !self.invalid_fields.is_empty())
+        {
             for (id, _, enabled) in &mut native.buttons {
                 if id == "accept" || id == "apply" {
                     *enabled = false;

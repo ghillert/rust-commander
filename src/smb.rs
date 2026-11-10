@@ -4,8 +4,71 @@ use crate::{
     operations::Task,
     remote::{Connection, Secrets},
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use std::{io::Read, path::Path, time::Duration};
+fn server_address(endpoint: &str) -> Result<(url::Url, String)> {
+    let url = if endpoint.contains("://") {
+        url::Url::parse(endpoint)?
+    } else {
+        url::Url::parse(&format!("smb://{endpoint}"))?
+    };
+    let host = url.host_str().context("Enter an SMB server hostname")?;
+    anyhow::ensure!(
+        url.scheme() == "smb",
+        "Enter an SMB server URL such as smb://nas.local"
+    );
+    let address = format!("{host}:{}", url.port().unwrap_or(445));
+    Ok((url, address))
+}
+
+async fn connect_server(
+    addr: String,
+    username: &str,
+    secrets: &Secrets,
+) -> Result<smb2::SmbClient> {
+    let (domain, username) = username.split_once('\\').unwrap_or(("", username));
+    Ok(smb2::SmbClient::connect(smb2::ClientConfig {
+        addr,
+        username: username.into(),
+        domain: domain.into(),
+        password: secrets.password.clone(),
+        timeout: Duration::from_secs(15),
+        ..Default::default()
+    })
+    .await?)
+}
+
+fn run<T>(f: impl std::future::Future<Output = Result<T>>, secrets: &Secrets) -> Result<T> {
+    crate::remote::runtime()
+        .block_on(async {
+            tokio::time::timeout(Duration::from_secs(30), f)
+                .await
+                .context("SMB request timed out")?
+        })
+        .map_err(|e| crate::remote::clean_error(e, secrets))
+}
+
+pub(crate) fn list_shares(profile: &Connection, secrets: &Secrets) -> Result<Vec<String>> {
+    crate::remote::validate(profile)?;
+    let (_, address) = server_address(&profile.endpoint)?;
+    run(
+        async {
+            let mut client = connect_server(address, &profile.username, secrets).await?;
+            Ok(client
+                .list_shares()
+                .await?
+                .into_iter()
+                .filter(|share| {
+                    !share.name.ends_with('$')
+                        && crate::filesystem::validate_name(&share.name).is_ok()
+                })
+                .map(|share| share.name)
+                .collect())
+        },
+        secrets,
+    )
+}
+
 #[derive(Clone)]
 pub struct Share {
     profile: Connection,
@@ -21,28 +84,14 @@ impl Share {
         Ok(share)
     }
     fn address(&self) -> Result<(String, String)> {
-        let endpoint = if self.profile.endpoint.contains("://") {
-            self.profile.endpoint.clone()
-        } else {
-            format!("smb://{}", self.profile.endpoint)
-        };
-        let url = url::Url::parse(&endpoint)?;
-        if url.scheme() != "smb" || url.host_str().is_none() {
-            bail!("Use an SMB endpoint such as smb://nas.local:445 and enter the share name");
-        }
-        let share = if !self.profile.bucket.is_empty() {
-            self.profile.bucket.clone()
-        } else {
+        let (url, address) = server_address(&self.profile.endpoint)?;
+        let share = if self.profile.bucket.is_empty() {
             url.path().trim_matches('/').to_owned()
+        } else {
+            self.profile.bucket.clone()
         };
         crate::filesystem::validate_name(&share)?;
-        let host = url.host_str().unwrap();
-        let host = if host.contains(':') && !host.starts_with('[') {
-            format!("[{host}]")
-        } else {
-            host.to_owned()
-        };
-        Ok((format!("{host}:{}", url.port().unwrap_or(445)), share))
+        Ok((address, share))
     }
     fn path(&self, path: &Path) -> Result<String> {
         let root = self.profile.root.trim_matches('/');
@@ -57,31 +106,12 @@ impl Share {
 
     async fn connect(&self) -> Result<(smb2::SmbClient, smb2::Tree)> {
         let (addr, share) = self.address()?;
-        let (domain, username) = self
-            .profile
-            .username
-            .split_once('\\')
-            .unwrap_or(("", self.profile.username.as_str()));
-        let mut client = smb2::SmbClient::connect(smb2::ClientConfig {
-            addr,
-            username: username.into(),
-            domain: domain.into(),
-            password: self.secrets.password.clone(),
-            timeout: Duration::from_secs(15),
-            ..Default::default()
-        })
-        .await?;
+        let mut client = connect_server(addr, &self.profile.username, &self.secrets).await?;
         let tree = client.connect_share(&share).await?;
         Ok((client, tree))
     }
     fn run<T>(&self, f: impl std::future::Future<Output = Result<T>>) -> Result<T> {
-        crate::remote::runtime()
-            .block_on(async {
-                tokio::time::timeout(Duration::from_secs(30), f)
-                    .await
-                    .context("SMB request timed out")?
-            })
-            .map_err(|e| crate::remote::clean_error(e, &self.secrets))
+        run(f, &self.secrets)
     }
     pub fn list(&self, path: &Path) -> Result<Vec<Entry>> {
         self.run(async {

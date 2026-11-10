@@ -121,6 +121,7 @@ pub(crate) fn publish(file: &Path, edited: &Path, expected: &str, task: &mut Tas
         );
         updates.push((cursor.clone(), output.clone()));
         match &cached.origin {
+            Location::Network { .. } => anyhow::bail!("Open a share or export to edit archives."),
             Location::Archive { file: parent, .. } => {
                 ensure!(
                     crate::history::fingerprint(parent, task)? == cached.parent_stamp,

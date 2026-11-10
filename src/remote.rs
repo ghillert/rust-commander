@@ -30,6 +30,8 @@ pub struct Connection {
     /// Named connections are shown in the sidebar; URI descriptors restore tabs only.
     pub listed: bool,
     pub initial_path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_parent: Option<String>,
     pub ftp_tls: FtpTls,
     pub query_required: bool,
     pub native_sftp: bool,
@@ -60,6 +62,7 @@ impl Default for Connection {
             oauth_port: 53682,
             listed: true,
             initial_path: PathBuf::new(),
+            network_parent: None,
             ftp_tls: FtpTls::Automatic,
             query_required: false,
             native_sftp: false,
@@ -339,19 +342,36 @@ pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Res
         .write()
         .map_err(|_| anyhow::anyhow!("Connection lock failed"))?
         .insert(connection.id.clone(), connection.clone());
+    store_session(
+        &connection.id,
+        Session {
+            operator,
+            http_streaming,
+            smb,
+            secrets,
+            remember: std::sync::atomic::AtomicBool::new(remember),
+        },
+    )
+}
+
+pub(crate) fn keep_server_credentials(id: &str, secrets: Secrets) -> Result<()> {
+    store_session(
+        id,
+        Session {
+            operator: None,
+            http_streaming: None,
+            smb: None,
+            secrets,
+            remember: std::sync::atomic::AtomicBool::new(false),
+        },
+    )
+}
+
+fn store_session(id: &str, session: Session) -> Result<()> {
     sessions()
         .write()
         .map_err(|_| anyhow::anyhow!("Session lock failed"))?
-        .insert(
-            connection.id.clone(),
-            Arc::new(Session {
-                operator,
-                http_streaming,
-                smb,
-                secrets,
-                remember: std::sync::atomic::AtomicBool::new(remember),
-            }),
-        );
+        .insert(id.into(), Arc::new(session));
     Ok(())
 }
 

@@ -227,7 +227,7 @@ pub fn destination(
                 path: options.destination(&path),
             }
         }
-        Location::Archive { .. } => {
+        Location::Archive { .. } | Location::Network { .. } => {
             anyhow::bail!("Choose a local or remote archive destination, outside another archive.")
         }
     })

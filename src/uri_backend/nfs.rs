@@ -19,6 +19,63 @@ const PORTMAP: u32 = 100000;
 const MAX_HANDLE: usize = 64;
 const READ_SIZE: usize = 64 * 1024;
 
+fn server_url(endpoint: &str) -> Result<url::Url> {
+    let url = url::Url::parse(endpoint).context("Enter a server URL such as nfs://server")?;
+    ensure!(
+        url.scheme() == "nfs"
+            && url.host_str().is_some()
+            && matches!(url.path(), "" | "/")
+            && url.fragment().is_none()
+            && url.query().is_none()
+            && url.username().is_empty()
+            && url.password().is_none(),
+        "Enter the NFS host in Server URL and the exported path in Export path."
+    );
+    Ok(url)
+}
+
+pub(crate) fn list_exports(endpoint: &str) -> Result<Vec<String>> {
+    let url = server_url(endpoint)?;
+    let host = url.host_str().unwrap().trim_matches(['[', ']']);
+    let mut result = Err(anyhow::anyhow!("NFS hostname returned no addresses."));
+    for address in (host, 111).to_socket_addrs()?.take(4) {
+        result = exports_at(address);
+        if result.is_ok() {
+            break;
+        }
+    }
+    result.with_context(|| format!("Could not list NFSv3 exports on {host}"))
+}
+
+fn exports_at(address: SocketAddr) -> Result<Vec<String>> {
+    let mut mapper = Rpc::connect(address)?;
+    let mount_port = port(&mut mapper, MOUNT, address.is_ipv6())?;
+    let mut mount = Rpc::connect(SocketAddr::new(address.ip(), mount_port))?;
+    let reply = mount.call(MOUNT, 3, 5, &identity(), &Xdr::default())?;
+    decode_exports(&reply)
+}
+
+fn decode_exports(reply: &[u8]) -> Result<Vec<String>> {
+    let mut data = Decoder(reply);
+    let mut exports = Vec::new();
+    while data.boolean()? {
+        let path = data.opaque(1024)?;
+        while data.boolean()? {
+            data.opaque(255)?; // Server-defined access group. MOUNT checks access.
+        }
+        if let Ok(path) = std::str::from_utf8(path)
+            && path.starts_with('/')
+            && crate::remote::key(Path::new(path.trim_matches('/')), false).is_ok()
+        {
+            exports.push(path.to_owned());
+        }
+    }
+    ensure!(data.0.is_empty(), "Invalid NFS export reply");
+    exports.sort();
+    exports.dedup();
+    Ok(exports)
+}
+
 pub(super) struct Nfs {
     address: SocketAddr,
     root: Vec<u8>,
@@ -27,13 +84,8 @@ pub(super) struct Nfs {
 
 impl Nfs {
     pub(super) fn new(c: &Connection) -> Result<Self> {
-        let url = url::Url::parse(&c.endpoint).context("Enter an endpoint such as nfs://server")?;
-        ensure!(
-            url.scheme() == "nfs" && matches!(url.path(), "" | "/") && url.fragment().is_none(),
-            "Enter the server in Endpoint and the exported path in Root folder."
-        );
-        let host = url.host_str().context("Enter the NFS server hostname")?;
-        let host = host.trim_matches(['[', ']']);
+        let url = server_url(&c.endpoint)?;
+        let host = url.host_str().unwrap().trim_matches(['[', ']']);
         let export = c.root.trim_matches('/');
         crate::remote::key(Path::new(export), false)?;
         ensure!(export.len() < 1024, "NFS export path is too long.");

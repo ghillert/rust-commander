@@ -352,7 +352,9 @@ pub fn source_label(file: &Path) -> String {
                 Location::Remote { connection, .. } => {
                     crate::uri::address(&connection, &cached.source)
                 }
-                Location::Local(_) => cached.source.display().to_string(),
+                Location::Network { .. } | Location::Local(_) => {
+                    cached.source.display().to_string()
+                }
             },
             None => file.display().to_string(),
         }
@@ -403,6 +405,7 @@ fn materialize_impl(
         bail!("Nested archives are limited to eight levels.");
     }
     let bytes = match location {
+        Location::Network { .. } => bail!("Open a share or export to browse archives."),
         Location::Archive { file, .. } => crate::archive::read_bytes(file, path, LIMIT)?,
         Location::Remote { connection, .. } => crate::remote::read_bytes(connection, path, LIMIT)?,
         Location::Local(_) => {
@@ -447,6 +450,7 @@ fn materialize_impl(
     }
     let writable = format.is_none()
         && match location {
+            Location::Network { .. } => false,
             Location::Archive { file, .. } => editable(file),
             Location::Remote { connection, .. } => {
                 crate::remote::profile(connection).is_none_or(|c| c.writable())
@@ -464,6 +468,7 @@ fn materialize_impl(
         bail!("The nested archive cache has reached 512 MiB. Close the application to clear it.");
     }
     let origin = match location {
+        Location::Network { .. } => bail!("Open a share or export to browse archives."),
         Location::Archive { file, .. } => Location::Archive {
             file: file.clone(),
             prefix: path.parent().unwrap_or(Path::new("")).into(),

@@ -141,7 +141,7 @@ component FilePane inherits Rectangle {
             HorizontalLayout {
                 padding-left: 6px; padding-right: 6px; spacing: 3px;
                 ChromeButton { label: Words.translate("Parent folder",Words.version); icon: Glyphs.action("Parent"); clicked => {root.action("Parent");} }
-                Text {text:root.protocol;color:Chrome.secondary;font-size:10px;font-weight:600;vertical-alignment:center;preferred-width:root.protocol=="ARCHIVE"?52px:40px;}
+                Text {text:root.protocol;color:Chrome.secondary;font-size:10px;font-weight:600;vertical-alignment:center;preferred-width:root.protocol=="ARCHIVE" || root.protocol=="NETWORK" ? 55px : 40px;}
                 Rectangle {
                     horizontal-stretch: 1;
                     location := ChromeField {
@@ -181,7 +181,7 @@ component FilePane inherits Rectangle {
                     }
                 }
                 ChromeButton {label: Words.translate(root.breadcrumbs-mode?"Show editable address":"Show breadcrumbs",Words.version);icon: Glyphs.action(root.breadcrumbs-mode?"Rename":"Forward");width:28px;clicked=>{root.action("ToggleLocationBar");}}
-                if root.protocol!="FILE" && root.protocol!="ARCHIVE": ChromeButton {label:Words.translate("Save connection…",Words.version);icon:Glyphs.action("Link");width:28px;clicked=>{root.action("SaveConnection");}}
+                if root.protocol!="FILE" && root.protocol!="ARCHIVE" && root.protocol!="NETWORK": ChromeButton {label:Words.translate("Save connection…",Words.version);icon:Glyphs.action("Link");width:28px;clicked=>{root.action("SaveConnection");}}
             }
         }
         Rectangle {
@@ -359,7 +359,11 @@ component FilePane inherits Rectangle {
                     }
                 }
             }
-            if root.busy: Text { text: Words.translate("Loading…", Words.version); x: 12px; y: 12px; color: Palette.foreground; }
+            if root.busy && (root.protocol != "NETWORK" || root.rows.length == 0): Text { text: Words.translate("Loading…", Words.version); x: 12px; y: 12px; color: Palette.foreground; }
+            if !root.busy && root.protocol == "NETWORK" && root.rows.length == 0 && root.error == "": Text {
+                text: Words.translate("No results. Refresh to try again.", Words.version);
+                x: 12px; y: 12px; color: Chrome.secondary;
+            }
             scroll-up := FileDropZone {side:root.side;priority:101;height:18px;highlight:false;}
             scroll-down := FileDropZone {side:root.side;priority:100;height:18px;y:parent.height - self.height;highlight:false;}
             Timer {interval:60ms;running:scroll-up.active;triggered=>{list.content-y=min(0px,list.content-y+24px);}}

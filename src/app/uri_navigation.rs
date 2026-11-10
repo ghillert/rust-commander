@@ -12,6 +12,7 @@ pub(super) struct Ticket {
     pub tab: u64,
     pub epoch: u64,
     pub path: PathBuf,
+    pub browse_server: bool,
 }
 pub(super) struct Pending {
     ticket: Ticket,
@@ -24,6 +25,7 @@ struct Resolved {
     location: Location,
     entries: Vec<Entry>,
     cursor: Option<PathBuf>,
+    server_credentials: Option<Secrets>,
 }
 impl Ticket {
     fn current(&self, app: &Commander) -> bool {
@@ -44,8 +46,69 @@ impl Commander {
             tab: tab.id,
             epoch: tab.navigation_epoch,
             path,
+            browse_server: false,
         }
     }
+    pub(super) fn open_network_entry(&mut self, entry: Entry, ctx: &UiSignal) {
+        self.tab_mut().stop_network_scan();
+        let mut ticket = self.uri_ticket(PathBuf::new());
+        let Location::Network { server } = &self.tab().location else {
+            return;
+        };
+        let connection = if let Some(id) = server {
+            let Some(mut profile) = crate::remote::profile(id) else {
+                self.fail("Reopen the server from Network.");
+                return;
+            };
+            profile.network_parent = Some(id.clone());
+            if profile.service == "smb" {
+                profile.credentials_from = id.clone();
+            }
+            profile.name = entry.name.clone();
+            if profile.service == "smb" {
+                profile.bucket = entry.name;
+            } else {
+                profile.root = entry.name;
+            }
+            profile.id = self
+                .connections
+                .iter()
+                .find(|c| {
+                    !c.listed
+                        && c.network_parent.as_ref() == Some(id)
+                        && c.bucket == profile.bucket
+                        && c.root == profile.root
+                })
+                .map(|c| c.id.clone())
+                .unwrap_or_else(|| Connection::default().id);
+            profile
+        } else {
+            let endpoint = entry.path.to_string_lossy();
+            let service = match endpoint.split_once("://").map(|(service, _)| service) {
+                Some("smb") => "smb",
+                Some("nfs") => "nfs",
+                _ => {
+                    self.navigate_input(self.active, &endpoint, ctx);
+                    return;
+                }
+            };
+            ticket.browse_server = true;
+            self.connections
+                .iter()
+                .rev()
+                .find(|c| c.id.starts_with("network-") && c.endpoint == endpoint)
+                .cloned()
+                .unwrap_or_else(|| Connection {
+                    name: entry.name,
+                    service: service.into(),
+                    endpoint: endpoint.into_owned(),
+                    listed: false,
+                    ..Default::default()
+                })
+        };
+        self.start_uri(ticket, connection, Secrets::default(), false, false, ctx);
+    }
+
     pub(super) fn navigate_input(&mut self, side: usize, text: &str, ctx: &UiSignal) {
         self.active = side;
         let result = uri::parse(text, &self.tab().location);
@@ -130,12 +193,22 @@ impl Commander {
     pub(super) fn start_uri(
         &mut self,
         ticket: Ticket,
-        connection: Connection,
+        mut connection: Connection,
         mut secrets: Secrets,
         remember: bool,
         authorize: bool,
         ctx: &UiSignal,
     ) {
+        if ticket.browse_server {
+            // Credentials for distinct SMB accounts must remain separate, even in
+            // two panes browsing the same server at the same time.
+            use sha2::{Digest, Sha256};
+            let mut identity = Sha256::new();
+            identity.update(connection.endpoint.as_bytes());
+            identity.update([0]);
+            identity.update(connection.username.as_bytes());
+            connection.id = format!("network-{:x}", identity.finalize());
+        }
         secrets.request_path = crate::remote::display_path(&ticket.path);
         if connection.service == "sftp" {
             let accepted = secrets.ssh_review.as_ref().and_then(|r| r.accepted.clone());
@@ -154,8 +227,10 @@ impl Commander {
             tab.loading = true;
             tab.error = None;
             // Passwords and signed queries disappear from the editable address immediately.
-            crate::remote::register_profiles(std::slice::from_ref(&connection));
-            tab.address = uri::address(&connection.id, &ticket.path);
+            if !ticket.browse_server {
+                crate::remote::register_profiles(std::slice::from_ref(&connection));
+                tab.address = uri::address(&connection.id, &ticket.path);
+            }
         }
         let worker_connection = connection.clone();
         let credential_source = if connection.credentials_from.is_empty() {
@@ -163,9 +238,10 @@ impl Commander {
         } else {
             connection.credentials_from.clone()
         };
-        let stored = !connection.uses_local_identity()
+        let stored = !ticket.browse_server
+            && !connection.uses_local_identity()
             && self.connections.iter().any(|c| c.id == credential_source);
-        let remember = remember && !connection.uses_local_identity();
+        let remember = remember && !ticket.browse_server && !connection.uses_local_identity();
         let worker_secrets = secrets.clone();
         let worker_ticket = ticket.clone();
         let worker_cancel = cancel.clone();
@@ -176,15 +252,30 @@ impl Commander {
                     !worker_cancel.load(Ordering::Relaxed),
                     "Connection cancelled."
                 );
-                anyhow::ensure!(
-                    worker_connection.service != "smb" || !worker_connection.bucket.is_empty(),
-                    "Enter an SMB share name."
-                );
                 let mut secrets = crate::remote::navigation_credentials(
                     &credential_source,
                     worker_secrets.clone(),
                     stored,
                 )?;
+                if worker_ticket.browse_server {
+                    let entries = crate::discovery::server_entries(&worker_connection, &secrets)?;
+                    anyhow::ensure!(
+                        !worker_cancel.load(Ordering::Relaxed),
+                        "Connection cancelled."
+                    );
+                    return Ok(Resolved {
+                        location: Location::Network {
+                            server: Some(worker_connection.id.clone()),
+                        },
+                        entries,
+                        cursor: None,
+                        server_credentials: (worker_connection.service == "smb").then_some(secrets),
+                    });
+                }
+                anyhow::ensure!(
+                    worker_connection.service != "smb" || !worker_connection.bucket.is_empty(),
+                    "Enter an SMB share name."
+                );
                 if authorize {
                     secrets = crate::oauth::authorize(
                         &worker_connection,
@@ -233,6 +324,7 @@ impl Commander {
                     location,
                     entries,
                     cursor,
+                    server_credentials: None,
                 })
             })()
             .map_err(|e| crate::remote::clean_error(e, &worker_secrets).to_string());
@@ -285,6 +377,20 @@ impl Commander {
                     tab.loading = false;
                     match result {
                         Ok(resolved) => {
+                            if request.ticket.browse_server {
+                                if let Some(secrets) = resolved.server_credentials
+                                    && let Err(error) = crate::remote::keep_server_credentials(
+                                        &request.connection.id,
+                                        secrets,
+                                    )
+                                {
+                                    tab.error = Some(error.to_string());
+                                    continue;
+                                }
+                                crate::remote::register_profiles(std::slice::from_ref(
+                                    &request.connection,
+                                ));
+                            }
                             tab.navigate_loaded(
                                 resolved.location,
                                 resolved.entries,
@@ -304,11 +410,13 @@ impl Commander {
                         }
                         Err(error) => {
                             tab.error = Some(error.clone());
-                            tab.focus_address = true;
-                            if self
-                                .connection_form
-                                .as_ref()
-                                .is_none_or(|f| f.navigation.as_ref() == Some(&request.ticket))
+                            tab.focus_address = !request.ticket.browse_server;
+                            if (!request.ticket.browse_server
+                                || request.connection.service == "smb")
+                                && self
+                                    .connection_form
+                                    .as_ref()
+                                    .is_none_or(|f| f.navigation.as_ref() == Some(&request.ticket))
                             {
                                 let ssh_challenge =
                                     request.secrets.ssh_review.as_ref().and_then(|r| {
@@ -395,6 +503,87 @@ mod tests {
         app.queue = Default::default();
         (dir, app, ctx)
     }
+    #[test]
+    #[ignore = "requires the disposable Samba fixture on RUST_COMMANDER_TEST_SMB_PORT"]
+    fn network_smb_authenticates_lists_and_opens_a_share() {
+        let port: u16 = std::env::var("RUST_COMMANDER_TEST_SMB_PORT")
+            .unwrap()
+            .parse()
+            .unwrap();
+        let (_root, mut app, ctx) = app();
+        let network = Location::Network { server: None };
+        let server = Entry {
+            name: "Fixture SMB server".into(),
+            path: format!("smb://127.0.0.1:{port}").into(),
+            is_dir: true,
+            is_symlink: false,
+            size: 0,
+            size_known: false,
+            modified: None,
+        };
+        app.tab_mut()
+            .navigate_loaded(network, vec![server.clone()], None, &ctx);
+        assert!(app.tab().chosen(false).is_empty());
+        let other = app.panes[1].tab().location.clone();
+
+        fn finish(app: &mut Commander, ctx: &UiSignal) {
+            let deadline = std::time::Instant::now() + Duration::from_secs(35);
+            while !app.pending_uris.is_empty() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "SMB fixture timed out"
+                );
+                app.poll_uris(ctx);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        app.open_entry(server, &ctx);
+        app.active = 1;
+        finish(&mut app, &ctx);
+        assert_eq!(app.tab().location, other);
+        let mut form = app
+            .connection_form
+            .take()
+            .expect("Protected SMB server needs credentials");
+        assert!(form.navigation.as_ref().unwrap().browse_server);
+        form.connection.username = "commander".into();
+        form.secrets.password = "commander-test-only".into();
+        app.connect_form(&mut form, false, &ctx);
+        app.connection_form = Some(form);
+        finish(&mut app, &ctx);
+        assert!(
+            app.connection_form.is_none(),
+            "{:?}",
+            app.panes[0].tab().error
+        );
+        assert_eq!(app.tab().location, other);
+
+        app.active = 0;
+        let server = app.tab().location.clone();
+        assert!(matches!(server, Location::Network { server: Some(_) }));
+        let share = app
+            .tab()
+            .entries
+            .iter()
+            .find(|row| row.name == "commander")
+            .unwrap()
+            .clone();
+        assert!(
+            filesystem::list(&server)
+                .unwrap()
+                .iter()
+                .any(|row| row.name == share.name)
+        );
+        app.open_entry(share, &ctx);
+        finish(&mut app, &ctx);
+        assert!(
+            matches!(app.tab().location, Location::Remote { .. }),
+            "{:?}",
+            app.tab().error
+        );
+        assert_eq!(app.tab().location.parent(), Some(server));
+    }
+
     fn completion(app: &mut Commander, ctx: &UiSignal) -> mpsc::Sender<Result<Resolved, String>> {
         let ticket = app.uri_ticket("folder".into());
         let (sender, receiver) = mpsc::channel();
@@ -419,6 +608,7 @@ mod tests {
                 location: Location::Local("/obsolete".into()),
                 entries: vec![],
                 cursor: None,
+                server_credentials: None,
             }))
             .unwrap_or_else(|_| panic!("Receiver closed"));
         app.poll_uris(&ctx);
@@ -443,6 +633,7 @@ mod tests {
                 location: Location::Local(root.path().join("result")),
                 entries: vec![],
                 cursor: None,
+                server_credentials: None,
             }))
             .unwrap_or_else(|_| panic!("Receiver closed"));
         app.poll_uris(&ctx);

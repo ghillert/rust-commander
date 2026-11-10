@@ -820,6 +820,7 @@ pub struct Commander {
 impl Commander {
     fn action_available(&self, id: &str) -> bool {
         let writable = |location: &Location| match location {
+            Location::Network { .. } => false,
             Location::Remote { connection, .. } => {
                 crate::remote::profile(connection).is_none_or(|c| c.writable())
             }
@@ -830,7 +831,10 @@ impl Commander {
                 writable(&self.tab().location)
                     && writable(&self.panes[1 - self.active].tab().location)
             }
-            "Copy" => writable(&self.panes[1 - self.active].tab().location),
+            "Copy" => {
+                !matches!(self.tab().location, Location::Network { .. })
+                    && writable(&self.panes[1 - self.active].tab().location)
+            }
             "OwnershipAcl" => self.tab().location.local().is_some(),
             "Permissions" => cfg!(unix) && self.tab().location.local().is_some(),
             "Mkfile" | "PermanentDelete" | "Modified" => {
@@ -954,7 +958,9 @@ impl Commander {
     fn refresh(&mut self, ctx: &UiSignal) {
         for pane in &mut self.panes {
             for tab in &mut pane.tabs {
-                tab.refresh(ctx);
+                if !(tab.loading && matches!(tab.location, Location::Network { .. })) {
+                    tab.refresh(ctx);
+                }
             }
         }
     }
@@ -1249,6 +1255,12 @@ impl Commander {
         }
     }
     fn open_entry(&mut self, entry: Entry, ctx: &UiSignal) {
+        if matches!(self.tab().location, Location::Network { .. }) {
+            if !self.tab().loading || self.tab().pending_network_scan() {
+                self.open_network_entry(entry, ctx);
+            }
+            return;
+        }
         if self.tab().location.local().is_some()
             && crate::native_actions::is_application(&entry.path)
         {
@@ -3131,6 +3143,9 @@ impl Commander {
         {
             self.active = side;
             match destination {
+                Location::Network { .. } => {
+                    self.fail("Open a share or export before transferring files.")
+                }
                 Location::Archive { file, prefix } => {
                     self.archive_form = Some(crate::feature_ui::ArchiveForm {
                         file: file.display().to_string(),

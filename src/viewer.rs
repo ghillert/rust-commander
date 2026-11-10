@@ -88,6 +88,7 @@ pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> 
             .contains(&extension.as_str());
     let pdf = mode == Mode::Pdf || mode == Mode::Auto && extension == "pdf";
     let size = match location {
+        Location::Network { .. } => bail!("Open a share or export to view files."),
         Location::Local(_) => Some(std::fs::metadata(path)?.len()),
         Location::Remote { connection, .. } => crate::remote::viewer_stamp(connection, path)
             .ok()
@@ -264,6 +265,7 @@ pub fn render_pdf_data(
 }
 pub fn read(location: &Location, path: &Path, limit: u64) -> Result<Vec<u8>> {
     match location {
+        Location::Network { .. } => bail!("Open a share or export to view files."),
         Location::Local(_) => {
             let mut bytes = Vec::new();
             File::open(path)?.take(limit + 1).read_to_end(&mut bytes)?;

@@ -1461,3 +1461,22 @@ fn connections_empty_discovery_is_a_status_not_an_error() {
             .any(|(id, _, enabled)| id == "discover-network" && *enabled)
     );
 }
+
+#[test]
+fn network_sidebar_opens_in_the_active_pane() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, left, _) = fixture();
+    adapter.app.active = 1;
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+
+    ui.invoke_place("network".into());
+    assert_eq!(ui.get_right_protocol(), "NETWORK");
+    assert_eq!(ui.get_right_address(), "network://");
+    assert_eq!(
+        state.borrow().app.panes[0].tab().location,
+        Location::Local(left)
+    );
+}
