@@ -1064,6 +1064,14 @@
       "icon": "nav-computer"
     },
     {
+      "key": "containers",
+      "icon": "docker"
+    },
+    {
+      "key": "network",
+      "icon": "nav-server"
+    },
+    {
       "key": "Connections",
       "icon": "nav-server"
     },

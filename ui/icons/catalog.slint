@@ -183,7 +183,8 @@ export global IconCatalog {
         if id == "place:3" { return "nav-downloads"; }
         if id == "place:4" { return "nav-computer"; }
         if id == "containers" { return "docker"; }
-        if id == "Connections" || id == "network" { return "nav-server"; }
+        if id == "network" { return "nav-server"; }
+        if id == "Connections" { return "nav-server"; }
         if id.starts-with("connection:") { return "nav-server"; }
         if id.starts-with("bookmark:") { return "nav-documents"; }
         return "nav-drive";
