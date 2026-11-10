@@ -394,6 +394,43 @@ fn location_bar_toggle_apply_cancel_and_escape_preserve_the_address() {
 }
 
 #[test]
+fn discovery_prefills_connections_without_opening_or_saving_them() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, left, _right) = fixture();
+    let (sender, receiver) = mpsc::channel();
+    adapter.app.connection_form = Some(ConnectionForm {
+        discovery: Some(receiver),
+        ..Default::default()
+    });
+    let discovered = crate::remote::Connection {
+        name: "Android fixture".into(),
+        service: "adb".into(),
+        bucket: "emulator-5554".into(),
+        endpoint: "adb://localhost".into(),
+        listed: false,
+        ..Default::default()
+    };
+    sender.send(Ok(vec![discovered.clone()])).unwrap();
+    adapter.app.poll(&adapter.ctx);
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    let dialog = state.borrow().dialog();
+    assert_eq!(dialog.rows[0].title, "Android fixture");
+    assert!(!dialog.busy);
+    ui.invoke_dialog_action("discovered-0".into());
+    let adapter = state.borrow();
+    let form = adapter.app.connection_form.as_ref().unwrap();
+    assert_eq!(form.connection.id, discovered.id);
+    assert_eq!(form.connection.bucket, "emulator-5554");
+    assert!(!adapter.dialog().fields.iter().any(|f| f.id == "password"));
+    assert_eq!(adapter.app.tab().location, Location::Local(left));
+    assert!(adapter.app.connections.is_empty());
+    assert!(adapter.app.pending_uris.is_empty());
+}
+
+#[test]
 fn unnamed_uri_profiles_restore_tabs_and_save_explicitly() {
     use crate::remote::Connection;
     i_slint_backend_testing::init_no_event_loop();

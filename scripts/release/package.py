@@ -273,6 +273,8 @@ def package(target, app_only=False):
             plistlib.dump({"CFBundleShortVersionString": ".".join(map(str, core)),
                            "CFBundleVersion": ".".join(map(str, core)), "RustCommanderVersion": version,
                            "NSAppleEventsUsageDescription": "Rust Commander uses Finder to open or empty the system Trash when you request these actions.",
+                           "NSLocalNetworkUsageDescription": "Rust Commander discovers and connects to file services on your local network when you request it.",
+                           "NSBonjourServices": ["_smb._tcp", "_sftp-ssh._tcp", "_ftp._tcp", "_nfs._tcp"],
                            "NSHighResolutionCapable": True}, stream)
         config["macos"] = {"minimumSystemVersion": "15.0", "signingIdentity": "-",
                            "infoPlistPath": str(plist), "frameworks": [str(p) for p in libraries]}

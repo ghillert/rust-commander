@@ -75,6 +75,8 @@ def bundle(executable, version):
                 "RustCommanderVersion": version,
                 "NSHighResolutionCapable": True,
                 "NSAppleEventsUsageDescription": "Rust Commander uses Finder to open or empty the system Trash when you request these actions.",
+                "NSLocalNetworkUsageDescription": "Rust Commander discovers and connects to file services on your local network when you request it.",
+                "NSBonjourServices": ["_smb._tcp", "_sftp-ssh._tcp", "_ftp._tcp", "_nfs._tcp"],
             }, stream)
         subprocess.run(["codesign", "--force", "--sign", "-", str(stage)], check=True)
         subprocess.run(["codesign", "--verify", "--strict", str(stage)], check=True)

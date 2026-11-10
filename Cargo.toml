@@ -71,6 +71,7 @@ filetime = "0.2"
 same-file = "1"
 base64 = "0.22"
 smb2 = "=0.27.0"
+mdns-sd = { version = "0.21.7", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 # OpenDAL SFTP uses the Unix-only openssh transport.

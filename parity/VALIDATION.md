@@ -1,5 +1,15 @@
 # Validation record
 
+## Network and device browsing
+
+Disposable loopback fixtures exercise ADB device discovery, file-sync v2
+metadata and streamed reads, and NFSv3 port mapping, export opening,
+directory listing fallback and offset reads. A loopback-only multicast fixture
+resolves an advertised SMB service. The Connections dialog test verifies that
+selecting a result fills the form and waits for an explicit Connect action.
+Physical Android devices, live NFS servers, and Bonjour across real network
+interfaces still need acceptance testing.
+
 ## Native-control audit and integration — 2026-10-31
 
 Settings and suitable operation/utility forms now render actual AppKit, Windows

@@ -1,7 +1,9 @@
 //! OpenDAL adapters for URI transports. Blocking socket I/O runs on blocking workers;
 //! file transfers remain streamed and use the same guarded operations as other services.
+pub(crate) mod adb;
 mod ftp;
 mod http;
+mod nfs;
 mod sftp;
 use crate::remote::{Connection, Secrets};
 use opendal::{raw::*, *};
@@ -33,6 +35,8 @@ pub fn operator(c: &Connection, s: &Secrets) -> anyhow::Result<Option<Operator>>
     let (transport, scheme, writable): (Arc<dyn Transport>, Scheme, bool) = match c.service.as_str()
     {
         "http" => (Arc::new(http::Http::new(c, s)?), Scheme::Http, false),
+        "adb" => (Arc::new(adb::Adb::new(c)?), Scheme::Custom("adb"), false),
+        "nfs" => (Arc::new(nfs::Nfs::new(c)?), Scheme::Custom("nfs"), false),
         "ftp" => (Arc::new(ftp::Ftp::new(c, s)?), Scheme::Ftp, true),
         "sftp" => (
             Arc::new(sftp::Sftp::new(c, s)?),
@@ -59,6 +63,18 @@ pub fn operator(c: &Connection, s: &Secrets) -> anyhow::Result<Option<Operator>>
     Ok(Some(
         OperatorBuilder::new(Backend { transport, info }).finish(),
     ))
+}
+
+fn child_key(parent: &str, name: &str, metadata: Option<Metadata>) -> Option<oio::Entry> {
+    let metadata = metadata?;
+    if name.is_empty() || matches!(name, "." | "..") || name.contains(['/', '\\', ':', '\0']) {
+        return None;
+    }
+    let prefix = parent.trim_matches('/');
+    let separator = if prefix.is_empty() { "" } else { "/" };
+    let suffix = if metadata.is_dir() { "/" } else { "" };
+    let key = format!("{prefix}{separator}{name}{suffix}");
+    Some(oio::Entry::new(&key, metadata))
 }
 
 #[derive(Clone)]

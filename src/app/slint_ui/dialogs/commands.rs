@@ -201,7 +201,43 @@ impl Adapter {
                     }
                 }
                 "connections" => {
-                    if matches!(id, "ssh-trust-once" | "ssh-trust-save") {
+                    if matches!(id, "discover-network" | "discover-android") {
+                        if let Some(form) = &mut self.app.connection_form
+                            && form.navigation.is_none()
+                            && !form.save_only
+                            && form.discovery.is_none()
+                        {
+                            let discover = if id == "discover-network" {
+                                crate::discovery::bonjour
+                            } else {
+                                crate::discovery::android
+                            };
+                            let (sender, receiver) = mpsc::channel();
+                            form.discovery = Some(receiver);
+                            form.discovered.clear();
+                            form.error = None;
+                            let ctx = self.ctx.clone();
+                            std::thread::spawn(move || {
+                                let _ =
+                                    sender.send(discover().map_err(|error| format!("{error:#}")));
+                                ctx.request_repaint();
+                            });
+                        }
+                    } else if let Some(index) = id
+                        .strip_prefix("discovered-")
+                        .and_then(|s| s.parse::<usize>().ok())
+                    {
+                        if let Some(form) = &mut self.app.connection_form
+                            && let Some(connection) = form.discovered.get(index).cloned()
+                        {
+                            form.connection = connection;
+                            form.discovered.clear();
+                            form.secrets = Default::default();
+                            form.remember = false;
+                            form.error = None;
+                            self.invalid_fields.clear();
+                        }
+                    } else if matches!(id, "ssh-trust-once" | "ssh-trust-save") {
                         if let Some(mut form) = self.app.connection_form.take() {
                             let result = (|| -> anyhow::Result<()> {
                                 let challenge = form
@@ -284,7 +320,13 @@ impl Adapter {
                             open::that(crate::uri::address(&form.connection.id, path))?;
                         }
                     } else if matches!(id, "accept" | "authorize") && !self.app.uri_connecting() {
-                        if let Some(mut form) = self.app.connection_form.take() {
+                        if self
+                            .app
+                            .connection_form
+                            .as_ref()
+                            .is_some_and(|f| f.discovery.is_none())
+                            && let Some(mut form) = self.app.connection_form.take()
+                        {
                             self.app
                                 .connect_form(&mut form, id == "authorize", &self.ctx);
                             self.app.connection_form = Some(form);

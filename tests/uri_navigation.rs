@@ -121,6 +121,35 @@ fn schemes_and_authorities() {
     }
 }
 #[test]
+fn nfs_and_android_addresses_round_trip_with_their_profile_roots() {
+    let nfs = target("nfs://nas.local/exports/caf%C3%A9");
+    assert_eq!(nfs.connection.root, "/exports/café");
+    assert_eq!(nfs.connection.endpoint, "nfs://nas.local");
+    assert!(!nfs.connection.writable());
+    let adb = target("adb://localhost/192.0.2.1%3A5555/storage/Download");
+    assert_eq!(adb.connection.bucket, "192.0.2.1:5555");
+    assert_eq!(adb.path, Path::new("storage/Download"));
+    assert!(!adb.connection.writable());
+
+    for t in [nfs, adb] {
+        remote::register_profiles(std::slice::from_ref(&t.connection));
+        let path = t.path.join("two words");
+        let display = uri::address(&t.connection.id, &path);
+        assert!(uri::matches_profile(&target(&display), &t.connection));
+        assert!(display.ends_with("/two%20words"));
+    }
+    let base = Location::Local(std::env::temp_dir());
+    for address in [
+        "adb://other.local/emulator-5554",
+        "adb://localhost:5037/emulator-5554",
+        "adb://localhost/a%2Fb",
+        "nfs://user@nas.local/export",
+    ] {
+        assert!(uri::parse(address, &base).is_err(), "{address}");
+    }
+}
+
+#[test]
 fn secrets_never_persist_or_appear_in_addresses() {
     let t = target("https://alice:p%40ssword@example.test/a.pdf?X-Amz-Signature=private#fragment");
     assert_eq!(t.secrets.password, "p@ssword");

@@ -332,6 +332,20 @@ impl Adapter {
                                     crate::remote::SERVICES.contains(&value),
                                     "Unsupported remote service."
                                 );
+                                if c.service != value
+                                    && (c.uses_local_identity() || matches!(value, "adb" | "nfs"))
+                                {
+                                    c.endpoint = if value == "adb" {
+                                        "adb://localhost".into()
+                                    } else {
+                                        String::new()
+                                    };
+                                    c.root = "/".into();
+                                    c.bucket.clear();
+                                    c.username.clear();
+                                    *s = Default::default();
+                                    form.remember = false;
+                                }
                                 c.service = value.into();
                             }
                             "endpoint" => c.endpoint = value.into(),

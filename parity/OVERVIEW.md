@@ -9,7 +9,7 @@ sections describe their original snapshots; later sections supersede older limit
 
 The reviewed source includes commits `737eca4` and `3a684b6` and the current
 Settings organization and native-control audit. The pinned inventory contains
-**200 entries: 4 implemented, 188 partial, 7 missing and 1 inapplicable**.
+**200 entries: 4 implemented, 190 partial, 5 missing and 1 inapplicable**.
 These are 166 upstream actions and 34 modules, not 200 equally sized features.
 In particular, **partial does not mean absent**: many entries have working
 behavior and fixture coverage but lack complete upstream/native acceptance.
@@ -44,6 +44,10 @@ The following are implemented and should no longer appear as missing features:
   retain the remaining native/live-service acceptance work.
 - A general reviewed browser URL dialog, shared Minimize/Maximize shortcut
   actions and reviewed external-editor save-back through 2 GiB.
+- Read-only NFSv3 export browsing and authorized Android browsing through a local
+  ADB server. The Connections form can discover SMB, SFTP, FTP, and NFS
+  advertisements via Bonjour and fill in the selected endpoint. See
+  [network and device browsing](../docs/REMOTE_CONNECTIONS.md#network-and-device-browsing).
 - Active sort indicators, a selectable `..` row, keyboard access to that row,
   focused-file actions independent of marks, dedicated file/background/parent,
   column and tab context menus, and a Duplicate tab command. See the interaction
@@ -101,13 +105,11 @@ open. The broader feature limits below still apply.
 
 ### Completely missing upstream entries
 
-This table lists all 7 entries currently marked `missing` in `status.json`.
+This table lists all 5 entries currently marked `missing` in `status.json`.
 It excludes limitations in working features and validation-only gaps.
 
 | Entry | Remaining gap |
 | --- | --- |
-| mucommander-protocol-nfs | NFS adapter. |
-| mucommander-protocol-adb | Android/ADB device browsing. |
 | mucommander-protocol-registry | Windows Registry virtual filesystem. |
 | mucommander-protocol-ovirt | oVirt integration. |
 | mucommander-protocol-vsphere | vSphere integration. |
@@ -119,7 +121,7 @@ It excludes limitations in working features and validation-only gaps.
 | Area | Existing behavior | Missing or limited behavior |
 | --- | --- | --- |
 | Drag and drop | Local/remote/archive selections; guarded copy/move; folder/tab/tree/breadcrumb/sidebar targets; hover navigation and edge scrolling; native X11/Wayland/AppKit/OLE bridges | Native desktop acceptance remains incomplete; virtual exports are Copy. Deferred native providers exist, with preparation available for receivers that require pre-existing local paths. See the detailed matrix below. |
-| Network services | HTTP/HTTPS, FTP/both FTPS modes, SFTP on all three desktop platforms, SMB2/3 and cloud adapters | The five missing adapters above and Bonjour discovery. WebHDFS does not establish full Hadoop parity. OpenSSH aliases/configuration and reviewed host fingerprints are supported. SSH certificates, jump/proxy commands and keyboard-interactive/MFA remain unsupported. |
+| Network services | HTTP/HTTPS, FTP/both FTPS modes, SFTP, SMB2/3, cloud adapters, read-only NFSv3 and Android browsing, and Bonjour discovery for SMB/SFTP/FTP/NFS | Windows Registry, oVirt and vSphere remain missing. NFS requires a known export and an unprivileged TCP connection. Android requires a local ADB server and file-sync v2. Writes and broader server/device/discovery acceptance remain open. WebHDFS covers part of Hadoop support. SFTP supports OpenSSH aliases and host fingerprint review. SSH certificates, jump/proxy commands and keyboard-interactive/MFA remain unsupported. |
 | Archives | Pack dialog with ZIP/7z/TAR/stream formats, compression levels, ZIP comments, foreground/background work and expandable source list; guarded local/nested/remote editing; encrypted ZIP/7z | Packing takes local, remote or archive sources, ZIP/7z encryption and local or configured remote output. Remote publication follows verified staging and provider-specific create guards; remote output has no general Undo. Live-provider acceptance remains incomplete. HTTP/format-override editing, LST/libguestfs and archive links/special files are unsupported. RAR/ISO/NRG/AR/DEB/CPIO/RPM creation/mutation is unavailable. Edited cached containers are limited to 128 MiB each, eight levels and a 512 MiB cache; cached edit recipes require reopening after restart. NRG/CPIO/RPM lack dedicated fixtures. See [format support](../docs/FILE_OPERATIONS.md#archives). |
 | Search and comparison | Streaming local/remote literal and per-line regex search with size/date/exclusion filters; SHA-256 or explicitly unverified metadata comparison; bounded read-only text diffs; shared presets and filtered local/remote synchronization | Regex lines are bounded to 8 MiB; text differences to 1 MiB per side and bounded line alignment. Comparison excludes archive roots and reports links without following them. Synchronization refuses links/special files; filtered sync refuses directory deletion/type replacement. Broader provider/desktop acceptance remains open. |
 | Viewers and editing | Encoded text editing, local/remote/archive read-only pages, streaming text/hex search, image/PDF rendering, PDF Unicode selection/copy and cancellable document search; reviewed external save-back to local/remote files and writable archive members | Built-in editing accepts 16 MiB and does not edit archive members or symlinks. Local/remote/archive read-only paging and streaming search/jump are implemented; archive snapshots are capped at 2 GiB. Reviewed external editing accepts 2 GiB; image/PDF file-backed input accepts 512 MiB with decoded limits. More encodings and image animation remain absent. OCR and PDF forms/annotation editing are also absent viewer enhancements, not additional missing inventory entries. |

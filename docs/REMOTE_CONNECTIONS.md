@@ -3,9 +3,9 @@
 [← Back to README](../README.md)
 
 Open **File → Connections** to add or edit a connection profile. Available
-adapters are SMB2/3, SFTP, FTP, WebDAV, S3, HTTP, Dropbox, Google Drive, OneDrive, GCS,
-and WebHDFS. Configure the endpoint, root, and service-specific fields; unused
-fields may remain blank.
+adapters are SMB2/3, SFTP, FTP, WebDAV, NFSv3, ADB, S3, HTTP, Dropbox, Google
+Drive, OneDrive, GCS, and WebHDFS. Configure the endpoint, root, and
+service-specific fields. Unused fields may remain blank.
 
 ## Paste a path or URI
 
@@ -29,6 +29,8 @@ The preference also travels with saved workspaces.
 | `file:///C:/Users/me/Documents/` | Windows local folder |
 | `file://server/share/folder/` | Windows UNC folder; use SMB on other platforms |
 | `smb://user@nas/share/folder/` | Direct SMB share |
+| `nfs://nas.local/export/media` | Read-only NFSv3 export |
+| `adb://localhost/emulator-5554/storage/emulated/0` | Folder on an authorized Android device |
 | `s3://bucket/prefix/` | S3 or a matching S3-compatible saved connection |
 | `gs://bucket/prefix/` | Google Cloud Storage |
 
@@ -37,6 +39,35 @@ does not turn its HTTPS URL into an SFTP connection. Spaces and Unicode names
 are percent-encoded in displayed addresses. Ordinary paths, relative paths,
 archive navigation and older `remote://CONNECTION_ID/path` locations still work.
 `data:` URIs and unrecognized schemes display an explanatory error.
+
+## Network and device browsing
+
+- **Bonjour.** In **File → Connections**, choose **Discover network services**.
+  A short scan looks for SMB, SFTP, FTP, and NFS advertisements on the local
+  network. Select a result to fill in the endpoint, then enter the share name,
+  export path, or credentials if required and choose **Connect**. Discovery
+  works from advertisements on the local link and may require allowing local
+  network access through the OS or firewall.
+- **NFS.** Choose `nfs`, enter an endpoint such as `nfs://nas.local` and the
+  exact export path, or paste an export URI into the location bar. Rust Commander
+  opens the export over NFSv3/TCP without mounting it in the OS. The server must
+  offer rpcbind and allow connections from unprivileged ports. AUTH_SYS uses
+  the effective UID and primary GID on Unix and anonymous IDs on Windows.
+  An explicit port overrides the NFS service port. rpcbind still supplies the
+  mount service port. Use pane navigation to browse below the export. An
+  unmatched NFS URI treats its full path as an export.
+- **Android.** Install Android SDK Platform Tools, run `adb start-server`, and
+  authorize the device through USB debugging or pair it through Android's
+  wireless debugging. In **Connections → Find Android devices**, select an
+  authorized device, optionally enter a root folder, and choose **Connect**.
+  The local ADB server must listen on loopback port 5037. The device must
+  support file-sync v2. Standard shared storage is typically under
+  `/storage/emulated/0`. Large forward seeks may be slow because ADB streams
+  from the start of the file.
+
+NFS and Android connections are read-only. Regular files and folders can be
+browsed and copied out, including via drag and drop. Directory listings omit
+symbolic links and special files.
 
 ### Credentials and saving connections
 

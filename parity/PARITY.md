@@ -18,7 +18,7 @@ Java actions require an explicit rationale if they are inapplicable to Rust.
 | missing | The audited behavior has no implementation; evidence may explain a related feature or why it differs. |
 | inapplicable | The item does not apply to this Rust application, with an explicit rationale. |
 
-Inventory: **200 entries — 4 implemented, 188 partial, 7 missing, 1 inapplicable**.
+Inventory: **200 entries — 4 implemented, 190 partial, 5 missing, 1 inapplicable**.
 These are action/module counts, not a percentage of product functionality.
 Cross-cutting workflows such as drag and drop are reviewed separately below.
 The completion gate checks the enumerated inventory; the workflow review
@@ -35,7 +35,7 @@ sections describe their original snapshots; later sections supersede older limit
 
 The reviewed source includes commits `737eca4` and `3a684b6` and the current
 Settings organization and native-control audit. The pinned inventory contains
-**200 entries: 4 implemented, 188 partial, 7 missing and 1 inapplicable**.
+**200 entries: 4 implemented, 190 partial, 5 missing and 1 inapplicable**.
 These are 166 upstream actions and 34 modules, not 200 equally sized features.
 In particular, **partial does not mean absent**: many entries have working
 behavior and fixture coverage but lack complete upstream/native acceptance.
@@ -70,6 +70,10 @@ The following are implemented and should no longer appear as missing features:
   retain the remaining native/live-service acceptance work.
 - A general reviewed browser URL dialog, shared Minimize/Maximize shortcut
   actions and reviewed external-editor save-back through 2 GiB.
+- Read-only NFSv3 export browsing and authorized Android browsing through a local
+  ADB server. The Connections form can discover SMB, SFTP, FTP, and NFS
+  advertisements via Bonjour and fill in the selected endpoint. See
+  [network and device browsing](../docs/REMOTE_CONNECTIONS.md#network-and-device-browsing).
 - Active sort indicators, a selectable `..` row, keyboard access to that row,
   focused-file actions independent of marks, dedicated file/background/parent,
   column and tab context menus, and a Duplicate tab command. See the interaction
@@ -127,13 +131,11 @@ open. The broader feature limits below still apply.
 
 ### Completely missing upstream entries
 
-This table lists all 7 entries currently marked `missing` in `status.json`.
+This table lists all 5 entries currently marked `missing` in `status.json`.
 It excludes limitations in working features and validation-only gaps.
 
 | Entry | Remaining gap |
 | --- | --- |
-| mucommander-protocol-nfs | NFS adapter. |
-| mucommander-protocol-adb | Android/ADB device browsing. |
 | mucommander-protocol-registry | Windows Registry virtual filesystem. |
 | mucommander-protocol-ovirt | oVirt integration. |
 | mucommander-protocol-vsphere | vSphere integration. |
@@ -145,10 +147,10 @@ It excludes limitations in working features and validation-only gaps.
 | Area | Existing behavior | Missing or limited behavior |
 | --- | --- | --- |
 | Drag and drop | Local/remote/archive selections; guarded copy/move; folder/tab/tree/breadcrumb/sidebar targets; hover navigation and edge scrolling; native X11/Wayland/AppKit/OLE bridges | Native desktop acceptance remains incomplete; virtual exports are Copy. Deferred native providers exist, with preparation available for receivers that require pre-existing local paths. See the detailed matrix below. |
-| Network services | HTTP/HTTPS, FTP/both FTPS modes, SFTP on all three desktop platforms, SMB2/3 and cloud adapters | The five missing adapters above and Bonjour discovery. WebHDFS does not establish full Hadoop parity. OpenSSH aliases/configuration and reviewed host fingerprints are supported. SSH certificates, jump/proxy commands and keyboard-interactive/MFA remain unsupported. |
+| Network services | HTTP/HTTPS, FTP/both FTPS modes, SFTP, SMB2/3, cloud adapters, read-only NFSv3 and Android browsing, and Bonjour discovery for SMB/SFTP/FTP/NFS | Windows Registry, oVirt and vSphere remain missing. NFS requires a known export and an unprivileged TCP connection. Android requires a local ADB server and file-sync v2. Writes and broader server/device/discovery acceptance remain open. WebHDFS covers part of Hadoop support. SFTP supports OpenSSH aliases and host fingerprint review. SSH certificates, jump/proxy commands and keyboard-interactive/MFA remain unsupported. |
 | Archives | Pack dialog with ZIP/7z/TAR/stream formats, compression levels, ZIP comments, foreground/background work and expandable source list; guarded local/nested/remote editing; encrypted ZIP/7z | Packing takes local, remote or archive sources, ZIP/7z encryption and local or configured remote output. Remote publication follows verified staging and provider-specific create guards; remote output has no general Undo. Live-provider acceptance remains incomplete. HTTP/format-override editing, LST/libguestfs and archive links/special files are unsupported. RAR/ISO/NRG/AR/DEB/CPIO/RPM creation/mutation is unavailable. Edited cached containers are limited to 128 MiB each, eight levels and a 512 MiB cache; cached edit recipes require reopening after restart. NRG/CPIO/RPM lack dedicated fixtures. See [format support](../docs/FILE_OPERATIONS.md#archives). |
 | Search and comparison | Streaming local/remote literal and per-line regex search with size/date/exclusion filters; SHA-256 or explicitly unverified metadata comparison; bounded read-only text diffs; shared presets and filtered local/remote synchronization | Regex lines are bounded to 8 MiB; text differences to 1 MiB per side and bounded line alignment. Comparison excludes archive roots and reports links without following them. Synchronization refuses links/special files; filtered sync refuses directory deletion/type replacement. Broader provider/desktop acceptance remains open. |
-| Viewers and editing | Encoded text editing, large local read-only pages, streaming local text/hex search, image/PDF rendering, PDF Unicode selection/copy and cancellable document search; reviewed external save-back to local/remote files and writable archive members | Built-in editing accepts 16 MiB and does not edit archive members or symlinks. Local/remote/archive read-only paging and streaming search/jump are implemented; archive snapshots are capped at 2 GiB. Reviewed external editing accepts 2 GiB; image/PDF file-backed input accepts 512 MiB with decoded limits. More encodings and image animation remain absent. OCR and PDF forms/annotation editing are also absent viewer enhancements, not additional missing inventory entries. |
+| Viewers and editing | Encoded text editing, local/remote/archive read-only pages, streaming text/hex search, image/PDF rendering, PDF Unicode selection/copy and cancellable document search; reviewed external save-back to local/remote files and writable archive members | Built-in editing accepts 16 MiB and does not edit archive members or symlinks. Local/remote/archive read-only paging and streaming search/jump are implemented; archive snapshots are capped at 2 GiB. Reviewed external editing accepts 2 GiB; image/PDF file-backed input accepts 512 MiB with decoded limits. More encodings and image animation remain absent. OCR and PDF forms/annotation editing are also absent viewer enhancements, not additional missing inventory entries. |
 | Recovery and publication | Journaled local Undo/Redo, retained remote originals, checkpointed copies and a restore/cleanup manager | Built-in editor drafts have private debounced autosave and guarded recovery. Universal/remote Undo/Redo, external-editor draft recovery and uninterrupted external save-back sessions after restart remain absent. Checkpointed copies refuse links; interrupted remote publication and concurrent writers remain provider-dependent, with no atomic guarantee on backends lacking conditional writes. Recovery restore selects at most 100 originals per operation. |
 | Metadata | Native local moves; copying macOS ACLs/xattrs/resource forks, Linux user attributes/POSIX ACLs and Windows DACLs | Readable owner/group names, symbolic/octal permissions and local ACL presentation are available. A native local form now edits owner/group and macOS/POSIX/Windows ACL rules with stale-object guards. Remote editing, Windows alternate data streams/ownership preservation and privileged Linux namespaces remain outside current copy preservation. Remote metadata depends on the provider. |
 | Pane swapping and file marks | Opposing-arrow toolbar button and Navigate > Swap panes move tabs, cursor, marks and keyboard focus together; Space/Insert toggle a mark and advance in visible order, with red marks independent of the cursor highlight | Broader native desktop acceptance remains open. |
@@ -400,14 +402,14 @@ than a missing user-facing protocol; the detailed entries below state that disti
 | mucommander-format-xz | partial | src/archive.rs, tests/desktop_tools.rs::stream_compression_round_trips, docs/FILE_OPERATIONS.md — Compressed single-file streams support creation, browsing and extraction; creation accepts one regular file. Corresponding compressed TAR containers are also supported. Broad variant, corruption and metadata compatibility remains open. |
 | mucommander-format-zip | partial | src/archive.rs, src/archive_tools.rs, tests/features.rs, tests/features_05.rs, tests/archive_paths.rs, docs/FILE_OPERATIONS.md, src/archive_writeback.rs, src/recovery.rs, tests/archive_writeback.rs, tests/recovery_manager.rs, docs/RECOVERY_AND_SUPPORT.md — ZIP creation, extraction, browsing, AES encryption/unlock and local mutation exist; encrypted edits retain encryption. Writable nested/remote ZIP/TAR/7z sources support guarded outer-container save-back; HTTP and Open As format overrides remain read-only. Link/special-file extraction is rejected; broad metadata, format-variant and desktop acceptance remain open. |
 | mucommander-format-rpm | partial | src/archive.rs, docs/FILE_OPERATIONS.md — RPM reading is routed through libarchive, but there is no dedicated RPM fixture. Creation/mutation and format-specific compatibility are not established. |
-| mucommander-protocol-adb | missing | src/remote.rs — Android/ADB device browsing has no adapter. |
+| mucommander-protocol-adb | partial | src/uri_backend/adb.rs, src/discovery.rs, tests/uri_navigation.rs — Authorized device discovery, read-only file-sync v2 browsing and streamed downloads through the local ADB server are implemented. Device writes and real-device acceptance remain open. |
 | mucommander-protocol-ftp | partial | src/uri_backend/ftp.rs, src/remote.rs, src/uri.rs, tests/remote_services.rs, scripts/test-uri-transports.py, docs/REMOTE_CONNECTIONS.md, parity/VALIDATION.md — Plain and anonymous FTP plus explicit AUTH TLS and implicit FTPS are implemented with selectable ports, certificate/hostname verification and no directory creation on connect. Legacy FTPS profiles retain explicit TLS. Six portable URI workflows include FTP/FTPS/security and writable transfer/recovery cases; Mac results are recorded and native-runner CI is configured. Broader servers and native desktop acceptance remain open. |
 | mucommander-protocol-dropbox | partial | src/oauth.rs, src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/features.rs — Browser OAuth with PKCE, refresh/reconnect and remote file workflows implemented. Protocol tests use loopback fixtures; live provider registration/account validation pending. |
 | mucommander-protocol-gcs | partial | src/remote.rs, src/uri.rs, docs/REMOTE_CONNECTIONS.md — Google Cloud Storage bucket/prefix navigation and transfers use the existing service-account configuration; direct gs URIs reuse compatible profiles. No live GCS account has been validated; credential and provider-specific behavior remain open. |
 | mucommander-protocol-gdrive | partial | src/oauth.rs, src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/features.rs — Browser OAuth with PKCE, refresh/reconnect and remote file workflows implemented. Protocol tests use loopback fixtures; live provider registration/account validation pending. |
 | mucommander-protocol-onedrive | partial | src/oauth.rs, src/remote.rs, tests/desktop_tools.rs::remote_backend_contract_upload_download_list_and_conflicts, tests/features.rs — Browser OAuth with PKCE, refresh/reconnect and remote file workflows implemented. Protocol tests use loopback fixtures; live provider registration/account validation pending. |
 | mucommander-protocol-hadoop | partial | src/remote.rs, src/uri.rs, docs/REMOTE_CONNECTIONS.md — The adapter uses WebHDFS rather than the complete upstream Hadoop filesystem implementation. No live Hadoop cluster has been validated; authentication and full upstream/provider compatibility remain open. |
-| mucommander-protocol-nfs | missing | src/remote.rs — NFS has no adapter. |
+| mucommander-protocol-nfs | partial | src/uri_backend/nfs.rs, src/uri_backend/nfs/tests.rs, tests/uri_navigation.rs — Direct read-only NFSv3/TCP export browsing uses rpcbind, MOUNT, directory listings and ranged reads. Export enumeration, reserved-port-only or NFSv4 servers, writes and live server acceptance remain open. |
 | mucommander-protocol-http | partial | src/uri_backend/http.rs, src/uri_backend/http/index.rs, src/remote.rs, tests/uri_navigation.rs::http_index_download_direct_file_range_and_errors, tests/uri_navigation.rs::kew_https_directory_smoke, docs/REMOTE_CONNECTIONS.md, parity/VALIDATION.md, tests/uri_navigation.rs::concurrently_created_connections_keep_distinct_profiles_and_sessions — Read-only HTTP/HTTPS directory-index browsing recognizes Apache, nginx and Caddy listings, including available size/date metadata. Direct files, redirects, range fallback and unknown-length streaming are implemented; signed queries remain session-only. Fixture tests and the live Kew listing pass on Mac. Arbitrary websites are rejected, not rendered; same-origin child links, 8 MiB index/20,000-link bounds and missing server metadata remain documented limits. Broader index/server compatibility remains open. The Windows request failure from CI run 40407268454 is not yet confirmed resolved on a hosted runner; timestamp-only connection IDs were replaced and a concurrent connection/profile/download regression passes locally. |
 | mucommander-protocol-ovirt | missing | src/remote.rs — oVirt has no adapter. |
 | mucommander-protocol-registry | missing | src/remote.rs — Windows Registry browsing has no virtual-filesystem adapter. |

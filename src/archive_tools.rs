@@ -449,7 +449,7 @@ fn materialize_impl(
         && match location {
             Location::Archive { file, .. } => editable(file),
             Location::Remote { connection, .. } => {
-                crate::remote::profile(connection).is_none_or(|c| c.service != "http")
+                crate::remote::profile(connection).is_none_or(|c| c.writable())
             }
             Location::Local(_) => true,
         };

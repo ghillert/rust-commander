@@ -1843,10 +1843,12 @@
   },
   "mucommander-protocol-adb": {
     "evidence": [
-      "src/remote.rs"
+      "src/uri_backend/adb.rs",
+      "src/discovery.rs",
+      "tests/uri_navigation.rs"
     ],
-    "note": "Android/ADB device browsing has no adapter.",
-    "status": "missing"
+    "note": "Authorized device discovery, read-only file-sync v2 browsing and streamed downloads through the local ADB server are implemented. Device writes and real-device acceptance remain open.",
+    "status": "partial"
   },
   "mucommander-protocol-api": {
     "evidence": [
@@ -1925,10 +1927,12 @@
   },
   "mucommander-protocol-nfs": {
     "evidence": [
-      "src/remote.rs"
+      "src/uri_backend/nfs.rs",
+      "src/uri_backend/nfs/tests.rs",
+      "tests/uri_navigation.rs"
     ],
-    "note": "NFS has no adapter.",
-    "status": "missing"
+    "note": "Direct read-only NFSv3/TCP export browsing uses rpcbind, MOUNT, directory listings and ranged reads. Export enumeration, reserved-port-only or NFSv4 servers, writes and live server acceptance remain open.",
+    "status": "partial"
   },
   "mucommander-protocol-onedrive": {
     "evidence": [

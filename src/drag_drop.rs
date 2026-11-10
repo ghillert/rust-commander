@@ -134,7 +134,7 @@ pub fn writable(location: &Location) -> bool {
     match location {
         Location::Local(_) => true,
         Location::Remote { connection, .. } => {
-            crate::remote::profile(connection).is_none_or(|c| c.service != "http")
+            crate::remote::profile(connection).is_none_or(|c| c.writable())
         }
         Location::Archive { file, .. } => crate::archive_tools::editable(file),
     }

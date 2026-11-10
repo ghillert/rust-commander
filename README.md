@@ -454,6 +454,9 @@ compatibility, or validation.
 - Direct SMB2/3, FTP with both FTPS modes, and native SFTP with OpenSSH aliases
   and host-key review. Cloud adapters, checkpointed copies, and remote folder
   synchronization are also available. See [remote connections](docs/REMOTE_CONNECTIONS.md).
+- Read-only NFSv3 export and Android device browsing. **File → Connections**
+  can find authorized Android devices and discover SMB, SFTP, FTP, and NFS
+  services via Bonjour. See [network and device browsing](docs/REMOTE_CONNECTIONS.md#network-and-device-browsing).
 - Packing from local, remote, and archive sources to local or configured remote
   destinations. Remote output uses local staging and a verified upload. Writable
   nested and remote ZIP/TAR/7z archives support guarded save-back. See
@@ -466,12 +469,12 @@ compatibility, or validation.
 
 ### Remaining functionality gaps
 
-- **Filesystems and discovery.** NFS, Android/ADB browsing, Windows Registry
-  browsing, oVirt, vSphere, LST virtual archives, and guest disk browsing via
-  libguestfs are the seven [missing modules](parity/PARITY.md#completely-missing-upstream-entries).
-  Bonjour discovery is also missing. WebHDFS covers part of Hadoop support, and
-  SFTP still lacks SSH jump hosts and proxy commands, certificates, and
-  keyboard-interactive authentication.
+- **Filesystems and discovery.** Windows Registry browsing, oVirt, vSphere, LST
+  virtual archives, and guest disk browsing via libguestfs remain
+  [missing](parity/PARITY.md#completely-missing-upstream-entries). NFS and Android
+  access are read-only, with NFSv3 over TCP and a local ADB server respectively.
+  WebHDFS covers part of Hadoop support. SFTP still lacks SSH jump hosts and
+  proxy commands, certificates, and keyboard-interactive authentication.
 - **Archives and transfers.** HTTP and format-override archives remain read-only.
   Formats such as RAR and ISO support browsing and extraction only. Archive
   links and special files have limited support, and folder comparison excludes
@@ -487,7 +490,8 @@ compatibility, or validation.
 ### Validation still needed
 
 - Real-account OAuth, credential-store prompts, broader NAS and server coverage,
-  and provider-specific transfer recovery and synchronization.
+  live Android and NFS interoperability, and provider-specific transfer recovery
+  and synchronization.
 - Explorer drag-and-drop and broader Wayland, screen-reader, mixed-DPI, and
   terminal compatibility. Nautilus and Dolphin copy drags already have recorded
   X11 coverage. See the [drag-and-drop review](parity/PARITY.md#drag-and-drop-parity-partial)

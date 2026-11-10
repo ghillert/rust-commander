@@ -163,7 +163,9 @@ impl Commander {
         } else {
             connection.credentials_from.clone()
         };
-        let stored = self.connections.iter().any(|c| c.id == credential_source);
+        let stored = !connection.uses_local_identity()
+            && self.connections.iter().any(|c| c.id == credential_source);
+        let remember = remember && !connection.uses_local_identity();
         let worker_secrets = secrets.clone();
         let worker_ticket = ticket.clone();
         let worker_cancel = cancel.clone();

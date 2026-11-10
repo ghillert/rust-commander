@@ -23,7 +23,7 @@ fn copy_password(from: &Path, to: &Path) -> Result<()> {
 pub(crate) fn working_copy(file: &Path) -> Result<(tempfile::TempDir, String)> {
     ensure!(
         archive_tools::editable(file),
-        "This archive source is read-only. Format overrides and HTTP archives cannot be saved back."
+        "This archive source is read-only. Format overrides and read-only connections cannot be saved back."
     );
     let expected = archive_tools::cached_origin(file)
         .context("Cached archive is no longer available; reopen it")?

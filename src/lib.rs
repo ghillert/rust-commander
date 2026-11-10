@@ -8,6 +8,7 @@ pub mod background;
 pub mod comparison;
 pub mod debug_log;
 pub mod desktop;
+mod discovery;
 pub mod filesystem;
 pub mod folder_tools;
 pub mod mail;

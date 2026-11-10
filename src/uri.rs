@@ -36,13 +36,12 @@ fn validate_remote_segment(name: &str) -> Result<()> {
 }
 
 pub(crate) fn remote_path(url: &Url) -> Result<PathBuf> {
+    remote_segments(url.path_segments().into_iter().flatten())
+}
+
+fn remote_segments<'a>(segments: impl Iterator<Item = &'a str>) -> Result<PathBuf> {
     let mut path = PathBuf::new();
-    for segment in url
-        .path_segments()
-        .into_iter()
-        .flatten()
-        .filter(|s| !s.is_empty())
-    {
+    for segment in segments.filter(|s| !s.is_empty()) {
         let segment = decoded(segment)?;
         validate_remote_segment(&segment)?;
         path.push(segment);
@@ -109,7 +108,18 @@ pub fn parse(text: &str, base: &Location) -> Result<Input> {
     ensure!(
         matches!(
             scheme.as_str(),
-            "file" | "http" | "https" | "ftp" | "ftps" | "ftpes" | "sftp" | "smb" | "s3" | "gs"
+            "file"
+                | "http"
+                | "https"
+                | "ftp"
+                | "ftps"
+                | "ftpes"
+                | "sftp"
+                | "smb"
+                | "s3"
+                | "gs"
+                | "nfs"
+                | "adb"
         ),
         "Unsupported URI scheme: {scheme}."
     );
@@ -146,6 +156,10 @@ pub fn parse(text: &str, base: &Location) -> Result<Input> {
     );
     let username = decoded(url.username())?;
     let password = decoded(url.password().unwrap_or_default())?;
+    ensure!(
+        !matches!(scheme.as_str(), "adb" | "nfs") || (username.is_empty() && password.is_empty()),
+        "This protocol uses local identity and does not accept URI credentials."
+    );
     let request_query = url.query().unwrap_or_default().to_owned();
     url.set_username("")
         .map_err(|_| anyhow::anyhow!("Invalid URI authority"))?;
@@ -153,7 +167,21 @@ pub fn parse(text: &str, base: &Location) -> Result<Input> {
         .map_err(|_| anyhow::anyhow!("Invalid URI authority"))?;
     url.set_query(None);
     url.set_fragment(None);
-    let mut path = remote_path(&url)?;
+    let mut serial = String::new();
+    let mut path = if scheme == "adb" {
+        ensure!(
+            url.host_str()
+                .is_some_and(|host| host.eq_ignore_ascii_case("localhost"))
+                && url.port().is_none(),
+            "Use adb://localhost/DEVICE_SERIAL to open an authorized Android device."
+        );
+        let mut segments = url.path_segments().into_iter().flatten();
+        serial = decoded(segments.next().unwrap_or_default())?;
+        crate::uri_backend::adb::validate_serial(&serial)?;
+        remote_segments(segments)?
+    } else {
+        remote_path(&url)?
+    };
     let mut connection = Connection {
         name: url.host_str().unwrap().into(),
         listed: false,
@@ -168,7 +196,19 @@ pub fn parse(text: &str, base: &Location) -> Result<Input> {
         s => s,
     }
     .into();
-    if matches!(scheme.as_str(), "s3" | "gs") {
+    if scheme == "adb" {
+        connection.endpoint = "adb://localhost".into();
+        connection.name = serial.clone();
+        connection.bucket = serial;
+    } else if scheme == "nfs" {
+        connection.root = format!("/{}", crate::remote::display_path(&path));
+        let host = url.host().unwrap();
+        connection.endpoint = if let Some(port) = url.port() {
+            format!("nfs://{host}:{port}")
+        } else {
+            format!("nfs://{host}")
+        };
+    } else if matches!(scheme.as_str(), "s3" | "gs") {
         ensure!(
             url.port().is_none() && connection.username.is_empty() && password.is_empty(),
             "Cloud URIs use a bucket name; configure endpoints and credentials in Connections."
@@ -261,7 +301,8 @@ pub fn address(id: &str, path: &Path) -> String {
                 })
             ))
         }),
-        "http" | "smb" => Url::parse(&c.endpoint),
+        "http" | "smb" | "nfs" => Url::parse(&c.endpoint),
+        "adb" => Url::parse("adb://localhost"),
         _ => return legacy(),
     };
     let Ok(ref mut url) = url else {
@@ -280,6 +321,9 @@ pub fn address(id: &str, path: &Path) -> String {
     full.push(path);
     if let Ok(mut segments) = url.path_segments_mut() {
         segments.clear();
+        if c.service == "adb" {
+            segments.push(&c.bucket);
+        }
         for name in full.iter() {
             segments.push(&name.to_string_lossy());
         }
@@ -303,6 +347,9 @@ pub fn matches_profile(target: &Target, c: &Connection) -> bool {
     if matches!(c.service.as_str(), "s3" | "gcs") {
         return c.bucket == t.bucket;
     }
+    if c.service == "adb" {
+        return c.bucket == t.bucket;
+    }
     if c.service == "smb" && c.bucket != t.bucket {
         return false;
     }
@@ -323,6 +370,7 @@ pub fn matches_profile(target: &Target, c: &Connection) -> bool {
                         "sftp" => 22,
                         "ftp" if c.tls_mode() == FtpTls::Implicit => 990,
                         "ftp" => 21,
+                        "nfs" => 2049,
                         _ => 445,
                     }),
             )

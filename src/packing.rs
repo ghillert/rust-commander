@@ -219,7 +219,7 @@ pub fn destination(
         Location::Local(path) => Location::Local(options.destination(&path)),
         Location::Remote { connection, path } => {
             ensure!(
-                crate::remote::profile(&connection).is_some_and(|c| c.service != "http"),
+                crate::remote::profile(&connection).is_some_and(|c| c.writable()),
                 "Choose a writable configured connection."
             );
             Location::Remote {

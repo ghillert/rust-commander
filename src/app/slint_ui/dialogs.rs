@@ -721,7 +721,7 @@ impl Adapter {
                 return d;
             }
             d.error = form.error.clone().unwrap_or_default();
-            d.busy = self.app.uri_connecting();
+            d.busy = self.app.uri_connecting() || form.discovery.is_some();
             if form.save_only {
                 d.title = tr("Save connection…").into_owned();
                 d.description =
@@ -744,6 +744,20 @@ impl Adapter {
                 }
                 return d;
             }
+            if form.navigation.is_none() {
+                d.button("discover-network", "Discover network services", !d.busy);
+                d.button("discover-android", "Find Android devices", !d.busy);
+                for (i, c) in form.discovered.iter().enumerate() {
+                    let id = format!("discovered-{i}");
+                    let detail = if c.service == "adb" {
+                        &c.bucket
+                    } else {
+                        &c.endpoint
+                    };
+                    d.rows
+                        .push(Row::new(&id, &c.name, detail).action(&id, "Select", !d.busy));
+                }
+            }
             for (i, c) in self.app.connections.iter().enumerate() {
                 if !c.listed || form.navigation.is_some() {
                     continue;
@@ -761,6 +775,34 @@ impl Adapter {
             }
             let c = &form.connection;
             let s = &form.secrets;
+            if c.uses_local_identity() {
+                d.fields.extend([
+                    Field::text("name", "Name", &c.name),
+                    Field::choice("service", "Service", &c.service, crate::remote::SERVICES),
+                ]);
+                if c.service == "adb" {
+                    d.description =
+                        tr("Browse an authorized Android device through the local ADB server.")
+                            .into_owned();
+                    d.fields
+                        .push(Field::text("bucket", "Device serial", &c.bucket));
+                } else {
+                    d.description = tr("Open an NFSv3 export in read-only mode.").into_owned();
+                    d.fields
+                        .push(Field::text("endpoint", "Endpoint", &c.endpoint));
+                }
+                d.fields.push(Field::text(
+                    "root",
+                    if c.service == "adb" {
+                        "Root folder"
+                    } else {
+                        "Export path"
+                    },
+                    &c.root,
+                ));
+                d.button("accept", "Connect", !d.busy);
+                return d;
+            }
             d.fields.extend([
                 Field::text("name", "Name", &c.name),
                 Field::choice("service", "Service", &c.service, crate::remote::SERVICES),

@@ -81,6 +81,14 @@ pub enum FtpTls {
     Implicit,
 }
 impl Connection {
+    pub fn writable(&self) -> bool {
+        !matches!(self.service.as_str(), "http" | "adb" | "nfs")
+    }
+
+    pub(crate) fn uses_local_identity(&self) -> bool {
+        matches!(self.service.as_str(), "adb" | "nfs")
+    }
+
     pub fn tls_mode(&self) -> FtpTls {
         match self.ftp_tls {
             FtpTls::Automatic if self.endpoint.starts_with("ftp://") => FtpTls::Plain,
@@ -111,7 +119,8 @@ pub struct Secrets {
     pub ssh_review: Option<crate::ssh::Review>,
 }
 pub const SERVICES: &[&str] = &[
-    "sftp", "smb", "ftp", "webdav", "s3", "http", "dropbox", "gdrive", "onedrive", "gcs", "webhdfs",
+    "sftp", "smb", "ftp", "webdav", "nfs", "adb", "s3", "http", "dropbox", "gdrive", "onedrive",
+    "gcs", "webhdfs",
 ];
 
 struct Session {
@@ -294,13 +303,15 @@ pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Res
         (None, Some(share))
     } else {
         let _guard = runtime().enter();
-        let scheme = connection.service.parse::<opendal::Scheme>()?;
         let operator = match crate::uri_backend::operator(connection, &secrets)
             .map_err(|e| clean_error(e, &secrets))?
         {
             Some(operator) => operator,
-            None => opendal::Operator::via_iter(scheme, options(connection, &secrets))
-                .map_err(|e| clean_error(e, &secrets))?,
+            None => opendal::Operator::via_iter(
+                connection.service.parse::<opendal::Scheme>()?,
+                options(connection, &secrets),
+            )
+            .map_err(|e| clean_error(e, &secrets))?,
         };
         let operator = operator.layer(
             opendal::layers::TimeoutLayer::new()
@@ -321,7 +332,7 @@ pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Res
         }
         (Some(operator), None)
     };
-    if remember {
+    if remember && !connection.uses_local_identity() {
         save_credentials(&connection.id, &secrets)?;
     }
     profiles()
@@ -396,7 +407,11 @@ fn session_locked(id: &str) -> Result<Arc<Session>> {
         .cloned()
         .context("Connection profile is missing. Open Connections to reconnect.")?;
     validate(&connection)?;
-    let stored = load_credentials(id);
+    let stored = if connection.uses_local_identity() {
+        Err(keyring::Error::NoEntry.into())
+    } else {
+        load_credentials(id)
+    };
     let remember = stored.is_ok();
     let mut secrets = stored.or_else(|error| {
         if matches!(error.downcast_ref::<keyring::Error>(),Some(keyring::Error::NoEntry)) {Ok(Secrets::default())} else {Err(error)}

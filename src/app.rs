@@ -750,6 +750,8 @@ struct ConnectionForm {
     choices: Vec<crate::remote::Connection>,
     save_only: bool,
     ssh_challenge: Option<crate::ssh::Challenge>,
+    discovery: Option<Receiver<Result<Vec<crate::remote::Connection>, String>>>,
+    discovered: Vec<crate::remote::Connection>,
 }
 
 pub struct Commander {
@@ -806,7 +808,7 @@ impl Commander {
     fn action_available(&self, id: &str) -> bool {
         let writable = |location: &Location| match location {
             Location::Remote { connection, .. } => {
-                crate::remote::profile(connection).is_none_or(|c| c.service != "http")
+                crate::remote::profile(connection).is_none_or(|c| c.writable())
             }
             _ => true,
         };
@@ -1034,6 +1036,17 @@ impl Commander {
         });
     }
     fn poll(&mut self, ctx: &UiSignal) {
+        if let Some(form) = &mut self.connection_form
+            && let Some(result) = crate::background::poll(&mut form.discovery)
+        {
+            match result {
+                Ok(connections) if connections.is_empty() => {
+                    form.error = Some("No services or authorized devices were found.".into());
+                }
+                Ok(connections) => form.discovered = connections,
+                Err(error) => form.error = Some(error),
+            }
+        }
         if let Some(result) = crate::background::poll(&mut self.pending_archive) {
             match result {
                 Ok(location) => {
@@ -1317,7 +1330,8 @@ impl Commander {
         ctx: &UiSignal,
     ) {
         let editable = editable
-            && !matches!(&location,Location::Remote{connection,..} if crate::remote::profile(connection).is_some_and(|c|c.service=="http"));
+            && !matches!(&location, Location::Remote { connection, .. }
+                if crate::remote::profile(connection).is_some_and(|c| !c.writable()));
         if entry.is_dir {
             self.fail("Select a text file to view or edit.");
             return;
