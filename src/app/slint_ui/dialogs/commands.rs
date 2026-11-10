@@ -201,7 +201,32 @@ impl Adapter {
                     }
                 }
                 "connections" => {
-                    if matches!(id, "discover-network" | "discover-android") {
+                    if id == "connection-advanced" {
+                        if let Some(form) = &mut self.app.connection_form {
+                            form.advanced =
+                                !form.advanced || self.invalid_fields.contains_key("port");
+                        }
+                    } else if matches!(
+                        id,
+                        "connections-home" | "connections-back" | "connection-new"
+                    ) {
+                        if let Some(form) = &mut self.app.connection_form
+                            && form.navigation.is_none()
+                            && !form.save_only
+                            && form.discovery.is_none()
+                        {
+                            if id == "connection-new" {
+                                *form = ConnectionForm::default();
+                            } else if id == "connections-back" {
+                                form.view = form.return_to.take().unwrap_or(ConnectionView::Saved);
+                            } else {
+                                form.view = ConnectionView::Saved;
+                            }
+                            form.error = None;
+                            self.invalid_fields.clear();
+                            self.field_error = None;
+                        }
+                    } else if matches!(id, "discover-network" | "discover-android") {
                         if let Some(form) = &mut self.app.connection_form
                             && form.navigation.is_none()
                             && !form.save_only
@@ -213,6 +238,12 @@ impl Adapter {
                                 crate::discovery::android
                             };
                             let (sender, receiver) = mpsc::channel();
+                            form.view = if id == "discover-network" {
+                                ConnectionView::Network
+                            } else {
+                                ConnectionView::Android
+                            };
+                            form.discovery_status.clear();
                             form.discovery = Some(receiver);
                             form.discovered.clear();
                             form.error = None;
@@ -231,7 +262,9 @@ impl Adapter {
                             && let Some(connection) = form.discovered.get(index).cloned()
                         {
                             form.connection = connection;
-                            form.discovered.clear();
+                            form.return_to = Some(form.view);
+                            form.view = ConnectionView::Edit;
+                            form.advanced = false;
                             form.secrets = Default::default();
                             form.remember = false;
                             form.error = None;
@@ -349,6 +382,9 @@ impl Adapter {
                         && let Some(form) = &mut self.app.connection_form
                     {
                         form.connection = connection.clone();
+                        form.view = ConnectionView::Edit;
+                        form.return_to = None;
+                        form.advanced = false;
                         form.secrets = Default::default();
                         form.error = None;
                         self.invalid_fields.clear();

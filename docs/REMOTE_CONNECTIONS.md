@@ -2,10 +2,14 @@
 
 [← Back to README](../README.md)
 
-Open **File → Connections** to add or edit a connection profile. Available
-adapters are SMB2/3, SFTP, FTP, WebDAV, NFSv3, ADB, S3, HTTP, Dropbox, Google
+Open **File → Connections** to open or edit a saved connection, browse nearby
+network servers and Android devices, or choose **New connection…** for manual setup.
+The setup form shows only fields for the selected **Connection type**. **Advanced
+options** contains SSH keys and configuration files, custom certificates, OAuth
+tokens and callback settings. Collapsing these options preserves their values.
+Available adapters are SMB2/3, SFTP, FTP, WebDAV, NFSv3, ADB, S3, HTTP, Dropbox, Google
 Drive, OneDrive, GCS, and WebHDFS. Configure the endpoint, root, and
-service-specific fields. Unused fields may remain blank.
+service-specific fields.
 
 ## Paste a path or URI
 
@@ -42,13 +46,13 @@ archive navigation and older `remote://CONNECTION_ID/path` locations still work.
 
 ## Network and device browsing
 
-- **Bonjour.** In **File → Connections**, choose **Discover network services**.
+- **Bonjour.** In **File → Connections**, choose **Browse network**.
   A short scan looks for SMB, SFTP, FTP, and NFS advertisements on the local
   network. Select a result to fill in the endpoint, then enter the share name,
   export path, or credentials if required and choose **Connect**. Discovery
   works from advertisements on the local link and may require allowing local
   network access through the OS or firewall.
-- **NFS.** Choose `nfs`, enter an endpoint such as `nfs://nas.local` and the
+- **NFS.** Choose **New connection… → NFS (read-only)**, enter an endpoint such as `nfs://nas.local` and the
   exact export path, or paste an export URI into the location bar. Rust Commander
   opens the export over NFSv3/TCP without mounting it in the OS. The server must
   offer rpcbind and allow connections from unprivileged ports. AUTH_SYS uses
@@ -58,7 +62,7 @@ archive navigation and older `remote://CONNECTION_ID/path` locations still work.
   unmatched NFS URI treats its full path as an export.
 - **Android.** Install Android SDK Platform Tools, run `adb start-server`, and
   authorize the device through USB debugging or pair it through Android's
-  wireless debugging. In **Connections → Find Android devices**, select an
+  wireless debugging. In **Connections → Browse devices**, select an
   authorized device, optionally enter a root folder, and choose **Connect**.
   The local ADB server must listen on loopback port 5037. The device must
   support file-sync v2. Standard shared storage is typically under
@@ -107,8 +111,8 @@ validation on the supported platforms.
 
 ## Service-specific behavior
 
-- **SMB2/3** connects directly without a mounted share. Set Endpoint to
-  `smb://host:445`, Share to its name, and Root folder to a path within it.
+- **SMB2/3** connects directly without a mounted share. Set **Server URL** to
+  `smb://host:445`, **Share name** to its name, and **Starting folder** to a path within it.
   Domain usernames can use `DOMAIN\user`. The pure Rust adapter streams files
   and supports the same search/edit/transfer workflows as other writable services.
 

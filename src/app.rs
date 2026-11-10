@@ -740,8 +740,21 @@ struct Job {
     progress: Progress,
 }
 
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum ConnectionView {
+    Saved,
+    Network,
+    Android,
+    #[default]
+    Edit,
+}
+
 #[derive(Default)]
 struct ConnectionForm {
+    view: ConnectionView,
+    return_to: Option<ConnectionView>,
+    advanced: bool,
+    discovery_status: String,
     connection: crate::remote::Connection,
     secrets: crate::remote::Secrets,
     remember: bool,
@@ -1041,9 +1054,13 @@ impl Commander {
         {
             match result {
                 Ok(connections) if connections.is_empty() => {
-                    form.error = Some("No services or authorized devices were found.".into());
+                    form.discovery_status = "Nothing found. Check that the server is advertised or the device is authorized, then scan again.".into();
                 }
-                Ok(connections) => form.discovered = connections,
+                Ok(connections) => {
+                    form.discovery_status =
+                        "Select a result to review its connection settings.".into();
+                    form.discovered = connections;
+                }
                 Err(error) => form.error = Some(error),
             }
         }
@@ -1907,7 +1924,10 @@ impl Commander {
                 }
             }
             Action::Connections => {
-                self.connection_form = Some(ConnectionForm::default());
+                self.connection_form = Some(ConnectionForm {
+                    view: ConnectionView::Saved,
+                    ..Default::default()
+                });
                 return;
             }
             Action::Refresh => {

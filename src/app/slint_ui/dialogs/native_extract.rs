@@ -554,7 +554,7 @@ impl Sheet {
         // Cocoa places the default action on the trailing edge, Cancel next to it.
         let mut footer = spec.buttons.iter().collect::<Vec<_>>();
         footer.sort_by_key(|(id, _, _)| match id.as_str() {
-            "accept" => 0,
+            "accept" | "connection-new" => 0,
             "cancel" => 1,
             "apply" => 2,
             "apply-all" => 3,
@@ -575,25 +575,29 @@ impl Sheet {
                 };
                 button.setBezelStyle(NSBezelStyle::Push);
                 button.setFrame(rect(
-                    if id == "defaults" { 24.0 } else { x - width },
+                    if matches!(id, "defaults" | "connections-home" | "connections-back") {
+                        24.0
+                    } else {
+                        x - width
+                    },
                     14.0,
                     width,
                     32.0,
                 ));
                 button.setTag(buttons.len() as isize);
-                if id == "accept" && spec.default_action {
+                if matches!(id, "accept" | "connection-new") && spec.default_action {
                     let cell = button.cell().unwrap().downcast::<NSButtonCell>().unwrap();
                     window.setDefaultButtonCell(Some(&cell));
                 }
                 button.setKeyEquivalent(&NSString::from_str(match id {
-                    "accept" if spec.default_action => "\r",
+                    "accept" | "connection-new" if spec.default_action => "\r",
                     "cancel" => "\u{1b}",
                     _ => "",
                 }));
                 content.addSubview(&button);
                 target.ivars().actions.borrow_mut().push(id.into());
                 buttons.push((id.into(), button));
-                if id != "defaults" {
+                if !matches!(id, "defaults" | "connections-home" | "connections-back") {
                     x -= width + 8.0;
                 }
             }
@@ -667,10 +671,28 @@ impl Sheet {
             });
         let mtm = self.window.mtm();
         let compact = spec.kind == "quit";
+        let connections = spec.kind == "connections";
+        let row_height = if connections { 68.0 } else { 74.0 };
+        let measure_field = |field: &Field| {
+            if connections && matches!(field.kind, 0 | 1 | 3 | 5) {
+                38.0
+            } else {
+                field_height(field)
+            }
+        };
         let (width, footer_height, minimum_body_height, chars_per_line) = if compact {
             (400.0, 52.0, 0.0, 45)
         } else {
-            (620.0, 100.0, 180.0, 75)
+            (
+                620.0,
+                if connections && spec.error.is_empty() {
+                    64.0
+                } else {
+                    100.0
+                },
+                180.0,
+                75,
+            )
         };
         let text_width = width - 68.0;
         let text_height = (spec
@@ -682,8 +704,8 @@ impl Sheet {
             .max(24.0);
         let description_height = 32.0 + text_height;
         let total = description_height
-            + spec.fields.iter().map(field_height).sum::<f64>()
-            + spec.rows.len() as f64 * 74.0
+            + spec.fields.iter().map(measure_field).sum::<f64>()
+            + spec.rows.len() as f64 * row_height
             + 16.0;
         let viewport = total.clamp(minimum_body_height, 480.0);
         self.window
@@ -709,7 +731,10 @@ impl Sheet {
             .borrow_mut()
             .truncate(self.buttons.len());
         for field in &spec.fields {
-            let height = field_height(field);
+            let height = measure_field(field);
+            let inline = connections && matches!(field.kind, 0 | 1 | 3 | 5);
+            let control_x = if inline { 188.0 } else { 8.0 };
+            let control_width = if inline { 372.0 } else { 552.0 };
             y -= height;
             let title = translated(&field.title);
             if !matches!(field.kind, 2 | 8 | 9) {
@@ -724,7 +749,11 @@ impl Sheet {
                 let heading = label(
                     mtm,
                     &title.to_string(),
-                    rect(8.0, y + height - title_height, 552.0, title_height),
+                    if inline {
+                        rect(8.0, y + 5.0, 170.0, 26.0)
+                    } else {
+                        rect(8.0, y + height - title_height, 552.0, title_height)
+                    },
                 );
                 doc.addSubview(&heading);
             }
@@ -734,9 +763,9 @@ impl Sheet {
                         NSSecureTextField::initWithFrame(
                             NSSecureTextField::alloc(mtm),
                             rect(
-                                8.0,
+                                control_x,
                                 y + 6.0,
-                                if field.picker.is_some() { 448.0 } else { 552.0 },
+                                control_width - if field.picker.is_some() { 104.0 } else { 0.0 },
                                 24.0,
                             ),
                         )
@@ -745,9 +774,9 @@ impl Sheet {
                         NSTextField::initWithFrame(
                             NSTextField::alloc(mtm),
                             rect(
-                                8.0,
+                                control_x,
                                 y + 6.0,
-                                if field.picker.is_some() { 448.0 } else { 552.0 },
+                                control_width - if field.picker.is_some() { 104.0 } else { 0.0 },
                                 24.0,
                             ),
                         )
@@ -841,7 +870,7 @@ impl Sheet {
                 3 => {
                     let choice = NSPopUpButton::initWithFrame_pullsDown(
                         NSPopUpButton::alloc(mtm),
-                        rect(6.0, y + 4.0, 556.0, 28.0),
+                        rect(control_x - 2.0, y + 4.0, control_width + 4.0, 28.0),
                         false,
                     );
                     for value in &field.choices {
@@ -890,11 +919,40 @@ impl Sheet {
             }
         }
         for row in &spec.rows {
-            y -= 74.0;
-            let heading = label(mtm, &row.title, rect(8.0, y + 42.0, 552.0, 24.0));
+            y -= row_height;
+            let action_width =
+                |title: &str| (crate::app::tr(title).chars().count() as f64 * 7.0 + 28.0).max(84.0);
+            let actions_width = row
+                .actions
+                .iter()
+                .map(|(_, title, _)| action_width(title) + 8.0)
+                .sum::<f64>();
+            let heading = label(
+                mtm,
+                &row.title,
+                rect(
+                    8.0,
+                    y + row_height - 28.0,
+                    if connections {
+                        (540.0 - actions_width).max(120.0)
+                    } else {
+                        552.0
+                    },
+                    24.0,
+                ),
+            );
             heading.setFont(Some(&NSFont::boldSystemFontOfSize(13.0)));
             doc.addSubview(&heading);
-            let mut x = 8.0;
+            if connections && !row.detail.is_empty() {
+                let detail = label(mtm, &row.detail, rect(8.0, y + 4.0, 552.0, 32.0));
+                detail.setTextColor(Some(&NSColor::secondaryLabelColor()));
+                doc.addSubview(&detail);
+            }
+            let mut x = if connections {
+                568.0 - actions_width
+            } else {
+                8.0
+            };
             for (id, title, enabled) in &row.actions {
                 let button = unsafe {
                     NSButton::buttonWithTitle_target_action(
@@ -904,9 +962,14 @@ impl Sheet {
                         mtm,
                     )
                 };
-                let width = (title.chars().count() as f64 * 7.0 + 28.0).max(84.0);
+                let width = action_width(title);
                 button.setBezelStyle(NSBezelStyle::Push);
-                button.setFrame(rect(x, y + 14.0, width, 28.0));
+                button.setFrame(rect(
+                    x,
+                    y + if connections { 36.0 } else { 14.0 },
+                    width,
+                    28.0,
+                ));
                 button.setEnabled(*enabled);
                 let mut actions = self.target.ivars().actions.borrow_mut();
                 button.setTag(actions.len() as isize);
@@ -914,7 +977,7 @@ impl Sheet {
                 doc.addSubview(&button);
                 x += width + 8.0;
             }
-            if !row.detail.is_empty() {
+            if !connections && !row.detail.is_empty() {
                 doc.addSubview(&label(
                     mtm,
                     &row.detail,
@@ -958,6 +1021,8 @@ impl Sheet {
     }
     fn update(&mut self, spec: &Dialog, scheme: crate::appearance::ColorScheme) {
         if spec.kind == "preferences"
+            || (spec.kind == "connections"
+                && self.error.stringValue().to_string().is_empty() != spec.error.is_empty())
             || self.description != spec.description
             || self.row_schema != spec.rows
             || self.schema.len() != spec.fields.len()

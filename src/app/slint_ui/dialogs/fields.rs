@@ -327,7 +327,19 @@ impl Adapter {
                         let s = &mut form.secrets;
                         match id {
                             "name" => c.name = value.into(),
+                            "connection-advanced" => {
+                                form.advanced =
+                                    checked(value) || self.invalid_fields.contains_key("port");
+                            }
                             "service" => {
+                                let value = crate::remote::SERVICES
+                                    .iter()
+                                    .copied()
+                                    .find(|id| {
+                                        value == *id
+                                            || value == tr(super::connections::service_title(id))
+                                    })
+                                    .unwrap_or(value);
                                 anyhow::ensure!(
                                     crate::remote::SERVICES.contains(&value),
                                     "Unsupported remote service."
@@ -345,6 +357,9 @@ impl Adapter {
                                     c.username.clear();
                                     *s = Default::default();
                                     form.remember = false;
+                                }
+                                if c.service != value {
+                                    self.invalid_fields.clear();
                                 }
                                 c.service = value.into();
                             }

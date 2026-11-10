@@ -399,6 +399,7 @@ fn discovery_prefills_connections_without_opening_or_saving_them() {
     let (_root, mut adapter, left, _right) = fixture();
     let (sender, receiver) = mpsc::channel();
     adapter.app.connection_form = Some(ConnectionForm {
+        view: ConnectionView::Android,
         discovery: Some(receiver),
         ..Default::default()
     });
@@ -428,6 +429,12 @@ fn discovery_prefills_connections_without_opening_or_saving_them() {
     assert_eq!(adapter.app.tab().location, Location::Local(left));
     assert!(adapter.app.connections.is_empty());
     assert!(adapter.app.pending_uris.is_empty());
+    drop(adapter);
+    ui.invoke_dialog_action("connections-back".into());
+    let dialog = state.borrow().dialog();
+    assert_eq!(dialog.title, "Android devices");
+    assert_eq!(dialog.rows[0].title, "Android fixture");
+    assert!(!dialog.busy);
 }
 
 #[test]
@@ -1233,4 +1240,224 @@ fn native_forms_share_validation_and_never_default_to_discarding_work() {
         Some(PromptKind::Trash(_))
     ));
     assert!(!adapter.native_dialog(&spec).default_action);
+}
+
+#[test]
+fn connections_separate_browsing_setup_and_advanced_options() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, adapter, left, _right) = fixture();
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    ui.invoke_action("Connections".into());
+    let home = state.borrow().dialog();
+    assert!(!home.fields.iter().any(|f| f.id == "service"));
+    assert!(!home.buttons.iter().any(|(id, _, _)| id == "accept"));
+    assert!(home.rows.iter().any(|r| r.id == "network"));
+    assert!(home.rows.iter().any(|r| r.id == "android"));
+    ui.invoke_dialog_action("connection-new".into());
+    ui.invoke_dialog_field("service".into(), "SFTP (SSH)".into());
+    ui.invoke_dialog_field("endpoint".into(), "sftp://example.test".into());
+    ui.invoke_dialog_field("password".into(), "test-secret".into());
+    let basic = state.borrow().dialog();
+    for id in ["endpoint", "username", "password", "root"] {
+        assert!(basic.fields.iter().any(|f| f.id == id), "{id}");
+    }
+    for id in ["bucket", "region", "token", "key-file", "known-hosts"] {
+        assert!(!basic.fields.iter().any(|f| f.id == id), "{id}");
+    }
+    ui.invoke_dialog_action("connection-advanced".into());
+    ui.invoke_dialog_field("key-file".into(), "/tmp/test-key".into());
+    assert!(
+        state
+            .borrow()
+            .dialog()
+            .fields
+            .iter()
+            .any(|f| f.id == "known-hosts")
+    );
+    ui.invoke_dialog_field("connection-advanced".into(), "false".into());
+    ui.invoke_dialog_field("connection-advanced".into(), "true".into());
+    let advanced = state.borrow().dialog();
+    assert_eq!(
+        advanced
+            .fields
+            .iter()
+            .find(|f| f.id == "key-file")
+            .unwrap()
+            .value,
+        "/tmp/test-key"
+    );
+    assert_eq!(
+        advanced
+            .fields
+            .iter()
+            .find(|f| f.id == "password")
+            .unwrap()
+            .value,
+        "test-secret"
+    );
+    ui.invoke_dialog_action("connections-home".into());
+    ui.invoke_dialog_action("connection-new".into());
+    assert!(
+        state
+            .borrow()
+            .app
+            .connection_form
+            .as_ref()
+            .unwrap()
+            .connection
+            .endpoint
+            .is_empty()
+    );
+    assert!(
+        state
+            .borrow()
+            .app
+            .connection_form
+            .as_ref()
+            .unwrap()
+            .secrets
+            .password
+            .is_empty()
+    );
+    assert_eq!(state.borrow().app.tab().location, Location::Local(left));
+    assert!(state.borrow().app.pending_uris.is_empty());
+}
+
+#[test]
+fn connections_show_only_service_specific_configuration() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, _left, _right) = fixture();
+    adapter.app.connection_form = Some(ConnectionForm::default());
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    for (service, present, absent) in [
+        (
+            "smb",
+            vec!["bucket", "username", "password"],
+            vec!["region", "token", "key-file"],
+        ),
+        (
+            "s3",
+            vec!["bucket", "region", "access-key", "secret-key"],
+            vec!["username", "password", "key-file"],
+        ),
+        (
+            "gcs",
+            vec!["bucket", "token"],
+            vec!["region", "username", "password"],
+        ),
+        (
+            "nfs",
+            vec!["endpoint", "root"],
+            vec!["bucket", "username", "password", "remember"],
+        ),
+        (
+            "adb",
+            vec!["bucket", "root"],
+            vec!["endpoint", "username", "password", "remember"],
+        ),
+        (
+            "ftp",
+            vec!["ftp-tls", "username", "password"],
+            vec!["bucket", "region", "key-file"],
+        ),
+        (
+            "webdav",
+            vec!["endpoint", "username", "password"],
+            vec!["bucket", "region", "key-file"],
+        ),
+        (
+            "webhdfs",
+            vec!["endpoint", "username"],
+            vec!["bucket", "region", "key-file"],
+        ),
+        (
+            "http",
+            vec!["endpoint", "root"],
+            vec!["bucket", "region", "key-file"],
+        ),
+        (
+            "gdrive",
+            vec!["client-id", "client-secret"],
+            vec!["endpoint", "bucket", "tenant"],
+        ),
+        (
+            "dropbox",
+            vec!["client-id", "client-secret"],
+            vec!["endpoint", "bucket", "tenant"],
+        ),
+        (
+            "onedrive",
+            vec!["client-id", "client-secret"],
+            vec!["endpoint", "bucket", "username"],
+        ),
+    ] {
+        ui.invoke_dialog_field("service".into(), service.into());
+        let dialog = state.borrow().dialog();
+        assert_eq!(
+            state
+                .borrow()
+                .app
+                .connection_form
+                .as_ref()
+                .unwrap()
+                .connection
+                .service,
+            service
+        );
+        for id in present {
+            assert!(
+                dialog.fields.iter().any(|f| f.id == id),
+                "{service}: missing {id}"
+            );
+        }
+        for id in absent {
+            assert!(
+                !dialog.fields.iter().any(|f| f.id == id),
+                "{service}: unexpected {id}"
+            );
+        }
+        assert!(
+            dialog
+                .buttons
+                .iter()
+                .any(|(id, _, enabled)| id == "accept" && *enabled)
+        );
+    }
+}
+
+#[test]
+fn connections_empty_discovery_is_a_status_not_an_error() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, _left, _right) = fixture();
+    let (sender, receiver) = mpsc::channel();
+    adapter.app.connection_form = Some(ConnectionForm {
+        view: ConnectionView::Network,
+        discovery: Some(receiver),
+        ..Default::default()
+    });
+    assert!(adapter.dialog().busy);
+    sender.send(Ok(Vec::new())).unwrap();
+    adapter.app.poll(&adapter.ctx);
+    let dialog = adapter.dialog();
+    assert!(!dialog.busy);
+    assert!(dialog.error.is_empty());
+    assert!(
+        dialog
+            .fields
+            .iter()
+            .any(|f| f.value.contains("Nothing found"))
+    );
+    assert!(!dialog.buttons.iter().any(|(id, _, _)| id == "accept"));
+    assert!(
+        dialog
+            .buttons
+            .iter()
+            .any(|(id, _, enabled)| id == "discover-network" && *enabled)
+    );
 }
