@@ -5,6 +5,9 @@ use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext};
 use rand::RngCore;
 use std::path::{Path, PathBuf};
 
+mod network_mounts;
+pub(crate) use network_mounts::network_mounts;
+
 #[cfg(target_os = "macos")]
 const FILE_MARKER: &str = "io.github.ghillert.rust-commander.files";
 #[cfg(not(target_os = "macos"))]
@@ -437,66 +440,38 @@ fn drag_item(
 }
 
 pub fn mounted_drives() -> Vec<(String, PathBuf)> {
-    let mut result = Vec::new();
+    #[cfg(not(target_os = "linux"))]
+    let mut result = network_mounts();
+    #[cfg(target_os = "linux")]
+    let mut result: Vec<_> = network_mounts::linux_mounts()
+        .into_iter()
+        .filter(|(path, network)| {
+            *network
+                || (["/media", "/mnt", "/run/media"]
+                    .iter()
+                    .any(|root| path.starts_with(root))
+                    && path.is_dir())
+        })
+        .map(|(path, _)| network_mounts::named_mount(path))
+        .collect();
     #[cfg(target_os = "macos")]
     if let Ok(entries) = std::fs::read_dir("/Volumes") {
         for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                result.push((
-                    entry.file_name().to_string_lossy().into_owned(),
-                    entry.path(),
-                ));
+            let path = entry.path();
+            if !result.iter().any(|(_, existing)| existing == &path) && path.is_dir() {
+                result.push(network_mounts::named_mount(path));
             }
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let orbstack = crate::filesystem::home().join("OrbStack");
-        if orbstack.join("docker").is_dir()
-            && !result.iter().any(|(_, path)| {
-                path.file_name().is_some_and(|name| name == "OrbStack")
-                    && same_file::is_same_file(path, &orbstack).unwrap_or(false)
-            })
-        {
-            result.push(("OrbStack".into(), orbstack));
         }
     }
     #[cfg(target_os = "windows")]
     for letter in b'A'..=b'Z' {
         let path = PathBuf::from(format!("{}:\\", letter as char));
-        if path.is_dir() {
+        if !result.iter().any(|(_, existing)| existing == &path) && path.is_dir() {
             result.push((format!("Drive {}", letter as char), path));
         }
     }
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(contents) = std::fs::read_to_string("/proc/self/mountinfo") {
-            for line in contents.lines() {
-                let fields = line.split_whitespace().collect::<Vec<_>>();
-                if let Some(mount) = fields.get(4) {
-                    let mount = mount
-                        .replace("\\040", " ")
-                        .replace("\\011", "\t")
-                        .replace("\\134", "\\");
-                    let path = PathBuf::from(mount);
-                    if ["/media", "/mnt", "/run/media"]
-                        .iter()
-                        .any(|root| path.starts_with(root))
-                        && path.is_dir()
-                    {
-                        let label = path
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .into_owned();
-                        if !result.iter().any(|(_, existing)| existing == &path) {
-                            result.push((label, path));
-                        }
-                    }
-                }
-            }
-        }
-    }
+    result.sort_by(|a, b| a.1.cmp(&b.1));
+    result.dedup_by(|a, b| a.1 == b.1);
     result.sort_by(|a, b| a.0.cmp(&b.0));
     result
 }

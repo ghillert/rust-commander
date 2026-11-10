@@ -1480,3 +1480,28 @@ fn network_sidebar_opens_in_the_active_pane() {
         Location::Local(left)
     );
 }
+
+#[test]
+fn network_opens_a_mounted_folder_in_the_pane() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, _, right) = fixture();
+    let mount = right.join("Mounted Share");
+    std::fs::create_dir_all(mount.join("documents")).unwrap();
+    adapter.app.active = 1;
+    adapter.app.tab_mut().navigate_loaded(
+        Location::Network { server: None },
+        vec![filesystem::entry_from_path(&mount).unwrap()],
+        None,
+        &adapter.ctx,
+    );
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+
+    ui.invoke_opened(1, path_id(&mount).into());
+
+    assert_eq!(ui.get_right_protocol(), "FILE");
+    assert_eq!(state.borrow().app.tab().location, Location::Local(mount));
+    assert!(state.borrow().app.pending_uris.is_empty());
+}

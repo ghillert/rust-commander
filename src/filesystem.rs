@@ -166,7 +166,18 @@ pub fn list(location: &Location) -> Result<Vec<Entry>> {
         Location::Archive { file, prefix } => crate::archive::list(file, prefix),
         Location::Remote { connection, path } => crate::remote::list(connection, path),
         Location::Local(path) => fs::read_dir(path)
-            .with_context(|| format!("Cannot open {}", path.display()))?
+            .map_err(|error| {
+                let mut message = format!("Cannot open {}", path.display());
+                if cfg!(target_os = "macos")
+                    && error.kind() == std::io::ErrorKind::PermissionDenied
+                    && crate::native_files::network_mounts()
+                        .iter()
+                        .any(|(_, mount)| path.starts_with(mount))
+                {
+                    message.push_str(". Check Rust Commander’s Network Volumes access in System Settings → Privacy & Security → Files and Folders");
+                }
+                anyhow::Error::new(error).context(message)
+            })?
             .map(|item| {
                 let item = item?;
                 let path = item.path();

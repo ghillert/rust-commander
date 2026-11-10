@@ -51,6 +51,10 @@ impl Commander {
     }
     pub(super) fn open_network_entry(&mut self, entry: Entry, ctx: &UiSignal) {
         self.tab_mut().stop_network_scan();
+        if self.tab().location == (Location::Network { server: None }) && entry.path.is_absolute() {
+            self.tab_mut().navigate(Location::Local(entry.path), ctx);
+            return;
+        }
         let mut ticket = self.uri_ticket(PathBuf::new());
         let Location::Network { server } = &self.tab().location else {
             return;

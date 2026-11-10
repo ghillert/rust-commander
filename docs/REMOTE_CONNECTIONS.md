@@ -76,10 +76,13 @@ archive navigation and older `remote://CONNECTION_ID/path` locations still work.
   `/storage/emulated/0`. Large forward seeks may be slow because ADB streams
   from the start of the file.
 
-- **Mounted volumes.** Browse mounted drives under **Devices**. On macOS,
-  OrbStack appears there when it exposes its Docker folders at `~/OrbStack`.
-  Open `docker/images` for image files, `docker/containers` for container files,
-  or `docker/volumes` for volumes. OrbStack exposes images as read-only folders.
+- **Mounted volumes.** The **Network** pane and **Devices** sidebar both list
+  network volumes mounted by the OS, including macOS network volumes, Windows
+  mapped network drives, and common Linux network filesystems such as NFS,
+  SMB and SSHFS. Opening a volume browses its mounted folder directly. This
+  also works for container runtimes that expose files through a network mount.
+  If macOS denies access, check **System Settings → Privacy & Security →
+  Files and Folders → Rust Commander → Network Volumes**.
 
 NFS and Android connections are read-only. Regular files and folders can be
 browsed and copied out, including via drag and drop. Directory listings omit

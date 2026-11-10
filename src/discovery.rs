@@ -122,21 +122,41 @@ fn scan(
 }
 
 pub(crate) fn network_entries(mut publish: impl FnMut(Vec<Entry>)) -> Result<Vec<Entry>> {
-    fn entries<'a>(connections: impl IntoIterator<Item = &'a Connection>) -> Vec<Entry> {
-        let mut seen = std::collections::HashSet::new();
-        connections
-            .into_iter()
-            .filter(|c| seen.insert(&c.endpoint))
-            .map(|c| {
-                folder(
-                    format!("{} ({})", c.name, c.service.to_ascii_uppercase()),
-                    c.endpoint.clone(),
-                )
-            })
-            .collect()
+    let mounted: Vec<_> = crate::native_files::network_mounts()
+        .into_iter()
+        .map(|(name, path)| folder(name, path))
+        .collect();
+    if !mounted.is_empty() {
+        publish(mounted.clone());
     }
-    let found = browse(|connections| publish(entries(connections.values())))?;
-    Ok(entries(&found))
+
+    fn entries<'a>(
+        mounted: &[Entry],
+        connections: impl IntoIterator<Item = &'a Connection>,
+    ) -> Vec<Entry> {
+        let mut seen = std::collections::HashSet::new();
+        let mut rows = mounted.to_vec();
+        rows.extend(
+            connections
+                .into_iter()
+                .filter(|c| seen.insert(&c.endpoint))
+                .map(|c| {
+                    folder(
+                        format!("{} ({})", c.name, c.service.to_ascii_uppercase()),
+                        &c.endpoint,
+                    )
+                }),
+        );
+        rows
+    }
+    match browse(|connections| publish(entries(&mounted, connections.values()))) {
+        Ok(found) => Ok(entries(&mounted, &found)),
+        Err(_) if !mounted.is_empty() => {
+            crate::debug_log::record("warning", "Bonjour discovery failed while listing Network.");
+            Ok(mounted)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub(crate) fn server_entries(profile: &Connection, secrets: &Secrets) -> Result<Vec<Entry>> {
@@ -151,9 +171,9 @@ pub(crate) fn server_entries(profile: &Connection, secrets: &Secrets) -> Result<
         .collect())
 }
 
-fn folder(name: String, path: String) -> Entry {
+fn folder(name: String, path: impl Into<PathBuf>) -> Entry {
     Entry {
-        path: PathBuf::from(path),
+        path: path.into(),
         name,
         is_dir: true,
         is_symlink: false,
