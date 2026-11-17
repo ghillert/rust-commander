@@ -574,6 +574,12 @@ fn settings_footer_stays_visible_in_small_windows_with_large_text() {
 fn trash_emptying_requires_confirmation_and_cannot_resume_unattended() {
     let (_root, ui, state, _left, _right) = setup();
     ui.invoke_action("EmptyTrash".into());
+    ui.invoke_dialog_field("confirm".into(), "EMPTY".into());
+    let mut enter = slint::language::KeyEvent::default();
+    enter.text = slint::platform::Key::Return.into();
+    assert!(!ui.invoke_global_key(enter));
+    assert!(state.borrow().extra.dialog.is_some());
+    assert!(state.borrow().app.job.is_none());
     ui.invoke_dialog_field("confirm".into(), "EMPT".into());
     ui.invoke_dialog_action("accept".into());
     assert!(state.borrow().app.job.is_none());

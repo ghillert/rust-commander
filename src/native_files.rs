@@ -298,6 +298,39 @@ pub(crate) fn align_window_controls(
     }
 }
 
+/// In-app overlays cover the title bar's content. Keep AppKit's controls from
+/// floating above those overlays, then restore them when the overlay closes.
+#[cfg(target_os = "macos")]
+pub(crate) fn set_window_controls_hidden(handle: raw_window_handle::RawWindowHandle, hidden: bool) {
+    use objc2_app_kit::{NSView, NSWindowButton, NSWindowStyleMask};
+
+    let raw_window_handle::RawWindowHandle::AppKit(handle) = handle else {
+        return;
+    };
+    // Called on the UI thread while winit owns and keeps this NSView alive.
+    let view = unsafe { handle.ns_view.cast::<NSView>().as_ref() };
+    let Some(window) = view.window() else {
+        return;
+    };
+    if window.styleMask().contains(NSWindowStyleMask::FullScreen)
+        || window.isMiniaturized()
+        || !window.isVisible()
+    {
+        return;
+    }
+    for kind in [
+        NSWindowButton::CloseButton,
+        NSWindowButton::MiniaturizeButton,
+        NSWindowButton::ZoomButton,
+    ] {
+        if let Some(button) = window.standardWindowButton(kind)
+            && button.isHidden() != hidden
+        {
+            button.setHidden(hidden);
+        }
+    }
+}
+
 /// Read the pointer in client coordinates at a native file drop. winit 0.30
 /// does not emit CursorMoved while an external native drag is over the window.
 #[cfg(target_os = "macos")]

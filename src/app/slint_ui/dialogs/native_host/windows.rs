@@ -226,7 +226,14 @@ impl View {
                         emit(&Event::Action("accept".into()));
                         return true;
                     }
-                    let id = if value == "return" { "accept" } else { value };
+                    let id = if value == "return" {
+                        let Some(id) = self.model.form.default_action_id() else {
+                            return false;
+                        };
+                        id
+                    } else {
+                        value
+                    };
                     let Some((_, button)) = self
                         .buttons
                         .values()
@@ -305,7 +312,7 @@ impl View {
                 "BUTTON",
                 &tr(title),
                 WS_TABSTOP
-                    | if id == "accept" && self.model.form.default_action {
+                    | if self.model.form.default_action_id() == Some(id) {
                         BS_DEFPUSHBUTTON as u32
                     } else {
                         BS_PUSHBUTTON as u32
@@ -1402,17 +1409,12 @@ pub(super) fn run(model: Model, incoming: Incoming) -> i32 {
                             || (f.kind == 3 && SendMessageW(f.hwnd, CB_GETDROPPEDSTATE, 0, 0) != 0)
                             || f.id == "shortcut-filter"
                     });
-                    if !keep
-                        && view.model.form.default_action
-                        && view.model.form.error.is_empty()
-                        && view.model.form.buttons.iter().any(|(id, _, enabled)| {
-                            id == "accept"
-                                && (*enabled
-                                    || (view.model.form.kind == "prompt" && view.model.form.busy))
-                        })
-                    {
-                        emit(&Event::Action("accept".into()));
-                        continue;
+                    let button_focused = view.buttons.values().any(|(_, button)| *button == focus);
+                    if !keep && !button_focused && view.model.form.error.is_empty() {
+                        if let Some(action) = view.model.form.default_action_id() {
+                            emit(&Event::Action(action.into()));
+                            continue;
+                        }
                     }
                 }
                 if IsDialogMessageW(window, &message) == 0 {

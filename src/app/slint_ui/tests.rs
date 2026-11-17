@@ -1231,6 +1231,9 @@ fn native_forms_share_validation_and_never_default_to_discarding_work() {
     adapter.invalid_fields.clear();
     spec.kind = "exit".into();
     assert!(!adapter.native_dialog(&spec).default_action);
+    assert_eq!(adapter.native_dialog(&spec).default_action_id(), None);
+    spec.kind = "run-command".into();
+    assert_eq!(adapter.native_dialog(&spec).default_action_id(), None);
     spec.kind = "prompt".into();
     // Construct an actual trash prompt through the normal selection action.
     adapter.app.tab_mut().cursor = Some(left.join("alpha.txt"));
@@ -1240,6 +1243,36 @@ fn native_forms_share_validation_and_never_default_to_discarding_work() {
         Some(PromptKind::Trash(_))
     ));
     assert!(!adapter.native_dialog(&spec).default_action);
+    assert_eq!(adapter.native_dialog(&spec).default_action_id(), None);
+    adapter.app.prompt = None;
+    spec.kind = "quit".into();
+    spec.buttons = vec![
+        ("cancel".into(), "Cancel".into(), true),
+        ("confirm-quit".into(), "Quit".into(), true),
+    ];
+    assert_eq!(
+        adapter.native_dialog(&spec).default_action_id(),
+        Some("confirm-quit")
+    );
+    spec.buttons[1].2 = false;
+    assert_eq!(adapter.native_dialog(&spec).default_action_id(), None);
+}
+
+#[test]
+fn return_does_not_confirm_a_destructive_file_prompt() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, adapter, left, _right) = fixture();
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().app.tab_mut().cursor = Some(left.join("alpha.txt"));
+    ui.invoke_action("Trash".into());
+    assert!(state.borrow().app.prompt.is_some());
+    let mut enter = slint::language::KeyEvent::default();
+    enter.text = slint::platform::Key::Return.into();
+    assert!(!ui.invoke_global_key(enter));
+    assert!(state.borrow().app.prompt.is_some());
+    assert!(left.join("alpha.txt").exists());
 }
 
 #[test]

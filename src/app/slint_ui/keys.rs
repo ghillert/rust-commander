@@ -6,6 +6,15 @@ fn key_is(text: &str, key: slint::platform::Key) -> bool {
     text == value.as_str()
 }
 
+fn modal_cancel_key(event: &slint::language::KeyEvent) -> bool {
+    key_is(event.text.as_str(), slint::platform::Key::Escape)
+        || (cfg!(target_os = "macos")
+            && event.text.as_str() == "."
+            && event.modifiers.control
+            && !event.modifiers.shift
+            && !event.modifiers.alt)
+}
+
 pub(super) fn normalized_key(text: &str) -> Option<Key> {
     if text.chars().count() == 1
         && let Some(code) = text.chars().next().map(u32::from)
@@ -77,8 +86,17 @@ impl Adapter {
         // Slint maps macOS Command to `control` and physical Control to `meta`.
         let text = event.text.as_str();
         if self.quit_confirmation.is_some() {
-            if key_is(text, slint::platform::Key::Escape) {
+            if modal_cancel_key(&event) {
                 self.dialog_action("cancel");
+                return true;
+            }
+            if key_is(text, slint::platform::Key::Return)
+                && !event.modifiers.control
+                && !event.modifiers.shift
+                && !event.modifiers.alt
+                && self.native_dialog(&self.dialog()).default_action_id() == Some("confirm-quit")
+            {
+                self.dialog_action("confirm-quit");
                 return true;
             }
             return false;
@@ -111,11 +129,17 @@ impl Adapter {
         if self.parity_list_key(&event) {
             return true;
         }
-        if self.extra.dialog.is_some() && key_is(text, slint::platform::Key::Escape) {
+        if self.extra.dialog.is_some() && modal_cancel_key(&event) {
             self.extra.dialog = None;
             return true;
         }
-        if self.extra.dialog.is_some() && key_is(text, slint::platform::Key::Return) {
+        if self.extra.dialog.is_some()
+            && key_is(text, slint::platform::Key::Return)
+            && !event.modifiers.control
+            && !event.modifiers.shift
+            && !event.modifiers.alt
+            && self.native_dialog(&self.dialog()).default_action_id() == Some("accept")
+        {
             self.parity_dialog_action("accept");
             return true;
         }
@@ -140,7 +164,7 @@ impl Adapter {
             }
         }
         if self.blocked() {
-            if key_is(text, slint::platform::Key::Escape) {
+            if modal_cancel_key(&event) {
                 if !self.app.confirm_exit
                     && self
                         .app
@@ -175,7 +199,13 @@ impl Adapter {
                 self.action(&action);
                 return true;
             }
-            if key_is(text, slint::platform::Key::Return) && self.app.prompt.is_some() {
+            if key_is(text, slint::platform::Key::Return)
+                && !event.modifiers.control
+                && !event.modifiers.shift
+                && !event.modifiers.alt
+                && self.app.prompt.is_some()
+                && self.native_dialog(&self.dialog()).default_action_id() == Some("accept")
+            {
                 self.dialog_action("accept");
                 return true;
             }

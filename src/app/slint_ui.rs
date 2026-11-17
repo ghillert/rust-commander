@@ -1472,19 +1472,26 @@ impl Adapter {
             "prompt" | "exit" | "quit" | "open-with" | "open-as" | "donate" | "browser-url"
         ));
         ui.set_dialog_primary(
-            spec.buttons.iter().any(|(id, _, _)| id == "accept")
-                && matches!(
-                    spec.kind.as_str(),
-                    "pack" | "prompt" | "preferences" | "open-with" | "open-as"
-                )
-                && !self.app.prompt.as_ref().is_some_and(|prompt| {
-                    matches!(
-                        prompt.kind,
-                        PromptKind::Trash(_)
-                            | PromptKind::PermanentDelete(_)
-                            | PromptKind::RemoteDelete { .. }
+            spec.kind == "quit"
+                || (spec.buttons.iter().any(|(id, _, _)| id == "accept")
+                    && matches!(
+                        spec.kind.as_str(),
+                        "pack" | "prompt" | "preferences" | "open-with" | "open-as"
                     )
-                }),
+                    && !self.app.prompt.as_ref().is_some_and(|prompt| {
+                        matches!(
+                            prompt.kind,
+                            PromptKind::Trash(_)
+                                | PromptKind::PermanentDelete(_)
+                                | PromptKind::RemoteDelete { .. }
+                        )
+                    })),
+        );
+        ui.set_dialog_default_action(
+            self.native_dialog(&spec)
+                .default_action_id()
+                .unwrap_or("")
+                .into(),
         );
         ui.set_dialog_input_locked(self.desktop_commands.sending());
         ui.set_dialog_compact(matches!(
@@ -1556,6 +1563,13 @@ impl Adapter {
             },
         );
         ui.set_dialog_buttons(self.dialog_buttons.clone().into());
+        #[cfg(target_os = "macos")]
+        if let Some(window) = &self.app.native_window {
+            crate::native_files::set_window_controls_hidden(
+                window.0,
+                ui.get_viewer_visible() || !ui.get_dialog_title().is_empty(),
+            );
+        }
         if was_modal && !self.blocked() {
             // Removing a focused dialog otherwise leaves keyboard input without
             // a target (for example Cmd+Z immediately after confirming Copy).
@@ -2208,7 +2222,10 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                         let native = (callback.starts_with("native-")
                             && callback != "native-viewer")
                             || (cfg!(target_os = "macos") && callback == "settings-page");
-                        if native && !windows::native_form_ready() {
+                        if native
+                            && callback != "native-check-closed"
+                            && !windows::native_form_ready()
+                        {
                             return false;
                         }
                         let (callback, value) = payload.as_ref().unwrap().clone();
@@ -2338,6 +2355,13 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                                             return false;
                                         }
                                     }
+                                }
+                                #[cfg(target_os = "macos")]
+                                "native-key"
+                                | "native-check-field"
+                                | "native-check-focus"
+                                | "native-check-closed" => {
+                                    windows::native_extract_smoke(&callback, &value);
                                 }
                                 "field" => {
                                     let (id, value): (String, String) =

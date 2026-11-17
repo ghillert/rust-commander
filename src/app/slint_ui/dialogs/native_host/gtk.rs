@@ -237,7 +237,7 @@ impl View {
         footer.append(&spacer);
         for (id, title, enabled) in buttons.iter().filter(|(id, _, _)| id != "defaults") {
             let button = view.button(id, title, *enabled);
-            if id == "accept" && view.model.form.default_action {
+            if view.model.form.default_action_id() == Some(id.as_str()) {
                 button.add_css_class("suggested-action");
                 view.window.set_default_widget(Some(&button));
             }
@@ -514,6 +514,16 @@ impl View {
                 button.set_sensitive(*enabled);
             }
         }
+        let default_action = self.model.form.default_action_id();
+        for (id, button) in &self.buttons {
+            if default_action == Some(id.as_str()) {
+                button.add_css_class("suggested-action");
+            } else {
+                button.remove_css_class("suggested-action");
+            }
+        }
+        self.window
+            .set_default_widget(default_action.and_then(|id| self.buttons.get(id)));
         self.updating.set(false);
     }
     fn update(&mut self, model: Model) {

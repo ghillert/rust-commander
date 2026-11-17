@@ -164,6 +164,33 @@ pub(super) struct Dialog {
     pub error_page: Option<i32>,
 }
 impl Dialog {
+    /// The enabled action Return may invoke without moving focus to a button.
+    pub(super) fn default_action_id(&self) -> Option<&str> {
+        if !self.default_action {
+            return None;
+        }
+        let id = match self.kind.as_str() {
+            "quit" => "confirm-quit",
+            "connections" if !self.buttons.iter().any(|(id, _, _)| id == "accept") => {
+                "connection-new"
+            }
+            _ => "accept",
+        };
+        self.buttons
+            .iter()
+            .find(|(button_id, _, enabled)| {
+                // A pending conflict preflight can finish after the user presses Return;
+                // the prompt controller defers that submission until it is ready.
+                button_id == id
+                    && (*enabled
+                        || (self.kind == "prompt"
+                            && self.busy
+                            && id == "accept"
+                            && self.error.is_empty()))
+            })
+            .map(|(button_id, _, _)| button_id.as_str())
+    }
+
     pub(super) fn native_pickers(&mut self, prompt: Option<&Prompt>) {
         for field in &mut self.fields {
             if !matches!(field.kind, 0 | 5) {
@@ -293,15 +320,16 @@ fn parse_policy(value: &str) -> crate::transfer::ConflictPolicy {
 impl Adapter {
     pub(super) fn native_dialog(&self, spec: &Dialog) -> Dialog {
         let mut native = spec.clone();
-        native.default_action = !matches!(spec.kind.as_str(), "exit" | "quit" | "empty-trash")
-            && !self.app.prompt.as_ref().is_some_and(|p| {
-                matches!(
-                    p.kind,
-                    PromptKind::Trash(_)
-                        | PromptKind::PermanentDelete(_)
-                        | PromptKind::RemoteDelete { .. }
-                )
-            });
+        native.default_action =
+            !matches!(spec.kind.as_str(), "exit" | "empty-trash" | "run-command")
+                && !self.app.prompt.as_ref().is_some_and(|p| {
+                    matches!(
+                        p.kind,
+                        PromptKind::Trash(_)
+                            | PromptKind::PermanentDelete(_)
+                            | PromptKind::RemoteDelete { .. }
+                    )
+                });
         native.error_page = self
             .invalid_fields
             .keys()

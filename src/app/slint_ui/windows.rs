@@ -199,6 +199,15 @@ pub(super) fn entries() -> Vec<(usize, String)> {
 pub(super) fn native_extract_smoke(command: &str, value: &str) {
     SESSIONS.with(|sessions| {
         let sessions = sessions.borrow();
+        if command == "native-check-closed" {
+            assert!(
+                sessions
+                    .iter()
+                    .all(|session| !session.state.borrow().native_extract.active()),
+                "Native sheets must be closed"
+            );
+            return;
+        }
         let session = sessions
             .iter()
             .find(|s| s.state.borrow().native_extract.active())
@@ -957,6 +966,33 @@ mod tests {
 
         let ui = open(&[root.path().into()], Ok(settings)).unwrap();
         ui.invoke_action("Quit".into());
+        tick();
+        assert!(entries().is_empty());
+    }
+
+    #[test]
+    fn quit_confirmation_return_confirms_and_escape_cancels() {
+        i_slint_backend_testing::init_no_event_loop();
+        let _reset = Reset;
+        let root = tempfile::tempdir().unwrap();
+        let ui = open(&[root.path().into()], Ok(Settings::default())).unwrap();
+        RUNTIME.with(|r| r.borrow_mut().as_mut().unwrap().settings_valid = false);
+
+        ui.invoke_action("Quit".into());
+        tick();
+        assert_eq!(ui.get_dialog_default_action(), "confirm-quit");
+        let mut escape = slint::language::KeyEvent::default();
+        escape.text = slint::platform::Key::Escape.into();
+        assert!(ui.invoke_global_key(escape));
+        tick();
+        assert_eq!(entries().len(), 1);
+        assert!(ui.get_dialog_title().is_empty());
+
+        ui.invoke_action("Quit".into());
+        tick();
+        let mut enter = slint::language::KeyEvent::default();
+        enter.text = slint::platform::Key::Return.into();
+        assert!(ui.invoke_global_key(enter));
         tick();
         assert!(entries().is_empty());
     }

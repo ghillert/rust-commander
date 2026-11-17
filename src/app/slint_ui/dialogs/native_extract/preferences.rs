@@ -294,24 +294,19 @@ impl Page {
                     ),
                 ),
                 2 => {
-                    let check = unsafe {
-                        NSButton::checkboxWithTitle_target_action(
-                            &title,
-                            Some(target),
-                            Some(sel!(changed:)),
-                            mtm,
-                        )
-                    };
+                    let check = sheet_button(mtm, rect(12.0, y + 6.0, 690.0, 26.0));
+                    check.setTitle(&title);
+                    check.setButtonType(NSButtonType::Switch);
+                    unsafe {
+                        check.setTarget(Some(target));
+                        check.setAction(Some(sel!(changed:)));
+                    }
                     check.setFrame(rect(12.0, y + 6.0, 690.0, 26.0));
                     check.setEnabled(field.id != "column-Name");
                     Widget::Check(check)
                 }
                 3 => {
-                    let choice = NSPopUpButton::initWithFrame_pullsDown(
-                        NSPopUpButton::alloc(mtm),
-                        rect(218.0, y + 4.0, 486.0, 28.0),
-                        false,
-                    );
+                    let choice = sheet_choice(mtm, rect(218.0, y + 4.0, 486.0, 28.0));
                     for value in &field.choices {
                         choice.addItemWithTitle(&translated(value));
                     }
@@ -342,14 +337,12 @@ impl Page {
             y -= 36.0;
             doc.addSubview(&label(mtm, &row.title, rect(12.0, y + 6.0, 480.0, 24.0)));
             for (i, (id, title, enabled)) in row.actions.iter().enumerate() {
-                let button = unsafe {
-                    NSButton::buttonWithTitle_target_action(
-                        &translated(title),
-                        Some(target),
-                        Some(sel!(perform:)),
-                        mtm,
-                    )
-                };
+                let button = sheet_button(mtm, rect(510.0 + i as f64 * 96.0, y + 2.0, 92.0, 30.0));
+                button.setTitle(&translated(title));
+                unsafe {
+                    button.setTarget(Some(target));
+                    button.setAction(Some(sel!(perform:)));
+                }
                 button.setBezelStyle(NSBezelStyle::Push);
                 button.setFrame(rect(510.0 + i as f64 * 96.0, y + 2.0, 92.0, 30.0));
                 button.setEnabled(*enabled);

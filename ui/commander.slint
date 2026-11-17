@@ -579,6 +579,7 @@ export component CommanderWindow inherits Window {
     in property <bool> dialog-compact;
     in property <bool> dialog-input-locked;
     in property <bool> dialog-primary;
+    in property <string> dialog-default-action;
     in property <bool> dialog-simple;
     in property <[FormRow]> dialog-rows;
     in property <[Command]> dialog-buttons;
@@ -1511,7 +1512,7 @@ export component CommanderWindow inherits Window {
                                 text <=> field.value;
                                 input-type: field.kind == 1 ? InputType.password : InputType.text;
                                 label: field.title;
-                                accepted(value) => { root.dialog-action("accept"); }
+                                accepted(value) => { if root.dialog-default-action == "accept" { root.dialog-action("accept"); } }
                                 edited(value) => { root.dialog-field(field.id, value); }
                             }
                             if !DialogTheme.macos && (field.kind == 0 || field.kind == 1 || field.kind == 5): StandardDialogField {
@@ -1520,7 +1521,7 @@ export component CommanderWindow inherits Window {
                                 text <=> field.value;
                                 input-type: field.kind == 1 ? InputType.password : InputType.text;
                                 label: field.title;
-                                accepted(value) => { root.dialog-action("accept"); }
+                                accepted(value) => { if root.dialog-default-action == "accept" { root.dialog-action("accept"); } }
                                 edited(value) => { root.dialog-field(field.id, value); }
                             }
                             if field.kind == 2: CheckBox { enabled: !root.dialog-input-locked; text: field.title; checked: field.value == "true"; toggled => { root.dialog-field(field.id, self.checked ? "true" : "false"); } }
@@ -1597,7 +1598,7 @@ export component CommanderWindow inherits Window {
                     padding: 0px; spacing: 8px; vertical-stretch: 0;
                     Rectangle { horizontal-stretch: 1; }
                     for command[index] in root.dialog-buttons: HorizontalBox {padding:0px;spacing:0px;horizontal-stretch:0;
-                        if index < 4: DialogButton { text: Words.translate(command.title,Words.version); primary:root.dialog-primary && command.id == "accept"; enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
+                        if index < 4: DialogButton { text: Words.translate(command.title,Words.version); primary:root.dialog-primary && command.id == root.dialog-default-action; enabled: command.enabled; clicked => { root.dialog-action(command.id); } }
                     }
                 }
                 if root.dialog-buttons.length > 4: HorizontalBox {

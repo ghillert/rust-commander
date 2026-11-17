@@ -8,9 +8,10 @@ use objc2::{
 use objc2_app_kit::{
     NSAccessibility, NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
     NSBackingStoreType, NSBezelStyle, NSButton, NSButtonCell, NSButtonType, NSColor, NSControl,
-    NSControlTextEditingDelegate, NSFont, NSPopUpButton, NSScrollView, NSSecureTextField,
-    NSTextDelegate, NSTextField, NSTextFieldBezelStyle, NSTextFieldDelegate, NSTextView,
-    NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
+    NSControlTextEditingDelegate, NSEvent, NSEventModifierFlags, NSFont, NSPopUpButton,
+    NSScrollView, NSSecureTextField, NSTextDelegate, NSTextField, NSTextFieldBezelStyle,
+    NSTextFieldDelegate, NSTextView, NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate,
+    NSWindowStyleMask,
 };
 use objc2_foundation::{
     MainThreadMarker, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -90,6 +91,71 @@ impl Widget {
         }
     }
 }
+
+define_class!(
+    // SAFETY: This is an NSButton with the standard AppKit behavior. Its key-view
+    // eligibility is local to our sheets, so Tab can reach their native controls
+    // even when system-wide Keyboard Navigation is disabled.
+    #[unsafe(super = NSButton)]
+    #[thread_kind = MainThreadOnly]
+    #[name = "RustCommanderSheetButton"]
+    struct SheetButton;
+    impl SheetButton {
+        #[unsafe(method(canBecomeKeyView))]
+        fn can_become_key_view(&self) -> bool {
+            self.isEnabled() && !self.isHidden()
+        }
+
+        #[unsafe(method(keyDown:))]
+        fn key_down(&self, event: &NSEvent) {
+            if event.keyCode() == 49
+                && !event.modifierFlags().intersects(
+                    NSEventModifierFlags::Command
+                        | NSEventModifierFlags::Control
+                        | NSEventModifierFlags::Option,
+                )
+            {
+                if !event.isARepeat() {
+                    // The system may not dispatch Space to a default button when
+                    // Keyboard Navigation is off. Activate the focused native control.
+                    unsafe { self.performClick(None) };
+                }
+                return;
+            }
+            let _: () = unsafe { msg_send![super(self), keyDown: event] };
+        }
+    }
+);
+
+define_class!(
+    // SAFETY: This remains a native pop-up button and only opts into Tab focus
+    // inside Rust Commander's sheets.
+    #[unsafe(super = NSPopUpButton)]
+    #[thread_kind = MainThreadOnly]
+    #[name = "RustCommanderSheetChoice"]
+    struct SheetChoice;
+    impl SheetChoice {
+        #[unsafe(method(canBecomeKeyView))]
+        fn can_become_key_view(&self) -> bool {
+            self.isEnabled() && !self.isHidden()
+        }
+    }
+);
+
+fn sheet_button(mtm: MainThreadMarker, frame: NSRect) -> Retained<NSButton> {
+    // SAFETY: NSButton's designated frame initializer is inherited by SheetButton.
+    let button: Retained<SheetButton> =
+        unsafe { msg_send![SheetButton::alloc(mtm), initWithFrame: frame] };
+    button.into_super()
+}
+
+fn sheet_choice(mtm: MainThreadMarker, frame: NSRect) -> Retained<NSPopUpButton> {
+    // SAFETY: NSPopUpButton's frame initializer is inherited by SheetChoice.
+    let choice: Retained<SheetChoice> =
+        unsafe { msg_send![SheetChoice::alloc(mtm), initWithFrame: frame, pullsDown: false] };
+    choice.into_super()
+}
+
 #[derive(Default)]
 struct TargetIvars {
     events: Events,
@@ -258,6 +324,51 @@ impl Host {
             .as_ref()
             .expect("Native Extract sheet must be open");
         match command {
+            "native-key" => {
+                use objc2_app_kit::{NSApplication, NSEvent, NSEventModifierFlags, NSEventType};
+                let (characters, unmodified, key_code, flags) = match value {
+                    "Return" => ("\r", "\r", 36, NSEventModifierFlags::empty()),
+                    "Escape" => ("\u{1b}", "\u{1b}", 53, NSEventModifierFlags::empty()),
+                    "Tab" => ("\t", "\t", 48, NSEventModifierFlags::empty()),
+                    "ShiftTab" => ("\u{19}", "\u{19}", 48, NSEventModifierFlags::Shift),
+                    "Space" => (" ", " ", 49, NSEventModifierFlags::empty()),
+                    "CommandPeriod" => (".", ".", 47, NSEventModifierFlags::Command),
+                    _ => panic!("Unknown native key {value}"),
+                };
+                let characters = NSString::from_str(characters);
+                let unmodified = NSString::from_str(unmodified);
+                let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
+                    NSEventType::KeyDown,
+                    NSPoint::new(0.0, 0.0),
+                    flags,
+                    0.0,
+                    sheet.window.windowNumber(),
+                    None,
+                    &characters,
+                    &unmodified,
+                    false,
+                    key_code,
+                )
+                .expect("Native key event");
+                let application = NSApplication::sharedApplication(sheet.window.mtm());
+                application.postEvent_atStart(&event, false);
+                if value == "Space" {
+                    let release = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
+                        NSEventType::KeyUp,
+                        NSPoint::new(0.0, 0.0),
+                        flags,
+                        0.0,
+                        sheet.window.windowNumber(),
+                        None,
+                        &characters,
+                        &unmodified,
+                        false,
+                        key_code,
+                    )
+                    .expect("Native key release");
+                    application.postEvent_atStart(&release, false);
+                }
+            }
             "native-page" => {
                 sheet
                     .preferences
@@ -279,6 +390,33 @@ impl Host {
                     .events
                     .borrow_mut()
                     .push(Event::Field(id, widget.value()));
+            }
+            "native-check-field" => {
+                let (id, expected): (String, String) = serde_json::from_str(value).unwrap();
+                let fields = sheet.target.ivars().fields.borrow();
+                let (_, widget) = fields
+                    .iter()
+                    .find(|(key, _)| key == &id)
+                    .expect("Native field must exist");
+                assert_eq!(widget.value(), expected, "Native field {id}");
+            }
+            "native-check-focus" => {
+                let responder = sheet.window.firstResponder().expect("Keyboard focus");
+                let focused = sheet.buttons.iter().find(|(_, button)| {
+                    std::ptr::eq(
+                        &*responder as *const _ as *const (),
+                        &**button as *const _ as *const (),
+                    )
+                });
+                let (id, _) = focused.unwrap_or_else(|| {
+                    panic!(
+                        "Tab must move focus to a native action button; responder: {:?}",
+                        responder.description()
+                    )
+                });
+                if value != "button" {
+                    assert_eq!(id, value, "Tab must follow the visible action order");
+                }
             }
             "native-action" if value == "close" => sheet.window.performClose(None),
             "native-action" if value == "return" => {
@@ -328,7 +466,13 @@ impl Host {
                             })
                         })
                         .expect("Native default cell must belong to a form button");
-                    assert_eq!(id, "accept", "Native default action must be affirmative");
+                    assert!(
+                        matches!(id.as_str(), "accept" | "confirm-quit" | "connection-new"),
+                        "Native default action must be affirmative"
+                    );
+                    if sheet.kind == "quit" {
+                        assert_eq!(id, "confirm-quit");
+                    }
                     button
                 });
                 for (_, button) in &sheet.buttons {
@@ -351,6 +495,35 @@ impl Host {
                         .to_string(),
                     "\u{1b}"
                 );
+                for (id, widget) in sheet.target.ivars().fields.borrow().iter() {
+                    if matches!(widget, Widget::Check(_) | Widget::Choice(..))
+                        && widget.control().is_some_and(NSControl::isEnabled)
+                    {
+                        assert!(widget.view().canBecomeKeyView(), "Tab must reach {id}");
+                    }
+                }
+                for (id, button) in &sheet.buttons {
+                    if button.isEnabled() {
+                        assert!(button.canBecomeKeyView(), "Tab must reach {id}");
+                    }
+                }
+                if sheet.kind == "quit" {
+                    let fields = sheet.target.ivars().fields.borrow();
+                    let checkbox = fields
+                        .iter()
+                        .find(|(id, _)| id == "quit-show-next-time")
+                        .expect("Quit confirmation checkbox");
+                    assert!(
+                        sheet.window.firstResponder().is_some_and(|responder| {
+                            std::ptr::eq(
+                                &*responder as *const _ as *const (),
+                                checkbox.1.view() as *const _ as *const (),
+                            )
+                        }),
+                        "Quit checkbox must receive initial keyboard focus; responder: {:?}",
+                        sheet.window.firstResponder()
+                    );
+                }
             }
             _ => panic!("Unknown native smoke command"),
         }
@@ -462,6 +635,7 @@ struct Sheet {
     review: Retained<NSButton>,
     busy: Retained<objc2_app_kit::NSProgressIndicator>,
     buttons: Vec<(String, Retained<NSButton>)>,
+    default_action: Option<String>,
     schema: Vec<Field>,
     preferences: Option<preferences::View>,
     row_schema: Vec<super::Row>,
@@ -522,14 +696,12 @@ impl Sheet {
         // SAFETY: Native subviews are retained by the content view.
         content.addSubview(&body);
         content.addSubview(&error);
-        let review = unsafe {
-            NSButton::buttonWithTitle_target_action(
-                &translated("Review invalid setting"),
-                Some(&target),
-                Some(sel!(review:)),
-                mtm,
-            )
-        };
+        let review = sheet_button(mtm, rect(612.0, 54.0, 184.0, 28.0));
+        review.setTitle(&translated("Review invalid setting"));
+        unsafe {
+            review.setTarget(Some(&target));
+            review.setAction(Some(sel!(review:)));
+        }
         review.setBezelStyle(NSBezelStyle::Push);
         review.setFrame(rect(612.0, 54.0, 184.0, 28.0));
         review.setHidden(true);
@@ -551,10 +723,11 @@ impl Sheet {
         } else {
             596.0
         };
-        // Cocoa places the default action on the trailing edge, Cancel next to it.
+        // Cocoa places the affirmative action on the trailing edge, Cancel next to it.
+        let default_action = spec.default_action_id();
         let mut footer = spec.buttons.iter().collect::<Vec<_>>();
         footer.sort_by_key(|(id, _, _)| match id.as_str() {
-            "accept" | "connection-new" => 0,
+            "accept" | "confirm-quit" | "connection-new" => 0,
             "cancel" => 1,
             "apply" => 2,
             "apply-all" => 3,
@@ -565,14 +738,12 @@ impl Sheet {
             let id = id.as_str();
             {
                 let width = (title.chars().count() as f64 * 8.0 + 28.0).max(84.0);
-                let button = unsafe {
-                    NSButton::buttonWithTitle_target_action(
-                        &translated(title),
-                        Some(&target),
-                        Some(sel!(perform:)),
-                        mtm,
-                    )
-                };
+                let button = sheet_button(mtm, rect(0.0, 0.0, width, 32.0));
+                button.setTitle(&translated(title));
+                unsafe {
+                    button.setTarget(Some(&target));
+                    button.setAction(Some(sel!(perform:)));
+                }
                 button.setBezelStyle(NSBezelStyle::Push);
                 button.setFrame(rect(
                     if matches!(id, "defaults" | "connections-home" | "connections-back") {
@@ -585,14 +756,16 @@ impl Sheet {
                     32.0,
                 ));
                 button.setTag(buttons.len() as isize);
-                if matches!(id, "accept" | "connection-new") && spec.default_action {
+                if default_action == Some(id) {
                     let cell = button.cell().unwrap().downcast::<NSButtonCell>().unwrap();
                     window.setDefaultButtonCell(Some(&cell));
                 }
-                button.setKeyEquivalent(&NSString::from_str(match id {
-                    "accept" | "connection-new" if spec.default_action => "\r",
-                    "cancel" => "\u{1b}",
-                    _ => "",
+                button.setKeyEquivalent(&NSString::from_str(if default_action == Some(id) {
+                    "\r"
+                } else if id == "cancel" {
+                    "\u{1b}"
+                } else {
+                    ""
                 }));
                 content.addSubview(&button);
                 target.ivars().actions.borrow_mut().push(id.into());
@@ -614,6 +787,7 @@ impl Sheet {
             review,
             busy,
             buttons,
+            default_action: default_action.map(str::to_owned),
             schema: Vec::new(),
             preferences: None,
             row_schema: Vec::new(),
@@ -622,10 +796,28 @@ impl Sheet {
         sheet
             .parent
             .beginSheet_completionHandler(&sheet.window, None);
-        if let Some((_, Widget::Text(field))) = sheet.target.ivars().fields.borrow().first() {
-            sheet.window.makeFirstResponder(Some(field));
-            unsafe {
-                field.selectText(None);
+        {
+            let fields = sheet.target.ivars().fields.borrow();
+            if let Some((_, widget)) = fields
+                .iter()
+                .find(|(_, widget)| !matches!(widget, Widget::Note(_)))
+            {
+                match widget {
+                    Widget::Text(field) => {
+                        sheet.window.makeFirstResponder(Some(field));
+                        unsafe { field.selectText(None) };
+                    }
+                    Widget::Multiline(view, _) => {
+                        sheet.window.makeFirstResponder(Some(view));
+                    }
+                    _ => {
+                        sheet.window.makeFirstResponder(Some(widget.view()));
+                    }
+                }
+            } else if let Some((_, button)) = sheet.buttons.iter().find(|(id, _)| {
+                Some(id.as_str()) == default_action || (default_action.is_none() && id == "cancel")
+            }) {
+                sheet.window.makeFirstResponder(Some(button));
             }
         }
         sheet
@@ -792,7 +984,7 @@ impl Sheet {
                     }
                     unsafe {
                         // Return submits; leaving the field never submits.
-                        if spec.default_action
+                        if spec.default_action_id() == Some("accept")
                             && let Some(index) =
                                 self.buttons.iter().position(|(id, _)| id == "accept")
                         {
@@ -806,10 +998,7 @@ impl Sheet {
                 }
                 2 | 8 => {
                     let check = if field.kind == 8 {
-                        let button = NSButton::initWithFrame(
-                            NSButton::alloc(mtm),
-                            rect(8.0, y + 6.0, 20.0, 24.0),
-                        );
+                        let button = sheet_button(mtm, rect(8.0, y + 6.0, 20.0, 24.0));
                         button.setTitle(&NSString::from_str(""));
                         button.setButtonType(NSButtonType::PushOnPushOff);
                         button.setBezelStyle(NSBezelStyle::Disclosure);
@@ -825,14 +1014,13 @@ impl Sheet {
                         ));
                         button
                     } else {
-                        let button = unsafe {
-                            NSButton::checkboxWithTitle_target_action(
-                                &title,
-                                Some(&self.target),
-                                Some(sel!(changed:)),
-                                mtm,
-                            )
-                        };
+                        let button = sheet_button(mtm, rect(8.0, y + 6.0, text_width, 24.0));
+                        button.setTitle(&title);
+                        button.setButtonType(NSButtonType::Switch);
+                        unsafe {
+                            button.setTarget(Some(&self.target));
+                            button.setAction(Some(sel!(changed:)));
+                        }
                         button.setFrame(rect(8.0, y + 6.0, text_width, 24.0));
                         button
                     };
@@ -868,10 +1056,9 @@ impl Sheet {
                     Widget::Multiline(text, scroll)
                 }
                 3 => {
-                    let choice = NSPopUpButton::initWithFrame_pullsDown(
-                        NSPopUpButton::alloc(mtm),
+                    let choice = sheet_choice(
+                        mtm,
                         rect(control_x - 2.0, y + 4.0, control_width + 4.0, 28.0),
-                        false,
                     );
                     for value in &field.choices {
                         choice.addItemWithTitle(&translated(value));
@@ -902,14 +1089,12 @@ impl Sheet {
             doc.addSubview(widget.view());
             widgets.push((field.id.clone(), widget));
             if let Some(picker) = field.picker {
-                let button = unsafe {
-                    NSButton::buttonWithTitle_target_action(
-                        &translated("Browse…"),
-                        Some(&self.target),
-                        Some(sel!(browse:)),
-                        mtm,
-                    )
-                };
+                let button = sheet_button(mtm, rect(464.0, y + 4.0, 96.0, 28.0));
+                button.setTitle(&translated("Browse…"));
+                unsafe {
+                    button.setTarget(Some(&self.target));
+                    button.setAction(Some(sel!(browse:)));
+                }
                 button.setBezelStyle(NSBezelStyle::Push);
                 button.setFrame(rect(464.0, y + 4.0, 96.0, 28.0));
                 let mut pickers = self.target.ivars().pickers.borrow_mut();
@@ -954,15 +1139,13 @@ impl Sheet {
                 8.0
             };
             for (id, title, enabled) in &row.actions {
-                let button = unsafe {
-                    NSButton::buttonWithTitle_target_action(
-                        &translated(title),
-                        Some(&self.target),
-                        Some(sel!(perform:)),
-                        mtm,
-                    )
-                };
                 let width = action_width(title);
+                let button = sheet_button(mtm, rect(x, y + 14.0, width, 28.0));
+                button.setTitle(&translated(title));
+                unsafe {
+                    button.setTarget(Some(&self.target));
+                    button.setAction(Some(sel!(perform:)));
+                }
                 button.setBezelStyle(NSBezelStyle::Push);
                 button.setFrame(rect(
                     x,
@@ -1052,6 +1235,9 @@ impl Sheet {
             let _: () = msg_send![&*self.window, setAppearance: appearance.as_deref()];
         }
         let widgets = self.target.ivars().fields.borrow();
+        let text_action = (spec.default_action_id() == Some("accept"))
+            .then(|| self.buttons.iter().position(|(id, _)| id == "accept"))
+            .flatten();
         if spec.kind != "preferences" {
             for ((_, widget), field) in widgets.iter().zip(&spec.fields) {
                 widget.update(&field.value);
@@ -1066,6 +1252,21 @@ impl Sheet {
                     .find(|f| f.kind == 11 && f.choices.get(1) == Some(id))
                 {
                     widget.update(&field.choices[0]);
+                }
+            }
+        }
+        for (_, widget) in widgets.iter() {
+            if let Widget::Text(text) = widget {
+                unsafe {
+                    text.setTarget(if text_action.is_some() {
+                        Some(&self.target)
+                    } else {
+                        None
+                    });
+                    text.setAction(text_action.map(|_| sel!(perform:)));
+                    if let Some(index) = text_action {
+                        text.setTag(index as isize);
+                    }
                 }
             }
         }
@@ -1105,6 +1306,26 @@ impl Sheet {
                     .iter()
                     .any(|(key, _, enabled)| key == id && *enabled),
             );
+        }
+        let default_action = spec.default_action_id();
+        if self.default_action.as_deref() != default_action {
+            self.window.setDefaultButtonCell(None);
+            for (id, button) in &self.buttons {
+                if default_action == Some(id.as_str()) {
+                    let cell = button.cell().unwrap().downcast::<NSButtonCell>().unwrap();
+                    self.window.setDefaultButtonCell(Some(&cell));
+                }
+                button.setKeyEquivalent(&NSString::from_str(
+                    if default_action == Some(id.as_str()) {
+                        "\r"
+                    } else if id == "cancel" {
+                        "\u{1b}"
+                    } else {
+                        ""
+                    },
+                ));
+            }
+            self.default_action = default_action.map(str::to_owned);
         }
     }
 }
