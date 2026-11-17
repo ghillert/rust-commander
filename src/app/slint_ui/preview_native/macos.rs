@@ -60,7 +60,11 @@ impl Platform {
         let target: Retained<Target> = unsafe { msg_send![super(target), init] };
         let button = unsafe {
             NSButton::buttonWithTitle_target_action(
-                &NSString::from_str(&tr("Open externally")),
+                &NSString::from_str(&tr(if ui.get_preview_image_file() {
+                    "Open full view"
+                } else {
+                    "Open externally"
+                })),
                 Some(&target),
                 Some(sel!(perform:)),
                 mtm,
@@ -93,7 +97,11 @@ impl Platform {
             unsafe { NSAppearanceNameAqua }
         });
         self.overlay.setAppearance(appearance.as_deref());
-        let label = NSString::from_str(&tr("Open externally"));
+        let label = NSString::from_str(&tr(if ui.get_preview_image_file() {
+            "Open full view"
+        } else {
+            "Open externally"
+        }));
         self.button.setTitle(&label);
         self.button.setAccessibilityLabel(Some(&label));
         self.button.setEnabled(ui.get_preview_can_open());
@@ -113,7 +121,14 @@ impl Platform {
     pub fn snapshot(&self, ui: &CommanderWindow, path: &Path) -> bool {
         use objc2_foundation::NSDictionary;
         // The smoke test verifies the actual AppKit control and its placement.
-        assert_eq!(self.button.title().to_string(), tr("Open externally"));
+        assert_eq!(
+            self.button.title().to_string(),
+            tr(if ui.get_preview_image_file() {
+                "Open full view"
+            } else {
+                "Open externally"
+            })
+        );
         assert!(self.button.frame().size.width > 0.0);
         let Ok(buffer) = ui.window().take_snapshot() else {
             return false;

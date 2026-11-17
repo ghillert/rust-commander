@@ -71,7 +71,12 @@ impl Platform {
             let button = CreateWindowExW(
                 0,
                 wide("BUTTON").as_ptr(),
-                wide(&tr("Open externally")).as_ptr(),
+                wide(&tr(if ui.get_preview_image_file() {
+                    "Open full view"
+                } else {
+                    "Open externally"
+                }))
+                .as_ptr(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
                 0,
                 0,
@@ -142,7 +147,15 @@ impl Platform {
                 self.font = font;
                 self.scale = scale;
             }
-            SetWindowTextW(self.state.button, wide(&tr("Open externally")).as_ptr());
+            SetWindowTextW(
+                self.state.button,
+                wide(&tr(if ui.get_preview_image_file() {
+                    "Open full view"
+                } else {
+                    "Open externally"
+                }))
+                .as_ptr(),
+            );
             EnableWindow(self.state.button, i32::from(ui.get_preview_can_open()));
             MoveWindow(
                 self.state.button,

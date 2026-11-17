@@ -81,11 +81,19 @@ impl Adapter {
             && !self.blocked()
             && !self.app.exiting
             && self.app.preferences.preview
-            && self.app.preview.external_video_path() == Some(path.as_path())
         {
-            self.app.remember_opened_file(path.clone());
-            if let Err(error) = open::that_detached(path) {
-                self.app.fail(error);
+            if self.app.preview.external_video_path() == Some(path.as_path()) {
+                self.app.remember_opened_file(path.clone());
+                if let Err(error) = open::that_detached(path) {
+                    self.app.fail(error);
+                }
+            } else if self.app.preview.image.is_some()
+                && let Some((location, entry)) = self.app.preview.target.clone()
+                && entry.path == path
+                && crate::icons::file_icon(&entry.name, entry.is_dir) == "image"
+            {
+                self.app
+                    .view_as(entry, false, location, crate::viewer::Mode::Auto, &self.ctx);
             }
         }
     }
@@ -114,5 +122,31 @@ mod tests {
         host.sync(&ui, Some("second.mp4".into()), false);
         assert!(host.take_clicked().is_none());
         assert!(!ui.get_preview_native());
+    }
+
+    #[test]
+    fn native_image_click_opens_the_preview_target() {
+        i_slint_backend_testing::init_no_event_loop();
+        let (_root, mut adapter, left, _) = crate::app::slint_ui::tests::fixture();
+        let path = left.join("preview.png");
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]))
+            .save(&path)
+            .unwrap();
+        let entry = filesystem::entry_from_path(&path).unwrap();
+        adapter.app.preferences.preview = true;
+        adapter
+            .app
+            .preview
+            .select(Location::Local(left), Some(entry));
+        adapter.app.preview.image = Some(crate::viewer::RasterImage {
+            size: [2, 2],
+            pixels: vec![[255, 0, 0, 255]; 4],
+        });
+        let ui = CommanderWindow::new().unwrap();
+        adapter.sync(&ui);
+        assert_eq!(adapter.native_preview.target, Some(path));
+        adapter.native_preview.clicked.set(true);
+        adapter.preview_native_events();
+        assert!(adapter.app.pending_view.is_some());
     }
 }

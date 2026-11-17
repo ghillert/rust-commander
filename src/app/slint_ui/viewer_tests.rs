@@ -640,6 +640,41 @@ fn video_preview_replaces_source_controls_with_metadata_and_local_open_action() 
 }
 
 #[test]
+fn image_preview_opens_the_displayed_file_in_the_full_viewer() {
+    let (_root, ui, state, path) = setup("preview.png", &[]);
+    image::RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]))
+        .save(&path)
+        .unwrap();
+    let entry = filesystem::entry_from_path(&path).unwrap();
+    {
+        let mut a = state.borrow_mut();
+        let location = a.app.tab().location.clone();
+        a.app.preferences.preview = true;
+        a.app.preview.select(location, Some(entry));
+    }
+    for _ in 0..1500 {
+        let ready = {
+            let mut a = state.borrow_mut();
+            let ctx = a.ctx.clone();
+            a.app.preview.poll(&ctx);
+            a.sync(&ui);
+            a.app.preview.image.is_some()
+        };
+        if ready {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(ui.get_preview_image_file());
+    assert!(ui.get_preview_can_open());
+    ui.invoke_open_preview_image();
+    wait(&state, &ui);
+    assert!(ui.get_viewer_visible());
+    assert_eq!(ui.get_viewer_image().size().width, 2);
+    assert_eq!(ui.get_viewer_image().size().height, 2);
+}
+
+#[test]
 fn utf16_source_views_preserve_the_bom_encoding_and_line_endings() {
     let source = "<root>\r\n\t<name>café 雪</name>\r\n</root>\r\n";
     let bytes: Vec<u8> = [0xff, 0xfe]

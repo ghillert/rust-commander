@@ -260,6 +260,28 @@ fn pane_orientation_and_divider_preserve_drop_target_routing() {
     assert_eq!(ui.invoke_drop_side(1000.0, 400.0), 1);
 }
 #[test]
+fn side_panels_resize_and_restore_their_saved_widths() {
+    let (_root, ui, state, _left, _right) = setup();
+    ui.invoke_resize_side_panel(0, 250.0, true);
+    ui.invoke_resize_side_panel(1, 310.0, true);
+    ui.invoke_resize_side_panel(2, 420.0, true);
+    {
+        let a = state.borrow();
+        assert_eq!(a.app.preferences.sidebar_width, 250.0);
+        assert_eq!(a.app.preferences.tree_width, 310.0);
+        assert_eq!(a.app.preferences.preview_width, 420.0);
+    }
+    ui.invoke_action("ToggleSidebar".into());
+    ui.invoke_action("Preview".into());
+    assert!(!ui.get_sidebar_visible());
+    assert!(ui.get_preview_visible());
+    ui.invoke_action("ToggleSidebar".into());
+    assert!(ui.get_sidebar_visible());
+    assert_eq!(ui.get_sidebar_width(), 250.0);
+    assert_eq!(ui.get_tree_width(), 310.0);
+    assert_eq!(ui.get_preview_width(), 420.0);
+}
+#[test]
 fn searchable_quick_lists_and_cross_pane_commands_navigate_only_the_requested_panes() {
     let (_root, ui, state, left, right) = setup();
     state.borrow_mut().app.bookmarks = vec![

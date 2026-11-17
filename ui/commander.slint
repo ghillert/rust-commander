@@ -396,6 +396,8 @@ export component CommanderWindow inherits Window {
     min-width: 840px;
     min-height: 480px;
     background: Palette.background;
+    private property <float> available-file-width: 1240;
+    changed width => { root.available-file-width = root.width / 1px; }
     in property <bool> native-menus;
     in-out property <bool> system-menubar;
     in property <bool> dark;
@@ -408,6 +410,15 @@ export component CommanderWindow inherits Window {
     in property <float> text-size: 14;
     in property <bool> toolbar-visible: true;
     in property <bool> sidebar-visible: true;
+    in property <float> sidebar-width: 186;
+    in property <float> tree-width: 220;
+    in property <float> preview-width: 300;
+    private property <float> side-panel-extra: (root.sidebar-visible ? max(0,root.sidebar-width - 120) : 0) + (root.sidebar-visible && root.tree-visible ? max(0,root.tree-width - 160) : 0) + (root.preview-visible ? max(0,root.preview-width - 180) : 0);
+    private property <float> side-panel-scale: min(1,max(0,root.available-file-width - 340 - (root.sidebar-visible ? 122 : 0) - (root.sidebar-visible && root.tree-visible ? 162 : 0) - (root.preview-visible ? 182 : 0)) / max(1,root.side-panel-extra));
+    private property <float> sidebar-panel-width: root.sidebar-visible ? 120 + (root.sidebar-width - 120) * root.side-panel-scale : 0;
+    private property <float> tree-panel-width: root.sidebar-visible && root.tree-visible ? 160 + (root.tree-width - 160) * root.side-panel-scale : 0;
+    private property <float> preview-panel-width: root.preview-visible ? 180 + (root.preview-width - 180) * root.side-panel-scale : 0;
+    callback resize-side-panel(int,float,bool);
     out property <length> native-header-height: root.toolbar-visible ? 44px : 40px;
     in property <bool> command-bar-visible: true;
     in property <bool> status-visible: true;
@@ -497,6 +508,8 @@ export component CommanderWindow inherits Window {
     out property <float> preview-button-y: preview-native-slot.absolute-position.y / 1px;
     out property <float> preview-button-width: preview-native-slot.width / 1px;
     in property <image> preview-image;
+    in property <bool> preview-image-file;
+    callback open-preview-image();
     in property <bool> preview-source;
     in property <string> source-font-family: "monospace";
     in property <bool> preview-source-active;
@@ -795,9 +808,9 @@ export component CommanderWindow inherits Window {
                 min-height: root.terminal-visible ? (root.stacked && !root.single-pane ? 220px : 140px) : 0px;
                 preferred-height: self.min-height;
                 vertical-stretch: 1;
-                spacing: 1px;
+                spacing: 0px;
                 if root.sidebar-visible: Rectangle {
-                    width: 186px; background: Chrome.sidebar;
+                    width: root.sidebar-panel-width * 1px; horizontal-stretch: 0; background: Chrome.sidebar;
                     places-list := ListView {
                         for place in root.places: place-focus := FocusScope {
                             focus-on-tab-navigation: true;
@@ -845,8 +858,23 @@ export component CommanderWindow inherits Window {
                         }
                     }
                 }
+                if root.sidebar-visible: Rectangle {
+                    width: 2px; horizontal-stretch: 0;
+                    background: sidebar-divider.has-hover || sidebar-divider.pressed ? root.accent : Chrome.separator;
+                    sidebar-divider := TouchArea {
+                        x: -2px; width: 6px;
+                        mouse-cursor: ew-resize;
+                        private property <float> base-width;
+                        private property <float> start-x;
+                        pointer-event(event) => {
+                            if event.kind == PointerEventKind.down { self.base-width = root.sidebar-panel-width; self.start-x = (self.absolute-position.x + self.mouse-x) / 1px; }
+                            if event.kind == PointerEventKind.up { root.resize-side-panel(0,root.sidebar-width,true); }
+                        }
+                        moved => { if self.pressed { root.resize-side-panel(0,max(120,min(360,self.base-width + (self.absolute-position.x + self.mouse-x) / 1px - self.start-x)),false); } }
+                    }
+                }
                 Rectangle {
-                    visible:root.sidebar-visible && root.tree-visible;width:root.sidebar-visible && root.tree-visible?220px:0px;background:Chrome.sidebar;
+                    visible:root.sidebar-visible && root.tree-visible;width:root.tree-panel-width * 1px;horizontal-stretch:0;background:Chrome.sidebar;
                     VerticalLayout {
                         Rectangle {height:32px;Text {x:16px;text:"Folders";height:parent.height;vertical-alignment:center;color:Chrome.secondary;font-weight:600;font-size:10px;}}
                         tree-focus := FocusScope {
@@ -891,6 +919,21 @@ export component CommanderWindow inherits Window {
                                 }
                             }
                         }
+                    }
+                }
+                if root.sidebar-visible && root.tree-visible: Rectangle {
+                    width: 2px; horizontal-stretch: 0;
+                    background: tree-divider.has-hover || tree-divider.pressed ? root.accent : Chrome.separator;
+                    tree-divider := TouchArea {
+                        x: -2px; width: 6px;
+                        mouse-cursor: ew-resize;
+                        private property <float> base-width;
+                        private property <float> start-x;
+                        pointer-event(event) => {
+                            if event.kind == PointerEventKind.down { self.base-width = root.tree-panel-width; self.start-x = (self.absolute-position.x + self.mouse-x) / 1px; }
+                            if event.kind == PointerEventKind.up { root.resize-side-panel(1,root.tree-width,true); }
+                        }
+                        moved => { if self.pressed { root.resize-side-panel(1,max(160,min(480,self.base-width + (self.absolute-position.x + self.mouse-x) / 1px - self.start-x)),false); } }
                     }
                 }
                 pane-area := Rectangle {
@@ -968,9 +1011,24 @@ export component CommanderWindow inherits Window {
                     }
                   }
                 }
+                if root.preview-visible: Rectangle {
+                    width: 2px; horizontal-stretch: 0;
+                    background: preview-divider.has-hover || preview-divider.pressed ? root.accent : Chrome.separator;
+                    preview-divider := TouchArea {
+                        x: -2px; width: 6px;
+                        mouse-cursor: ew-resize;
+                        private property <float> base-width;
+                        private property <float> start-x;
+                        pointer-event(event) => {
+                            if event.kind == PointerEventKind.down { self.base-width = root.preview-panel-width; self.start-x = (self.absolute-position.x + self.mouse-x) / 1px; }
+                            if event.kind == PointerEventKind.up { root.resize-side-panel(2,root.preview-width,true); }
+                        }
+                        moved => { if self.pressed { root.resize-side-panel(2,max(180,min(640,self.base-width - (self.absolute-position.x + self.mouse-x) / 1px + self.start-x)),false); } }
+                    }
+                }
                 Rectangle {
                     visible: root.preview-visible;
-                    width: root.preview-visible ? 300px : 0px;
+                    width: root.preview-panel-width * 1px;
                     horizontal-stretch: 0;
                     VerticalBox {
                     Text { text: root.preview-title; color: Palette.foreground; wrap: word-wrap; font-weight: 600; }
@@ -978,9 +1036,14 @@ export component CommanderWindow inherits Window {
                         text: root.preview-text; color: Palette.foreground; wrap: word-wrap;
                         vertical-stretch: 0;
                     }
+                    if root.preview-source: DialogChoice {accessible-label:"Preview source view";model:root.preview-source-modes;current-value <=> root.preview-source-mode;selected(value)=>{root.preview-source-mode-selected(value);}}
+                    Image { source: root.preview-image; image-fit: contain; height: self.source.height > 0 ? 200px : 0px; }
+                    Button { text: Words.translate("Open full view",Words.version); accessible-label: Words.translate("Open image in full view",Words.version);
+                        visible: root.preview-image-file && !root.preview-native; height: self.visible ? 32px : 0px; vertical-stretch: 0;
+                        clicked => {root.open-preview-image();} }
                     preview-native-slot := Rectangle {
                         horizontal-stretch: 1;
-                        visible: root.preview-video && root.preview-native;
+                        visible: (root.preview-video || root.preview-image-file) && root.preview-native;
                         height: self.visible ? 32px : 0px;
                         vertical-stretch: 0;
                         accessible-role: none;
@@ -990,8 +1053,6 @@ export component CommanderWindow inherits Window {
                         }
                     }
                     if root.preview-video: Rectangle {vertical-stretch:1;}
-                    if root.preview-source: DialogChoice {accessible-label:"Preview source view";model:root.preview-source-modes;current-value <=> root.preview-source-mode;selected(value)=>{root.preview-source-mode-selected(value);}}
-                    Image { source: root.preview-image; image-fit: contain; height: self.source.height > 0 ? 200px : 0px; }
                     preview-source-view := SourceView {
                         visible:root.preview-source-active;max-height:self.visible?100000px:0px;min-height:0px;
                         text:root.preview-text;groups:root.preview-source-groups;line-count:root.preview-source-lines;

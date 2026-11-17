@@ -903,6 +903,9 @@ impl Adapter {
             .set_font_size((self.app.preferences.font_size - 1.0).max(13.0));
         ui.set_toolbar_visible(self.app.preferences.toolbar);
         ui.set_sidebar_visible(self.app.preferences.sidebar);
+        ui.set_sidebar_width(self.app.preferences.sidebar_width);
+        ui.set_tree_width(self.app.preferences.tree_width);
+        ui.set_preview_width(self.app.preferences.preview_width);
         ui.set_breadcrumbs_mode(
             self.app.preferences.location_bar == crate::preferences::LocationBar::Breadcrumbs,
         );
@@ -1890,8 +1893,16 @@ impl Adapter {
         );
         ui.set_preview_visible(self.app.preferences.preview);
         ui.set_preview_video(self.app.preview.is_video());
+        ui.set_preview_image_file(
+            self.app.preferences.preview
+                && self.app.preview.image.is_some()
+                && self.app.preview.target.as_ref().is_some_and(|(_, entry)| {
+                    crate::icons::file_icon(&entry.name, entry.is_dir) == "image"
+                }),
+        );
         ui.set_preview_can_open(
-            self.app.preview.external_video_path().is_some() && !self.blocked(),
+            (self.app.preview.external_video_path().is_some() || ui.get_preview_image_file())
+                && !self.blocked(),
         );
         if self.app.preferences.preview {
             ui.set_preview_title(
@@ -1932,7 +1943,22 @@ impl Adapter {
                 self.preview_stamp = stamp;
             }
         }
-        let target = self.app.preview.external_video_path().map(Path::to_owned);
+        let target = self
+            .app
+            .preview
+            .external_video_path()
+            .map(Path::to_owned)
+            .or_else(|| {
+                ui.get_preview_image_file()
+                    .then(|| {
+                        self.app
+                            .preview
+                            .target
+                            .as_ref()
+                            .map(|(_, entry)| entry.path.clone())
+                    })
+                    .flatten()
+            });
         self.native_preview.sync(ui, target, self.dark);
     }
 
@@ -2484,6 +2510,18 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
     callback!(on_preview_focus_open, |a, w| {
         a.native_preview.focus();
     });
+    callback!(on_open_preview_image, |a, w| {
+        if !a.blocked()
+            && !a.app.exiting
+            && a.app.preferences.preview
+            && a.app.preview.image.is_some()
+            && let Some((location, entry)) = a.app.preview.target.clone()
+            && crate::icons::file_icon(&entry.name, entry.is_dir) == "image"
+        {
+            a.app
+                .view_as(entry, false, location, crate::viewer::Mode::Auto, &a.ctx);
+        }
+    });
     callback!(on_action, |a, w, id| {
         if matches!(id.as_str(), "FocusNext" | "FocusPrevious") && w.get_focused_control() >= 0 {
             a.extra.focus_index = w.get_focused_control() as usize;
@@ -2720,6 +2758,22 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
         a.app.preferences.layout.set_ratio(ratio);
         if finished {
             a.app.save_settings();
+        }
+    });
+    callback!(on_resize_side_panel, |a, w, panel, width, finished| {
+        let target = match panel {
+            0 => Some((&mut a.app.preferences.sidebar_width, 120.0, 360.0)),
+            1 => Some((&mut a.app.preferences.tree_width, 160.0, 480.0)),
+            2 => Some((&mut a.app.preferences.preview_width, 180.0, 640.0)),
+            _ => None,
+        };
+        if let Some((target, minimum, maximum)) = target
+            && width.is_finite()
+        {
+            *target = width.clamp(minimum, maximum);
+            if finished {
+                a.app.save_settings();
+            }
         }
     });
     callback!(on_dropped, |a, w, side, data| {

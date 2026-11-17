@@ -36,6 +36,8 @@ pub struct Preferences {
     pub font_size: f32,
     pub toolbar: bool,
     pub sidebar: bool,
+    pub sidebar_width: f32,
+    pub tree_width: f32,
     pub command_bar: bool,
     #[serde(default)]
     pub command_bar_defaults_version: u8,
@@ -50,6 +52,7 @@ pub struct Preferences {
     pub toolbar_actions: Vec<ToolbarAction>,
     pub recovery: crate::history::Retention,
     pub preview: bool,
+    pub preview_width: f32,
     pub layout: crate::navigation::Layout,
     pub command_actions: Vec<String>,
     pub alternate_shortcuts: BTreeMap<String, String>,
@@ -73,8 +76,11 @@ impl Default for Preferences {
             font_size: 14.0,
             toolbar: true,
             sidebar: true,
+            sidebar_width: 186.0,
+            tree_width: 220.0,
             recovery: Default::default(),
             preview: false,
+            preview_width: 300.0,
             layout: Default::default(),
             auto_size_columns: false,
             alternate_shortcuts: [("MarkSelectedFile".into(), "Insert".into())]
@@ -310,6 +316,15 @@ pub fn validate(preferences: &Preferences) -> Result<()> {
     }
     if !preferences.font_size.is_finite() || !(10.0..=24.0).contains(&preferences.font_size) {
         bail!("Font size must be between 10 and 24.");
+    }
+    for (width, minimum, maximum) in [
+        (preferences.sidebar_width, 120.0, 360.0),
+        (preferences.tree_width, 160.0, 480.0),
+        (preferences.preview_width, 180.0, 640.0),
+    ] {
+        if !width.is_finite() || width < minimum || width > maximum {
+            bail!("Side panel widths are out of range.");
+        }
     }
     if preferences.columns.is_empty() || preferences.columns[0].kind != Column::Name {
         bail!("The Name column must be first.");
