@@ -17,6 +17,7 @@ pub struct Entry {
     pub action: String,
     pub label: String,
     pub enabled: bool,
+    pub separator: bool,
 }
 pub type Model = Vec<(String, Vec<Entry>)>;
 struct State {
@@ -109,6 +110,11 @@ impl Menu {
                     continue;
                 }
                 for entry in entries {
+                    if entry.separator {
+                        AppendMenuW(popup, MF_SEPARATOR, 0, std::ptr::null());
+                        id += 1;
+                        continue;
+                    }
                     let text = wide(&entry.label);
                     AppendMenuW(
                         popup,
@@ -133,7 +139,7 @@ impl Menu {
             .filter_map(|id| {
                 entries
                     .get(id)
-                    .filter(|e| e.enabled)
+                    .filter(|e| e.enabled && !e.separator)
                     .map(|e| e.action.clone())
             })
             .collect()

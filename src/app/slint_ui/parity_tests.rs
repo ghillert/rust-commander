@@ -321,6 +321,7 @@ fn command_bar_and_shortcut_labels_follow_custom_bindings() {
     state.borrow_mut().app.tab_mut().cursor = Some(left.join("alpha.txt"));
     state.borrow_mut().sync(&ui);
     assert_eq!(ui.get_command_buttons().row_count(), 2);
+    assert_eq!(ui.get_command_buttons().row_data(0).unwrap().title, "Copy");
     assert!(
         ui.get_command_buttons()
             .row_data(0)
@@ -334,11 +335,11 @@ fn command_bar_and_shortcut_labels_follow_custom_bindings() {
     assert!(state.borrow().app.prompt.is_some());
     ui.invoke_dialog_action("cancel".into());
     assert!(!ui.invoke_global_key(key(SharedString::from(slint::platform::Key::F5))));
-    ui.invoke_menu("Operations".into());
+    ui.invoke_menu("File".into());
     assert!(
         ui.get_menu_items()
             .iter()
-            .any(|c| c.id == "Copy" && c.title.contains('K'))
+            .any(|c| c.id == "Copy" && c.shortcut.contains('K'))
     );
 }
 

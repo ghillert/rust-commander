@@ -475,16 +475,62 @@ fn alt_menu_navigation_moves_between_headings_and_restores_pane_focus() {
     press(&ui, Key::RightArrow);
     assert_eq!(ui.get_menu_heading_index(), 1);
     press(&ui, Key::DownArrow);
-    assert!(ui.get_menu_items().iter().any(|i| i.id == "Copy"));
+    assert!(ui.get_menu_items().iter().any(|i| i.id == "CopyClipboard"));
     press(&ui, Key::RightArrow);
     assert_eq!(ui.get_menu_heading_index(), 2);
-    assert!(ui.get_menu_items().iter().any(|i| i.id == "Home"));
-    assert!(ui.get_menu_items().iter().any(|i| i.id == "Parent"));
+    assert!(ui.get_menu_items().iter().any(|i| i.id == "MarkAll"));
+    assert!(ui.get_menu_items().iter().any(|i| i.id == "SelectPattern"));
     press(&ui, Key::Escape);
     assert!(ui.get_menu_heading_active());
     press(&ui, Key::Escape);
     assert!(!ui.get_menu_heading_active());
     assert!(state.borrow().app.prompt.is_none());
+}
+
+#[test]
+fn menu_dividers_are_skipped_and_headings_wrap_in_both_directions() {
+    let (_root, ui, _state, _left, _right) = setup();
+    ui.set_system_menubar(false);
+    ui.invoke_focus_files(0);
+    press(&ui, Key::F10);
+    press(&ui, Key::LeftArrow);
+    assert_eq!(
+        ui.get_menu_heading_index(),
+        ui.get_menu_titles().row_count() as i32 - 1
+    );
+    press(&ui, Key::DownArrow);
+    assert!(ui.get_menu_items().iter().any(|item| item.id == "Help"));
+    press(&ui, Key::RightArrow);
+    assert_eq!(ui.get_menu_heading_index(), 0);
+    let rows = ui.get_menu_items().iter().collect::<Vec<_>>();
+    assert!(rows.iter().any(|row| row.separator));
+    let enabled = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| row.enabled)
+        .map(|(index, _)| index as i32)
+        .collect::<Vec<_>>();
+    for &index in &enabled {
+        assert_eq!(ui.get_menu_index(), index);
+        assert!(!rows[index as usize].separator);
+        press(&ui, Key::DownArrow);
+    }
+    assert_eq!(ui.get_menu_index(), enabled[0]);
+    press(&ui, Key::UpArrow);
+    assert_eq!(ui.get_menu_index(), *enabled.last().unwrap());
+    let mut offset = 0;
+    for row in rows {
+        assert_eq!(row.offset, offset);
+        if row.separator {
+            assert!(!row.enabled);
+            assert!(row.id.is_empty());
+        }
+        offset += if row.separator { 9 } else { 28 };
+    }
+    assert_eq!(ui.get_menu_content_height(), offset);
+    press(&ui, Key::Escape);
+    press(&ui, Key::Escape);
+    assert_eq!(ui.get_focused_control(), 0);
 }
 #[test]
 fn ownership_acl_form_loads_async_and_retains_invalid_drafts() {

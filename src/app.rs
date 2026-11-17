@@ -22,6 +22,8 @@ fn tr(text: &str) -> std::borrow::Cow<'_, str> {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Action {
+    Back,
+    Forward,
     DirectoryTree,
     ToggleSidebar,
     ExternalEdit,
@@ -182,6 +184,8 @@ pub(crate) enum Action {
 
 pub(crate) fn all_actions() -> Vec<Action> {
     vec![
+        Action::Back,
+        Action::Forward,
         Action::DirectoryTree,
         Action::ToggleSidebar,
         Action::ExternalEdit,
@@ -337,234 +341,8 @@ pub(crate) fn all_actions() -> Vec<Action> {
     ]
 }
 
-pub(crate) fn action_menus() -> Vec<(&'static str, Vec<(&'static str, Action)>)> {
-    let mut groups = Vec::from([
-        (
-            "Navigation tools",
-            vec![
-                ("Quick find", Action::QuickFind),
-                ("Find next filename", Action::QuickFindNext),
-                ("Find previous filename", Action::QuickFindPrevious),
-                ("Quick lists…", Action::QuickLists),
-                ("Recent locations…", Action::RecentLocations),
-                ("Recently opened files…", Action::RecentFiles),
-                ("Bookmarks…", Action::BookmarksList),
-                ("Open tabs…", Action::TabsList),
-                ("Roots and drives…", Action::RootsList),
-                ("Open in both panes", Action::OpenBoth),
-                ("Parent in both panes", Action::ParentBoth),
-                ("Parent in other pane", Action::ParentOther),
-                ("Switch pane", Action::SwitchPane),
-                ("Focus next control", Action::FocusNext),
-                ("Focus previous control", Action::FocusPrevious),
-                ("File context menu", Action::FileContextMenu),
-            ],
-        ),
-        (
-            "Tab and layout",
-            vec![
-                ("Lock/unlock tab", Action::LockTab),
-                ("Name tab…", Action::TabTitle),
-                ("Move tab to other pane", Action::MoveTabOther),
-                ("Move tab left", Action::MoveTabLeft),
-                ("Move tab right", Action::MoveTabRight),
-                ("Directory tree", Action::DirectoryTree),
-                ("Side-by-side panes", Action::SideBySide),
-                ("Stacked panes", Action::Stacked),
-                ("Equal pane sizes", Action::EqualPanes),
-                ("Fit columns to content", Action::AutoSizeColumns),
-            ],
-        ),
-        (
-            "More tools",
-            vec![
-                ("Select by pattern…", Action::SelectPattern),
-                ("Unselect by pattern…", Action::UnselectPattern),
-                ("Select same extension", Action::SelectExtension),
-                ("Next block", Action::SelectNextBlock),
-                ("Previous block", Action::SelectPreviousBlock),
-                ("Mark next block", Action::MarkNextBlock),
-                ("Mark previous block", Action::MarkPreviousBlock),
-                ("Open Trash", Action::OpenTrash),
-                ("Empty Trash…", Action::EmptyTrash),
-                ("New window", Action::NewWindow),
-                ("Close window", Action::CloseWindow),
-                ("Next window", Action::NextWindow),
-                ("Previous window", Action::PreviousWindow),
-                ("Windows…", Action::WindowsList),
-                ("Import muCommander settings…", Action::ImportSettings),
-                ("Imported commands…", Action::ImportedCommands),
-            ],
-        ),
-        (
-            "File",
-            vec![
-                ("Connections…", Action::Connections),
-                ("Archive tools…", Action::ArchiveTools),
-                ("Pack files…", Action::Pack),
-                ("New file", Action::Mkfile),
-                ("Batch rename…", Action::BatchRename),
-                ("Properties", Action::Properties),
-                ("Permissions…", Action::Permissions),
-                ("Ownership and ACL…", Action::OwnershipAcl),
-                ("Modification time…", Action::Modified),
-                ("View  F3", Action::View),
-                ("Edit  F4", Action::Edit),
-                ("Open externally", Action::External),
-                ("Open With…", Action::OpenWith),
-                ("Open As…", Action::OpenAs),
-                ("Edit externally…", Action::ExternalEdit),
-                ("Email files…", Action::Email),
-                ("Open URL in browser…", Action::OpenURLInBrowser),
-                ("Application associations…", Action::Associations),
-                ("Reveal in file manager", Action::Reveal),
-                ("Show package contents", Action::PackageContents),
-                ("Rename  F2", Action::Rename),
-                ("New folder  F7", Action::Mkdir),
-                ("Move to Trash  F8", Action::Trash),
-                ("Permanently delete…", Action::PermanentDelete),
-                #[cfg(not(target_os = "macos"))]
-                ("Quit Rust Commander", Action::Quit),
-            ],
-        ),
-        (
-            "Operations",
-            vec![
-                ("Undo last operation", Action::Undo),
-                ("Redo last operation", Action::Redo),
-                ("Recovery manager…", Action::Recovery),
-                ("Recover editor drafts…", Action::RecoverEditorDrafts),
-                ("Synchronize folders…", Action::Synchronize),
-                ("Transfer queue and history…", Action::Queue),
-                ("Copy  F5", Action::Copy),
-                ("Move  F6", Action::Move),
-                ("Pack files…", Action::Pack),
-                ("Extract archive", Action::Extract),
-                ("Checksums", Action::Checksum),
-                ("Find files…", Action::Search),
-                ("Compare folders", Action::Compare),
-                ("Split file…", Action::Split),
-                ("Combine files…", Action::Combine),
-                ("Open terminal", Action::Terminal),
-            ],
-        ),
-        (
-            "Navigate",
-            vec![
-                ("Preview pane", Action::Preview),
-                ("Quick Look", Action::QuickLook),
-                ("Workspaces…", Action::Workspaces),
-                ("Home", Action::Home),
-                ("Parent folder", Action::Parent),
-                ("New tab", Action::NewTab),
-                ("Duplicate tab", Action::DuplicateTab),
-                ("Close tab", Action::CloseTab),
-                ("Add bookmark", Action::Bookmark),
-                ("Explore bookmarks…", Action::ExploreBookmarks),
-                ("Refresh", Action::Refresh),
-                ("Swap panes", Action::Swap),
-                ("Same folder in both panes", Action::SameFolder),
-                ("Clone tab to other pane", Action::CloneTab),
-                ("Open in other pane", Action::OpenOther),
-                ("Open in new tab", Action::OpenNewTab),
-                ("Next tab", Action::NextTab),
-                ("Previous tab", Action::PreviousTab),
-                ("Close other tabs", Action::CloseOtherTabs),
-                ("Close duplicate tabs", Action::CloseDuplicateTabs),
-            ],
-        ),
-        (
-            "Selection",
-            vec![
-                ("Mark all", Action::MarkAll),
-                ("Unmark all", Action::UnmarkAll),
-                ("Invert selection", Action::InvertSelection),
-                ("Copy names", Action::CopyNames),
-                ("Copy names without extensions", Action::CopyBaseNames),
-                ("Copy paths", Action::CopyPaths),
-                ("Copy files", Action::CopyClipboard),
-                ("Cut files", Action::CutClipboard),
-                ("Paste files", Action::PasteClipboard),
-                ("Prepare files for external drag…", Action::NativeDrag),
-            ],
-        ),
-    ]);
-    let extras = groups
-        .drain(..3)
-        .flat_map(|(_, items)| items)
-        .collect::<Vec<_>>();
-    groups.push((
-        "View",
-        vec![
-            ("Show hidden files", Action::ToggleHidden),
-            ("Show parent directory row", Action::ToggleParentEntry),
-            ("Toggle sidebar", Action::ToggleSidebar),
-            ("Settings…", Action::Preferences),
-        ],
-    ));
-    groups.push(("Window", Vec::new()));
-    for item in extras {
-        let target = match item.1 {
-            Action::NewWindow
-            | Action::CloseWindow
-            | Action::NextWindow
-            | Action::PreviousWindow
-            | Action::WindowsList => "Window",
-            Action::DirectoryTree
-            | Action::SideBySide
-            | Action::Stacked
-            | Action::EqualPanes
-            | Action::AutoSizeColumns => "View",
-            Action::SelectPattern
-            | Action::UnselectPattern
-            | Action::SelectExtension
-            | Action::SelectNextBlock
-            | Action::SelectPreviousBlock
-            | Action::MarkNextBlock
-            | Action::MarkPreviousBlock => "Selection",
-            Action::OpenTrash
-            | Action::EmptyTrash
-            | Action::ImportSettings
-            | Action::ImportedCommands => "File",
-            _ => "Navigate",
-        };
-        if let Some((_, items)) = groups.iter_mut().find(|(title, _)| *title == target) {
-            items.push(item);
-        }
-    }
-    if let Some((_, items)) = groups.iter_mut().find(|(title, _)| *title == "Window") {
-        items.extend([
-            ("Bring all windows forward", Action::BringAllToFront),
-            ("Minimize window", Action::MinimizeWindow),
-            ("Maximize / restore window", Action::MaximizeWindow),
-            ("Switch to window 1", Action::RecallWindow1),
-            ("Switch to window 2", Action::RecallWindow2),
-            ("Switch to window 3", Action::RecallWindow3),
-            ("Switch to window 4", Action::RecallWindow4),
-            ("Switch to window 5", Action::RecallWindow5),
-            ("Switch to window 6", Action::RecallWindow6),
-            ("Switch to window 7", Action::RecallWindow7),
-            ("Switch to window 8", Action::RecallWindow8),
-            ("Switch to window 9", Action::RecallWindow9),
-            ("Switch to window 10", Action::RecallWindow10),
-        ]);
-    }
-    groups.push((
-        "Help",
-        vec![
-            ("Help", Action::Help),
-            ("Check for updates…", Action::CheckForUpdates),
-            ("Diagnostics…", Action::Diagnostics),
-            ("Report a bug…", Action::ReportBug),
-            ("Documentation", Action::GoToDocumentation),
-            ("Community support", Action::GoToForums),
-            ("Project website", Action::GoToWebsite),
-            ("Donate…", Action::Donate),
-            ("Debug console…", Action::ShowDebugConsole),
-        ],
-    ));
-    groups
-}
+mod menus;
+pub(crate) use menus::{action_menu_definitions, action_menus};
 
 struct Prompt {
     title: String,
@@ -1972,6 +1750,11 @@ impl Commander {
             Action::CloseTab => {
                 let i = self.panes[self.active].active;
                 self.panes[self.active].close_tab(i);
+                return;
+            }
+            Action::Back | Action::Forward => {
+                self.tab_mut()
+                    .history(matches!(action, Action::Forward), ctx);
                 return;
             }
             Action::Home => {

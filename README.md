@@ -241,11 +241,15 @@ viewer and preview pane, optional JSON/XML pretty views, and an always-available
 Plain original view. Formatting only changes the display. PDFs support text
 selection/copying and document search with previous/next matches.
 See [viewer tools](docs/VIEWERS.md).
-**F5** extracts archive entries into new or existing folders with conflict choices. **File → Archive tools…**
+**F5** extracts archive entries into new or existing folders with conflict choices. **Tools → Archive tools…**
 edits local ZIP/TAR/7z containers or creates/unlocks encrypted ZIP and 7z archives. Nested and
 remote ZIP/TAR/7z archives support guarded save-back; HTTP and Open As overrides stay read-only. **Mod+Z / Mod+Shift+Z** undo/redo eligible local operations and
-**Mod+J** opens the queue and history. **Mod+P** toggles preview. Additional tools are available in the **File**, **Operations**,
-**Navigate**, and **Selection** menus.
+**Mod+J** opens the queue and history. **Mod+P** toggles preview. Menus follow a task-based order: **File**, **Edit**, **Mark**, **View**, **Go**,
+**Bookmarks**, **Tools**, **Window**, and **Help**. Dividers separate related groups.
+Use **File** for actions on files, **Edit** for clipboard and undo, **Mark** for
+selection, and **Go** for locations and connections. **Window** contains tabs,
+windows, and workspaces; **Tools** contains search, comparison, archives, and recovery.
+Settings live in the application menu on macOS and **Edit** on Windows/Linux.
 
 ## Desktop appearance
 

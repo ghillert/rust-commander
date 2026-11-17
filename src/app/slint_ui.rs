@@ -2436,6 +2436,15 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
 }
 
 fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
+    ui.set_menu_titles(
+        Rc::new(VecModel::from(
+            action_menu_definitions()
+                .into_iter()
+                .map(|menu| SharedString::from(menu.title))
+                .collect::<Vec<_>>(),
+        ))
+        .into(),
+    );
     ui.set_system_menubar(cfg!(target_os = "macos"));
     let drag_ui = ui.as_weak();
     ui.on_window_drag(move || {
@@ -2527,35 +2536,41 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
             w.set_menu_items(Rc::new(VecModel::from(items)).into());
             return;
         }
-        let mut entries = action_menus()
+        if let Some(index) = w.get_menu_titles().iter().position(|name| name == title) {
+            w.set_menu_heading_index(index as i32);
+        }
+        let entries = action_menu_definitions()
             .into_iter()
-            .find(|(name, _)| *name == title.as_str())
-            .map(|(_, entries)| entries)
+            .find(|menu| menu.title == title.as_str())
+            .map(|menu| menu.entries().collect::<Vec<_>>())
             .unwrap_or_default();
-        if title == "View" && entries.is_empty() {
-            entries = vec![
-                ("Show Hidden Files", Action::ToggleHidden),
-                ("Appearance…", Action::Preferences),
-            ];
-        }
-        if title == "Help" && entries.is_empty() {
-            entries = vec![("Rust Commander Help", Action::Help)];
-        }
-        w.set_menu_items(
-            Rc::new(VecModel::from(
-                entries
-                    .into_iter()
-                    .map(|(title, action)| MenuEntry {
-                        id: format!("{action:?}").into(),
-                        title: parity::caption(&format!("{action:?}"), title, &a.app.preferences)
-                            .into(),
-                        enabled: !a.blocked() && a.action_available(&format!("{action:?}")),
+        let items = entries
+            .into_iter()
+            .map(|entry| {
+                let Some((title, action)) = entry else {
+                    return MenuEntry {
+                        separator: true,
                         ..Default::default()
-                    })
-                    .collect::<Vec<_>>(),
-            ))
-            .into(),
-        );
+                    };
+                };
+                let id = format!("{action:?}");
+                MenuEntry {
+                    title: tr(title).into_owned().into(),
+                    shortcut: a
+                        .app
+                        .preferences
+                        .shortcuts
+                        .get(&id)
+                        .map(|binding| parity::display_binding(binding))
+                        .unwrap_or_default()
+                        .into(),
+                    enabled: !a.blocked() && a.action_available(&id),
+                    id: id.into(),
+                    ..Default::default()
+                }
+            })
+            .collect::<Vec<_>>();
+        w.set_menu_items(Rc::new(VecModel::from(items)).into());
     });
     callback!(on_tab, |a, w, side, index| {
         if !a.blocked()
@@ -2588,6 +2603,18 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
         let weak = ui.as_weak();
         move || {
             if let Some(ui) = weak.upgrade() {
+                let mut offset = 0;
+                let items = ui
+                    .get_menu_items()
+                    .iter()
+                    .map(|mut item| {
+                        item.offset = offset;
+                        offset += if item.separator { 9 } else { 28 };
+                        item
+                    })
+                    .collect::<Vec<_>>();
+                ui.set_menu_content_height(offset);
+                ui.set_menu_items(Rc::new(VecModel::from(items)).into());
                 ui.set_menu_index(
                     ui.get_menu_items()
                         .iter()

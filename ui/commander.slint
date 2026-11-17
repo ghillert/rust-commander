@@ -14,7 +14,7 @@ export { Command, FormField, FormRow, FormPage } from "form-types.slint";
 import { SettingsView } from "settings.slint";
 import { SourceView, SourceLineGroup } from "source-view.slint";
 export { SourceLine } from "source-view.slint";
-export struct MenuEntry {id:string,title:string,enabled:bool,checkable:bool,checked:bool}
+export struct MenuEntry {id:string,title:string,shortcut:string,enabled:bool,checkable:bool,checked:bool,separator:bool,offset:int}
 export struct TreeRow { index:int, title:string, depth:int, expanded:bool, selected:bool, detail:string }
 export struct Place { id: string, title: string, detail: string, heading: bool, section: string, expanded: bool }
 export struct FileColumn { title: string, width: float }
@@ -526,7 +526,8 @@ export component CommanderWindow inherits Window {
     in-out property <int> menu-heading-index: -1;
     in-out property <bool> menu-heading-active;
     in-out property <bool> menu-top;
-    property <[string]> menu-titles: ["File", "Operations", "Navigate", "Selection", "View", "Window", "Help"];
+    in property <[string]> menu-titles;
+    in property <int> menu-content-height;
     menubar-keys := FocusScope { key-pressed(event) => {return root.global-key(event) ? EventResult.accept : EventResult.reject;} }
     public function focus-menubar() {menubar-keys.focus();}
     public function close-popup() {app-menu.close();}
@@ -702,7 +703,7 @@ export component CommanderWindow inherits Window {
         return -1;
     }
     public function open-menu() {if !root.menu-heading-active {root.menu-origin-focus=root.focused-control;}root.menu-start();app-menu.show();}
-    public function show-menu(title: string) {root.menu-top=true;root.menu-x=8;root.menu-y=30;root.menu(title);root.open-menu();}
+    public function show-menu(title: string) {root.menu-top=true;root.menu-y=30;root.menu(title);root.open-menu();}
     public function show-file-menu() {if root.active-pane==0 {left.show-file-menu();}else{right.show-file-menu();}}
     public function restore-menu-focus() {
         if root.menu-origin-focus==1 || root.menu-origin-focus==4 {root.focus-address(root.active-pane);}
@@ -731,10 +732,12 @@ export component CommanderWindow inherits Window {
                 HorizontalLayout {
                     padding-left: 8px; spacing: 3px;
                     for title[index] in root.menu-titles: ChromeButton {
-                        checked: root.menu-heading-active && root.menu-heading-index==index;
+                        private property <bool> active-heading: root.menu-heading-index==index;
+                        changed active-heading => {if self.active-heading {root.menu-x=self.absolute-position.x/1px;}}
+                        checked: root.menu-heading-active && self.active-heading;
                         tab-style:true;
                         label: Words.translate(title,Words.version); show-label: true;
-                        clicked => {root.menu-heading-index=index;root.show-menu(title);}
+                        clicked => {root.menu-heading-index=index;root.menu-x=self.absolute-position.x/1px;root.show-menu(title);}
                     }
                     Rectangle {horizontal-stretch:1;}
                 }
@@ -1088,17 +1091,17 @@ export component CommanderWindow inherits Window {
 
     app-menu := PopupWindow {
         forward-focus: menu-keys;
-        x: max(8px,min(root.menu-x*1px,root.width - 292px)); y: max(8px,min(root.menu-y*1px,root.height - self.height - 8px)); width: 280px;
-        height: min(root.height - 40px,(root.menu-items.length*28+16)*1px);
+        x: max(8px,min(root.menu-x*1px,root.width - self.width - 8px)); y: max(8px,min(root.menu-y*1px,root.height - self.height - 8px)); width: min(380px, root.width - 16px);
+        height: min(root.height - 40px,(root.menu-content-height+16)*1px);
         menu-keys := FocusScope {
           key-pressed(event) => {
             let result=root.menu-key(event);
             if result==2 {root.menu-heading-active=false;root.activate-menu(root.menu-index);}
             else if result==3 {app-menu.close();root.menu-heading-active=false;root.restore-menu-focus();}
             else if result==4 {app-menu.close();root.menu-heading-active=true;root.focus-menubar();}
-            else if result==5 {root.menu(root.menu-titles[root.menu-heading-index]);root.menu-start();}
+            else if result==5 {root.menu(root.menu-titles[root.menu-heading-index]);root.menu-start();menu-scroll.content-y=0px;}
             else if root.menu-index>=0 {
-                let top=root.menu-index*28px+menu-scroll.content-y;
+                let top=root.menu-items[root.menu-index].offset*1px+menu-scroll.content-y;
                 if top<0px {menu-scroll.content-y -= top;}
                 if top+28px>menu-scroll.visible-height {menu-scroll.content-y -= top+28px-menu-scroll.visible-height;}
             }
@@ -1114,13 +1117,45 @@ export component CommanderWindow inherits Window {
                 VerticalLayout {
                     spacing: 0px;
                     for command[index] in root.menu-items: Rectangle {
-                        height: 28px; background:index==root.menu-index?Chrome.hover:transparent;
-                        ChromeButton {
-                            width:parent.width;height:28px;
-                            label: (command.checkable ? (command.checked ? "✓  " : "    ") : "") + Words.translate(command.title,Words.version); show-label: true;
-                            accessible-label:command.title; checkable:command.checkable; accessible-checked:command.checked;
-                            enabled: command.enabled;
-                            clicked => {root.activate-menu(index);}
+                        height: command.separator ? 9px : 28px;
+                        accessible-role: none;
+                        if command.separator: Rectangle {
+                            x: 8px; y: 4px; width: parent.width - 16px; height: 1px;
+                            background: Chrome.separator;
+                            accessible-role: none;
+                        }
+                        if !command.separator: Rectangle {
+                            width: parent.width; height: 28px;
+                            background: index==root.menu-index ? Chrome.selection : transparent;
+                            border-radius: 3px;
+                            accessible-role: button;
+                            accessible-label: command.title;
+                            accessible-enabled: command.enabled;
+                            accessible-checkable: command.checkable;
+                            accessible-checked: command.checked;
+                            accessible-action-default => {root.activate-menu(index);}
+                            HorizontalLayout {
+                                padding-left: 8px; padding-right: 8px; spacing: 18px;
+                                Text {
+                                    text: (command.checkable ? (command.checked ? "✓  " : "    ") : "") + command.title;
+                                    color: !command.enabled ? Chrome.disabled : index==root.menu-index ? Chrome.selection-text : Chrome.foreground;
+                                    font-size: 12px; vertical-alignment: center;
+                                    min-width: 0px; overflow: elide;
+                                    accessible-role: none;
+                                }
+                                Text {
+                                    text: command.shortcut;
+                                    color: !command.enabled ? Chrome.disabled : index==root.menu-index ? Chrome.selection-text : Chrome.secondary;
+                                    font-size: 12px; horizontal-alignment: TextHorizontalAlignment.right; vertical-alignment: center;
+                                    horizontal-stretch: 0;
+                                    accessible-role: none;
+                                }
+                            }
+                            TouchArea {
+                                enabled: command.enabled;
+                                moved => {root.menu-index=index;}
+                                clicked => {root.activate-menu(index);}
+                            }
                         }
                     }
                 }

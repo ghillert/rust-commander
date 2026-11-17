@@ -741,11 +741,10 @@ fn native_menu_tick(id: usize, ui: &CommanderWindow, state: &Rc<RefCell<Adapter>
         }
         let model = with_state(state, |a| {
             let mut used = std::collections::BTreeSet::new();
-            action_menus()
+            action_menu_definitions()
                 .into_iter()
-                .filter(|(title, _)| *title != "More tools")
-                .map(|(title, entries)| {
-                    let title = tr(title).into_owned();
+                .map(|definition| {
+                    let title = tr(definition.title).into_owned();
                     let mnemonic = title
                         .chars()
                         .find(|c| c.is_alphabetic() && used.insert(c.to_ascii_lowercase()));
@@ -762,9 +761,17 @@ fn native_menu_tick(id: usize, ui: &CommanderWindow, state: &Rc<RefCell<Adapter>
                         }
                     }
                     let mut entry_used = std::collections::BTreeSet::new();
-                    let entries = entries
-                        .into_iter()
-                        .map(|(title, action)| {
+                    let entries = definition
+                        .entries()
+                        .map(|entry| {
+                            let Some((title, action)) = entry else {
+                                return crate::windows_menu::Entry {
+                                    action: String::new(),
+                                    label: String::new(),
+                                    enabled: false,
+                                    separator: true,
+                                };
+                            };
                             let action = format!("{action:?}");
                             let caption = parity::caption(&action, title, &a.app.preferences);
                             let mut label = String::new();
@@ -785,7 +792,8 @@ fn native_menu_tick(id: usize, ui: &CommanderWindow, state: &Rc<RefCell<Adapter>
                             crate::windows_menu::Entry {
                                 enabled: !a.blocked() && a.action_available(&action),
                                 action,
-                                label,
+                                label: label.replace("   ", "\t"),
+                                separator: false,
                             }
                         })
                         .collect();

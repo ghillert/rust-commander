@@ -82,11 +82,7 @@ pub(super) fn command_catalog() -> Vec<(String, String)> {
             });
             (id, label)
         })
-        .chain([
-            ("Back".into(), "Back".into()),
-            ("Forward".into(), "Forward".into()),
-            ("SaveText".into(), "Save text".into()),
-        ])
+        .chain([("SaveText".into(), "Save text".into())])
         .collect()
 }
 impl Adapter {
@@ -530,6 +526,15 @@ impl Adapter {
             .iter()
             .filter_map(|id| {
                 catalog.iter().find(|(key, _)| key == id).map(|(_, title)| {
+                    // The command bar is compact; menus can explain the destination.
+                    let title = match id.as_str() {
+                        "Copy" => "Copy",
+                        "Move" => "Move",
+                        "Mkdir" => "New folder",
+                        "Mkfile" => "New file",
+                        "Rename" => "Rename",
+                        _ => title.as_str(),
+                    };
                     (
                         id.clone(),
                         tr(title).into_owned(),

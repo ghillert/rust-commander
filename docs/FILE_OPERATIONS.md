@@ -67,7 +67,7 @@ provider limits](FEATURES_NEXT.md#7-checkpointed-copies-and-live-transfer-contro
 | CPIO / RPM | Yes, through libarchive | No |
 
 Mark local, remote or archive files/folders with Space, then choose **Pack files…** from the right-click
-menu or **Operations → Pack files…**. The dialog mirrors the muCommander workflow:
+menu or **File → Pack files…**. The dialog mirrors the muCommander workflow:
 
 - **Add selected files to** suggests a name in the opposite local or remote pane
   (falling back to the current local folder or Home). Enter a local path or an
@@ -95,7 +95,7 @@ menu or **Operations → Pack files…**. The dialog mirrors the muCommander wor
 
 **Pack** creates a new archive and refuses to overwrite an existing destination.
 The selected format determines the output suffix; a missing/different suffix is
-corrected before packing. **File → Archive tools… → Create encrypted archive**
+corrected before packing. **Tools → Archive tools… → Create encrypted archive**
 remains available for local files.
 
 Remote/archive selections are frozen when the dialog opens. A worker stages

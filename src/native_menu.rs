@@ -2,7 +2,7 @@
 use crate::ui_signal::UiSignal;
 use crate::{
     APP_NAME,
-    app::{Action, action_menus},
+    app::{Action, action_menu_definitions},
 };
 use muda::{
     Menu, MenuItem, PredefinedMenuItem, Submenu,
@@ -61,11 +61,20 @@ impl NativeMenu {
             &[&PredefinedMenuItem::fullscreen(None)],
         )?;
 
-        for (title, entries) in action_menus() {
-            if title == "Operations" {
+        for definition in action_menu_definitions() {
+            let title = definition.title;
+            let submenu = if title == "Window" {
+                window.clone()
+            } else {
+                Submenu::new(crate::i18n::text(title).as_ref(), true)
+            };
+            if title == "Window" {
+                submenu.append(&PredefinedMenuItem::separator())?;
+            }
+            if title == "Edit" {
                 // AppKit text editors route Command shortcuts through the
                 // responder chain, including while a native sheet is modal.
-                let edit = Submenu::new(crate::i18n::text("Edit").as_ref(), true);
+                let edit = &submenu;
                 for (label, item) in [
                     ("Undo", PredefinedMenuItem::undo(None)),
                     ("Redo", PredefinedMenuItem::redo(None)),
@@ -81,15 +90,13 @@ impl NativeMenu {
                     edit.append(&item)?;
                     edit_items.push((item, label));
                 }
-                submenu_labels.push((edit.clone(), "Edit"));
-                menu.append(&edit)?;
+                edit.append(&PredefinedMenuItem::separator())?;
             }
-            let submenu = if title == "Window" {
-                window.clone()
-            } else {
-                Submenu::new(crate::i18n::text(title).as_ref(), true)
-            };
-            for (label, action) in entries {
+            for entry in definition.entries() {
+                let Some((label, action)) = entry else {
+                    submenu.append(&PredefinedMenuItem::separator())?;
+                    continue;
+                };
                 let item = MenuItem::with_id(
                     format!("{title}-{action:?}"),
                     crate::i18n::text(label.split("  F").next().unwrap_or(label)).as_ref(),

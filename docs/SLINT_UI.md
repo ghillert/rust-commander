@@ -252,7 +252,7 @@ RUST_COMMANDER_SCREENSHOT_TO="$PWD/.runtime/slint.png" \
 The app captures a frame after loading and exits. Set
 `RUST_COMMANDER_SCREENSHOT_ACTION=Preferences` to capture Settings. Snapshots
 can also open a command menu, for example with
-`RUST_COMMANDER_SCREENSHOT_ACTION=Menu:Operations`, or collapse a sidebar
+`RUST_COMMANDER_SCREENSHOT_ACTION=Menu:Tools`, or collapse a sidebar
 section with `RUST_COMMANDER_SCREENSHOT_ACTION=ToggleSection:places`.
 Use `RUST_COMMANDER_SCREENSHOT_ACTION=ToggleSidebar` to capture the file panes
 with the full navigation area hidden.

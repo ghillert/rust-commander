@@ -579,5 +579,12 @@
   "Running operations will be cancelled and unsaved changes will be discarded.": "Laufende Vorgänge werden abgebrochen und ungespeicherte Änderungen werden verworfen.",
   "Show next time": "Beim nächsten Mal anzeigen",
   "You have one window open. Are you sure you want to quit?": "Ein Fenster ist geöffnet. Möchten Sie Rust Commander wirklich beenden?",
-  "You have {count} windows open. Are you sure you want to quit?": "{count} Fenster sind geöffnet. Möchten Sie Rust Commander wirklich beenden?"
+  "You have {count} windows open. Are you sure you want to quit?": "{count} Fenster sind geöffnet. Möchten Sie Rust Commander wirklich beenden?",
+  "Mark": "Markieren",
+  "Go": "Gehe zu",
+  "Tools": "Werkzeuge",
+  "Copy to other pane…": "In anderen Bereich kopieren…",
+  "Move to other pane…": "In anderen Bereich verschieben…",
+  "Mark / unmark file": "Datei markieren / Markierung aufheben",
+  "Go to location…": "Gehe zu Adresse…"
 }

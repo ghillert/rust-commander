@@ -37,6 +37,7 @@ impl Adapter {
             enabled: !self.blocked() && enabled && self.action_available(id),
             checkable: checked.is_some(),
             checked: checked.unwrap_or(false),
+            ..Default::default()
         };
         if kind == "ColumnContext" {
             let mut items: Vec<_> = Column::ALL
@@ -218,12 +219,13 @@ impl Adapter {
         if ui.get_menu_top()
             && (is(slint::platform::Key::LeftArrow) || is(slint::platform::Key::RightArrow))
         {
+            let count = ui.get_menu_titles().row_count() as i32;
             let step = if is(slint::platform::Key::LeftArrow) {
-                6
+                count - 1
             } else {
                 1
             };
-            ui.set_menu_heading_index((ui.get_menu_heading_index().max(0) + step) % 7);
+            ui.set_menu_heading_index((ui.get_menu_heading_index().max(0) + step) % count);
             return 5;
         }
         if is(slint::platform::Key::Escape) || is(slint::platform::Key::Tab) {
@@ -292,22 +294,19 @@ impl Adapter {
         }
         let text = event.text.as_str();
         let is = |key| event.text == SharedString::from(key);
-        let titles = [
-            "File",
-            "Operations",
-            "Navigate",
-            "Selection",
-            "View",
-            "Window",
-            "Help",
-        ];
+        let titles = ui.get_menu_titles().iter().collect::<Vec<_>>();
         let mut used = std::collections::BTreeSet::new();
-        let mnemonics = titles.map(|title| {
-            tr(title)
-                .chars()
-                .find(|c| c.is_alphabetic() && used.insert(c.to_lowercase().collect::<String>()))
-                .map(|c| c.to_lowercase().collect::<String>())
-        });
+        let mnemonics = titles
+            .iter()
+            .map(|title| {
+                tr(title.as_str())
+                    .chars()
+                    .find(|c| {
+                        c.is_alphabetic() && used.insert(c.to_lowercase().collect::<String>())
+                    })
+                    .map(|c| c.to_lowercase().collect::<String>())
+            })
+            .collect::<Vec<_>>();
         let index = event
             .modifiers
             .alt
@@ -321,7 +320,7 @@ impl Adapter {
             ui.set_menu_heading_index(index as i32);
             ui.set_menu_heading_active(true);
             let weak = ui.as_weak();
-            let title = titles[index];
+            let title = titles[index].clone();
             slint::Timer::single_shot(Duration::ZERO, move || {
                 if let Some(ui) = weak.upgrade() {
                     ui.invoke_show_menu(title.into());
@@ -347,12 +346,13 @@ impl Adapter {
             return false;
         }
         if is(slint::platform::Key::LeftArrow) || is(slint::platform::Key::RightArrow) {
+            let count = ui.get_menu_titles().row_count() as i32;
             let step = if is(slint::platform::Key::LeftArrow) {
-                6
+                count - 1
             } else {
                 1
             };
-            ui.set_menu_heading_index((ui.get_menu_heading_index().max(0) + step) % 7);
+            ui.set_menu_heading_index((ui.get_menu_heading_index().max(0) + step) % count);
             return true;
         }
         if is(slint::platform::Key::Escape) || is(slint::platform::Key::Tab) {
@@ -362,7 +362,10 @@ impl Adapter {
         }
         if is(slint::platform::Key::DownArrow) || is(slint::platform::Key::Return) || text == " " {
             let weak = ui.as_weak();
-            let title = titles[ui.get_menu_heading_index().clamp(0, 6) as usize];
+            let title = titles[ui
+                .get_menu_heading_index()
+                .clamp(0, titles.len() as i32 - 1) as usize]
+                .clone();
             slint::Timer::single_shot(Duration::ZERO, move || {
                 if let Some(ui) = weak.upgrade() {
                     ui.invoke_show_menu(title.into());
