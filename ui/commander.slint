@@ -489,6 +489,13 @@ export component CommanderWindow inherits Window {
     in property <bool> preview-visible;
     in property <string> preview-title;
     in property <string> preview-text;
+    in property <bool> preview-video;
+    in property <bool> preview-can-open;
+    in property <bool> preview-native;
+    callback preview-focus-open();
+    out property <float> preview-button-x: preview-native-slot.absolute-position.x / 1px;
+    out property <float> preview-button-y: preview-native-slot.absolute-position.y / 1px;
+    out property <float> preview-button-width: preview-native-slot.width / 1px;
     in property <image> preview-image;
     in property <bool> preview-source;
     in property <string> source-font-family: "monospace";
@@ -961,9 +968,28 @@ export component CommanderWindow inherits Window {
                     }
                   }
                 }
-                if root.preview-visible: VerticalBox {
-                    width: 300px;
+                Rectangle {
+                    visible: root.preview-visible;
+                    width: root.preview-visible ? 300px : 0px;
+                    horizontal-stretch: 0;
+                    VerticalBox {
                     Text { text: root.preview-title; color: Palette.foreground; wrap: word-wrap; font-weight: 600; }
+                    if root.preview-video: Text {
+                        text: root.preview-text; color: Palette.foreground; wrap: word-wrap;
+                        vertical-stretch: 0;
+                    }
+                    preview-native-slot := Rectangle {
+                        horizontal-stretch: 1;
+                        visible: root.preview-video && root.preview-native;
+                        height: self.visible ? 32px : 0px;
+                        vertical-stretch: 0;
+                        accessible-role: none;
+                        FocusScope {
+                            enabled: parent.visible; focus-on-tab-navigation: true;
+                            changed has-focus => {if self.has-focus {root.preview-focus-open();}}
+                        }
+                    }
+                    if root.preview-video: Rectangle {vertical-stretch:1;}
                     if root.preview-source: DialogChoice {accessible-label:"Preview source view";model:root.preview-source-modes;current-value <=> root.preview-source-mode;selected(value)=>{root.preview-source-mode-selected(value);}}
                     Image { source: root.preview-image; image-fit: contain; height: self.source.height > 0 ? 200px : 0px; }
                     preview-source-view := SourceView {
@@ -979,9 +1005,10 @@ export component CommanderWindow inherits Window {
                     }
                     TextEdit {visible:root.preview-source && !root.preview-source-active;max-height:self.visible?100000px:0px;min-height:0px;
                         text:root.preview-text;read-only:true;font-family:root.source-font-family;wrap:no-wrap;accessible-label:Words.translate("Preview contents",Words.version);}
-                    ScrollView {visible:!root.preview-source;max-height:self.visible?100000px:0px;min-height:0px;
-                        Text { text: root.preview-text; wrap: word-wrap; color: Palette.foreground; } }
+                    ScrollView {visible:!root.preview-source && !root.preview-video;max-height:self.visible?100000px:0px;min-height:0px;
+                        Text { x:0px; y:0px; width:parent.width; text: root.preview-text; wrap: word-wrap; color: Palette.foreground; vertical-alignment: top; horizontal-alignment: TextHorizontalAlignment.left; } }
                     if root.preview-source-notice != "": Text {text:root.preview-source-notice;wrap:word-wrap;color:Palette.foreground;}
+                    }
                 }
             }
             terminal-focus := FocusScope {

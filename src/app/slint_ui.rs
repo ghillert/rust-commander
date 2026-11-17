@@ -17,6 +17,7 @@ mod interaction;
 mod keys;
 mod management;
 mod parity;
+mod preview_native;
 mod security;
 mod source_views;
 mod viewer_native;
@@ -99,6 +100,7 @@ pub(super) struct Adapter {
     viewer_source_cache: source_views::Cache,
     preview_source_cache: source_views::Cache,
     native_viewer: viewer_native::Host,
+    native_preview: preview_native::Host,
     security: Option<security::Form>,
     drafts: drafts::State,
     dark: bool,
@@ -296,6 +298,7 @@ impl Adapter {
             viewer_source_cache: Default::default(),
             preview_source_cache: Default::default(),
             native_viewer: Default::default(),
+            native_preview: Default::default(),
             security: None,
             drafts: Default::default(),
             dark: false,
@@ -699,6 +702,7 @@ impl Adapter {
 
     fn sync(&mut self, ui: &CommanderWindow) {
         self.native_viewer_events(ui);
+        self.preview_native_events();
         #[cfg(any(target_os = "linux", target_os = "windows"))]
         for event in self.native_forms.events() {
             use dialogs::native_host::Event;
@@ -1885,6 +1889,10 @@ impl Adapter {
             &self.app.preferences,
         );
         ui.set_preview_visible(self.app.preferences.preview);
+        ui.set_preview_video(self.app.preview.is_video());
+        ui.set_preview_can_open(
+            self.app.preview.external_video_path().is_some() && !self.blocked(),
+        );
         if self.app.preferences.preview {
             ui.set_preview_title(
                 self.app
@@ -1924,6 +1932,8 @@ impl Adapter {
                 self.preview_stamp = stamp;
             }
         }
+        let target = self.app.preview.external_video_path().map(Path::to_owned);
+        self.native_preview.sync(ui, target, self.dark);
     }
 
     fn sync_terminal(&mut self, ui: &CommanderWindow) {
@@ -2471,6 +2481,9 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
             });
         }};
     }
+    callback!(on_preview_focus_open, |a, w| {
+        a.native_preview.focus();
+    });
     callback!(on_action, |a, w, id| {
         if matches!(id.as_str(), "FocusNext" | "FocusPrevious") && w.get_focused_control() >= 0 {
             a.extra.focus_index = w.get_focused_control() as usize;

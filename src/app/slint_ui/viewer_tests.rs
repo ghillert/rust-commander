@@ -584,6 +584,62 @@ fn preview_modes_reset_for_new_files_and_do_not_format_truncated_documents() {
 }
 
 #[test]
+fn video_preview_replaces_source_controls_with_metadata_and_local_open_action() {
+    let (_root, ui, state, path) = setup("preview.json", br#"{"hello":"world"}"#);
+    let location = state.borrow().app.tab().location.clone();
+    let mut entry = filesystem::entry_from_path(&path).unwrap();
+    {
+        let mut a = state.borrow_mut();
+        a.app.preferences.preview = true;
+        a.app.preview.select(location.clone(), Some(entry.clone()));
+    }
+    wait_preview(&state, &ui);
+    assert!(ui.get_preview_source());
+    entry.name = "clip.MP4".into();
+    entry.path = path.with_file_name(&entry.name);
+    entry.size = 80 * 1024 * 1024;
+    {
+        let mut a = state.borrow_mut();
+        a.app.preview.select(location.clone(), Some(entry.clone()));
+        a.sync(&ui);
+    }
+    assert!(ui.get_preview_video());
+    assert!(ui.get_preview_can_open());
+    assert!(!ui.get_preview_source());
+    assert!(!ui.get_preview_source_active());
+    assert!(ui.get_preview_text().contains("80.0 MiB"));
+    assert!(!ui.get_preview_text().contains("hello"));
+    // The headless backend has no NSView/HWND, and must not substitute a styled button.
+    assert!(!ui.get_preview_native());
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "Open externally")
+            .next()
+            .is_none()
+    );
+    {
+        let mut a = state.borrow_mut();
+        a.app.preview.select(
+            Location::Remote {
+                connection: "not-connected".into(),
+                path: "".into(),
+            },
+            Some(entry),
+        );
+        a.sync(&ui);
+    }
+    assert!(ui.get_preview_video());
+    assert!(!ui.get_preview_can_open());
+    {
+        let mut a = state.borrow_mut();
+        a.app.preview.select(location, None);
+        a.sync(&ui);
+    }
+    assert!(!ui.get_preview_video());
+    assert!(!ui.get_preview_can_open());
+    assert!(ui.get_preview_text().is_empty());
+}
+
+#[test]
 fn utf16_source_views_preserve_the_bom_encoding_and_line_endings() {
     let source = "<root>\r\n\t<name>café 雪</name>\r\n</root>\r\n";
     let bytes: Vec<u8> = [0xff, 0xfe]

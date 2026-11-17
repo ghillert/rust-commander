@@ -586,5 +586,8 @@
   "Copy to other pane…": "Copiar al otro panel…",
   "Move to other pane…": "Mover al otro panel…",
   "Mark / unmark file": "Marcar / desmarcar archivo",
-  "Go to location…": "Ir a la ubicación…"
+  "Go to location…": "Ir a la ubicación…",
+  "Video file": "Archivo de vídeo",
+  "Open this video in your media player.": "Abra este vídeo en su reproductor multimedia.",
+  "Copy or extract this video to a local folder to play it.": "Copie o extraiga este vídeo a una carpeta local para reproducirlo."
 }

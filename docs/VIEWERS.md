@@ -30,6 +30,15 @@ edited through Archive tools. Choose explicit ZIP/7z and enter the optional arch
 password for password-protected files. Other archive uses libarchive's format
 detection and encryption support.
 
+## Video previews
+
+Video files in the preview pane show their extension, size, and modification time
+instead of binary or hexadecimal contents. Local videos offer a native **Open externally** button below the metadata on
+macOS (AppKit) and Windows (Win32), to play the displayed file in the default
+media player. Other platforms can use **File → Open externally**. Remote and archive videos
+use listing metadata without downloading or extracting the file; copy or extract
+them locally to play them. Embedded playback and video thumbnails are not supported.
+
 ## Source highlighting and pretty views
 
 The full viewer keeps the filename, compact view buttons, **Find**, and **More

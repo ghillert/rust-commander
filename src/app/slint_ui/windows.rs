@@ -248,10 +248,18 @@ pub(super) fn native_extract_snapshot(path: &std::path::Path) -> bool {
 ))]
 pub(super) fn native_viewer_snapshot(path: &std::path::Path) -> bool {
     SESSIONS.with(|sessions| {
-        sessions
-            .borrow()
-            .iter()
-            .any(|s| s.state.borrow().native_viewer.snapshot(&s.ui, path))
+        sessions.borrow().iter().any(|s| {
+            let state = s.state.borrow();
+            if state.native_viewer.snapshot(&s.ui, path) {
+                return true;
+            }
+            #[cfg(target_os = "macos")]
+            {
+                return state.native_preview.snapshot(&s.ui, path);
+            }
+            #[cfg(not(target_os = "macos"))]
+            false
+        })
     })
 }
 #[cfg(all(

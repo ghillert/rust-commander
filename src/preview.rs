@@ -4,6 +4,7 @@ use crate::{
     viewer::Content,
 };
 use std::{
+    path::Path,
     sync::mpsc::{self, Receiver},
     time::{Duration, Instant},
 };
@@ -20,6 +21,19 @@ pub struct Preview {
     pub(crate) loading: bool,
 }
 impl Preview {
+    pub(crate) fn is_video(&self) -> bool {
+        self.target.as_ref().is_some_and(|(_, entry)| {
+            !entry.is_dir && crate::icons::file_icon(&entry.name, false) == "video"
+        })
+    }
+
+    /// Launch the displayed file, even if focus or marks have since changed.
+    pub(crate) fn external_video_path(&self) -> Option<&Path> {
+        self.target.as_ref().and_then(|(location, entry)| {
+            (self.is_video() && location.local().is_some()).then_some(entry.path.as_path())
+        })
+    }
+
     pub fn select(&mut self, location: Location, entry: Option<Entry>) {
         let changed = match (&self.target, &entry) {
             (Some((l, e)), Some(n)) => {
@@ -38,6 +52,13 @@ impl Preview {
             self.text.clear();
             self.changed = Some(Instant::now());
             self.loading = self.target.is_some();
+            if self.is_video() {
+                // Listing metadata is enough. Never read, download or extract a
+                // video just because the cursor moved over it.
+                self.loading = false;
+                let (location, entry) = self.target.as_ref().unwrap();
+                self.text = video_metadata(location, entry);
+            }
         }
     }
     pub(crate) fn poll(&mut self, ctx: &UiSignal) {
@@ -93,5 +114,126 @@ impl Preview {
                 Err(e) => self.text = e,
             }
         }
+    }
+}
+
+fn video_metadata(location: &Location, entry: &Entry) -> String {
+    use crate::{i18n::text as tr, preferences::Column};
+    let local = location.local().is_some();
+    format!(
+        "{}\n\n{}: {}\n{}: {}\n{}: {}\n\n{}",
+        tr("Video file"),
+        tr("Extension"),
+        Column::Extension.value(entry, local).to_uppercase(),
+        tr("Size"),
+        Column::Size.value(entry, local),
+        tr("Modified"),
+        Column::Modified.value(entry, local),
+        tr(if local {
+            "Open this video in your media player."
+        } else {
+            "Copy or extract this video to a local folder to play it."
+        }),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(name: &str) -> Entry {
+        Entry {
+            path: Path::new("/not-read-by-preview").join(name),
+            name: name.into(),
+            is_dir: false,
+            is_symlink: false,
+            size: 80 * 1024 * 1024,
+            size_known: true,
+            modified: Some(std::time::UNIX_EPOCH),
+        }
+    }
+
+    #[test]
+    fn video_previews_use_listing_metadata_without_opening_files() {
+        let mut preview = Preview::default();
+        for name in [
+            "clip.MP4",
+            "clip.mov",
+            "clip.mkv",
+            "clip.webm",
+            "clip.avi",
+            "clip.m4v",
+        ] {
+            let entry = entry(name);
+            let expected = entry.path.clone();
+            preview.select(Location::Local("/not-read-by-preview".into()), Some(entry));
+            preview.poll(&UiSignal::default());
+            assert!(preview.is_video());
+            assert!(preview.text.contains("80.0 MiB"));
+            assert_eq!(preview.external_video_path(), Some(expected.as_path()));
+            assert!(!preview.source_text);
+            assert!(!preview.loading);
+            assert!(preview.pending.is_none());
+            assert!(preview.image.is_none());
+        }
+    }
+
+    #[test]
+    fn virtual_videos_never_download_or_extract_and_preserve_unknown_metadata() {
+        for location in [
+            Location::Remote {
+                connection: "not-connected".into(),
+                path: "videos".into(),
+            },
+            Location::Archive {
+                file: "/missing.zip".into(),
+                prefix: "videos".into(),
+            },
+        ] {
+            let mut preview = Preview::default();
+            let mut entry = entry("clip.mp4");
+            entry.size_known = false;
+            entry.modified = None;
+            preview.select(location, Some(entry));
+            preview.poll(&UiSignal::default());
+            assert!(preview.is_video());
+            assert_eq!(preview.text.matches('—').count(), 2);
+            assert!(!preview.text.contains("80.0 MiB"));
+            assert!(preview.external_video_path().is_none());
+            assert!(preview.pending.is_none());
+            assert!(!preview.loading);
+        }
+    }
+
+    #[test]
+    fn selecting_video_discards_previous_content_and_late_worker_results() {
+        let mut preview = Preview::default();
+        let location = Location::Local("/not-read-by-preview".into());
+        preview.select(location.clone(), Some(entry("previous.txt")));
+        let (sender, receiver) = mpsc::channel();
+        preview.pending = Some(receiver);
+        preview.text = "Old file contents".into();
+        preview.source_text = true;
+        preview.image = Some(crate::viewer::RasterImage {
+            size: [1, 1],
+            pixels: vec![[0; 4]],
+        });
+        sender
+            .send(Ok(Content::Text("Late result".into())))
+            .unwrap();
+        preview.select(location.clone(), Some(entry("clip.mp4")));
+        preview.poll(&UiSignal::default());
+        assert!(!preview.text.contains("Late result"));
+        assert!(!preview.text.contains("Old file contents"));
+        assert!(preview.image.is_none());
+        assert!(!preview.source_text);
+        let mut folder = entry("folder.mp4");
+        folder.is_dir = true;
+        preview.select(location.clone(), Some(folder));
+        assert!(!preview.is_video());
+        assert!(preview.external_video_path().is_none());
+        preview.select(location, None);
+        assert!(preview.text.is_empty());
+        assert!(!preview.loading);
     }
 }
