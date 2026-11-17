@@ -74,18 +74,81 @@ pub enum Mode {
 pub fn load(location: &Location, path: &Path) -> Result<Content> {
     load_as(location, path, Mode::Auto)
 }
+pub fn load_preview(location: &Location, path: &Path) -> Result<Content> {
+    if !is_image_extension(path) {
+        return load(location, path);
+    }
+    #[cfg(target_os = "macos")]
+    if matches!(location, Location::Local(_))
+        && let Some(image) = macos_thumbnail(path)
+    {
+        return Ok(Content::Image(image));
+    }
+    let snapshot = snapshot(
+        location,
+        path,
+        MEDIA_LIMIT,
+        &mut crate::operations::Task::default(),
+    )?;
+    let bytes: &[u8] = snapshot.as_ref().as_ref();
+    Ok(Content::Image(decode_image(bytes, Some(800))?))
+}
+#[cfg(target_os = "macos")]
+fn macos_thumbnail(path: &Path) -> Option<RasterImage> {
+    // ImageIO (through sips) downsamples during decoding, avoiding a full-size
+    // raster and the associated copies for large local images.
+    if std::fs::metadata(path).ok()?.len() > MEDIA_LIMIT {
+        return None;
+    }
+    let output = tempfile::Builder::new().suffix(".png").tempfile().ok()?;
+    let status = std::process::Command::new("/usr/bin/sips")
+        .args(["-Z", "800", "-s", "format", "png", "--out"])
+        .arg(output.path())
+        .arg(path)
+        .output()
+        .ok()?;
+    if !status.status.success() {
+        return None;
+    }
+    let bytes = std::fs::read(output.path()).ok()?;
+    decode_image(&bytes, None).ok()
+}
+fn is_image_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            [
+                "png", "jpg", "jpeg", "gif", "bmp", "webp", "tif", "tiff", "ico",
+            ]
+            .contains(&extension.to_ascii_lowercase().as_str())
+        })
+}
+fn decode_image(bytes: &[u8], preview_edge: Option<u32>) -> Result<RasterImage> {
+    let mut reader = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(8192);
+    limits.max_image_height = Some(8192);
+    limits.max_alloc = Some(128 * 1024 * 1024);
+    reader.limits(limits);
+    let decoded = reader.decode()?;
+    let decoded = if let Some(edge) = preview_edge {
+        decoded.thumbnail(edge, edge)
+    } else {
+        decoded
+    };
+    let image = decoded.to_rgba8();
+    Ok(RasterImage::from_rgba_unmultiplied(
+        [image.width() as usize, image.height() as usize],
+        image.as_raw(),
+    ))
+}
 pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> {
     let extension = path
         .extension()
         .unwrap_or_default()
         .to_string_lossy()
         .to_lowercase();
-    let image = mode == Mode::Image
-        || mode == Mode::Auto
-            && [
-                "png", "jpg", "jpeg", "gif", "bmp", "webp", "tif", "tiff", "ico",
-            ]
-            .contains(&extension.as_str());
+    let image = mode == Mode::Image || mode == Mode::Auto && is_image_extension(path);
     let pdf = mode == Mode::Pdf || mode == Mode::Auto && extension == "pdf";
     let size = match location {
         Location::Network { .. } | Location::Containers => {
@@ -178,19 +241,7 @@ pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> 
         });
     }
     if image {
-        let mut reader = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
-        let mut limits = image::Limits::default();
-        limits.max_image_width = Some(8192);
-        limits.max_image_height = Some(8192);
-        limits.max_alloc = Some(128 * 1024 * 1024);
-        reader.limits(limits);
-        let image = reader.decode()?.to_rgba8();
-        return Ok(Content::Image(
-            crate::viewer::RasterImage::from_rgba_unmultiplied(
-                [image.width() as usize, image.height() as usize],
-                image.as_raw(),
-            ),
-        ));
+        return Ok(Content::Image(decode_image(bytes, None)?));
     }
     if mode == Mode::Text {
         return Ok(Content::EncodedText(
@@ -435,4 +486,27 @@ pub fn snapshot(
         path,
         task,
     )
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::*;
+
+    #[test]
+    fn preview_images_are_bounded_without_reducing_full_view_resolution() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("large.png");
+        image::RgbaImage::from_pixel(1600, 1000, image::Rgba([20, 40, 60, 255]))
+            .save(&path)
+            .unwrap();
+        let location = Location::Local(directory.path().to_path_buf());
+        let Content::Image(preview) = load_preview(&location, &path).unwrap() else {
+            panic!("Expected an image preview");
+        };
+        assert_eq!(preview.size, [800, 500]);
+        let Content::Image(full) = load(&location, &path).unwrap() else {
+            panic!("Expected an image viewer");
+        };
+        assert_eq!(full.size, [1600, 1000]);
+    }
 }

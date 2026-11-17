@@ -79,8 +79,8 @@ impl Preview {
                     let path = entry.path.clone();
                     let ctx = ctx.clone();
                     std::thread::spawn(move || {
-                        let result =
-                            crate::viewer::load(&location, &path).map_err(|e| format!("{e:#}"));
+                        let result = crate::viewer::load_preview(&location, &path)
+                            .map_err(|e| format!("{e:#}"));
                         let _ = sender.send(result);
                         ctx.request_repaint();
                     });
@@ -106,7 +106,7 @@ impl Preview {
                     self.source_text = true;
                 }
                 Ok(Content::Image(i)) | Ok(Content::Pdf { image: i, .. }) => {
-                    self.image = Some(i.clone());
+                    self.image = Some(i);
                 }
                 Ok(Content::LockedPdf { .. }) => {
                     self.text = "Password-protected PDF — open the viewer to unlock it.".into()
