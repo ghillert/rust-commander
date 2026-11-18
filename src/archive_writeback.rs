@@ -171,6 +171,7 @@ pub(crate) fn publish(file: &Path, edited: &Path, expected: &str, task: &mut Tas
                     task,
                 )?;
                 task.notices.push(message);
+                task.note_replacement(crate::history::ReplacementRecovery::Manager);
                 break;
             }
             Location::Local(_) => {

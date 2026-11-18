@@ -2,6 +2,23 @@ use super::*;
 use anyhow::Context;
 
 impl Adapter {
+    pub(super) fn result_record(&self) -> Option<&crate::history::Record> {
+        let id = self.app.message.as_ref()?.record_id.as_ref()?;
+        self.app.history.iter().find(|r| &r.id == id)
+    }
+
+    pub(super) fn can_undo_result(&self, id: &str) -> bool {
+        self.app.job.is_none()
+            && self.app.queue.is_empty()
+            && self
+                .app
+                .history
+                .iter()
+                .rev()
+                .find(|r| r.can_undo())
+                .is_some_and(|r| r.id == id)
+    }
+
     pub(in super::super) fn dialog_select(&mut self, id: &str) {
         if self.desktop_commands_select(id) {
             return;
@@ -103,7 +120,36 @@ impl Adapter {
                 }
                 "message" if id == "copy-result" => {
                     if let Some(message) = &self.app.message {
-                        self.app.native_files.copy_text(message.clone())?;
+                        self.app.native_files.copy_text(message.text.clone())?;
+                    }
+                }
+                "message" => {
+                    use crate::history::ReplacementRecovery;
+                    if let Some((action, id)) = id.split_once('-')
+                        && let Some(record) = self.result_record().filter(|r| r.id == id)
+                    {
+                        match (action, &record.replacement_recovery) {
+                            ("reveal", Some(ReplacementRecovery::Folder(folder))) => {
+                                anyhow::ensure!(
+                                    folder.is_dir(),
+                                    "The recovery folder is no longer available."
+                                );
+                                let location = Location::Local(folder.clone());
+                                self.app.message = None;
+                                self.app.show_history = false;
+                                self.app.tab_mut().navigate(location, &self.ctx);
+                            }
+                            ("recover", Some(ReplacementRecovery::Manager)) => {
+                                self.app.message = None;
+                                self.app.show_history = false;
+                                self.app.features.recovery(&self.ctx);
+                            }
+                            ("undo", _) if self.can_undo_result(id) => {
+                                self.app.message = None;
+                                self.app.act(Action::Undo, &self.ctx);
+                            }
+                            _ => {}
+                        }
                     }
                 }
                 "pack-progress" => {
@@ -864,7 +910,7 @@ impl Adapter {
             .and_then(|s| s.parse::<usize>().ok())
             && let Some(record) = self.app.history.get(i)
         {
-            self.app.message = Some(record.result.clone());
+            self.app.message = Some(ResultMessage::for_record(record));
         }
         Ok(())
     }

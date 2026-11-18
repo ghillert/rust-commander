@@ -294,7 +294,7 @@ impl View {
                 if !field.title.is_empty() {
                     body.append(&label(&title));
                 }
-                if field.kind == 6 && field.value.len() > 300 {
+                if field.scrollable_note() {
                     let text = gtk::TextView::new();
                     text.set_editable(false);
                     text.set_wrap_mode(gtk::WrapMode::WordChar);

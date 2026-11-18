@@ -30,11 +30,20 @@ pub struct Change {
     pub backup_native: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReplacementRecovery {
+    Folder(PathBuf),
+    Manager,
+    Undo,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Record {
     pub id: String,
     pub label: String,
     pub result: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replacement_recovery: Option<ReplacementRecovery>,
     pub success: bool,
     #[serde(default)]
     pub cancelled: bool,
@@ -347,6 +356,7 @@ pub fn execute_in(operation: Operation, task: &mut Task, root: &Path) -> Result<
     } else {
         None
     };
+    task.replacement_recovery = None;
     let result = operations::run(operation, task);
     task.before_change = None;
     let mut recorder = recorder
@@ -402,6 +412,7 @@ pub fn execute_in(operation: Operation, task: &mut Task, root: &Path) -> Result<
         cancelled: result.is_err() && task.cancel.load(std::sync::atomic::Ordering::Relaxed),
         created_at: crate::oauth::now(),
         result: result.unwrap_or_else(|error| format!("{error:#}")),
+        replacement_recovery: task.replacement_recovery.take(),
         undone: false,
         undo_blocked: task.undo_blocked,
         changes,
@@ -540,6 +551,7 @@ pub fn cancelled(label: &str) -> Record {
         id: format!("operation-{}-{:016x}", timestamp(), rand::random::<u64>()),
         label: label.into(),
         result: "Cancelled before starting.".into(),
+        replacement_recovery: None,
         success: false,
         cancelled: true,
         created_at: crate::oauth::now(),

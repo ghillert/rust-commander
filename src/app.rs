@@ -545,6 +545,26 @@ struct ConnectionForm {
     discovered: Vec<crate::remote::Connection>,
 }
 
+#[derive(Debug)]
+struct ResultMessage {
+    text: String,
+    record_id: Option<String>,
+}
+impl ResultMessage {
+    fn plain(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            record_id: None,
+        }
+    }
+    fn for_record(record: &crate::history::Record) -> Self {
+        Self {
+            text: record.result.clone(),
+            record_id: Some(record.id.clone()),
+        }
+    }
+}
+
 pub struct Commander {
     saved_windows: Vec<crate::settings::WindowSession>,
     window_id: usize,
@@ -589,7 +609,7 @@ pub struct Commander {
     pending_view: Option<Receiver<Result<Editor, String>>>,
     job: Option<Job>,
     help: bool,
-    message: Option<String>,
+    message: Option<ResultMessage>,
     settings_valid: bool,
     confirm_exit: bool,
     exiting: bool,
@@ -979,12 +999,12 @@ impl Commander {
                 Ok(record) => {
                     self.status = record.result.clone();
                     self.status_error = !record.success;
-                    if record.result.contains("Replaced originals are kept")
+                    if record.replacement_recovery.is_some()
                         || record.result.starts_with("Checksums")
                         || record.result.starts_with("Properties")
                         || record.result.starts_with("Folder comparison")
                     {
-                        self.message = Some(record.result.clone());
+                        self.message = Some(ResultMessage::for_record(&record));
                     }
                     self.history = crate::history::load().unwrap_or_else(|_| self.history.clone());
                     if !self.history.iter().any(|r| r.id == record.id) {
@@ -1813,7 +1833,7 @@ impl Commander {
                 if local.is_some() {
                     self.start_job(Operation::Properties(sources), ctx);
                 } else {
-                    self.message = Some(
+                    self.message = Some(ResultMessage::plain(
                         chosen
                             .iter()
                             .map(|e| {
@@ -1826,7 +1846,7 @@ impl Commander {
                             })
                             .collect::<Vec<_>>()
                             .join("\n"),
-                    );
+                    ));
                 }
                 return;
             }

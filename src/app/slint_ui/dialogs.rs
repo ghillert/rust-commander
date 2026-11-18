@@ -94,6 +94,9 @@ impl Field {
             ..Self::text("", title, value)
         }
     }
+    pub(super) fn scrollable_note(&self) -> bool {
+        self.kind == 6 && (self.id == "replacement-details" || self.value.len() > 300)
+    }
     pub(super) fn slint(&self) -> FormField {
         FormField {
             id: self.id.as_str().into(),
@@ -421,7 +424,41 @@ impl Adapter {
         }
         if let Some(message) = &self.app.message {
             let mut d = Dialog::new("message", "Results");
-            d.fields.push(Field::label("", message));
+            let mut details = Field::label("", &message.text);
+            if let Some(record) = self.result_record() {
+                use crate::history::ReplacementRecovery;
+                if record.replacement_recovery.is_some() {
+                    d.title = tr(if record.success {
+                        "Replacement complete"
+                    } else {
+                        "Transfer needs attention"
+                    })
+                    .into_owned();
+                    details.id = "replacement-details".into();
+                    details.title = record.label.clone();
+                }
+                match &record.replacement_recovery {
+                    Some(ReplacementRecovery::Folder(folder)) if folder.is_dir() => {
+                        d.button(
+                            &format!("reveal-{}", record.id),
+                            "Show recovery folder",
+                            true,
+                        );
+                    }
+                    Some(ReplacementRecovery::Manager) => {
+                        d.button(
+                            &format!("recover-{}", record.id),
+                            "Open Recovery Manager",
+                            true,
+                        );
+                    }
+                    _ => {}
+                }
+                if self.can_undo_result(&record.id) {
+                    d.button(&format!("undo-{}", record.id), "Undo", true);
+                }
+            }
+            d.fields.push(details);
             d.button("copy-result", "Copy result", true);
             return d;
         }

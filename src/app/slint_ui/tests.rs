@@ -72,6 +72,67 @@ fn transfer_caption_tracks_visible_marks_and_the_opposite_pane() {
 }
 
 #[test]
+fn replacement_result_reveals_its_folder_and_refuses_stale_undo() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (root, mut adapter, left, right) = fixture();
+    std::fs::write(right.join("alpha.txt"), "previous").unwrap();
+    let run = |operation| {
+        crate::history::execute_in(
+            operation,
+            &mut Task::default(),
+            &root.path().join("journal"),
+        )
+        .unwrap()
+    };
+    let record = run(Operation::Transfer {
+        sources: vec![left.join("alpha.txt")],
+        destination: right.clone(),
+        moving: false,
+        options: crate::transfer::TransferOptions {
+            conflicts: crate::transfer::ConflictPolicy::Replace,
+            merge_folders: false,
+        },
+    });
+    let Some(crate::history::ReplacementRecovery::Folder(folder)) =
+        record.replacement_recovery.clone()
+    else {
+        panic!("Missing replacement recovery folder");
+    };
+    let id = record.id.clone();
+    adapter.app.message = Some(ResultMessage::for_record(&record));
+    adapter.app.history.push(record);
+    let ui = CommanderWindow::new().unwrap();
+    adapter.sync(&ui);
+    let undo = format!("undo-{id}");
+    assert!(
+        adapter
+            .dialog()
+            .buttons
+            .iter()
+            .any(|(key, _, _)| key == &undo)
+    );
+    adapter.app.history.push(run(Operation::Copy {
+        sources: vec![left.join("café.txt")],
+        destination: right.clone(),
+    }));
+    adapter.dialog_action(&undo);
+    assert!(adapter.app.job.is_none());
+    assert!(
+        !adapter
+            .dialog()
+            .buttons
+            .iter()
+            .any(|(key, _, _)| key == &undo)
+    );
+    adapter.dialog_action(&format!("reveal-{id}"));
+    assert_eq!(adapter.app.tab().location, Location::Local(folder.clone()));
+    assert_eq!(
+        std::fs::read_to_string(folder.join("items/alpha.txt")).unwrap(),
+        "previous"
+    );
+}
+
+#[test]
 fn extract_uses_the_shared_form_and_keeps_a_fallback_without_a_native_parent() {
     i_slint_backend_testing::init_no_event_loop();
     let (_root, mut adapter, left, right) = fixture();

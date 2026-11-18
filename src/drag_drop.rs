@@ -337,6 +337,7 @@ pub fn transfer(
                     let suffix = if source.local().is_none() {
                         "The server recovery copy is reported after saving.".to_owned()
                     } else if durable_undo {
+                        task.note_replacement(crate::history::ReplacementRecovery::Undo);
                         "Replaced archive entries can be restored with Undo.".to_owned()
                     } else {
                         let mut backup = tempfile::Builder::new()
@@ -350,16 +351,11 @@ pub fn transfer(
                         backup.as_file().sync_all()?;
                         let (_, path) = backup.keep()?;
                         crate::recovery::record_backup(&source, &path, &original, task)?;
+                        task.note_replacement(crate::history::ReplacementRecovery::Manager);
                         format!("Original archive is kept in {}", path.display())
                     };
-                    report.message = format!(
-                        "{}\n{suffix}",
-                        report
-                            .message
-                            .split("\nReplaced originals are kept in ")
-                            .next()
-                            .unwrap_or(&report.message)
-                    );
+                    report.message.push('\n');
+                    report.message.push_str(&suffix);
                     fs::remove_dir_all(recovery)?;
                 }
                 if moving && same_archive {
@@ -385,7 +381,7 @@ pub fn transfer(
                     task,
                 )
             })?;
-            (report.message, report.complete)
+            (report.description(), report.complete)
         }
         Location::Remote { .. } => {
             let local = Location::Local(staged.paths[0].parent().unwrap().into());

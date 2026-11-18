@@ -226,6 +226,7 @@ impl Execution {
                 }
                 let backup = self.backup_path(&plan.target)?;
                 rename_exclusive(&plan.target, &backup)?;
+                self.replacements += 1;
                 if let Err(error) = crate::recovery::record_backup(
                     &crate::filesystem::Location::Local(self.destination.clone()),
                     &backup,
@@ -233,6 +234,9 @@ impl Execution {
                     task,
                 ) {
                     let restored = rename_exclusive(&backup, &plan.target);
+                    if restored.is_ok() {
+                        self.replacements -= 1;
+                    }
                     return Err(error).with_context(|| {
                         format!(
                             "Could not record recovery copy at {}; original restored: {}",
@@ -241,7 +245,6 @@ impl Execution {
                         )
                     });
                 }
-                self.replacements += 1;
                 if let Err(error) = rename_exclusive(&incoming, &plan.target) {
                     let restore = rename_exclusive(&backup, &plan.target);
                     if restore.is_ok() {
@@ -272,13 +275,25 @@ pub fn transfer_resolved(
     overrides: &BTreeMap<PathBuf, ConflictPolicy>,
     task: &mut Task,
 ) -> Result<String> {
-    Ok(transfer_report(sources, destination, moving, options, overrides, task)?.message)
+    Ok(transfer_report(sources, destination, moving, options, overrides, task)?.description())
 }
 
 pub(crate) struct TransferReport {
     pub message: String,
     pub complete: Vec<bool>,
     pub recovery: Option<PathBuf>,
+}
+impl TransferReport {
+    pub(crate) fn description(&self) -> String {
+        match &self.recovery {
+            Some(folder) => format!(
+                "{}\nReplaced originals are kept in {}",
+                self.message,
+                folder.display()
+            ),
+            None => self.message.clone(),
+        }
+    }
 }
 
 pub(crate) fn transfer_report(
@@ -444,13 +459,17 @@ pub(crate) fn transfer_report(
         if execution.replacements == 0 {
             let _ = fs::remove_dir_all(recovery);
         } else {
+            if !task
+                .private_roots
+                .iter()
+                .any(|root| recovery.starts_with(root))
+            {
+                task.note_replacement(crate::history::ReplacementRecovery::Folder(
+                    recovery.clone(),
+                ));
+            }
             return result
                 .map(|mut report| {
-                    report.message = format!(
-                        "{}\nReplaced originals are kept in {}",
-                        report.message,
-                        recovery.display()
-                    );
                     report.recovery = Some(recovery.clone());
                     report
                 })

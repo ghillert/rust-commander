@@ -471,6 +471,7 @@ impl Progress {
 }
 
 pub struct Task {
+    pub(crate) replacement_recovery: Option<crate::history::ReplacementRecovery>,
     pub undo_blocked: bool,
     pub notices: Vec<String>,
     pub(crate) private_roots: Vec<PathBuf>,
@@ -494,6 +495,7 @@ impl Task {
     pub fn new(cancel: Arc<AtomicBool>, report: impl FnMut(Progress) + Send + 'static) -> Self {
         Self {
             undo_blocked: false,
+            replacement_recovery: None,
             notices: Vec::new(),
             private_roots: Vec::new(),
             before_change: None,
@@ -516,6 +518,13 @@ impl Task {
 
     pub(crate) fn needs_total(&self) -> bool {
         !self.total_planned
+    }
+
+    pub(crate) fn note_replacement(&mut self, recovery: crate::history::ReplacementRecovery) {
+        self.replacement_recovery = Some(match &self.replacement_recovery {
+            Some(previous) if previous != &recovery => crate::history::ReplacementRecovery::Manager,
+            _ => recovery,
+        });
     }
 
     /// Only the outer operation owns the total; nested copies share its budget.

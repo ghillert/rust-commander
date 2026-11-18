@@ -1416,6 +1416,7 @@ pub fn transfer_resolved(
             copy_entry(to, existing, to, &backup, task)?;
             backups.push(backup.clone());
             crate::recovery::record_backup(to, &backup, &plan.target, task)?;
+            task.note_replacement(crate::history::ReplacementRecovery::Manager);
             anyhow::ensure!(
                 snapshot(to, std::slice::from_ref(existing), task)? == stamp,
                 "Destination changed; recovery retained at {}",

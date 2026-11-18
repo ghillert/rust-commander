@@ -666,6 +666,8 @@ fn field_height(field: &Field) -> f64 {
         6 => {
             if field.value.len() > 300 {
                 220.0
+            } else if field.scrollable_note() {
+                118.0
             } else {
                 68.0
             }
@@ -1031,7 +1033,7 @@ impl Sheet {
                     };
                     Widget::Check(check)
                 }
-                4 | 6 if field.kind == 4 || field.value.len() > 300 => {
+                4 | 6 if field.kind == 4 || field.scrollable_note() => {
                     let scroll = NSScrollView::initWithFrame(
                         NSScrollView::alloc(mtm),
                         rect(

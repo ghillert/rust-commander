@@ -207,7 +207,9 @@ impl Adapter {
                 Ok(()) => {
                     crate::debug_log::record("email", "SMTP server accepted the message");
                     self.desktop_commands = Default::default();
-                    self.app.message=Some("The SMTP server accepted the email. Final recipient delivery depends on the mail service.".into());
+                    self.app.message = Some(ResultMessage::plain(
+                        "The SMTP server accepted the email. Final recipient delivery depends on the mail service.",
+                    ));
                 }
                 Err(error) => {
                     crate::debug_log::record(

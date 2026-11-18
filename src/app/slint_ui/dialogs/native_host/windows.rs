@@ -598,7 +598,7 @@ impl View {
                             self.child("STATIC", &title, 0, self.body, 12, y, 700, 24);
                             y += 28;
                         }
-                        if field.kind == 6 && field.value.len() > 300 {
+                        if field.scrollable_note() {
                             let hwnd = self
                                 .child(
                                     "EDIT",
