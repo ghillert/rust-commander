@@ -274,8 +274,11 @@ impl Tab {
             self.folders_first,
         );
         self.entries = entries;
-        self.selected
-            .retain(|path| self.entries.iter().any(|e| &e.path == path));
+        if !self.selected.is_empty() {
+            let present: std::collections::HashSet<_> =
+                self.entries.iter().map(|e| &e.path).collect();
+            self.selected.retain(|path| present.contains(path));
+        }
         if !self.parent_focused()
             && !self
                 .entries
@@ -438,15 +441,19 @@ impl Tab {
     }
 
     pub fn visible(&self, hidden: bool) -> Vec<usize> {
+        self.visible_indices(hidden).collect()
+    }
+
+    pub(crate) fn visible_indices(&self, hidden: bool) -> impl Iterator<Item = usize> + '_ {
         let query = self.filter.to_lowercase();
         self.entries
             .iter()
             .enumerate()
-            .filter(|(_, e)| {
-                (hidden || !e.name.starts_with('.')) && e.name.to_lowercase().contains(&query)
+            .filter(move |(_, e)| {
+                (hidden || !e.name.starts_with('.'))
+                    && (query.is_empty() || e.name.to_lowercase().contains(&query))
             })
             .map(|(i, _)| i)
-            .collect()
     }
 
     pub fn parent_focused(&self) -> bool {
@@ -454,9 +461,10 @@ impl Tab {
     }
 
     pub fn focused(&self, hidden: bool) -> Option<Entry> {
-        self.visible(hidden).into_iter().find_map(|index| {
+        let cursor = self.cursor.as_ref()?;
+        self.visible_indices(hidden).find_map(|index| {
             let entry = &self.entries[index];
-            (self.cursor.as_ref() == Some(&entry.path)).then(|| entry.clone())
+            (&entry.path == cursor).then(|| entry.clone())
         })
     }
 
@@ -476,23 +484,18 @@ impl Tab {
         if self.location.is_virtual_list() {
             return Vec::new();
         }
-        let visible = self.visible(hidden);
-        let selected: Vec<_> = visible
-            .iter()
-            .map(|&i| &self.entries[i])
-            .filter(|e| self.selected.contains(&e.path))
-            .cloned()
-            .collect();
-        if !selected.is_empty() {
-            selected
-        } else {
-            visible
-                .iter()
-                .map(|&i| &self.entries[i])
-                .filter(|e| Some(&e.path) == self.cursor.as_ref())
+        if !self.selected.is_empty() {
+            let selected: Vec<_> = self
+                .visible_indices(hidden)
+                .map(|i| &self.entries[i])
+                .filter(|e| self.selected.contains(&e.path))
                 .cloned()
-                .collect()
+                .collect();
+            if !selected.is_empty() {
+                return selected;
+            }
         }
+        self.focused(hidden).into_iter().collect()
     }
 
     /// Toggle the current visible row's mark, then advance without marking the next row.

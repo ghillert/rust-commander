@@ -202,7 +202,7 @@ fn native_hit_feedback_survives_adapter_borrow_and_prioritizes_folder_rows() {
     let mut a = state.borrow_mut();
     a.drag.hovered = vec![file.clone()];
     a.drag.position = Some((450.0, 280.0));
-    *a.drag.targets.borrow_mut() = a.native_targets();
+    *a.drag.targets.borrow_mut() = a.native_targets(&ui);
     let target = format!("folder:{}", path_id(&left.join("folder")));
     let data = native_payload(vec![file]);
     assert_eq!(

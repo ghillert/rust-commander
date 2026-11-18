@@ -129,15 +129,15 @@ impl Adapter {
         };
         accepted(&to, data, proposed)
     }
-    fn native_targets(&self) -> BTreeMap<(i32, String), Location> {
+    fn native_targets(&self, ui: &CommanderWindow) -> BTreeMap<(i32, String), Location> {
         let mut targets = BTreeMap::new();
         if self.blocked() || self.app.job.is_some() {
             return targets;
         }
-        for side in 0..2 {
+        for (side, visible) in self.visible_row_ranges(ui).into_iter().enumerate() {
             let mut ids = vec!["pane".to_owned()];
             ids.extend(
-                self.row_cache[side]
+                self.row_cache[side][visible]
                     .iter()
                     .filter(|r| r.directory || crate::archive_tools::editable(&r.path))
                     .map(|r| format!("folder:{}", r.id)),
@@ -630,7 +630,7 @@ impl Adapter {
         let active = !self.drag.hovered.is_empty() || !self.pending_drops.is_empty();
         let global = ui.global::<Transfers>();
         if active {
-            *self.drag.targets.borrow_mut() = self.native_targets();
+            *self.drag.targets.borrow_mut() = self.native_targets(ui);
             #[cfg(not(target_os = "linux"))]
             use raw_window_handle::HasWindowHandle;
             if self.pending_drops.is_empty() {

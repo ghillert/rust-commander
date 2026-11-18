@@ -670,13 +670,19 @@ pub(crate) fn validate_sources(sources: &[PathBuf]) -> Result<()> {
     if sources.is_empty() {
         bail!("Select at least one item.");
     }
-    for (i, source) in sources.iter().enumerate() {
+    let paths: std::collections::HashSet<&Path> = sources.iter().map(PathBuf::as_path).collect();
+    if paths.len() != sources.len() {
+        bail!("The selection contains duplicate or nested paths.");
+    }
+    for source in sources {
         fs::symlink_metadata(source)
             .with_context(|| format!("Cannot read {}", source.display()))?;
-        for other in &sources[..i] {
-            if source == other || source.starts_with(other) || other.starts_with(source) {
-                bail!("The selection contains duplicate or nested paths.");
-            }
+        if source
+            .ancestors()
+            .skip(1)
+            .any(|parent| paths.contains(parent))
+        {
+            bail!("The selection contains duplicate or nested paths.");
         }
     }
     Ok(())

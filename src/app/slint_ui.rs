@@ -39,6 +39,20 @@ struct RowData {
     payload: String,
 }
 
+#[derive(PartialEq)]
+struct ListingStamp {
+    tab: u64,
+    revision: u64,
+    location: Location,
+    sort: filesystem::Sort,
+    descending: bool,
+    show_hidden: bool,
+    filter: String,
+    columns: Vec<crate::preferences::Column>,
+    language: crate::i18n::Language,
+    metadata_revision: u64,
+}
+
 pub(super) struct Adapter {
     app: Commander,
     enhancements: enhancements::State,
@@ -65,9 +79,11 @@ pub(super) struct Adapter {
     ctx: UiSignal,
     rows: [Rc<VecModel<FileRow>>; 2],
     row_cache: [Vec<RowData>; 2],
+    // Encoded UI identifier to (visible row, entry in the sorted listing).
+    row_indices: [std::collections::HashMap<String, (usize, usize)>; 2],
     icons: icons::Cache,
     icon_rows: [std::ops::Range<usize>; 2],
-    listing_stamp: [String; 2],
+    listing_stamp: [Option<ListingStamp>; 2],
     breadcrumbs: [Vec<Location>; 2],
     breadcrumb_stamp: [String; 2],
     selection_stamp: [u64; 2],
@@ -267,6 +283,7 @@ impl Adapter {
             ctx,
             rows: std::array::from_fn(|_| Rc::new(VecModel::default())),
             row_cache: Default::default(),
+            row_indices: Default::default(),
             icons: Default::default(),
             icon_rows: [0..0, 0..0],
             listing_stamp: Default::default(),
@@ -341,13 +358,30 @@ impl Adapter {
     }
 
     fn entry(&self, side: usize, id: &str) -> Option<Entry> {
-        self.app
-            .panes
-            .get(side)?
-            .tab()
-            .entries
-            .iter()
-            .find(|entry| path_id(&entry.path) == id)
+        let tab = self.app.panes.get(side)?.tab();
+        if self.listing_stamp[side].as_ref().is_some_and(|stamp| {
+            stamp.tab == tab.id
+                && stamp.revision == tab.revision
+                && stamp.location == tab.location
+                && stamp.sort == tab.sort
+                && stamp.descending == tab.descending
+                && stamp.show_hidden == self.app.show_hidden
+                && stamp.filter == tab.filter
+        }) {
+            let &(row, index) = self.row_indices[side].get(id)?;
+            return tab
+                .entries
+                .get(index)
+                .filter(|entry| entry.path == self.row_cache[side][row].path)
+                .cloned();
+        }
+        // An input event can arrive after a listing completes and before its rows are published.
+        let requested = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(id)
+            .ok()?;
+        tab.visible_indices(self.app.show_hidden)
+            .map(|i| &tab.entries[i])
+            .find(|entry| entry.path.as_os_str().as_encoded_bytes() == requested)
             .cloned()
     }
 
@@ -1142,31 +1176,32 @@ impl Adapter {
                 self.breadcrumbs[side] = crumbs.into_iter().map(|(_, location)| location).collect();
                 self.breadcrumb_stamp[side] = tab.location.label();
             }
-            let visible = tab.visible(self.app.show_hidden);
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             tab.selected.hash(&mut hasher);
             tab.cursor.hash(&mut hasher);
             let selection = hasher.finish();
-            let listing = format!(
-                "{}:{}:{}:{:?}:{}:{}:{}:{:?}:{:?}:{}",
-                tab.id,
-                tab.revision,
-                tab.location.label(),
-                tab.sort,
-                tab.descending,
-                self.app.show_hidden,
-                tab.filter,
-                self.app
+            let listing = ListingStamp {
+                tab: tab.id,
+                revision: tab.revision,
+                location: tab.location.clone(),
+                sort: tab.sort,
+                descending: tab.descending,
+                show_hidden: self.app.show_hidden,
+                filter: tab.filter.clone(),
+                columns: self
+                    .app
                     .preferences
                     .columns
                     .iter()
                     .map(|c| c.kind)
-                    .collect::<Vec<_>>(),
-                self.app.preferences.language,
-                metadata_revision
-            );
-            if self.listing_stamp[side] != listing {
+                    .collect(),
+                language: self.app.preferences.language,
+                metadata_revision,
+            };
+            let listing_changed = self.listing_stamp[side].as_ref() != Some(&listing);
+            if listing_changed {
+                let visible = tab.visible(self.app.show_hidden);
                 let virtual_list = tab.location.is_virtual_list();
                 self.drag.rows[side] = if virtual_list {
                     Vec::new()
@@ -1231,6 +1266,12 @@ impl Adapter {
                         symlink: row.symlink,
                     }
                 });
+                self.row_indices[side] = self.row_cache[side]
+                    .iter()
+                    .zip(visible)
+                    .enumerate()
+                    .map(|(row, (data, index))| (data.id.clone(), (row, index)))
+                    .collect();
             } else if self.selection_stamp[side] != selection {
                 for (index, row) in self.row_cache[side].iter_mut().enumerate() {
                     let selected = tab.selected.contains(&row.path);
@@ -1246,7 +1287,7 @@ impl Adapter {
                     }
                 }
             }
-            if self.selection_stamp[side] != selection || self.listing_stamp[side] != listing {
+            if self.selection_stamp[side] != selection || listing_changed {
                 let chosen = tab.chosen(self.app.show_hidden);
                 self.drag.selected[side] = (!chosen.is_empty()).then(|| {
                     drag::Handle::new(crate::drag_drop::Selection {
@@ -1264,7 +1305,7 @@ impl Adapter {
                     ui.set_right_selection_payload(payload.into());
                 }
             }
-            self.listing_stamp[side] = listing;
+            self.listing_stamp[side] = Some(listing);
             self.selection_stamp[side] = selection;
             let tabs = self.app.panes[side]
                 .tabs
@@ -1279,11 +1320,11 @@ impl Adapter {
                 }
                 self.tabs_cache[side] = tabs;
             }
-            let cursor = visible
-                .iter()
-                .position(|&index| tab.cursor.as_ref() == Some(&tab.entries[index].path))
-                .map(|index| index as i32)
-                .unwrap_or(-1);
+            let cursor = tab
+                .cursor
+                .as_ref()
+                .and_then(|path| self.row_indices[side].get(&path_id(path)))
+                .map_or(-1, |&(row, _)| row as i32);
             if side == 0 {
                 ui.set_left_cursor(cursor);
             } else {
@@ -1292,13 +1333,14 @@ impl Adapter {
             if tab.scroll_to_cursor {
                 ui.invoke_scroll_to_cursor(side as i32);
             }
-            let item_label = tr(if visible.len() == 1 { "item" } else { "items" });
+            let visible_count = self.row_cache[side].len();
+            let item_label = tr(if visible_count == 1 { "item" } else { "items" });
             let summary = if tab.selected.is_empty() {
-                format!("{} {}", visible.len(), item_label)
+                format!("{visible_count} {item_label}")
             } else {
                 format!(
                     "{} {} · {} {}",
-                    visible.len(),
+                    visible_count,
                     item_label,
                     tab.selected.len(),
                     tr("selected")
