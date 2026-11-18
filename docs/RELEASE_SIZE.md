@@ -88,17 +88,22 @@ feature graphs. No dependency versions are upgraded.
 
 | Dependency | Decision | Functionality retained |
 | --- | --- | --- |
-| OpenDAL | Disable defaults; keep Tokio execution and every previously selected service explicitly. Remove the unused `services-memory` backend. | Local filesystem adapter, FTP, WebDAV, S3, HTTP, Dropbox, Google Drive, OneDrive, GCS, WebHDFS, and Unix SFTP. The direct Reqwest dependency still enables Rustls TLS. |
+| OpenDAL | Enable Tokio execution and the storage services the application uses. | Local filesystem adapter, WebDAV, S3, HTTP, Dropbox, Google Drive, OneDrive, GCS, and WebHDFS. FTP and FTPS use SuppaFTP. SFTP uses russh on all desktop platforms. |
 | clipboard-rs | Disable its default `image` feature; keep `wayland`. The application calls its file, text, and custom-format APIs only. | File Copy/Cut/Paste, text clipboard, ownership markers, Windows drop effects, and Linux file formats. |
 | Slint | Retain both FemtoVG and software renderers, accessibility, system text support, and X11/Wayland. | GPU and software rendering, accessible controls, international text, and desktop platform integration. |
 | Hayro / image | Retain embedded PDF fonts, CMaps, SIMD, and all enabled image formats. | PDF rendering and BMP, GIF, ICO, JPEG, PNG, TIFF, and WebP previews. |
 | Archives | Retain all existing compression and encryption features. | Existing ZIP, TAR, 7z, compressed stream, and libarchive support. |
-| TLS crypto providers | Retain Ring and AWS-LC. OpenDAL's FTP dependencies enable both transitively; features are additive, so a direct default-feature override cannot remove the upstream request. | Existing TLS behavior and supported algorithms. Unifying these requires a separate upstream dependency change. |
+| TLS crypto provider | The native FTP transport uses Rustls with Ring. | Explicit and implicit FTPS with certificate verification. |
 
-The lockfile change removes only the unused clipboard-to-image dependency edge.
-The preview image dependency is still enabled independently. Removing unused
-features does not imply their full crate size was present in the final executable:
-link-time dead-code elimination already discards unreachable code.
+Removing OpenDAL's duplicate Unix SFTP backend dropped 20 packages from the
+lockfile. In a paired Apple Silicon release build at `fcd756d`, disabling this
+feature alone reduced the executable from 25,795,616 to 25,495,904 bytes
+(299,712 bytes, 1.16%). The native SFTP fixture exercises password, key and SSH
+alias connections with `python3 scripts/test-uri-transports.py`.
+
+Including the file-operation, idle CPU and UI changes from the same review,
+the Apple Silicon release executable weighs 25,545,808 bytes. That saves
+249,808 bytes (0.97%) against the 25,795,616-byte baseline at `fcd756d`.
 
 ## Validation
 
