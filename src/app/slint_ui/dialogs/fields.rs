@@ -19,6 +19,8 @@ fn checked(value: &str) -> bool {
 
 impl Adapter {
     pub(in super::super) fn edit_field(&mut self, id: &str, value: &str) {
+        // Native field events arrive during sync, after the current tick polled the prompt.
+        self.ctx.request_repaint();
         if let Some(confirmation) = &mut self.quit_confirmation {
             if id == "quit-show-next-time" {
                 confirmation.show_next_time = checked(value);

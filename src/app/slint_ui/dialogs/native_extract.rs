@@ -423,7 +423,14 @@ impl Host {
                     assert_eq!(id, value, "Tab must follow the visible action order");
                 }
             }
-            "native-action" if value == "close" => sheet.window.performClose(None),
+            "native-action" if value == "close" => {
+                // Attached sheets have no close button. Exercise their registered close delegate.
+                let delegate = sheet
+                    .window
+                    .delegate()
+                    .expect("Native sheet close delegate");
+                assert!(!delegate.windowShouldClose(&sheet.window));
+            }
             "native-action" if value == "return" => {
                 let fields = sheet.target.ivars().fields.borrow();
                 let control = fields.first().unwrap().1.control().unwrap();
