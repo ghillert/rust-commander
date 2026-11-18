@@ -853,6 +853,7 @@ mod tests {
     #[test]
     fn browser_url_is_reviewed_and_window_commands_use_configured_shortcuts() {
         let (_root, ui, state, _, _) = setup();
+        ui.set_system_menubar(false);
         for (command, request) in [
             ("MinimizeWindow", "minimize"),
             ("MaximizeWindow", "maximize"),

@@ -485,6 +485,13 @@ fn alt_menu_navigation_moves_between_headings_and_restores_pane_focus() {
     press(&ui, Key::Escape);
     assert!(!ui.get_menu_heading_active());
     assert!(state.borrow().app.prompt.is_none());
+
+    let mut mnemonic = slint::language::KeyEvent::default();
+    mnemonic.text = "m".into();
+    mnemonic.modifiers.alt = true;
+    assert!(ui.invoke_global_key(mnemonic));
+    slint::platform::update_timers_and_animations();
+    assert!(ui.get_menu_items().iter().any(|item| item.id == "MarkAll"));
 }
 
 #[test]

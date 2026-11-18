@@ -295,27 +295,24 @@ impl Adapter {
         let text = event.text.as_str();
         let is = |key| event.text == SharedString::from(key);
         let titles = ui.get_menu_titles().iter().collect::<Vec<_>>();
-        let mut used = std::collections::BTreeSet::new();
-        let mnemonics = titles
-            .iter()
-            .map(|title| {
+        let index = if event.modifiers.alt
+            && !event.modifiers.control
+            && !event.modifiers.shift
+            && !event.modifiers.meta
+        {
+            let key = text.to_lowercase();
+            let mut used = std::collections::BTreeSet::new();
+            titles.iter().position(|title| {
                 tr(title.as_str())
                     .chars()
-                    .find(|c| {
-                        c.is_alphabetic() && used.insert(c.to_lowercase().collect::<String>())
-                    })
+                    .filter(|c| c.is_alphabetic())
                     .map(|c| c.to_lowercase().collect::<String>())
+                    .find(|mnemonic| used.insert(mnemonic.clone()))
+                    .is_some_and(|mnemonic| mnemonic == key)
             })
-            .collect::<Vec<_>>();
-        let index = event
-            .modifiers
-            .alt
-            .then(|| {
-                mnemonics
-                    .iter()
-                    .position(|m| m.as_deref() == Some(text.to_lowercase().as_str()))
-            })
-            .flatten();
+        } else {
+            None
+        };
         if let Some(index) = index {
             ui.set_menu_heading_index(index as i32);
             ui.set_menu_heading_active(true);
