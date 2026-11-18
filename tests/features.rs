@@ -71,6 +71,53 @@ fn undo_rename_restores_original_name() {
     assert!(!source.join("after").exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn moving_a_symlink_replaces_only_a_distinct_directory_entry() {
+    use std::os::unix::fs::symlink;
+
+    let (root, source, destination) = fixture();
+    let referent = root.path().join("referent");
+    let alias = root.path().join("source-alias");
+    symlink(&source, &alias).unwrap();
+    let options = TransferOptions {
+        conflicts: ConflictPolicy::Replace,
+        merge_folders: false,
+    };
+    for name in ["dangling", "live"] {
+        if name == "live" {
+            fs::write(&referent, "original").unwrap();
+        }
+        let link = source.join(name);
+        symlink(&referent, &link).unwrap();
+        for same_folder in [&source, &alias] {
+            let error = transfer::transfer(
+                std::slice::from_ref(&link),
+                same_folder,
+                true,
+                options,
+                &mut Task::default(),
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains("same item"));
+            assert_eq!(fs::read_link(&link).unwrap(), referent);
+            assert_eq!(fs::read_dir(&source).unwrap().count(), 1);
+        }
+        symlink(&referent, destination.join(name)).unwrap();
+        transfer::transfer(
+            std::slice::from_ref(&link),
+            &destination,
+            true,
+            options,
+            &mut Task::default(),
+        )
+        .unwrap();
+        assert!(fs::symlink_metadata(link).is_err());
+        assert_eq!(fs::read_link(destination.join(name)).unwrap(), referent);
+    }
+    assert_eq!(fs::read_to_string(referent).unwrap(), "original");
+}
+
 #[test]
 fn undo_replacement_restores_previous_contents() {
     let (root, source, destination) = fixture();

@@ -37,6 +37,18 @@ struct PlannedItem {
     action: Action,
 }
 
+fn entry_parent(path: &Path) -> &Path {
+    path.parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."))
+}
+
+fn canonical_entry(path: &Path) -> Result<PathBuf> {
+    Ok(entry_parent(path)
+        .canonicalize()?
+        .join(path.file_name().context("Missing filename")?))
+}
+
 fn next_name(target: &Path, reserved: &BTreeSet<PathBuf>) -> Result<PathBuf> {
     let parent = target.parent().context("Missing target parent")?;
     let stem = target.file_stem().context("Missing filename")?;
@@ -79,8 +91,8 @@ fn plan_item(
         if options.conflicts == ConflictPolicy::Rename {
             target = next_name(&target, reserved)?;
             Action::Copy
-        } else if fs::canonicalize(source).ok() == fs::canonicalize(&target).ok()
-            && !source_metadata.file_type().is_symlink()
+        } else if source.file_name() == target.file_name()
+            && same_file::is_same_file(entry_parent(source), entry_parent(&target))?
         {
             if options.conflicts == ConflictPolicy::Skip {
                 Action::Skip
@@ -281,11 +293,7 @@ pub(crate) fn transfer_report(
     let normalized_overrides = overrides
         .iter()
         .map(|(path, policy)| {
-            let normalized = path
-                .parent()
-                .and_then(|parent| parent.canonicalize().ok())
-                .and_then(|parent| path.file_name().map(|name| parent.join(name)))
-                .unwrap_or_else(|| path.clone());
+            let normalized = canonical_entry(path).unwrap_or_else(|_| path.clone());
             (normalized, *policy)
         })
         .collect::<BTreeMap<_, _>>();
@@ -313,7 +321,7 @@ pub(crate) fn transfer_report(
         {
             let target_directory = fs::canonicalize(&target)?;
             for selected in sources {
-                if fs::canonicalize(selected)?.starts_with(&target_directory) {
+                if canonical_entry(selected)?.starts_with(&target_directory) {
                     bail!(
                         "A destination folder contains a selected source: {}",
                         target.display()
