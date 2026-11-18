@@ -87,7 +87,7 @@ pub fn build(
             error: String::new(),
         });
         if expanded.contains(path) {
-            match filesystem::list(&at(root, path)) {
+            match filesystem::browse(&at(root, path)) {
                 Ok(mut entries) => {
                     entries.retain(|e| {
                         e.is_dir

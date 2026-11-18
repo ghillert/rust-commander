@@ -200,10 +200,10 @@ impl Tab {
                     (Location::Remote { path, .. }, Some(container)) => {
                         container.entries(path, refresh_docker, &cancel)
                     }
-                    _ => filesystem::list(&location),
+                    _ => filesystem::browse(&location),
                 }
             } else {
-                filesystem::list(&location)
+                filesystem::browse(&location)
             };
             let _ = sender.send(result.map_err(|e| format!("{e:#}")));
             ctx.request_repaint();

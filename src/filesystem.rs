@@ -190,7 +190,20 @@ pub fn list(location: &Location) -> Result<Vec<Entry>> {
         }
         Location::Archive { file, prefix } => crate::archive::list(file, prefix),
         Location::Remote { connection, path } => crate::remote::list(connection, path),
-        Location::Local(path) => fs::read_dir(path)
+        Location::Local(path) => list_local(path, false),
+    }
+}
+
+/// A live folder view can omit children that disappeared after enumeration.
+pub(crate) fn browse(location: &Location) -> Result<Vec<Entry>> {
+    match location {
+        Location::Local(path) => list_local(path, true),
+        _ => list(location),
+    }
+}
+
+fn list_local(path: &Path, skip_vanished: bool) -> Result<Vec<Entry>> {
+    let children = fs::read_dir(path)
             .map_err(|error| {
                 let mut message = format!("Cannot open {}", path.display());
                 if cfg!(target_os = "macos")
@@ -202,28 +215,36 @@ pub fn list(location: &Location) -> Result<Vec<Entry>> {
                     message.push_str(". Check Rust Commander’s Network Volumes access in System Settings → Privacy & Security → Files and Folders");
                 }
                 anyhow::Error::new(error).context(message)
-            })?
-            .map(|item| {
-                let item = item?;
-                let path = item.path();
-                let metadata = fs::symlink_metadata(&path)?;
-                let is_symlink = metadata.file_type().is_symlink();
-                Ok(Entry {
-                    name: item.file_name().to_string_lossy().into_owned(),
-                    is_dir: if is_symlink {
-                        path.is_dir()
-                    } else {
-                        metadata.is_dir()
-                    },
-                    is_symlink,
-                    size_known: true,
-                    size: metadata.len(),
-                    modified: metadata.modified().ok(),
-                    path,
-                })
-            })
-            .collect(),
-    }
+            })?;
+    collect_children(children, skip_vanished)
+}
+
+fn collect_children(
+    children: impl Iterator<Item = std::io::Result<fs::DirEntry>>,
+    skip_vanished: bool,
+) -> Result<Vec<Entry>> {
+    children.map(|child| child.and_then(local_entry))
+        .filter(|entry| !matches!(entry, Err(e) if skip_vanished && e.kind() == std::io::ErrorKind::NotFound))
+        .collect::<std::io::Result<_>>().map_err(Into::into)
+}
+
+fn local_entry(item: fs::DirEntry) -> std::io::Result<Entry> {
+    let path = item.path();
+    let metadata = fs::symlink_metadata(&path)?;
+    let is_symlink = metadata.file_type().is_symlink();
+    Ok(Entry {
+        name: item.file_name().to_string_lossy().into_owned(),
+        is_dir: if is_symlink {
+            path.is_dir()
+        } else {
+            metadata.is_dir()
+        },
+        is_symlink,
+        size_known: true,
+        size: metadata.len(),
+        modified: metadata.modified().ok(),
+        path,
+    })
 }
 
 pub fn sort_entries(entries: &mut [Entry], sort: Sort, descending: bool) {
@@ -449,6 +470,25 @@ pub fn ownership(path: &Path) -> (Option<u32>, Option<u32>, Option<u32>) {
 #[cfg(test)]
 mod relative_path_tests {
     use super::*;
+
+    #[test]
+    fn browsing_skips_vanished_children_but_preserves_root_and_inventory_errors() {
+        let directory = tempfile::tempdir().unwrap();
+        let vanished = directory.path().join("vanished");
+        fs::write(&vanished, "").unwrap();
+        fs::write(directory.path().join("survivor"), "").unwrap();
+        let enumerate = || fs::read_dir(directory.path()).unwrap().collect::<Vec<_>>();
+        let browse_children = enumerate();
+        let inventory_children = enumerate();
+        fs::remove_file(&vanished).unwrap();
+        let entries = collect_children(browse_children.into_iter(), true).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "survivor");
+        assert!(collect_children(inventory_children.into_iter(), false).is_err());
+        assert!(browse(&Location::Local(vanished)).is_err());
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert!(collect_children(std::iter::once(Err(denied)), true).is_err());
+    }
 
     #[test]
     fn home_expansion_keeps_repeated_separators_inside_home() {
