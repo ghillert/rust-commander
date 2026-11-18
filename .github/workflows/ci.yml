@@ -49,7 +49,8 @@ jobs:
     name: Test and build (${{ matrix.os }})
     needs: format
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # Ubuntu package mirrors can take over 30 minutes to deliver the native build dependencies.
+    timeout-minutes: ${{ startsWith(matrix.os, 'ubuntu-') && 90 || 60 }}
     strategy:
       fail-fast: false
       matrix:
