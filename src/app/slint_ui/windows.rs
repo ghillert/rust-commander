@@ -259,15 +259,15 @@ pub(super) fn native_viewer_snapshot(path: &std::path::Path) -> bool {
     SESSIONS.with(|sessions| {
         sessions.borrow().iter().any(|s| {
             let state = s.state.borrow();
-            if state.native_viewer.snapshot(&s.ui, path) {
-                return true;
+            #[cfg(target_os = "windows")]
+            {
+                state.native_viewer.snapshot(&s.ui, path)
             }
             #[cfg(target_os = "macos")]
             {
-                state.native_preview.snapshot(&s.ui, path)
+                state.native_viewer.snapshot(&s.ui, path)
+                    || state.native_preview.snapshot(&s.ui, path)
             }
-            #[cfg(not(target_os = "macos"))]
-            false
         })
     })
 }

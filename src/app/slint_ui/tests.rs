@@ -643,8 +643,8 @@ pub(super) fn fixture() -> (tempfile::TempDir, Adapter, PathBuf, PathBuf) {
     adapter.app.settings_valid = false;
     adapter.app.queue = Default::default();
     adapter.app.history.clear();
-    for side in 0..2 {
-        let tab = adapter.app.panes[side].tab_mut();
+    for pane in &mut adapter.app.panes {
+        let tab = pane.tab_mut();
         tab.entries = filesystem::list(&tab.location).unwrap();
         // Match normal directory loading instead of relying on read_dir order.
         filesystem::sort_entries_with_options(

@@ -1410,11 +1410,13 @@ pub(super) fn run(model: Model, incoming: Incoming) -> i32 {
                             || f.id == "shortcut-filter"
                     });
                     let button_focused = view.buttons.values().any(|(_, button)| *button == focus);
-                    if !keep && !button_focused && view.model.form.error.is_empty() {
-                        if let Some(action) = view.model.form.default_action_id() {
-                            emit(&Event::Action(action.into()));
-                            continue;
-                        }
+                    if !keep
+                        && !button_focused
+                        && view.model.form.error.is_empty()
+                        && let Some(action) = view.model.form.default_action_id()
+                    {
+                        emit(&Event::Action(action.into()));
+                        continue;
                     }
                 }
                 if IsDialogMessageW(window, &message) == 0 {

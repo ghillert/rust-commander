@@ -344,9 +344,9 @@ fn every_tab_creation_path_obeys_the_limit_and_moving_tabs_moves_focus() {
     assert_eq!(state.borrow().app.active, 1);
     let mut a = state.borrow_mut();
     let ctx = a.ctx.clone();
-    for side in 0..2 {
-        while a.app.panes[side].tabs.len() < 32 {
-            a.app.panes[side].add_tab(&ctx);
+    for pane in &mut a.app.panes {
+        while pane.tabs.len() < 32 {
+            pane.add_tab(&ctx);
         }
     }
     for action in [
