@@ -7,16 +7,29 @@ use std::sync::{
 #[derive(Clone, Default)]
 pub struct UiSignal {
     dirty: Arc<AtomicBool>,
+    deadline: Arc<Mutex<Option<std::time::Instant>>>,
     clipboard: Arc<Mutex<Vec<String>>>,
     close: Arc<AtomicBool>,
     terminal_output: Option<Arc<dyn Fn() + Send + Sync>>,
 }
+
 impl UiSignal {
     pub fn request_repaint(&self) {
-        self.dirty.store(true, Ordering::Relaxed);
+        self.dirty.store(true, Ordering::Release);
     }
-    pub fn request_repaint_after(&self, _delay: std::time::Duration) {
-        self.request_repaint();
+    pub fn request_repaint_after(&self, delay: std::time::Duration) {
+        let when = std::time::Instant::now() + delay;
+        let mut deadline = self.deadline.lock().unwrap_or_else(|e| e.into_inner());
+        if deadline.is_none_or(|previous| when < previous) {
+            *deadline = Some(when);
+        }
+    }
+    pub(crate) fn take_repaint(&self) -> bool {
+        let mut deadline = self.deadline.lock().unwrap_or_else(|e| e.into_inner());
+        let due = deadline
+            .take_if(|when| *when <= std::time::Instant::now())
+            .is_some();
+        self.dirty.swap(false, Ordering::Acquire) || due
     }
     pub(crate) fn on_terminal_output(&mut self, notify: impl Fn() + Send + Sync + 'static) {
         self.terminal_output = Some(Arc::new(notify));
@@ -38,9 +51,28 @@ impl UiSignal {
         self.request_repaint();
     }
     pub(crate) fn take_events(&self) -> (Vec<String>, bool) {
-        self.dirty.store(false, Ordering::Relaxed);
         let clipboard =
             std::mem::take(&mut *self.clipboard.lock().unwrap_or_else(|e| e.into_inner()));
         (clipboard, self.close.swap(false, Ordering::Relaxed))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn draining_ui_events_preserves_worker_wakeups_and_the_earliest_deadline() {
+        let signal = UiSignal::default();
+        assert!(!signal.take_repaint());
+        signal.request_repaint_after(std::time::Duration::from_secs(60));
+        assert!(!signal.take_repaint());
+        signal.copy_text("ready".into());
+        assert_eq!(signal.take_events().0, ["ready"]);
+        assert!(signal.take_repaint());
+        assert!(!signal.take_repaint());
+        signal.request_repaint_after(std::time::Duration::ZERO);
+        signal.request_repaint_after(std::time::Duration::from_secs(1));
+        assert!(signal.take_repaint());
+        assert!(!signal.take_repaint());
     }
 }

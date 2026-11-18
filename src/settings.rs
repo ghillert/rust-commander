@@ -232,7 +232,7 @@ mod tests {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct WindowSession {
     pub workspace: crate::workspaces::Workspace,
     pub width: f32,

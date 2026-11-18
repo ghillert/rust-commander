@@ -20,6 +20,9 @@ pub(super) struct Host {
     clicked: Rc<Cell<bool>>,
 }
 impl Host {
+    pub fn has_click(&self) -> bool {
+        self.clicked.get()
+    }
     pub fn take_clicked(&self) -> Option<PathBuf> {
         self.clicked
             .replace(false)

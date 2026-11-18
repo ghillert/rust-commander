@@ -55,6 +55,9 @@ unsafe extern "system" fn subclass(
     unsafe { DefSubclassProc(hwnd, msg, w, l) }
 }
 impl Menu {
+    pub fn has_events(&self) -> bool {
+        !self.state.events.borrow().is_empty()
+    }
     /// Must be called on the owning GUI thread, outside controller borrows:
     /// attaching a menu can synchronously resize the host window.
     pub fn attach(hwnd: HWND) -> Option<Self> {

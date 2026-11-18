@@ -317,6 +317,11 @@ impl Host {
             .map(|s| std::mem::take(&mut *s.target.ivars().events.borrow_mut()))
             .unwrap_or_default()
     }
+    pub fn has_events(&self) -> bool {
+        self.sheet
+            .as_ref()
+            .is_some_and(|sheet| !sheet.target.ivars().events.borrow().is_empty())
+    }
     #[cfg(feature = "screenshot")]
     pub fn smoke(&self, command: &str, value: &str) {
         let sheet = self

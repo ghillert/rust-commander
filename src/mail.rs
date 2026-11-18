@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 pub const ATTACHMENT_LIMIT: usize = 25 * 1024 * 1024;
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Settings {
     pub host: String,

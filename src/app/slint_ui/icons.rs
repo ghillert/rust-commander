@@ -158,8 +158,8 @@ fn viewport(first: f32, page: f32, count: usize) -> Range<usize> {
 }
 
 impl Adapter {
-    pub(super) fn sync_icons(&mut self, ui: &CommanderWindow) {
-        let ranges = std::array::from_fn::<_, 2, _>(|side| {
+    pub(super) fn visible_row_ranges(&self, ui: &CommanderWindow) -> [Range<usize>; 2] {
+        std::array::from_fn(|side| {
             if self.app.preferences.single_pane && self.app.active != side {
                 0..0
             } else {
@@ -169,7 +169,15 @@ impl Adapter {
                     self.row_cache[side].len(),
                 )
             }
-        });
+        })
+    }
+
+    pub(super) fn icons_need_update(&self, ui: &CommanderWindow) -> bool {
+        !self.icons.pending.is_empty() || self.icon_rows != self.visible_row_ranges(ui)
+    }
+
+    pub(super) fn sync_icons(&mut self, ui: &CommanderWindow) {
+        let ranges = self.visible_row_ranges(ui);
         let system = self.app.preferences.file_icon_source == FileIconSource::SystemWithFallback;
         let wanted = (0..2)
             .filter(|_| system)

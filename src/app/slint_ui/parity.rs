@@ -499,6 +499,10 @@ impl Adapter {
             if self.extra.deadline[side].is_some_and(|d| std::time::Instant::now() > d) {
                 self.extra.deadline[side] = None;
                 self.extra.query[side].clear();
+            } else if let Some(deadline) = self.extra.deadline[side] {
+                self.ctx.request_repaint_after(
+                    deadline.saturating_duration_since(std::time::Instant::now()),
+                );
             }
         }
         ui.set_left_quick_find(self.extra.query[0].clone().into());
@@ -1096,9 +1100,11 @@ impl Adapter {
         }
         let (send, receive) = mpsc::channel();
         self.extra.native_pending = Some(receive);
+        let ctx = self.ctx.clone();
         std::thread::spawn(move || {
             let result = crate::native_actions::trash_action(empty).map_err(|e| format!("{e:#}"));
             let _ = send.send(result);
+            ctx.request_repaint();
         });
     }
 }

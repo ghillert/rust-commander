@@ -323,7 +323,7 @@ impl Adapter {
             let title = titles[index].clone();
             slint::Timer::single_shot(Duration::ZERO, move || {
                 if let Some(ui) = weak.upgrade() {
-                    ui.invoke_show_menu(title.into());
+                    ui.invoke_show_menu(title);
                 }
             });
             return true;
@@ -368,7 +368,7 @@ impl Adapter {
                 .clone();
             slint::Timer::single_shot(Duration::ZERO, move || {
                 if let Some(ui) = weak.upgrade() {
-                    ui.invoke_show_menu(title.into());
+                    ui.invoke_show_menu(title);
                 }
             });
             return true;

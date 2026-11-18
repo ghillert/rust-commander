@@ -33,7 +33,7 @@ pub struct Options {
     pub rules: PathRules,
     pub mode: Mode,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Preset {
     pub name: String,
     pub options: Options,

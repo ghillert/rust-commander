@@ -1,6 +1,6 @@
 use crate::{filesystem::Location, preferences::Preferences};
 use serde::{Deserialize, Serialize};
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Workspace {
     pub name: String,
     #[serde(default)]

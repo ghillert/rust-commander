@@ -62,6 +62,11 @@ impl Preview {
         }
     }
     pub(crate) fn poll(&mut self, ctx: &UiSignal) {
+        if self.loading
+            && let Some(changed) = self.changed
+        {
+            ctx.request_repaint_after(Duration::from_millis(250).saturating_sub(changed.elapsed()));
+        }
         if self.pending.is_none()
             && self.loading
             && self

@@ -577,7 +577,7 @@ impl Record {
             && !self.changes.is_empty()
     }
 }
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Retention {
     pub max_mib: u64,

@@ -18,7 +18,7 @@ impl LocationBar {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Preferences {
     pub mail: crate::mail::Settings,
@@ -489,7 +489,7 @@ impl Column {
         }
     }
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ColumnSpec {
     pub kind: Column,
     pub width: f32,

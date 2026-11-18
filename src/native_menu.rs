@@ -1,5 +1,4 @@
 //! AppKit menus. Constructed and updated only on Slint's main UI thread.
-use crate::ui_signal::UiSignal;
 use crate::{
     APP_NAME,
     app::{Action, action_menu_definitions},
@@ -16,10 +15,12 @@ pub struct NativeMenu {
     submenu_labels: Vec<(Submenu, &'static str)>,
     edit_items: Vec<(PredefinedMenuItem, &'static str)>,
     receiver: Receiver<muda::MenuId>,
+    notified: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    blocked: std::cell::Cell<Option<bool>>,
     binding_cache: std::cell::RefCell<std::collections::BTreeMap<String, String>>,
 }
 impl NativeMenu {
-    pub fn new(ctx: &UiSignal) -> muda::Result<Self> {
+    pub fn new() -> muda::Result<Self> {
         let menu = Menu::new();
         let mut items = Vec::new();
         let mut submenu_labels = Vec::new();
@@ -113,10 +114,11 @@ impl NativeMenu {
             menu.append(&submenu)?;
         }
         let (sender, receiver) = mpsc::channel();
-        let ctx = ctx.clone();
+        let notified = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let pending = notified.clone();
         muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {
             let _ = sender.send(event.id);
-            ctx.request_repaint();
+            pending.store(true, std::sync::atomic::Ordering::Release);
         }));
         menu.init_for_nsapp();
         window.set_as_windows_menu_for_nsapp();
@@ -126,6 +128,8 @@ impl NativeMenu {
             submenu_labels,
             edit_items,
             receiver,
+            notified,
+            blocked: Default::default(),
             binding_cache: Default::default(),
         })
     }
@@ -178,6 +182,10 @@ impl NativeMenu {
         *self.binding_cache.borrow_mut() = preferences.shortcuts.clone();
     }
 
+    pub fn take_notification(&self) -> bool {
+        self.notified
+            .swap(false, std::sync::atomic::Ordering::Acquire)
+    }
     pub fn poll(&self, blocked: bool) -> Vec<Action> {
         let mut actions = Vec::new();
         while let Ok(id) = self.receiver.try_recv() {
@@ -187,8 +195,10 @@ impl NativeMenu {
                 actions.push(*action);
             }
         }
-        for (item, action, _) in &self.items {
-            item.set_enabled(!blocked || matches!(action, Action::Quit));
+        if self.blocked.replace(Some(blocked)) != Some(blocked) {
+            for (item, action, _) in &self.items {
+                item.set_enabled(!blocked || matches!(action, Action::Quit));
+            }
         }
         actions
     }

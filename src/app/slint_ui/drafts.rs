@@ -127,6 +127,15 @@ impl Adapter {
             if editor.navigation.draft_written {
                 self.discard_editor_draft(&mut editor);
             }
+        } else if editor.navigation.draft_revision != editor.navigation.draft_saved
+            && editor.navigation.draft_due > std::time::Instant::now()
+        {
+            self.ctx.request_repaint_after(
+                editor
+                    .navigation
+                    .draft_due
+                    .saturating_duration_since(std::time::Instant::now()),
+            );
         } else if editor.navigation.draft_pending.is_none()
             && editor.navigation.draft_revision != editor.navigation.draft_saved
             && std::time::Instant::now() >= editor.navigation.draft_due

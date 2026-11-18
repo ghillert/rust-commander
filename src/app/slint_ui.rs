@@ -83,6 +83,9 @@ pub(super) struct Adapter {
     dialog_buttons: Rc<VecModel<Command>>,
     dialog_button_cache: Vec<(String, String, bool)>,
     places: Vec<(String, Location)>,
+    mounted_drives: Vec<(String, PathBuf)>,
+    drive_scan: Option<Receiver<Vec<(String, PathBuf)>>>,
+    last_drive_scan: Option<std::time::Instant>,
     place_cache: Vec<(String, String, bool, &'static str, bool)>,
     place_sections_expanded: [bool; 4],
     toolbar_cache: Vec<(String, String, bool)>,
@@ -90,6 +93,7 @@ pub(super) struct Adapter {
     columns: Rc<VecModel<FileColumn>>,
     tabs_cache: [Vec<String>; 2],
     dialog_kind: String,
+    labels_language: Option<crate::i18n::Language>,
     field_error: Option<String>,
     invalid_fields: std::collections::BTreeMap<String, (String, String)>,
     quit_confirmation: Option<windows::QuitConfirmation>,
@@ -281,6 +285,9 @@ impl Adapter {
             dialog_buttons: Rc::new(VecModel::default()),
             dialog_button_cache: Vec::new(),
             places: Vec::new(),
+            mounted_drives: Vec::new(),
+            drive_scan: None,
+            last_drive_scan: None,
             place_cache: Vec::new(),
             place_sections_expanded: [true; 4],
             toolbar_cache: Vec::new(),
@@ -288,6 +295,7 @@ impl Adapter {
             columns: Rc::new(VecModel::default()),
             tabs_cache: Default::default(),
             dialog_kind: String::new(),
+            labels_language: None,
             field_error: None,
             invalid_fields: Default::default(),
             quit_confirmation: None,
@@ -402,6 +410,7 @@ impl Adapter {
     }
 
     fn action(&mut self, id: &str) {
+        self.ctx.request_repaint();
         if id.starts_with("Column:") {
             if !self.blocked() {
                 self.interaction_action(id);
@@ -601,6 +610,57 @@ impl Adapter {
         }
     }
 
+    fn needs_tick(&mut self, ui: &CommanderWindow) -> bool {
+        let repaint = self.ctx.take_repaint();
+        let scan_due = self.drive_scan.is_none()
+            && self
+                .last_drive_scan
+                .is_none_or(|t| t.elapsed() >= Duration::from_secs(10));
+        if scan_due {
+            let (send, receive) = mpsc::channel();
+            self.drive_scan = Some(receive);
+            self.last_drive_scan = Some(std::time::Instant::now());
+            std::thread::spawn(move || {
+                let _ = send.send(crate::native_files::mounted_drives());
+            });
+        }
+        let mut drives_changed = false;
+        if let Some(result) = self.drive_scan.as_ref().map(Receiver::try_recv) {
+            match result {
+                Ok(drives) => {
+                    drives_changed = self.mounted_drives != drives;
+                    self.mounted_drives = drives;
+                    self.drive_scan = None;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.drive_scan = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        #[cfg(target_os = "macos")]
+        let native_form = self.native_extract.has_events();
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        let native_form = self.native_forms.needs_update();
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+        let native_form = false;
+        // The infrequent device scan also refreshes system appearance and detects disconnected workers.
+        repaint
+            || scan_due
+            || drives_changed
+            || native_form
+            || self.native_viewer.has_events()
+            || self.native_preview.has_click()
+            || self.icons_need_update(ui)
+            || self.metadata_revision != crate::metadata::names_revision()
+            || self.extra.window_request.is_some()
+            || self.app.exiting
+            || !self.drag.hovered.is_empty()
+            || self.drag.pressed
+            || self.drag.prepare_requested
+            || self.drag.preparation.is_some()
+            || self.drag.finished.is_some()
+            || self.drop_deadline.is_some()
+    }
+
     fn tick(&mut self, ui: &CommanderWindow) {
         #[cfg(target_os = "macos")]
         use slint::winit_030::WinitWindowAccessor;
@@ -613,7 +673,7 @@ impl Adapter {
         }
         #[cfg(target_os = "macos")]
         if self.app.native_window.is_some() && self.app.native_menu.is_none() {
-            match crate::native_menu::NativeMenu::new(&self.ctx) {
+            match crate::native_menu::NativeMenu::new() {
                 Ok(menu) => self.app.native_menu = Some(menu),
                 Err(error) => self.app.fail(error),
             }
@@ -684,9 +744,6 @@ impl Adapter {
                 .preview
                 .select(self.app.tab().location.clone(), entry);
             self.app.preview.poll(&self.ctx);
-        }
-        if let Some(terminal) = &mut self.app.terminal {
-            terminal.poll();
         }
         let (clipboard, close) = self.ctx.take_events();
         for text in clipboard {
@@ -1321,26 +1378,29 @@ impl Adapter {
         }
         ui.set_dialog_preferences(spec.kind == "preferences");
         ui.set_settings_pages(self.settings_pages.clone());
-        ui.set_settings_labels(strings(
-            [
-                "General",
-                "Folders",
-                "Appearance",
-                "Shortcuts",
-                "Mail",
-                "Advanced",
-                "Browsing",
-                "Columns",
-                "Theme and icons",
-                "Toolbar",
-                "Command bar",
-                "Column order",
-                "Button order",
-                "Primary shortcut",
-                "Alternate shortcut",
-            ]
-            .map(|label| tr(label).into_owned()),
-        ));
+        if self.labels_language != Some(self.app.preferences.language) {
+            self.labels_language = Some(self.app.preferences.language);
+            ui.set_settings_labels(strings(
+                [
+                    "General",
+                    "Folders",
+                    "Appearance",
+                    "Shortcuts",
+                    "Mail",
+                    "Advanced",
+                    "Browsing",
+                    "Columns",
+                    "Theme and icons",
+                    "Toolbar",
+                    "Command bar",
+                    "Column order",
+                    "Button order",
+                    "Primary shortcut",
+                    "Alternate shortcut",
+                ]
+                .map(|label| tr(label).into_owned()),
+            ));
+        }
         ui.set_settings_error_page(
             self.invalid_fields
                 .keys()
@@ -1622,10 +1682,10 @@ impl Adapter {
         ));
         self.places
             .push(("containers".into(), Location::Containers));
-        for (name, path) in crate::native_files::mounted_drives() {
+        for (name, path) in &self.mounted_drives {
             let id = format!("place:{}", self.places.len());
-            entries.push((id.clone(), name, false, "devices"));
-            self.places.push((id, Location::Local(path)));
+            entries.push((id.clone(), name.clone(), false, "devices"));
+            self.places.push((id, Location::Local(path.clone())));
         }
         entries.push((
             String::new(),
@@ -2524,6 +2584,7 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
             ui.$method(move |$($arg),*| {
                 let Some($window)=weak.upgrade() else {return Default::default();};
                 windows::with_state(&state,|$adapter| {
+                  $adapter.ctx.request_repaint();
                   let result=$body;
                   $adapter.sync(&$window);
                   result
@@ -2906,6 +2967,9 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
                 WindowEvent::CursorMoved { position, .. } if position.x < 0.0 || position.y < 0.0 || position.x >= f64::from(window.size().width) || position.y >= f64::from(window.size().height));
             if leaving { drag::prime_exit(&event_state, &ui); }
             let mut a = event_state.borrow_mut();
+            if matches!(event, WindowEvent::Resized(_) | WindowEvent::Moved(_) | WindowEvent::ScaleFactorChanged { .. } | WindowEvent::ThemeChanged(_) | WindowEvent::Focused(_) | WindowEvent::HoveredFileCancelled | WindowEvent::DroppedFile(_)) {
+                a.ctx.request_repaint();
+            }
             match event {
                 WindowEvent::MouseInput {
                     state,

@@ -29,7 +29,7 @@ pub enum Orientation {
     Stacked,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Layout {
     pub orientation: Orientation,

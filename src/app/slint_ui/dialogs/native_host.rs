@@ -229,8 +229,8 @@ impl Drop for Process {
 pub(in super::super) struct Host {
     process: Option<Process>,
     failed_kind: Option<String>,
-    #[cfg(feature = "screenshot")]
     pending: Vec<Event>,
+    retry_update: bool,
     #[cfg(feature = "screenshot")]
     fixture: Option<Fixture>,
 }
@@ -249,15 +249,23 @@ impl Host {
     pub fn fixture_active(&self) -> bool {
         self.active() || self.fixture.is_some()
     }
+    pub fn needs_update(&mut self) -> bool {
+        self.poll_events();
+        !self.pending.is_empty() || self.retry_update
+    }
     pub fn events(&mut self) -> Vec<Event> {
-        let mut events = Vec::new();
-        #[cfg(feature = "screenshot")]
-        events.append(&mut self.pending);
+        self.poll_events();
+        std::mem::take(&mut self.pending)
+    }
+    fn poll_events(&mut self) {
         let mut failed = false;
         if let Some(process) = &mut self.process {
             for event in process.events.try_iter() {
                 match event {
-                    Event::Ready => process.ready = true,
+                    Event::Ready => {
+                        process.ready = true;
+                        self.pending.push(Event::Ready);
+                    }
                     Event::Failed => failed = true,
                     #[cfg(feature = "screenshot")]
                     Event::Checked(ok) if self.fixture.as_ref().is_some_and(|f| !f.capture) => {
@@ -267,7 +275,7 @@ impl Host {
                     Event::Captured(ok) if self.fixture.as_ref().is_some_and(|f| f.capture) => {
                         self.fixture.as_mut().unwrap().reply = Some(ok);
                     }
-                    event => events.push(event),
+                    event => self.pending.push(event),
                 }
             }
             if process
@@ -286,16 +294,15 @@ impl Host {
         if failed {
             self.failed_kind = self.process.as_ref().map(|p| p.model.form.kind.clone());
             self.process = None;
+            self.pending.push(Event::Failed);
         }
-        events
     }
     #[cfg(feature = "screenshot")]
     fn test_request(&mut self, request: Request, capture: bool) -> bool {
         // Never wait on the UI thread: the helper can synchronously message its
         // Win32 owner while rebuilding controls, changing focus or capturing.
         // Preserve normal field/action events for the next application tick.
-        let events = self.events();
-        self.pending.extend(events);
+        self.poll_events();
         if let Some(fixture) = self.fixture.as_ref() {
             assert!(fixture.request == request && fixture.capture == capture);
             if let Some(ok) = fixture.reply {
@@ -352,6 +359,7 @@ impl Host {
     ) -> bool {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
         use slint::ComponentHandle;
+        self.retry_update = false;
         let Some(form) = form.filter(|f| native_supported(f)) else {
             self.process = None;
             self.failed_kind = None;
@@ -421,7 +429,7 @@ impl Host {
                 .try_send(Request::Update(Box::new(model.clone())))
             {
                 Ok(()) => process.model = model,
-                Err(TrySendError::Full(_)) => {}
+                Err(TrySendError::Full(_)) => self.retry_update = true,
                 Err(TrySendError::Disconnected(_)) => {
                     self.failed_kind = Some(form.kind.clone());
                     self.process = None;

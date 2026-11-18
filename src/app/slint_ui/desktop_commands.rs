@@ -188,6 +188,7 @@ impl Adapter {
     pub(super) fn desktop_commands_tick(&mut self) {
         if self.desktop_commands.kind == Some("debug-console") && !self.desktop_commands.paused {
             self.desktop_commands.events = crate::debug_log::snapshot();
+            self.ctx.request_repaint_after(Duration::from_millis(250));
         }
         let Some(email) = &mut self.desktop_commands.email else {
             return;

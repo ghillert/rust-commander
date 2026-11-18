@@ -264,7 +264,7 @@ pub(super) fn native_viewer_snapshot(path: &std::path::Path) -> bool {
             }
             #[cfg(target_os = "macos")]
             {
-                return state.native_preview.snapshot(&s.ui, path);
+                state.native_preview.snapshot(&s.ui, path)
             }
             #[cfg(not(target_os = "macos"))]
             false
@@ -453,16 +453,15 @@ fn persist_sessions() {
             }
         })
         .collect::<Vec<_>>();
-    for (_, state) in &sessions {
-        state.borrow_mut().app.saved_windows = windows.clone();
-    }
     RUNTIME.with(|r| {
-        if let Some(r) = r.borrow_mut().as_mut() {
-            let changed = serde_json::to_vec(&r.settings.window_sessions).ok()
-                != serde_json::to_vec(&windows).ok();
+        if let Some(r) = r.borrow_mut().as_mut()
+            && r.settings.window_sessions != windows
+        {
+            for (_, state) in &sessions {
+                state.borrow_mut().app.saved_windows = windows.clone();
+            }
             r.settings.window_sessions = windows;
-            if changed
-                && r.settings_valid
+            if r.settings_valid
                 && let Err(e) = settings::save(&r.settings)
             {
                 eprintln!("Could not save window session: {e:#}");
@@ -501,6 +500,32 @@ pub(super) fn is_last_window(id: usize) -> bool {
     })
 }
 pub(super) fn tick() {
+    // A shared menu, preferences and job queue can affect any open window.
+    // Consume all window notifications before polling so later worker events survive.
+    let mut pending = false;
+    #[cfg(target_os = "macos")]
+    RUNTIME.with(|r| {
+        pending |= r
+            .borrow()
+            .as_ref()
+            .and_then(|r| r.menu.as_ref())
+            .is_some_and(crate::native_menu::NativeMenu::take_notification);
+    });
+    SESSIONS.with(|sessions| {
+        for session in sessions.borrow().iter() {
+            pending |= session.state.borrow_mut().needs_tick(&session.ui);
+            #[cfg(target_os = "windows")]
+            {
+                pending |= session
+                    .menu
+                    .as_ref()
+                    .is_none_or(crate::windows_menu::Menu::has_events);
+            }
+        }
+    });
+    if !pending {
+        return;
+    }
     let sessions = SESSIONS.with(|s| {
         s.borrow()
             .iter()

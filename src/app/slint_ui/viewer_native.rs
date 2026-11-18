@@ -65,6 +65,9 @@ pub(super) struct Host {
     values: HashMap<String, String>,
 }
 impl Host {
+    pub fn has_events(&self) -> bool {
+        !self.events.borrow().is_empty()
+    }
     fn events(&mut self) -> Vec<Event> {
         self.events.take()
     }
