@@ -233,6 +233,7 @@ export component ShortcutButton inherits Rectangle {
     forward-focus: keyboard;
     in property <string> key-label;
     in property <string> label;
+    in property <string> description: root.label;
     in property <image> icon;
     in property <bool> icon-monochrome: true;
     callback clicked();
@@ -242,7 +243,7 @@ export component ShortcutButton inherits Rectangle {
     min-width: 0px; preferred-width: 0px; max-width: 100000px;
     horizontal-stretch: 1;
     accessible-role: button;
-    accessible-label: root.key-label + " " + root.label;
+    accessible-label: root.key-label + " " + root.description;
     accessible-enabled: root.enabled;
     accessible-action-default => { if root.enabled {root.clicked();} }
     keyboard := FocusScope {
@@ -283,5 +284,5 @@ export component ShortcutButton inherits Rectangle {
         }
     }
     touch := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
-    Tooltip { text: @markdown("\{root.key-label} \{root.label}"); }
+    Tooltip { text: @markdown("\{root.key-label} \{root.description}"); }
 }

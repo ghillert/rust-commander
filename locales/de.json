@@ -249,6 +249,8 @@
   "Pin recovery records": "Wiederherstellungseinträge anheften",
   "Pinned chains and the latest reversible chain are retained.": "Angeheftete und die letzte umkehrbare Vorgangsfolge bleiben erhalten.",
   "Places": "Orte",
+  "folder": "Ordner",
+  "file": "Datei",
   "Preferences": "Einstellungen",
   "Preview": "Vorschau",
   "Preview changes": "Änderungen prüfen",

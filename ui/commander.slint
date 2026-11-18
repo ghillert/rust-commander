@@ -145,7 +145,7 @@ component FilePane inherits Rectangle {
                 ChromeButton { label: Words.translate("New tab",Words.version); icon: Glyphs.action("NewTab"); height: 24px; clicked => { root.action("NewTab"); } }
                 ChromeButton { label: Words.translate("Close tab",Words.version); icon: Glyphs.action("CloseTab"); height: 24px; enabled: root.tabs.length > 1; clicked => { root.action("CloseTab"); } }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Chrome.separator; }
+            Rectangle { y: parent.height - self.height; height: root.active ? 2px : 1px; background: root.active ? root.accent : Chrome.separator; }
         }
         Rectangle {
             height: 36px; background: Chrome.header;
@@ -319,18 +319,28 @@ component FilePane inherits Rectangle {
                             preferred-width: root.column-preferred(column); min-width: root.column-minimum(column.role);
                             max-width: root.show-column(column.role) ? 100000px : 0px;
                             horizontal-stretch: col == 0 ? 1 : 0;
-                            if col == 0: Image {
+                            if col == 0 && !row.selected: Image {
                                 source: row.native-icon ? row.icon : Glyphs.file(row.fallback-icon);
                                 image-fit: contain;
                                 x: 8px; y: (parent.height - 18px) / 2; width: 18px; height: 18px;
                             }
-                            if col == 0 && row.symlink && !row.native-icon: Rectangle {
+                            if col == 0 && !row.selected && row.symlink && !row.native-icon: Rectangle {
                                 x: 8px; y: (parent.height - 18px) / 2 + 10px;
                                 width: 9px; height: 9px; border-radius: 2px; background: Chrome.pane;
                                 IconView {source: Glyphs.action("Link"); x: 0px; y: 0px; width: 9px; height: 9px;}
                             }
+                            if col == 0 && row.selected: Rectangle {
+                                x: 8px; y: (parent.height - 16px) / 2; width: 16px; height: 16px;
+                                border-radius: 4px; background: Chrome.selection;
+                                Path {
+                                    x: 2px; y: 2px; width: 12px; height: 12px;
+                                    viewbox-width: 12; viewbox-height: 12;
+                                    stroke: Chrome.selection-text; stroke-width: 2px; fill: transparent;
+                                    MoveTo { x: 1; y: 6; } LineTo { x: 4.5; y: 9; } LineTo { x: 11; y: 2; }
+                                }
+                            }
                             Text {
-                                text: (Chrome.high-contrast && row.selected && col==0 ? "✓ " : "") + row.cells[col];
+                                text: row.cells[col];
                                 x: col == 0 ? 32px : 8px;
                                 width: parent.width - self.x - 6px;
                                 height: parent.height;
@@ -423,6 +433,11 @@ export component CommanderWindow inherits Window {
     in property <color> marked-cursor-color: #cce8ff;
     in property <color> inactive-selection: #dedfe3;
     in property <float> text-size: 14;
+    in property <string> transfer-context;
+    pure function action-caption(id: string, title: string, enabled: bool) -> string {
+        return enabled && root.transfer-context != "" && (id == "Copy" || id == "Move")
+            ? title + " " + root.transfer-context : title;
+    }
     in property <bool> toolbar-visible: true;
     in property <bool> sidebar-visible: true;
     in property <float> sidebar-width: 186;
@@ -811,9 +826,10 @@ export component CommanderWindow inherits Window {
                     ChromeButton {label:Words.translate(root.sidebar-visible ? "Hide sidebar" : "Show sidebar",Words.version);icon:Glyphs.action("ToggleSidebar");checkable:true;checked:root.sidebar-visible;clicked=>{root.action("ToggleSidebar");}}
                     Rectangle {width:9px;Rectangle {x:4px;width:1px;height:20px;y:(parent.height - self.height)/2;background:Chrome.separator;}}
                     for command in root.toolbar: ChromeButton {
-                        label: Words.translate(command.title,Words.version); icon: Glyphs.action(command.id);
+                        label: root.action-caption(command.id, Words.translate(command.title,Words.version), command.enabled);
+                        max-width: 220px; icon: Glyphs.action(command.id);
                         show-label: command.id == "Mkdir" || command.id == "Copy" || command.id == "Move";
-                        enabled: command.enabled; clicked=>{root.action(command.id);}
+                        enabled: command.enabled && ((command.id != "Copy" && command.id != "Move") || root.transfer-context != ""); clicked=>{root.action(command.id);}
                     }
                     Rectangle {horizontal-stretch:1;}
                     ChromeButton {label:Words.translate("Hidden",Words.version);icon:Glyphs.action("ToggleHidden");checkable:true;checked:root.show-hidden;clicked=>{root.action("ToggleHidden");}}
@@ -1213,7 +1229,9 @@ export component CommanderWindow inherits Window {
                     for command in root.command-buttons: ShortcutButton {
                         icon: Glyphs.command(command.id);
                         icon-monochrome: Glyphs.command-monochrome(command.id);
-                        key-label:command.key;label:Words.translate(command.title,Words.version);enabled:command.enabled;clicked=>{root.action(command.id);}
+                        key-label:command.key;label:Words.translate(command.title,Words.version);
+                        description:root.action-caption(command.id,self.label,command.enabled);
+                        enabled:command.enabled && ((command.id != "Copy" && command.id != "Move") || root.transfer-context != "");clicked=>{root.action(command.id);}
                     }
                 }
             }

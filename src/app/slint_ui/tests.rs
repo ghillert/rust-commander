@@ -41,6 +41,37 @@ fn compact_sidebar_switches_views_and_preserves_filename_width() {
 }
 
 #[test]
+fn transfer_caption_tracks_visible_marks_and_the_opposite_pane() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, left, right) = fixture();
+    let ui = CommanderWindow::new().unwrap();
+    let tab = adapter.app.tab_mut();
+    tab.cursor = Some(left.join("folder"));
+    tab.selected
+        .extend([left.join("alpha.txt"), left.join("café.txt")]);
+    adapter.sync(&ui);
+    assert_eq!(ui.get_transfer_context(), "2 items → right");
+    adapter.app.tab_mut().filter = "folder".into();
+    adapter.sync(&ui);
+    assert_eq!(ui.get_transfer_context(), "1 folder → right");
+    assert!(
+        adapter
+            .entry(0, &path_id(&left.join("alpha.txt")))
+            .is_none()
+    );
+    adapter.app.active = 1;
+    adapter.sync(&ui);
+    assert_eq!(ui.get_transfer_context(), "");
+    std::fs::write(right.join("delivery.txt"), "text").unwrap();
+    let tab = adapter.app.tab_mut();
+    tab.entries = filesystem::list(&tab.location).unwrap();
+    tab.revision += 1;
+    tab.cursor = Some(right.join("delivery.txt"));
+    adapter.sync(&ui);
+    assert_eq!(ui.get_transfer_context(), "1 file → left");
+}
+
+#[test]
 fn extract_uses_the_shared_form_and_keeps_a_fallback_without_a_native_parent() {
     i_slint_backend_testing::init_no_event_loop();
     let (_root, mut adapter, left, right) = fixture();

@@ -16,9 +16,18 @@ thread_local! {
 }
 pub(super) struct Handle {
     pub token: String,
-    _selection: Rc<Selection>,
+    selection: Rc<Selection>,
 }
 impl Handle {
+    pub(super) fn count_label(&self) -> (usize, &'static str) {
+        let entries = &self.selection.entries;
+        let label = match entries.as_slice() {
+            [entry] if entry.is_dir => "folder",
+            [_] => "file",
+            _ => "items",
+        };
+        (entries.len(), label)
+    }
     pub fn new(selection: Selection) -> Self {
         let token = format!("{:032x}", rand::random::<u128>());
         let selection = Rc::new(selection);
@@ -29,10 +38,7 @@ impl Handle {
             }
             sources.insert(token.clone(), Rc::downgrade(&selection));
         });
-        Self {
-            token,
-            _selection: selection,
-        }
+        Self { token, selection }
     }
 }
 pub(super) fn payload(token: &str) -> slint::DataTransfer {

@@ -1317,6 +1317,17 @@ impl Adapter {
                     ui.set_right_selection_payload(payload.into());
                 }
             }
+            if side == self.app.active {
+                let destination = &self.app.panes[1 - side].tab().location;
+                let context = self.drag.selected[side]
+                    .as_ref()
+                    .map(|handle| {
+                        let (count, noun) = handle.count_label();
+                        format!("{count} {} → {}", tr(noun), destination.title())
+                    })
+                    .unwrap_or_default();
+                ui.set_transfer_context(context.into());
+            }
             self.listing_stamp[side] = Some(listing);
             self.selection_stamp[side] = selection;
             let tabs = self.app.panes[side]

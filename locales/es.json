@@ -249,6 +249,8 @@
   "Pin recovery records": "Fijar registros de recuperación",
   "Pinned chains and the latest reversible chain are retained.": "Se conservan las cadenas fijadas y la última cadena reversible.",
   "Places": "Lugares",
+  "folder": "carpeta",
+  "file": "archivo",
   "Preferences": "Preferencias",
   "Preview": "Vista previa",
   "Preview changes": "Vista previa de cambios",
