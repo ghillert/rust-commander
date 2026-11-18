@@ -105,7 +105,7 @@ pub(super) struct Adapter {
     place_cache: Vec<(String, String, bool, &'static str, bool)>,
     place_sections_expanded: [bool; 4],
     toolbar_cache: Vec<(String, String, bool)>,
-    columns_cache: Vec<(String, f32)>,
+    columns_cache: Vec<(crate::preferences::Column, String, f32)>,
     columns: Rc<VecModel<FileColumn>>,
     tabs_cache: [Vec<String>; 2],
     dialog_kind: String,
@@ -1125,15 +1125,27 @@ impl Adapter {
             .preferences
             .columns
             .iter()
-            .map(|column| (tr(column.kind.label()).into_owned(), column.width))
+            .map(|column| {
+                (
+                    column.kind,
+                    tr(column.kind.label()).into_owned(),
+                    column.width,
+                )
+            })
             .collect::<Vec<_>>();
         publish(
             &self.columns,
             &mut self.columns_cache,
             columns,
-            |(title, width)| FileColumn {
+            |(kind, title, width)| FileColumn {
                 title: title.as_str().into(),
                 width: *width,
+                role: match kind {
+                    crate::preferences::Column::Name => ColumnRole::Name,
+                    crate::preferences::Column::Size => ColumnRole::Size,
+                    crate::preferences::Column::Modified => ColumnRole::Modified,
+                    _ => ColumnRole::Other,
+                },
             },
         );
         ui.set_columns(self.columns.clone().into());

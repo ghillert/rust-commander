@@ -1,5 +1,45 @@
 use super::*;
 
+#[cfg(debug_assertions)]
+#[test]
+fn compact_sidebar_switches_views_and_preserves_filename_width() {
+    use i_slint_backend_testing::{AccessibleRole, ElementHandle};
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, _left, _right) = fixture();
+    adapter.app.preferences.directory_tree = true;
+    adapter.app.preferences.preview = true;
+    let ui = CommanderWindow::new().unwrap();
+    let state = Rc::new(RefCell::new(adapter));
+    wire(&ui, state.clone());
+    state.borrow_mut().sync(&ui);
+    ui.window().set_size(slint::LogicalSize::new(1024.0, 640.0));
+    ui.show().unwrap();
+    slint::platform::update_timers_and_animations();
+    assert!(ui.get_compact_sidebar());
+    let name = || {
+        ElementHandle::find_by_accessible_label(&ui, "Name")
+            .find(|h| h.accessible_role() == Some(AccessibleRole::Button))
+            .unwrap()
+    };
+    let width = name().size().width;
+    assert!(width >= 210.0);
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "Modified").all(|h| h.size().width == 0.0)
+    );
+    let places = ElementHandle::find_by_accessible_label(&ui, "Places")
+        .find(|h| h.accessible_role() == Some(AccessibleRole::Button))
+        .unwrap();
+    places.invoke_accessible_default_action();
+    assert!(!ui.get_sidebar_tree_page());
+    assert_eq!(name().size().width, width);
+    ui.invoke_focus_tree();
+    assert!(ui.get_sidebar_tree_page());
+    ui.window().set_size(slint::LogicalSize::new(1600.0, 780.0));
+    slint::platform::update_timers_and_animations();
+    assert!(!ui.get_compact_sidebar());
+    assert!(ui.get_sidebar_visible() && ui.get_tree_visible());
+}
+
 #[test]
 fn extract_uses_the_shared_form_and_keeps_a_fallback_without_a_native_parent() {
     i_slint_backend_testing::init_no_event_loop();
