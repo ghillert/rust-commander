@@ -71,6 +71,8 @@ def run_case(args, binary, renderer, case):
                          [2600, 'native-action', 'accept']]
         else:
             sequence += [[2400, 'native-action', 'cancel' if case == 'cancel' else 'return' if case == 'rename' else 'accept']]
+        if sequence[-1][1] in ('native-action', 'native-field-return'):
+            sequence.append([sequence[-1][0], 'wait-operation', ''])
         target = args.output.resolve() / f'{renderer}-{case}.png'
         target.unlink(missing_ok=True)
         env = dict(os.environ, RUST_COMMANDER_CONFIG_DIR=str(config),

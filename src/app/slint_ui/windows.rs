@@ -747,6 +747,22 @@ pub(super) fn shutdown_native_forms() {
 }
 
 #[cfg(feature = "screenshot")]
+pub(super) fn smoke_operation_finished() -> bool {
+    let idle = RUNTIME.with(|runtime| {
+        runtime
+            .borrow()
+            .as_ref()
+            .is_some_and(|r| r.job.is_none() && r.queue.is_empty())
+    });
+    idle && SESSIONS.with(|sessions| {
+        sessions
+            .borrow()
+            .iter()
+            .all(|s| s.state.borrow().app.prompt.is_none())
+    })
+}
+
+#[cfg(feature = "screenshot")]
 pub(super) fn native_form_ready() -> bool {
     SESSIONS.with(|sessions| {
         sessions.borrow().iter().any(|session| {

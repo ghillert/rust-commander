@@ -75,6 +75,8 @@ def run_cases(args, binary):
                 elif case == 'reopen':
                     sequence += [[2100, 'native-action', 'cancel'], [2400, 'action', 'Extract'],
                                  [3000, 'native-check', '']]
+                if sequence[-1][1] in ('native-action', 'native-field-return'):
+                    sequence.append([sequence[-1][0], 'wait-operation', ''])
                 target = args.output.resolve() / f'{renderer}-{case}.png'
                 target.unlink(missing_ok=True)
                 env = dict(os.environ, RUST_COMMANDER_CONFIG_DIR=str(config),
@@ -89,8 +91,6 @@ def run_cases(args, binary):
                     raise RuntimeError(f'{renderer}/{case}: {result.stderr}')
                 if case != 'quit' and (not target.is_file() or target.stat().st_size < 1000):
                     raise RuntimeError(f'Missing snapshot: {target}')
-                if case == 'return-fast':
-                    sequence = sequence[:2] + [[1300, 'native-field-return', json.dumps(['prompt', str(destination)])]]
                 if case in ['extract', 'return', 'return-fast']:
                     assert (destination / 'report.txt').read_text(encoding="utf-8") == 'Extracted café contents\n'
                 elif case == 'conflicts':

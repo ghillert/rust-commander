@@ -2233,6 +2233,7 @@ impl Drop for Adapter {
 // overdue timers cannot overtake its presentation during a busy startup.
 #[cfg(feature = "screenshot")]
 struct SmokeStep {
+    name: String,
     delay: u64,
     action: Box<dyn FnMut() -> bool>,
 }
@@ -2255,9 +2256,16 @@ fn smoke_step(
         if (step.action)() {
             smoke_steps(steps, done);
         } else {
+            // File operations can outlast native form startup on a hosted runner.
+            let max_retries = if step.name == "wait-operation" {
+                600
+            } else {
+                100
+            };
             assert!(
-                retries < 100,
-                "Native form did not become ready for the screenshot step"
+                retries < max_retries,
+                "Screenshot step '{}' did not finish after {max_retries} retries",
+                step.name
             );
             step.delay = 50;
             smoke_step(step, steps, done, retries + 1);
@@ -2337,13 +2345,17 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
                 let interval = delay.saturating_sub(previous);
                 previous = delay;
                 let step_ui = smoke_ui.as_weak();
-                let mut payload = Some((callback, value));
+                let mut payload = Some((callback.clone(), value));
                 #[cfg(any(target_os = "windows", target_os = "linux"))]
                 let mut field_entered = false;
                 scheduled.push_back(SmokeStep {
+                    name: callback,
                     delay: interval,
                     action: Box::new(move || {
                         let callback = &payload.as_ref().unwrap().0;
+                        if callback == "wait-operation" {
+                            return windows::smoke_operation_finished();
+                        }
                         let native = (callback.starts_with("native-")
                             && callback != "native-viewer")
                             || (cfg!(target_os = "macos") && callback == "settings-page");
