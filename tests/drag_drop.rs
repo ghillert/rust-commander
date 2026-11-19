@@ -468,7 +468,7 @@ fn archive_conflict_preview_uses_metadata_and_includes_nested_merge_conflicts() 
     // Keep the directory intact but damage a file body. A metadata preview must
     // not download/extract it (a confirmed transfer will still reject its CRC).
     let mut reader = zip::ZipArchive::new(fs::File::open(&file).unwrap()).unwrap();
-    let start = reader.by_name("a.txt").unwrap().data_start() as usize;
+    let start = reader.by_name("a.txt").unwrap().data_start().unwrap() as usize;
     drop(reader);
     let mut bytes = fs::read(&file).unwrap();
     bytes[start] ^= 0xff;

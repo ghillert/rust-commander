@@ -137,7 +137,9 @@ fn metadata(file: &File) -> Metadata {
         EntryMode::FILE
     });
     meta.set_content_length(file.size() as u64);
-    meta.set_last_modified(file.modified().into());
+    if let Ok(modified) = file.modified().try_into() {
+        meta.set_last_modified(modified);
+    }
     meta
 }
 impl Transport for Ftp {

@@ -331,11 +331,8 @@ pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Res
             .map_err(|e| clean_error(e, &secrets))?
         {
             Some(operator) => operator,
-            None => opendal::Operator::via_iter(
-                connection.service.parse::<opendal::Scheme>()?,
-                options(connection, &secrets),
-            )
-            .map_err(|e| clean_error(e, &secrets))?,
+            None => opendal::Operator::via_iter(&connection.service, options(connection, &secrets))
+                .map_err(|e| clean_error(e, &secrets))?,
         };
         let operator = operator.layer(
             opendal::layers::TimeoutLayer::new()
@@ -1708,7 +1705,9 @@ pub(crate) fn upload_checkpoint(
 pub(crate) fn checkpoint_passes(location: &Location) -> Result<u64> {
     if let Location::Remote { connection, .. } = location {
         let session = session(connection)?;
-        if session.smb.is_none() && session.operator()?.info().scheme() != opendal::Scheme::Fs {
+        if session.smb.is_none()
+            && session.operator()?.info().scheme() != opendal::services::FS_SCHEME
+        {
             return Ok(3);
         }
     }
@@ -1722,7 +1721,9 @@ pub(crate) fn checkpoint_local_path(location: &Location, path: &Path) -> Result<
         Location::Local(_) => Ok(Some(path.into())),
         Location::Remote { connection, .. } => {
             let session = session(connection)?;
-            if session.smb.is_none() && session.operator()?.info().scheme() == opendal::Scheme::Fs {
+            if session.smb.is_none()
+                && session.operator()?.info().scheme() == opendal::services::FS_SCHEME
+            {
                 let root = PathBuf::from(session.operator()?.info().root());
                 Ok(Some(if path.as_os_str().is_empty() {
                     root
@@ -1753,7 +1754,7 @@ pub(crate) fn publish_checkpoint(
     if let Some(smb) = &session.smb {
         return smb.publish_checkpoint(stage, target);
     }
-    if session.operator()?.info().scheme() == opendal::Scheme::Fs {
+    if session.operator()?.info().scheme() == opendal::services::FS_SCHEME {
         let info = session.operator()?.info();
         let root = PathBuf::from(info.root());
         crate::desktop::rename_exclusive(

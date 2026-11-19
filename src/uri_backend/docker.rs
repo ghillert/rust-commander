@@ -5,7 +5,10 @@ mod snapshot;
 use crate::{filesystem::Entry, remote::DockerTarget};
 use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use opendal::{EntryMode, Metadata, raw::oio};
+use opendal::{
+    EntryMode, Metadata,
+    raw::{Timestamp, oio},
+};
 use process::{Cancel, capture, cli};
 use serde::Deserialize;
 use snapshot::Snapshot;
@@ -44,10 +47,7 @@ impl Item {
             EntryMode::FILE
         });
         meta.set_content_length(self.size);
-        if let Some(time) = self
-            .modified
-            .and_then(|t| chrono::DateTime::from_timestamp(t, 0))
-        {
+        if let Some(time) = self.modified.and_then(|t| Timestamp::from_second(t).ok()) {
             meta.set_last_modified(time);
         }
         meta

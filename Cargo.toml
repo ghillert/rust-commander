@@ -35,8 +35,8 @@ md-5 = "0.10"
 libc = "0.2"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "rustls-tls"] }
 notify = "8"
-# Select storage services explicitly; the reqwest dependency below retains Rustls TLS.
-opendal = { version = "0.54", default-features = false, features = ["executors-tokio", "blocking", "services-fs", "services-webdav", "services-s3", "services-http", "services-dropbox", "services-gdrive", "services-onedrive", "services-gcs", "services-webhdfs"] }
+# Register the selected storage services for runtime lookup and use Rustls for HTTPS.
+opendal = { version = "0.56", default-features = false, features = ["auto-register-services", "reqwest-rustls-tls", "executors-tokio", "blocking", "layers-timeout", "services-fs", "services-webdav", "services-s3", "services-http", "services-dropbox", "services-gdrive", "services-onedrive", "services-gcs", "services-webhdfs"] }
 percent-encoding = "2"
 portable-pty = "0.9"
 regex = "1"

@@ -1,7 +1,10 @@
 use super::{Output, Transport};
 use crate::remote::{Connection, Secrets};
 use anyhow::{Context, Result, ensure};
-use opendal::{EntryMode, Metadata, raw::oio};
+use opendal::{
+    EntryMode, Metadata,
+    raw::{Timestamp, oio},
+};
 use russh::{
     client,
     keys::{
@@ -230,7 +233,7 @@ fn metadata(meta: FileAttributes) -> Metadata {
         result.set_content_length(size);
     }
     if let Some(time) = meta.mtime {
-        result.set_last_modified(chrono::DateTime::from_timestamp(time as i64, 0).unwrap());
+        result.set_last_modified(Timestamp::from_second(i64::from(time)).unwrap());
     }
     result
 }

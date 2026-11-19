@@ -1,7 +1,10 @@
 use super::Transport;
 use crate::remote::{Connection, Secrets};
 use anyhow::{Context, Result, bail, ensure};
-use opendal::{EntryMode, Metadata, raw::oio};
+use opendal::{
+    EntryMode, Metadata,
+    raw::{Timestamp, oio},
+};
 use reqwest::{
     Method, StatusCode,
     blocking::{Client, Response},
@@ -175,9 +178,9 @@ fn metadata(response: &Response) -> Metadata {
         .headers()
         .get(header::LAST_MODIFIED)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| chrono::DateTime::parse_from_rfc2822(v).ok())
+        .and_then(|v| Timestamp::parse_rfc2822(v).ok())
     {
-        meta.set_last_modified(modified.to_utc());
+        meta.set_last_modified(modified);
     }
     if let Some(etag) = response
         .headers()
@@ -188,6 +191,16 @@ fn metadata(response: &Response) -> Metadata {
     }
     meta
 }
+
+fn listing_entry(path: &str, mut metadata: Metadata) -> oio::Entry {
+    // OpenDAL requires a length for listed files. Keep the unknown-size marker
+    // so callers can still stream the file without assuming it is empty.
+    if metadata.is_file() && metadata.content_length() == 0 {
+        metadata.set_content_length(0);
+    }
+    oio::Entry::new(path, metadata)
+}
+
 impl Transport for Http {
     fn stat(&self, path: &str) -> Result<Metadata> {
         if path.ends_with('/') || path.is_empty() {
@@ -213,7 +226,7 @@ impl Transport for Http {
                 !path.trim_matches('/').is_empty(),
                 "This HTTP address is a file. Paste its complete file URI."
             );
-            return Ok(vec![oio::Entry::new(path.trim_matches('/'), meta)]);
+            return Ok(vec![listing_entry(path.trim_matches('/'), meta)]);
         }
         ensure!(
             response.content_length().is_none_or(|n| n <= INDEX_LIMIT),

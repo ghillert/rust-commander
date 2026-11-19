@@ -4,7 +4,10 @@ mod rpc;
 use super::Transport;
 use crate::remote::Connection;
 use anyhow::{Context, Result, ensure};
-use opendal::{EntryMode, Metadata, raw::oio};
+use opendal::{
+    EntryMode, Metadata,
+    raw::{Timestamp, oio},
+};
 use rpc::{Decoder, Rpc, Xdr};
 use std::{
     io::{self, Cursor, Read},
@@ -411,7 +414,7 @@ fn handle(data: &mut Decoder<'_>) -> Result<Vec<u8>> {
 struct Attributes {
     kind: u32,
     size: u64,
-    modified: Option<chrono::DateTime<chrono::Utc>>,
+    modified: Option<Timestamp>,
 }
 
 impl Attributes {
@@ -434,7 +437,10 @@ fn attributes(data: &mut Decoder<'_>) -> Result<Attributes> {
     data.take(16)?; // Mode, link count, UID, GID
     let size = data.wide()?;
     data.take(40)?; // Used space, device ID, filesystem ID, file ID, atime
-    let modified = chrono::DateTime::from_timestamp(i64::from(data.word()?), data.word()?);
+    let seconds = i64::from(data.word()?);
+    let modified = i32::try_from(data.word()?)
+        .ok()
+        .and_then(|nanos| Timestamp::new(seconds, nanos).ok());
     data.take(8)?; // ctime
     Ok(Attributes {
         kind,

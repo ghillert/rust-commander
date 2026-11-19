@@ -2,7 +2,10 @@
 //! Listing sizes may be rounded; operations still stat files for authoritative values.
 use anyhow::{Result, ensure};
 use chrono::{DateTime, NaiveDateTime, Utc};
-use opendal::{EntryMode, Metadata, raw::oio};
+use opendal::{
+    EntryMode, Metadata,
+    raw::{Timestamp, oio},
+};
 use scraper::{ElementRef, Html, Selector};
 use std::collections::{BTreeMap, HashMap};
 use url::Url;
@@ -77,13 +80,16 @@ pub(super) fn parse(
                 "false".into(),
             )]));
         }
-        if let Some(modified) = details.modified {
-            meta.set_last_modified(modified);
+        if let Some(date) = details.modified
+            && let Ok(timestamp) =
+                Timestamp::new(date.timestamp(), date.timestamp_subsec_nanos() as i32)
+        {
+            meta.set_last_modified(timestamp);
         }
         links.insert(key.clone(), url);
         entries.insert(
             key.clone(),
-            oio::Entry::new(&(key + if directory { "/" } else { "" }), meta),
+            super::listing_entry(&(key + if directory { "/" } else { "" }), meta),
         );
     }
     Ok(entries.into_values().collect())
@@ -291,13 +297,16 @@ mod tests {
         if let Some(size) = size {
             expected.set_content_length(size);
         } else {
+            if expected.is_file() {
+                expected.set_content_length(0);
+            }
             expected = expected.with_user_metadata(HashMap::from([(
                 "rust-commander-size-known".into(),
                 "false".into(),
             )]));
         }
         if let Some(modified) = modified {
-            expected.set_last_modified(DateTime::parse_from_rfc3339(modified).unwrap().to_utc());
+            expected.set_last_modified(modified.parse().unwrap());
         }
         assert_eq!(entry, &oio::Entry::new(entry.path(), expected));
     }

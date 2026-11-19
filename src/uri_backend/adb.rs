@@ -2,7 +2,10 @@
 use super::Transport;
 use crate::remote::Connection;
 use anyhow::{Context, Result, ensure};
-use opendal::{EntryMode, Metadata, raw::oio};
+use opendal::{
+    EntryMode, Metadata,
+    raw::{Timestamp, oio},
+};
 use std::{
     io::{self, Read, Write},
     net::{SocketAddr, TcpStream},
@@ -158,7 +161,7 @@ fn metadata(record: &[u8; 68]) -> Result<Option<Metadata>> {
     let size = u64::from_le_bytes(record[36..44].try_into()?);
     let mtime = i64::from_le_bytes(record[52..60].try_into()?);
     let mut result = Metadata::new(mode).with_content_length(size);
-    if let Some(modified) = chrono::DateTime::from_timestamp(mtime, 0) {
+    if let Ok(modified) = Timestamp::from_second(mtime) {
         result.set_last_modified(modified);
     }
     Ok(Some(result))
