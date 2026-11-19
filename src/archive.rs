@@ -88,7 +88,7 @@ fn visit(file: &Path, mut callback: impl FnMut(Member, &mut dyn Read) -> Result<
                     Some(password) => archive.by_index_decrypt(i, password.as_bytes())?,
                     None => archive.by_index(i)?,
                 };
-                let path = safe_relative(Path::new(entry.name()))?;
+                let path = safe_relative(Path::new(entry.name()?.as_ref()))?;
                 let directory = entry.is_dir();
                 let link = entry.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000);
                 let member = Member {
@@ -387,7 +387,7 @@ fn pack_zip<W: Write + Seek>(
     task: &mut Task,
 ) -> Result<W> {
     let mut archive = ZipWriter::new(writer);
-    archive.set_comment(comment);
+    archive.set_comment(comment)?;
     for source in sources {
         let name = Path::new(
             source

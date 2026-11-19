@@ -59,7 +59,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 webpki-roots = "0.26"
 url = "2"
 vt100 = "0.15"
-zip = { version = "2.4", default-features = false, features = ["deflate-flate2", "flate2", "bzip2", "aes-crypto"] }
+zip = { version = "9.7.3", default-features = false, features = ["deflate-flate2-zlib-rs", "bzip2", "aes-crypto"] }
 
 # File and text clipboard support; image previews use the image dependency directly.
 clipboard-rs = { version = "0.3.5", default-features = false, features = ["wayland"] }

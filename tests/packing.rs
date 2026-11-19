@@ -41,7 +41,7 @@ fn zip_comment_round_trips_without_changing_member_contents() {
     archive::pack_with_comment(&[file], &destination, comment, &mut Task::default()).unwrap();
     let mut zip = zip::ZipArchive::new(fs::File::open(&destination).unwrap()).unwrap();
     assert_eq!(zip.comment(), comment.as_bytes());
-    assert_eq!(zip.by_index(0).unwrap().name(), "café.txt");
+    assert_eq!(zip.by_index(0).unwrap().name().unwrap(), "café.txt");
     let output = root.path().join("out");
     archive::extract(
         &destination,

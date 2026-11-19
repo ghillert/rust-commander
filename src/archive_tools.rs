@@ -66,7 +66,7 @@ pub fn edit_zip(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> {
         if matches!(edit, ZipEdit::Add { .. }) && entry.encrypted() {
             bail!("Adding entries to an encrypted ZIP requires creating a new encrypted archive.");
         }
-        let path = safe_relative(Path::new(entry.name()))?;
+        let path = safe_relative(Path::new(entry.name()?.as_ref()))?;
         if entry
             .unix_mode()
             .is_some_and(|mode| mode & 0o170000 == 0o120000)
@@ -120,8 +120,7 @@ pub fn edit_zip(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> {
             task.check()?;
             if let Some(target) = target {
                 let entry = input.by_index_raw(index)?;
-                let old = entry.name().to_string();
-                if target == old {
+                if entry.name()? == target {
                     output.raw_copy_file(entry)?;
                 } else {
                     // Changing names of encrypted raw entries is supported by the ZIP writer.
@@ -198,7 +197,8 @@ pub fn edit_zip(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> {
         let mut entries = BTreeMap::new();
         for index in 0..verify.len() {
             let entry = verify.by_index_raw(index)?;
-            entries.insert(safe_relative(Path::new(entry.name()))?, entry.is_dir());
+            let path = safe_relative(Path::new(entry.name()?.as_ref()))?;
+            entries.insert(path, entry.is_dir());
         }
         for path in entries.keys() {
             for parent in path

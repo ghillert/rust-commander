@@ -10,7 +10,7 @@ fn member_names(file: &Path, extension: &str) -> Vec<String> {
         "zip" => {
             let mut reader = zip::ZipArchive::new(File::open(file).unwrap()).unwrap();
             (0..reader.len())
-                .map(|i| reader.by_index_raw(i).unwrap().name().to_owned())
+                .map(|i| reader.by_index_raw(i).unwrap().name().unwrap().into_owned())
                 .collect()
         }
         "tar" => tar::Archive::new(File::open(file).unwrap())
