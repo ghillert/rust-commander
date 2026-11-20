@@ -99,6 +99,7 @@ pub(super) struct Adapter {
     dialog_buttons: Rc<VecModel<Command>>,
     dialog_button_cache: Vec<(String, String, bool)>,
     places: Vec<(String, Location)>,
+    docker_available: bool,
     mounted_drives: Vec<(String, PathBuf)>,
     drive_scan: Option<Receiver<Vec<(String, PathBuf)>>>,
     last_drive_scan: Option<std::time::Instant>,
@@ -302,6 +303,7 @@ impl Adapter {
             dialog_buttons: Rc::new(VecModel::default()),
             dialog_button_cache: Vec::new(),
             places: Vec::new(),
+            docker_available: false,
             mounted_drives: Vec::new(),
             drive_scan: None,
             last_drive_scan: None,
@@ -1739,16 +1741,18 @@ impl Adapter {
             self.places.push((id, bookmark.location.clone()));
         }
         entries.push((String::new(), tr("Devices").into_owned(), true, "devices"));
-        entries.push((
-            "containers".into(),
-            tr("Containers").into_owned(),
-            false,
-            "devices",
-        ));
-        self.places
-            .push(("containers".into(), Location::Containers));
+        if self.docker_available {
+            entries.push((
+                "containers".into(),
+                tr("Containers").into_owned(),
+                false,
+                "devices",
+            ));
+            self.places
+                .push(("containers".into(), Location::Containers));
+        }
         for (name, path) in &self.mounted_drives {
-            let id = format!("place:{}", self.places.len());
+            let id = format!("drive:{}", path_id(path));
             entries.push((id.clone(), name.clone(), false, "devices"));
             self.places.push((id, Location::Local(path.clone())));
         }

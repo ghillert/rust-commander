@@ -1,5 +1,41 @@
 use super::*;
 
+#[test]
+fn sidebar_shows_containers_only_while_docker_is_available() {
+    i_slint_backend_testing::init_no_event_loop();
+    let (_root, mut adapter, drive, _) = fixture();
+    adapter.mounted_drives = vec![("Test drive".into(), drive.clone())];
+    let ui = CommanderWindow::new().unwrap();
+    let has_containers = || ui.get_places().iter().any(|place| place.id == "containers");
+    let drive_id = || {
+        ui.get_places()
+            .iter()
+            .find(|place| place.title == "Test drive")
+            .unwrap()
+            .id
+    };
+
+    adapter.sync_places(&ui);
+    assert!(!has_containers());
+    let original_drive_id = drive_id();
+
+    adapter.docker_available = true;
+    adapter.sync_places(&ui);
+    assert!(has_containers());
+    assert_eq!(drive_id(), original_drive_id);
+    assert!(
+        adapter
+            .places
+            .contains(&("containers".into(), Location::Containers))
+    );
+
+    adapter.docker_available = false;
+    adapter.sync_places(&ui);
+    assert!(!has_containers());
+    assert_eq!(drive_id(), original_drive_id);
+    assert!(!adapter.places.iter().any(|(id, _)| id == "containers"));
+}
+
 #[cfg(debug_assertions)]
 #[test]
 fn compact_sidebar_switches_views_and_preserves_filename_width() {

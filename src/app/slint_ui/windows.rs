@@ -25,6 +25,9 @@ struct Runtime {
     pending_save: Option<(String, String)>,
     settings: Settings,
     settings_valid: bool,
+    docker_available: bool,
+    docker_probe: Option<Receiver<bool>>,
+    last_docker_probe: Option<std::time::Instant>,
     #[cfg(target_os = "macos")]
     menu: Option<crate::native_menu::NativeMenu>,
 }
@@ -53,6 +56,30 @@ impl Runtime {
         app.imported_commands = self.settings.imported_commands.clone();
         app.show_hidden = self.settings.show_hidden;
     }
+
+    fn poll_docker(&mut self) -> bool {
+        if let Some(probe) = &self.docker_probe {
+            let available = match probe.try_recv() {
+                Ok(available) => available,
+                Err(mpsc::TryRecvError::Empty) => return false,
+                Err(mpsc::TryRecvError::Disconnected) => false,
+            };
+            self.docker_probe = None;
+            return std::mem::replace(&mut self.docker_available, available) != available;
+        }
+        if self
+            .last_docker_probe
+            .is_none_or(|last| last.elapsed() >= Duration::from_secs(10))
+        {
+            let (send, receive) = mpsc::channel();
+            self.docker_probe = Some(receive);
+            self.last_docker_probe = Some(std::time::Instant::now());
+            std::thread::spawn(move || {
+                let _ = send.send(crate::uri_backend::docker::available());
+            });
+        }
+        false
+    }
 }
 struct Session {
     id: usize,
@@ -76,6 +103,7 @@ pub(super) fn with_state<T>(state: &Rc<RefCell<Adapter>>, f: impl FnOnce(&mut Ad
         let mut runtime = runtime.borrow_mut();
         let mut adapter = state.borrow_mut();
         if let Some(runtime) = runtime.as_mut() {
+            adapter.docker_available = runtime.docker_available;
             runtime.load_globals(&mut adapter.app);
             runtime.swap(&mut adapter.app);
             let result = f(&mut adapter);
@@ -335,6 +363,9 @@ pub(super) fn open(paths: &[PathBuf], loaded: Result<Settings>) -> Result<Comman
                 pending_save: None,
                 settings,
                 settings_valid: adapter.app.settings_valid,
+                docker_available: false,
+                docker_probe: None,
+                last_docker_probe: None,
                 #[cfg(target_os = "macos")]
                 menu: None,
             };
@@ -502,7 +533,7 @@ pub(super) fn is_last_window(id: usize) -> bool {
 pub(super) fn tick() {
     // A shared menu, preferences and job queue can affect any open window.
     // Consume all window notifications before polling so later worker events survive.
-    let mut pending = false;
+    let mut pending = RUNTIME.with(|r| r.borrow_mut().as_mut().is_some_and(Runtime::poll_docker));
     #[cfg(target_os = "macos")]
     RUNTIME.with(|r| {
         pending |= r

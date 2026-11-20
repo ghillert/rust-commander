@@ -130,9 +130,10 @@ fn endpoint(cancel: &Cancel) -> Result<String> {
     Ok(endpoint)
 }
 
-fn ensure_linux(endpoint: &str, cancel: &Cancel) -> Result<()> {
+fn linux_endpoint(cancel: &Cancel) -> Result<String> {
+    let endpoint = endpoint(cancel)?;
     let os = output_text(
-        host_command(endpoint).args(["info", "--format", "{{.OSType}}"]),
+        host_command(&endpoint).args(["info", "--format", "{{.OSType}}"]),
         cancel,
     )
     .context("Cannot connect to the local Docker engine")?;
@@ -140,7 +141,11 @@ fn ensure_linux(endpoint: &str, cancel: &Cancel) -> Result<()> {
         os == "linux",
         "Docker browsing supports Linux containers. Switch the engine to Linux containers."
     );
-    Ok(())
+    Ok(endpoint)
+}
+
+pub(crate) fn available() -> bool {
+    linux_endpoint(&Cancel::default()).is_ok()
 }
 
 #[derive(Deserialize)]
@@ -153,8 +158,7 @@ struct ListedContainer {
 }
 
 pub(crate) fn list_containers(cancel: &Cancel) -> Result<Vec<Entry>> {
-    let endpoint = endpoint(cancel)?;
-    ensure_linux(&endpoint, cancel)?;
+    let endpoint = linux_endpoint(cancel)?;
     let rows = capture(
         host_command(&endpoint).args([
             "container",
