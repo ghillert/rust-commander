@@ -13,9 +13,12 @@ use std::{
 use windows_sys::Win32::{
     Foundation::*,
     Graphics::Gdi::*,
-    System::LibraryLoader::GetModuleHandleW,
+    System::{LibraryLoader::GetModuleHandleW, SystemServices::SS_NOPREFIX},
     UI::{Controls::*, HiDpi::*, Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
 };
+
+const QUIT_WIDTH: i32 = 440;
+const QUIT_STYLE: u32 = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
@@ -262,6 +265,35 @@ impl View {
     }
     fn px(&self, n: i32) -> i32 {
         ((n as i64 * self.dpi as i64 + 48) / 96) as i32
+    }
+    unsafe fn wrapped_text_height(&self, text: &str, width: i32) -> i32 {
+        unsafe {
+            let dc = GetDC(self.window);
+            if dc.is_null() {
+                return 96;
+            }
+            let font = SelectObject(dc, self.font);
+            let mut bounds = RECT {
+                left: 0,
+                top: 0,
+                right: self.px(width),
+                bottom: 0,
+            };
+            let height = DrawTextW(
+                dc,
+                wide(text).as_ptr(),
+                -1,
+                &mut bounds,
+                DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX,
+            );
+            SelectObject(dc, font);
+            ReleaseDC(self.window, dc);
+            if height > 0 {
+                (height as u32 * 96).div_ceil(self.dpi) as i32 + 2
+            } else {
+                96
+            }
+        }
     }
     #[allow(clippy::too_many_arguments)] // Mirrors CreateWindowEx: style, owner and bounds.
     unsafe fn child(
@@ -555,25 +587,36 @@ impl View {
             }
             self.next_id = 100;
             let mut y = 12;
+            let compact = self.model.form.kind == "quit";
+            let text_width = if compact { QUIT_WIDTH - 56 } else { 700 };
             if self.model.form.kind != "preferences" && !self.model.form.description.is_empty() {
                 let description = self.model.form.description.clone();
-                let height = if description.len() > 300 { 120 } else { 48 };
+                let scrollable = !compact && description.len() > 300;
+                let height = if compact {
+                    self.wrapped_text_height(&description, text_width)
+                } else if scrollable {
+                    120
+                } else {
+                    48
+                };
                 self.child(
-                    if height == 120 { "EDIT" } else { "STATIC" },
+                    if scrollable { "EDIT" } else { "STATIC" },
                     &description,
-                    if height == 120 {
+                    if scrollable {
                         WS_TABSTOP
                             | WS_VSCROLL
                             | ES_MULTILINE as u32
                             | ES_READONLY as u32
                             | ES_AUTOVSCROLL as u32
+                    } else if compact {
+                        SS_NOPREFIX
                     } else {
                         0
                     },
                     self.body,
                     12,
                     y,
-                    700,
+                    text_width,
                     height,
                 );
                 y += height + 8;
@@ -658,7 +701,7 @@ impl View {
                                 self.body,
                                 12,
                                 y,
-                                700,
+                                text_width,
                                 26,
                             )
                             .1;
@@ -816,6 +859,24 @@ impl View {
                 }
             }
             self.structure = Self::fingerprint(&self.model, self.page);
+            if compact {
+                let mut bounds = RECT {
+                    left: 0,
+                    top: 0,
+                    right: self.px(QUIT_WIDTH),
+                    bottom: self.px(self.total + 64),
+                };
+                AdjustWindowRectExForDpi(&mut bounds, QUIT_STYLE, 0, WS_EX_CONTROLPARENT, self.dpi);
+                SetWindowPos(
+                    self.window,
+                    null_mut(),
+                    0,
+                    0,
+                    bounds.right - bounds.left,
+                    bounds.bottom - bounds.top,
+                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
             self.layout();
             self.update_values();
             self.updating = false;
@@ -833,17 +894,19 @@ impl View {
             GetClientRect(self.window, &mut client);
             let width = client.right * 96 / self.dpi as i32;
             let height = client.bottom * 96 / self.dpi as i32;
+            let compact = self.model.form.kind == "quit";
             let top = if self.model.form.kind == "preferences" {
                 if self.subtabs.is_null() { 52 } else { 90 }
             } else {
                 12
             };
+            let body_height = (height - top - if compact { 52 } else { 140 }).max(40);
             MoveWindow(
                 self.body,
                 self.px(16),
                 self.px(top),
                 self.px(width - 32),
-                self.px((height - top - 140).max(40)),
+                self.px(body_height),
                 1,
             );
             if !self.tabs.is_null() {
@@ -866,30 +929,32 @@ impl View {
                     1,
                 );
             }
-            MoveWindow(
-                self.error,
-                self.px(16),
-                self.px(height - 132),
-                self.px(width - 32),
-                self.px(40),
-                1,
-            );
-            MoveWindow(
-                self.review,
-                self.px(16),
-                self.px(height - 74),
-                self.px(190),
-                self.px(26),
-                1,
-            );
-            MoveWindow(
-                self.busy,
-                self.px(16),
-                self.px(height - 74),
-                self.px(190),
-                self.px(16),
-                1,
-            );
+            if !compact {
+                MoveWindow(
+                    self.error,
+                    self.px(16),
+                    self.px(height - 132),
+                    self.px(width - 32),
+                    self.px(40),
+                    1,
+                );
+                MoveWindow(
+                    self.review,
+                    self.px(16),
+                    self.px(height - 74),
+                    self.px(190),
+                    self.px(26),
+                    1,
+                );
+                MoveWindow(
+                    self.busy,
+                    self.px(16),
+                    self.px(height - 74),
+                    self.px(190),
+                    self.px(16),
+                    1,
+                );
+            }
             let mut footer = self.model.form.buttons.iter().collect::<Vec<_>>();
             footer.sort_by_key(|(id, _, _)| match id.as_str() {
                 "cancel" => 0,
@@ -901,7 +966,12 @@ impl View {
             let mut right = width - 16;
             for (id, title, _) in footer {
                 if let Some((_, button)) = self.buttons.values().find(|(key, _)| key == id) {
-                    let bw = (title.chars().count() as i32 * 7 + 28).max(80);
+                    let title_len = if compact {
+                        tr(title).chars().count()
+                    } else {
+                        title.chars().count()
+                    };
+                    let bw = (title_len as i32 * 7 + 28).max(80);
                     let bx = if id == "defaults" { 16 } else { right - bw };
                     MoveWindow(
                         *button,
@@ -916,14 +986,16 @@ impl View {
                     }
                 }
             }
-            let mut info: SCROLLINFO = std::mem::zeroed();
-            info.cbSize = std::mem::size_of::<SCROLLINFO>() as u32;
-            info.fMask = SIF_ALL;
-            info.nMin = 0;
-            info.nMax = self.px(self.total);
-            info.nPage = self.px((height - top - 140).max(40)) as u32;
-            info.nPos = self.scroll;
-            SetScrollInfo(self.body, SB_VERT, &info, 1);
+            if !compact {
+                let mut info: SCROLLINFO = std::mem::zeroed();
+                info.cbSize = std::mem::size_of::<SCROLLINFO>() as u32;
+                info.fMask = SIF_ALL;
+                info.nMin = 0;
+                info.nMax = self.px(self.total);
+                info.nPage = self.px(body_height) as u32;
+                info.nPos = self.scroll;
+                SetScrollInfo(self.body, SB_VERT, &info, 1);
+            }
         }
     }
     unsafe fn update_values(&mut self) {
@@ -1117,7 +1189,7 @@ unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, w: usize, l: isize) 
             return DefWindowProcW(hwnd, msg, w, l);
         };
         match msg {
-            WM_GETMINMAXINFO => {
+            WM_GETMINMAXINFO if view.model.form.kind != "quit" => {
                 let info = &mut *(l as *mut MINMAXINFO);
                 let mut bounds = RECT {
                     left: 0,
@@ -1275,29 +1347,24 @@ pub(super) fn run(model: Model, incoming: Incoming) -> i32 {
         let mut owner_rect: RECT = std::mem::zeroed();
         GetWindowRect(owner as HWND, &mut owner_rect);
         let dpi = GetDpiForWindow(owner as HWND).max(96);
+        let compact = model.form.kind == "quit";
+        let (style, width, height) = match model.form.kind.as_str() {
+            "quit" => (QUIT_STYLE, QUIT_WIDTH, 160),
+            "preferences" => (WS_OVERLAPPEDWINDOW, 840, 620),
+            _ => (WS_OVERLAPPEDWINDOW, 780, 620),
+        };
         let mut initial_bounds = RECT {
             left: 0,
             top: 0,
-            right: ((if model.form.kind == "preferences" {
-                840
-            } else {
-                780
-            }) * dpi
-                / 96) as i32,
-            bottom: (620 * dpi / 96) as i32,
+            right: width * dpi as i32 / 96,
+            bottom: height * dpi as i32 / 96,
         };
-        AdjustWindowRectExForDpi(
-            &mut initial_bounds,
-            WS_OVERLAPPEDWINDOW,
-            0,
-            WS_EX_CONTROLPARENT,
-            dpi,
-        );
+        AdjustWindowRectExForDpi(&mut initial_bounds, style, 0, WS_EX_CONTROLPARENT, dpi);
         let window = CreateWindowExW(
             WS_EX_CONTROLPARENT,
             name.as_ptr(),
             wide(&model.form.title).as_ptr(),
-            WS_OVERLAPPEDWINDOW,
+            style,
             owner_rect.left + 40,
             owner_rect.top + 40,
             initial_bounds.right - initial_bounds.left,
@@ -1339,7 +1406,7 @@ pub(super) fn run(model: Model, incoming: Incoming) -> i32 {
             WS_EX_CONTROLPARENT,
             body_name.as_ptr(),
             wide("").as_ptr(),
-            WS_CHILD | WS_VISIBLE | WS_VSCROLL,
+            WS_CHILD | WS_VISIBLE | if compact { 0 } else { WS_VSCROLL },
             16,
             12,
             760,
@@ -1384,6 +1451,19 @@ pub(super) fn run(model: Model, incoming: Incoming) -> i32 {
             let mut initial = data.borrow_mut();
             initial.tabs();
             initial.build();
+            if compact {
+                let mut bounds: RECT = std::mem::zeroed();
+                GetWindowRect(window, &mut bounds);
+                SetWindowPos(
+                    window,
+                    null_mut(),
+                    (owner_rect.left + owner_rect.right - (bounds.right - bounds.left)) / 2,
+                    (owner_rect.top + owner_rect.bottom - (bounds.bottom - bounds.top)) / 2,
+                    0,
+                    0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
             ShowWindow(window, SW_SHOW);
             UpdateWindow(window);
             emit(&Event::Ready);
