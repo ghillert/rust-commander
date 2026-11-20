@@ -2299,9 +2299,15 @@ pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
         slint::platform::set_platform(Box::new(backend.build()?))?;
     }
     #[cfg(not(target_os = "macos"))]
-    slint::BackendSelector::new()
-        .backend_name("winit".into())
-        .select()?;
+    {
+        let backend = slint::BackendSelector::new().backend_name("winit".into());
+        // Match Slint's own Win32 menu setup: DWM window transparency
+        // makes native menu text nearly invisible on light surfaces.
+        #[cfg(target_os = "windows")]
+        let backend = backend
+            .with_winit_window_attributes_hook(|attributes| attributes.with_transparent(false));
+        backend.select()?;
+    }
     #[cfg(feature = "screenshot")]
     if let Some(path) = std::env::var_os("RUST_COMMANDER_ICON_GALLERY_TO") {
         return icon_smoke::run(path.into());

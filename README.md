@@ -156,9 +156,12 @@ Ubuntu/Debian: `libglib2.0-bin gvfs-backends`).
 <details>
 <summary>Windows</summary>
 
-Install the Visual Studio C++ build tools and vcpkg, and use Rust's MSVC
-toolchain. From a PowerShell session with the build tools available, set the
-path to your vcpkg checkout and install libarchive:
+Install the Visual Studio C++ build tools and Windows SDK for your architecture,
+plus vcpkg, and use Rust's MSVC toolchain. For an ARM64 Rust host
+(`aarch64-pc-windows-msvc` in `rustc -vV`), include the ARM64 C++ build tools
+and use the `arm64-windows-static-md` triplet in both commands below. From a
+PowerShell session with the build tools available, set the path to your vcpkg
+checkout and install libarchive:
 
 ```powershell
 $env:VCPKG_ROOT = "C:\path\to\vcpkg"
@@ -166,8 +169,8 @@ $env:VCPKGRS_TRIPLET = "x64-windows-static-md"
 & "$env:VCPKG_ROOT\vcpkg.exe" install libarchive:x64-windows-static-md
 ```
 
-Keep these environment variables set when running Cargo. Windows setup is
-configured in CI but has not yet been validated on a Windows machine.
+Keep these environment variables set when running Cargo. In Git Bash, use
+`./scripts/run.sh` to prevent Git Bash's `link.exe` from shadowing the MSVC linker.
 
 </details>
 
