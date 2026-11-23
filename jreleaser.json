@@ -36,6 +36,36 @@
       },
       "changelog": {
         "formatted": "ALWAYS",
+        "categoryTitleFormat": "### {{categoryTitle}}",
+        "categories": [
+          { "key": "fixes", "order": 1, "title": "🐞 Bug Fixes", "labels": ["fix"] },
+          { "key": "features", "order": 2, "title": "⭐ New Features", "labels": ["feature"] },
+          { "key": "docs", "order": 3, "title": "📔 Documentation", "labels": ["docs"] },
+          { "key": "dependencies", "order": 4, "title": "🔨 Dependency Upgrades", "labels": ["dependencies"] },
+          { "key": "other", "order": 5, "title": "Other Changes", "labels": ["other"] }
+        ],
+        "labelers": [
+          {
+            "label": "fix",
+            "title": "regex:^(?i:fix(?:\\([^)]+\\))?!?:|fix\\s).*"
+          },
+          {
+            "label": "feature",
+            "title": "regex:^(?i:feat(?:\\([^)]+\\))?!?:|(?:add|introduce)\\s).*"
+          },
+          {
+            "label": "docs",
+            "title": "regex:^(?i:docs(?:\\([^)]+\\))?!?:|document\\s|(?:update|refresh) (?:the )?(?:docs|documentation|readme)\\b).*"
+          },
+          {
+            "label": "dependencies",
+            "title": "regex:^(?i:(?:chore|build)\\(deps(?:-dev)?\\)!?:|bump\\s|update\\s.+\\sfor dependabot\\b).*"
+          },
+          {
+            "label": "other",
+            "title": "regex:^.*$"
+          }
+        ],
         "hide": {
           "contributors": [
             "regex:^GitHub$",

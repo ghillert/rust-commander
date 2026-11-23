@@ -96,6 +96,20 @@ A PR synchronizes the version change back into `main`. Draft creation does not
 wait for the PR to merge. If `main` changes meanwhile, resolve the version PR
 normally. Do not amend the tested release commit or move the release tag.
 
+### Release note categories
+
+JReleaser groups commits by subject and shows only categories that have entries.
+Use a prefix to choose where a change appears. Scopes and breaking-change markers
+also work, as in `fix(windows):` or `feat(ui)!:`.
+
+| Category | Example commit subjects |
+| --- | --- |
+| Bug Fixes | `fix: restore keyboard focus`, `Fix Windows MSVC builds` |
+| New Features | `feat: preview archives`, `Add native Windows ARM64 release builds` |
+| Documentation | `docs: explain portable installs`, `Update the README` |
+| Dependency Upgrades | `chore(deps): bump russh`, `Update zip for Dependabot alert #8` |
+| Other Changes | Any remaining subject, such as `ci: cache the Rust toolchain` |
+
 ## Review and publish
 
 1. Read the draft notes, correct the user-facing summary, and check the signing
