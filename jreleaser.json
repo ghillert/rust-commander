@@ -36,6 +36,14 @@
       },
       "changelog": {
         "formatted": "ALWAYS",
+        "hide": {
+          "contributors": [
+            "regex:^GitHub$",
+            "regex:^Gunnar Hillert$",
+            "regex:^dependabot\\[bot\\]$",
+            "regex:^github-actions\\[bot\\]$"
+          ]
+        },
         "content": "## Changelog\n\n{{changelogChanges}}\n{{changelogContributors}}\n\n## Downloads\n\nChoose the DMG for your Mac (Apple Silicon/ARM64 or Intel/x64), the Windows installer or portable ZIP for your PC (ARM64 for Windows 11 on Arm, x64 for Intel/AMD), or the Linux x64 AppImage/DEB. macOS 15+ and Ubuntu 24.04+ are the initial packaged-release baselines.\n\nMac applications are ad hoc signed and **not notarized**. Windows downloads are **not Authenticode signed**. See the [release and installation guide](https://github.com/ghillert/rust-commander/blob/v{{projectVersion}}/docs/RELEASING.md) for installation, first-launch approval, checksums, and known platform limitations.\n\nThe SHA-256 checksum file and release-manifest.json identify the complete asset set and source commit."
       }
     }
