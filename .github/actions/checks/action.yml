@@ -28,11 +28,23 @@ runs:
       shell: bash
       run: python3 scripts/test-remote.py
 
+    # The Python test servers depend on cryptography, which ships Windows x64 wheels.
+    - name: Set up fixture Python on Windows ARM64
+      if: runner.os == 'Windows' && runner.arch == 'ARM64'
+      id: fixture-python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+        architecture: x64
+        update-environment: false
+
     - name: Test native URI transports (FTP, both FTPS modes, Rust SFTP)
       shell: bash
+      env:
+        FIXTURE_PYTHON: ${{ steps.fixture-python.outputs.python-path || 'python' }}
       run: |
-        python -m pip install --disable-pip-version-check -r scripts/uri-fixtures/requirements.txt
-        python scripts/test-uri-transports.py
+        "$FIXTURE_PYTHON" -m pip install --disable-pip-version-check -r scripts/uri-fixtures/requirements.txt
+        "$FIXTURE_PYTHON" scripts/test-uri-transports.py
 
     - name: Test native Linux clipboard and drag source
       if: runner.os == 'Linux'

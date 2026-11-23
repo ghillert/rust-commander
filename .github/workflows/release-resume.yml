@@ -9,7 +9,7 @@ on:
         type: string
         required: true
       original_run_id:
-        description: 'Original Release workflow run ID with four successful package jobs'
+        description: 'Original Release workflow run ID with all package jobs successful'
         type: string
         required: true
 
@@ -52,28 +52,8 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          name: release-macos-arm64
-          path: source/dist/release
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ inputs.original_run_id }}
-      - uses: actions/download-artifact@v8
-        with:
-          name: release-macos-x64
-          path: source/dist/release
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ inputs.original_run_id }}
-      - uses: actions/download-artifact@v8
-        with:
-          name: release-windows-x64
-          path: source/dist/release
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ inputs.original_run_id }}
-      - uses: actions/download-artifact@v8
-        with:
-          name: release-linux-x64
+          pattern: 'release-{macos,windows,linux}-*'
+          merge-multiple: true
           path: source/dist/release
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}

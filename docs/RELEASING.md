@@ -17,7 +17,7 @@ The entire release runs on GitHub-hosted runners; your Mac need not stay online.
 3. Ensure repository rules permit Actions to create `release/v*` branches and
    `v*` tags. No bypass of `main` protection is required: version changes return
    through a PR. GitHub must be able to sign and verify the preparation commit.
-4. Ensure enough Actions minutes/storage are available for four native build
+4. Ensure enough Actions minutes/storage are available for five native build
    jobs. The platform jobs can take considerably longer than incremental local
    builds, especially on a cold cache.
 5. The publication job installs Temurin Java 17 and the SHA-256-verified
@@ -26,10 +26,10 @@ The entire release runs on GitHub-hosted runners; your Mac need not stay online.
    token, or JReleaser secret is needed initially. The GitHub workflow token is
    passed to `gh` and JReleaser for this repository only.
 
-The initial distribution targets are macOS 15+ (ARM64 and Intel separately),
-Windows x64, and Ubuntu 24.04+ x64. Other Linux distributions must provide a
+The distribution targets are macOS 15+ (ARM64 and Intel), Windows x64,
+Windows 11 ARM64, and Ubuntu 24.04+ x64. Other Linux distributions must provide a
 compatible glibc/system graphics stack; AppImage does not guarantee compatibility
-with every distribution. There is no Linux/Windows ARM64 package yet.
+with every distribution.
 
 Mac apps are **ad hoc signed and not notarized**. Windows executables/installers
 are **not Authenticode signed**. GitHub's verified release commit is a source-code
@@ -48,7 +48,7 @@ so the synchronization PR contains an actual version change.
 
 1. Open **Actions → Release → Run workflow**.
 2. Select **main**, enter the desired version, and click **Run workflow**.
-3. Follow preparation, the four platform jobs, and publication in the run view.
+3. Follow preparation, the five platform jobs, and publication in the run view.
 4. Open the draft release and version PR linked in the final job summary.
 
 ### GitHub CLI
@@ -73,14 +73,16 @@ queue.
 - Builds and tests from that exact commit, using the same checks as ordinary CI.
 - A `v0.8.0` tag at the tested commit, created after all packages pass. This tag
   is not moved by retries.
-- A draft release titled **Rust Commander 0.8.0**, containing these six assets:
+- A draft release titled **Rust Commander 0.8.0** with eight packages.
 
 | Platform | Filename |
 | --- | --- |
 | Mac, Apple Silicon | `rust-commander-0.8.0-macos-arm64.dmg` |
 | Mac, Intel | `rust-commander-0.8.0-macos-x64.dmg` |
-| Windows installer | `rust-commander-0.8.0-windows-x64-setup.exe` |
-| Windows portable | `rust-commander-0.8.0-windows-x64.zip` |
+| Windows x64 installer | `rust-commander-0.8.0-windows-x64-setup.exe` |
+| Windows x64 portable | `rust-commander-0.8.0-windows-x64.zip` |
+| Windows ARM64 installer | `rust-commander-0.8.0-windows-arm64-setup.exe` |
+| Windows ARM64 portable | `rust-commander-0.8.0-windows-arm64.zip` |
 | Linux AppImage | `rust-commander-0.8.0-linux-x64.AppImage` |
 | Ubuntu/Debian package | `rust-commander-0.8.0-linux-x64.deb` |
 
@@ -156,6 +158,9 @@ disable Gatekeeper globally. See
 
 ### Windows
 
+Choose **windows-arm64** for Windows 11 on Arm (including Snapdragon PCs) or
+**windows-x64** for 64-bit Intel and AMD PCs. Windows lists the processor
+architecture under **Settings → System → About → System type**.
 Run the `-setup.exe` installer for a per-user installation, or extract the ZIP
 and run `rust-commander.exe`. Keep the accompanying DLLs alongside the executable.
 The installer supplies shortcuts and uninstall support; uninstall preserves app
@@ -206,7 +211,7 @@ adapter with password, private-key and Windows OpenSSH-agent authentication.
 - **Publication tooling needs a source fix:** merge the fix into `main`, then
   run **Actions → Resume release publication → Run workflow** on `main`. Enter
   the original version and original **Release** workflow run ID. This verifies
-  that all four native package jobs succeeded, checks the original signed
+  that every native package job for that release succeeded, checks the original signed
   release branch, downloads those exact artifacts, and resumes the draft and
   version PR without rebuilding or moving the release commit. Equivalent CLI:
 
@@ -215,7 +220,8 @@ adapter with password, private-key and Windows OpenSSH-agent authentication.
     -f version=0.8.0-rc.1 -f original_run_id=RUN_ID
   ```
 
-  Use this only while all four original artifacts are retained. The recovery
+  Use this while all original package artifacts are retained. Runs from before
+  Windows ARM64 support use their original four-target package set. The recovery
   job has the same published-release and mismatched-asset protections as the
   normal publisher.
 - **Do not rerun successful build jobs after a partial upload.** Packages such
@@ -301,8 +307,8 @@ References: [GitHub certificate setup](https://docs.github.com/en/actions/how-to
 
 - [ ] Intended changes merged; ordinary CI passes.
 - [ ] New version selected; release dispatched from `main`.
-- [ ] Four native build/package jobs pass.
-- [ ] Six packages, manifest, and checksum file present on the draft.
+- [ ] Five native build/package jobs pass.
+- [ ] Eight packages, manifest, and checksum file present on the draft.
 - [ ] Checksums, source commit, version metadata, and installation tests reviewed.
 - [ ] Release notes and signing/platform limitations checked.
 - [ ] Version synchronization PR merged.

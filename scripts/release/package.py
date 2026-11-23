@@ -151,9 +151,29 @@ def stage_macos(executable, binary, stage):
     return sorted(frameworks.glob("*.dylib"))
 
 
-def windows_runtime(stage):
-    run("pwsh", "-NoProfile", "-File", ROOT / "scripts/release/windows-runtime.ps1", "-Destination", stage)
+def windows_runtime(stage, arch):
+    run("pwsh", "-NoProfile", "-File", ROOT / "scripts/release/windows-runtime.ps1",
+        "-Destination", stage, "-Architecture", arch)
     return sorted(stage.glob("*.dll"))
+
+
+def check_windows_payload(directory, target):
+    # Windows on ARM can launch an x64 executable under emulation. Check the PE
+    # machine field of the application and its app-local runtime before launch.
+    machine = {"windows-x64": 0x8664, "windows-arm64": 0xAA64}[target]
+    dlls = list(directory.glob("*.dll"))
+    if not dlls:
+        raise ValueError(f"{directory} contains no app-local runtime DLLs")
+    for binary in [directory / "rust-commander.exe", *dlls]:
+        with binary.open("rb") as stream:
+            dos_signature = stream.read(2)
+            stream.seek(0x3C)
+            pe_offset = int.from_bytes(stream.read(4), "little")
+            stream.seek(pe_offset)
+            pe_signature = stream.read(4)
+            actual_machine = int.from_bytes(stream.read(2), "little")
+        if dos_signature != b"MZ" or pe_signature != b"PE\0\0" or actual_machine != machine:
+            raise ValueError(f"{binary.name} is not a {target} PE image (machine 0x{actual_machine:04x})")
 
 
 def create_macos_dmg(app, stage):
@@ -238,9 +258,10 @@ def package(target, app_only=False):
     expected_os = "Darwin" if target.startswith("macos") else "Windows" if target.startswith("windows") else "Linux"
     if platform.system() != expected_os:
         raise ValueError(f"Build {target} on its native OS")
-    arch = platform.machine().lower()
-    if (target == "macos-arm64") != (arch in ("arm64", "aarch64")):
-        raise ValueError(f"Host architecture {arch} does not match {target}")
+    arch = target.rsplit("-", 1)[1]
+    host = platform.machine().lower()
+    if {"amd64": "x64", "x86_64": "x64", "aarch64": "arm64"}.get(host, host) != arch:
+        raise ValueError(f"Host architecture {host} does not match {target}")
     suffix = ".exe" if target.startswith("windows") else ""
     executable = ROOT / f"target/release/rust-commander{suffix}"
     if output(executable, "--version").strip() != f"Rust Commander {version}":
@@ -284,7 +305,10 @@ def package(target, app_only=False):
         if licenses.exists():
             config["resources"].append({"src": str(licenses), "target": "third-party-licenses"})
     elif target.startswith("windows"):
-        dlls = windows_runtime(stage)
+        dlls = windows_runtime(stage, arch)
+        check_windows_payload(stage, target)
+        rust_arch = "aarch64" if arch == "arm64" else "x86_64"
+        config["targetTriple"] = f"{rust_arch}-pc-windows-msvc"
         config["resources"].extend({"src": str(p), "target": p.name} for p in dlls)
         config["resources"].append({"src": str(stage / "Microsoft-VC-Runtime.txt"), "target": "Microsoft-VC-Runtime.txt"})
         config["formats"] = ["nsis"]
@@ -347,14 +371,11 @@ def package(target, app_only=False):
     manifest = {"target": target, "version": version, "commit": commit,
                 "assets": {name: {"sha256": digest(dist / name), "size": (dist / name).stat().st_size} for name in names}}
     (dist / f"{target}.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    if target == "windows-x64":
+    if target.startswith("windows"):
         # Exercise a real installer version upgrade without downloading/running
         # older public executables. The fixture contains today's tested binary.
-        fixture = ROOT / "target/release-upgrade-fixture"
-        if fixture.exists():
-            shutil.rmtree(fixture)
         config["version"] = "0.0.0-0"
-        config["outDir"] = str(fixture)
+        config["outDir"] = str(stage / "upgrade-fixture")
         fixture_config = stage / "upgrade-fixture.json"
         fixture_config.write_text(json.dumps(config, indent=2) + "\n")
         run(packager_command(), "--config", fixture_config, "--release", env=env)

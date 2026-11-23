@@ -37,8 +37,9 @@ by the Rust Project or Rust Foundation.
 
 Versioned installers and portable downloads are published on the
 [GitHub Releases page](https://github.com/ghillert/rust-commander/releases).
-Each completed release contains separate Apple Silicon/Intel DMGs, a Windows
-installer and ZIP, a Linux AppImage and DEB, and SHA-256 checksums.
+The release workflow builds separate DMGs for Apple Silicon and Intel, Windows
+installers and portable ZIPs for both x64 and ARM64, and a Linux x64 AppImage
+and DEB. Each release includes SHA-256 checksums.
 The Mac DMGs show first-launch instructions for the current unnotarized builds.
 
 **Maintainers:** follow [Releasing Rust Commander](docs/RELEASING.md) for the
@@ -156,17 +157,18 @@ Ubuntu/Debian: `libglib2.0-bin gvfs-backends`).
 <details>
 <summary>Windows</summary>
 
-Install the Visual Studio C++ build tools and Windows SDK for your architecture,
-plus vcpkg, and use Rust's MSVC toolchain. For an ARM64 Rust host
-(`aarch64-pc-windows-msvc` in `rustc -vV`), include the ARM64 C++ build tools
-and use the `arm64-windows-static-md` triplet in both commands below. From a
-PowerShell session with the build tools available, set the path to your vcpkg
-checkout and install libarchive:
+Install vcpkg and the Visual Studio C++ build tools and Windows SDK for your
+x64 or ARM64 MSVC Rust toolchain. In PowerShell, set the path to your vcpkg checkout and
+install libarchive for the Rust host architecture.
 
 ```powershell
 $env:VCPKG_ROOT = "C:\path\to\vcpkg"
-$env:VCPKGRS_TRIPLET = "x64-windows-static-md"
-& "$env:VCPKG_ROOT\vcpkg.exe" install libarchive:x64-windows-static-md
+$env:VCPKGRS_TRIPLET = if ((rustc --print host-tuple) -eq "aarch64-pc-windows-msvc") {
+    "arm64-windows-static-md"
+} else {
+    "x64-windows-static-md"
+}
+& "$env:VCPKG_ROOT\vcpkg.exe" install "libarchive:$env:VCPKGRS_TRIPLET"
 ```
 
 Keep these environment variables set when running Cargo. In Git Bash, use
@@ -429,7 +431,7 @@ artifacts to the workflow run's summary page for **7 days**, including an ad hoc
 signed macOS app bundle. These are CI builds, not release installers; native
 runtime dependencies still apply. The badge above shows the `main` branch.
 The separate [Release workflow](.github/workflows/release.yml) uses the same
-checks, then packages four native targets and assembles a draft GitHub release
+checks, then packages five native targets and assembles a draft GitHub release
 with JReleaser. See [Releasing Rust Commander](docs/RELEASING.md).
 Local validation is recorded in [parity/VALIDATION.md](parity/VALIDATION.md).
 

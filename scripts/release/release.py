@@ -19,10 +19,24 @@ import tomllib
 import urllib.parse
 
 ROOT = Path(os.environ.get("RELEASE_ROOT", Path(__file__).resolve().parents[2])).resolve()
-TARGETS = {
-    "macos-arm64": ["dmg"], "macos-x64": ["dmg"],
-    "windows-x64": ["setup.exe", "zip"], "linux-x64": ["AppImage", "deb"],
-}
+TARGETS_FILE = "scripts/release/targets.json"
+
+
+def release_targets(contents):
+    if contents is not None:
+        return json.loads(contents)
+    # Release commits predating the target manifest used these four native targets.
+    return {"macos-arm64": ["dmg"], "macos-x64": ["dmg"],
+            "windows-x64": ["setup.exe", "zip"], "linux-x64": ["AppImage", "deb"]}
+
+
+try:
+    TARGETS = release_targets((ROOT / TARGETS_FILE).read_text())
+except FileNotFoundError:
+    # Recovery runs today's publishing tools against a separate, older source tree.
+    if "RELEASE_ROOT" not in os.environ:
+        raise
+    TARGETS = release_targets(None)
 
 
 def version_parts(version):
@@ -99,9 +113,9 @@ class GitHub:
     def post(self, path, data):
         return self.request("POST", self.prefix + path, data)
 
-    def file(self, name, ref):
-        data = self.get(f"contents/{name}?ref={urllib.parse.quote(ref, safe='')}")
-        return base64.b64decode(data["content"]).decode()
+    def file(self, name, ref, missing=False):
+        data = self.get(f"contents/{name}?ref={urllib.parse.quote(ref, safe='')}", missing=missing)
+        return base64.b64decode(data["content"]).decode() if data is not None else None
 
 
 def release_for(api, version):
@@ -206,10 +220,11 @@ def recovery_commit(api, version, run_id):
         if len(batch) < 100:
             break
         page += 1
-    expected = {"Prepare verified release commit", *(f"Package {target}" for target in TARGETS)}
+    targets = release_targets(api.file(TARGETS_FILE, run["head_sha"], missing=True))
+    expected = {"Prepare verified release commit", *(f"Package {target}" for target in targets)}
     if any(sum(job["name"] == name and job["conclusion"] == "success" for job in jobs) != 1
            for name in expected):
-        raise ValueError("All four original native package jobs must have passed exactly once")
+        raise ValueError("Preparation and every original native package job must have passed exactly once")
     return prepare(api, version, run["head_sha"], str(run_id))
 
 
@@ -393,7 +408,7 @@ def main():
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
             out.write(f"## Release ready for review\n\n[Draft release]({release['html_url']})\n\n"
                       f"[Version synchronization PR]({url})\n\nCommit: `{args.commit}`\n\n"
-                      "All six packages and checksums are uploaded. Publish manually after review.\n")
+                      "All packages and checksums are uploaded. Publish manually after review.\n")
 
 
 if __name__ == "__main__":

@@ -26,7 +26,8 @@ class FakeGitHub:
     prefix = "repos/ghillert/rust-commander/"
 
     def __init__(self):
-        self.files = {"source": {"Cargo.toml": MANIFEST, "Cargo.lock": LOCK}}
+        self.files = {"source": {"Cargo.toml": MANIFEST, "Cargo.lock": LOCK,
+                                 release.TARGETS_FILE: json.dumps(release.TARGETS)}}
         self.branch = None
         self.tag = None
         self.commit = None
@@ -37,8 +38,8 @@ class FakeGitHub:
         self.jobs = [{"name": name, "conclusion": "success"} for name in
                      ["Prepare verified release commit", *(f"Package {target}" for target in release.TARGETS)]]
 
-    def file(self, name, ref):
-        return self.files[ref][name]
+    def file(self, name, ref, missing=False):
+        return self.files[ref].get(name) if missing else self.files[ref][name]
 
     def get(self, path, missing=False):
         if path == "actions/runs/123":
@@ -89,7 +90,7 @@ class ReleaseTests(unittest.TestCase):
         release.prepare(api, "0.8.0", "source", "123")
         self.assertEqual(release.recovery_commit(api, "0.8.0", "123"), "release")
         api.jobs[-1]["conclusion"] = "failure"
-        with self.assertRaisesRegex(ValueError, "four original native package jobs"):
+        with self.assertRaisesRegex(ValueError, "every original native package job"):
             release.recovery_commit(api, "0.8.0", "123")
         api.jobs[-1]["conclusion"] = "success"
         api.run["path"] = ".github/workflows/ci.yml"
@@ -99,6 +100,56 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "did not prepare"):
             release.recovery_commit(fresh, "0.8.0", "123")
         self.assertIsNone(fresh.branch)
+
+    def test_recovery_requires_windows_arm64_only_for_releases_that_build_it(self):
+        api = FakeGitHub()
+        release.prepare(api, "0.8.0", "source", "123")
+        api.jobs = [job for job in api.jobs if job["name"] != "Package windows-arm64"]
+        with self.assertRaisesRegex(ValueError, "every original native package job"):
+            release.recovery_commit(api, "0.8.0", "123")
+        del api.files["source"][release.TARGETS_FILE]
+        self.assertEqual(release.recovery_commit(api, "0.8.0", "123"), "release")
+
+    def test_windows_payload_checks_the_executable_and_runtime_architectures(self):
+        import package
+
+        def pe_image(machine):
+            dos_header = b"MZ" + bytes(58) + (64).to_bytes(4, "little")
+            return dos_header + b"PE\0\0" + machine.to_bytes(2, "little")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            exe = directory / "rust-commander.exe"
+            dll = directory / "vcruntime140.dll"
+            for target, machine, wrong in [("windows-arm64", 0xAA64, 0x8664),
+                                            ("windows-x64", 0x8664, 0xAA64)]:
+                with self.subTest(target=target):
+                    exe.write_bytes(pe_image(machine))
+                    dll.write_bytes(pe_image(machine))
+                    package.check_windows_payload(directory, target)
+                    dll.write_bytes(pe_image(wrong))
+                    with self.assertRaisesRegex(ValueError, dll.name):
+                        package.check_windows_payload(directory, target)
+                    dll.write_bytes(pe_image(machine))
+                    exe.write_bytes(pe_image(wrong))
+                    with self.assertRaisesRegex(ValueError, exe.name):
+                        package.check_windows_payload(directory, target)
+            dll.unlink()
+            with self.assertRaisesRegex(ValueError, "no app-local runtime DLLs"):
+                package.check_windows_payload(directory, target)
+
+    @unittest.skipUnless(platform.system() == "Windows", "Requires the native MSVC build tools")
+    def test_windows_stages_the_native_visual_cpp_runtime(self):
+        import package
+        arch = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x64"
+        with tempfile.TemporaryDirectory() as tmp:
+            stage = Path(tmp)
+            source = stage / "probe.rs"
+            source.write_text("fn main() {}\n")
+            subprocess.run(["rustc", source, "-o", stage / "rust-commander.exe"], check=True)
+            package.windows_runtime(stage, arch)
+            self.assertTrue((stage / "vcruntime140.dll").is_file())
+            package.check_windows_payload(stage, f"windows-{arch}")
 
     def test_debian_package_ownership_ignores_diversion_notices(self):
         import package
@@ -185,7 +236,8 @@ class ReleaseTests(unittest.TestCase):
                 result=release.publish(api,'0.8.0','release',directory)
                 self.assertTrue(result['draft'])
                 self.assertEqual(result['body'],'maintainer edits')
-                self.assertEqual(len(uploaded),8)
+                self.assertCountEqual(uploaded, [*release.asset_names('0.8.0'),
+                                                 'release-manifest.json', 'checksums_sha256.txt'])
                 self.assertEqual(api.tag,'release')
                 self.assertEqual(release.publish(api,'0.8.0','release',directory),result)
                 api.release['draft']=False
@@ -294,7 +346,10 @@ class ReleaseTests(unittest.TestCase):
                     (directory/name).write_bytes(b'package fixture')
                     assets[name]={"sha256":release.digest(directory/name),"size":15}
                 (directory/f'{target}.json').write_text(json.dumps({"version":"0.8.0","commit":"abc","target":target,"assets":assets}))
-            self.assertEqual(len(release.validate_assets(directory,"0.8.0","abc")),6)
+            assets = release.validate_assets(directory, "0.8.0", "abc")
+            self.assertEqual(len(assets), 8)
+            self.assertIn("rust-commander-0.8.0-windows-arm64-setup.exe", assets)
+            self.assertIn("rust-commander-0.8.0-windows-arm64.zip", assets)
             with self.assertRaises(ValueError):
                 release.validate_assets(directory,"0.8.0","different")
             (directory/release.asset_names("0.8.0")[0]).write_bytes(b'tampered')

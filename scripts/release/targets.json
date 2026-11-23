@@ -1,0 +1,7 @@
+{
+  "macos-arm64": ["dmg"],
+  "macos-x64": ["dmg"],
+  "windows-x64": ["setup.exe", "zip"],
+  "windows-arm64": ["setup.exe", "zip"],
+  "linux-x64": ["AppImage", "deb"]
+}

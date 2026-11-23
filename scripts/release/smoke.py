@@ -11,8 +11,8 @@ import tempfile
 import time
 import zipfile
 
-from release import ROOT, asset_names, digest, version_parts
-from package import check_macos_baseline, debian_version, macho_dependencies
+from release import ROOT, TARGETS, asset_names, digest, version_parts
+from package import check_macos_baseline, check_windows_payload, debian_version, macho_dependencies
 
 
 def run(*args, **kwargs):
@@ -98,11 +98,12 @@ def macos(directory, version, target, work):
     launch(binary, version, work)
 
 
-def windows(directory, version, work):
-    installer, archive = [directory / name for name in asset_names(version, "windows-x64")]
+def windows(directory, version, target, work):
+    installer, archive = [directory / name for name in asset_names(version, target)]
     portable = work / "portable"
     with zipfile.ZipFile(archive) as stream:
         stream.extractall(portable)
+    check_windows_payload(portable, target)
     env = dict(os.environ, RELEASE_EXE=str(portable / "rust-commander.exe"))
     metadata = json.loads(run("pwsh", "-NoProfile", "-Command",
         "(Get-Item -LiteralPath $env:RELEASE_EXE).VersionInfo | ConvertTo-Json", env=env,
@@ -121,10 +122,11 @@ def windows(directory, version, work):
     sentinel.write_text("preserve settings")
     installed = work / "installed"
     try:
-        fixture, = (ROOT / "target/release-upgrade-fixture").rglob("*.exe")
+        fixture, = (ROOT / "target/release-packaging" / target / "upgrade-fixture").rglob("*.exe")
         # Install old fixture metadata, upgrade, then exercise maintenance.
         for candidate in (fixture, installer, installer):
             run(candidate, "/S", f"/D={installed}")
+            check_windows_payload(installed, target)
             launch(installed / "rust-commander.exe", version, work)
             if sentinel.read_text() != "preserve settings":
                 raise ValueError("Installer changed user configuration")
@@ -152,7 +154,7 @@ def linux(directory, version, work, kind):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True)
+    parser.add_argument("--target", choices=TARGETS, required=True)
     parser.add_argument("--directory", type=Path, default=ROOT / "dist/release")
     parser.add_argument("--linux-package", choices=["deb", "appimage"], default="appimage")
     args = parser.parse_args()
@@ -164,8 +166,8 @@ def main():
         work = Path(name)
         if args.target.startswith("macos"):
             macos(args.directory, data["version"], args.target, work)
-        elif args.target == "windows-x64":
-            windows(args.directory, data["version"], work)
+        elif args.target.startswith("windows"):
+            windows(args.directory, data["version"], args.target, work)
         else:
             linux(args.directory, data["version"], work, args.linux_package)
     print(f"Installed-package smoke test passed: {args.target}")
