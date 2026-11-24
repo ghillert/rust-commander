@@ -1,4 +1,49 @@
 //! Discover retained originals and restore copies without overwriting current files.
+//!
+//! [`inventory`] brings together backups from the [operation journal](crate::history),
+//! [transfer checkpoints](crate::resumable), and registered replacements.
+//! Select an [`Item`] and pass it to [`restore`] to copy its contents into a
+//! writable local or remote directory. A name collision produces a numbered
+//! sibling. The retained original remains available for another restore.
+//!
+//! [`cleanup`] permanently removes backup data. [`Item::cleanup_scope`] describes
+//! what selecting that item would remove, which can include a whole Undo/Redo chain.
+//!
+//! # Examples
+//!
+//! Recover the version from before a journaled edit into the file's original directory.
+//!
+//! ```
+//! use rust_commander::operations::{Operation, Task};
+//! use rust_commander::{history, recovery};
+//! use std::fs;
+//!
+//! let workspace = tempfile::tempdir()?;
+//! let config = workspace.path().join("config");
+//! let path = workspace.path().join("notes.txt");
+//! fs::write(&path, "first draft")?;
+//!
+//! let edit = Operation::SaveText {
+//!     path: path.clone(),
+//!     original: fs::read(&path)?,
+//!     text: "published".into(),
+//! };
+//! let mut task = Task::default();
+//! let record = history::execute_in(edit, &mut task, &config.join("history"))?;
+//! assert!(record.success, "{}", record.result);
+//!
+//! let inventory = recovery::inventory_in(&config, &task)?;
+//! let item = inventory.items.iter()
+//!     .find(|item| item.name == "notes.txt")
+//!     .expect("the journal retained the first draft");
+//! recovery::restore_in(&config, item, &item.destination, &mut task)?;
+//!
+//! assert_eq!(fs::read_to_string(&path)?, "published");
+//! assert_eq!(fs::read_to_string(workspace.path().join("notes (1).txt"))?, "first draft");
+//! assert_eq!(fs::read_to_string(&item.path)?, "first draft");
+//! # Ok::<(), anyhow::Error>(())
+//! ```
+
 use crate::{
     filesystem::{self, Location},
     operations::{self, Task},
@@ -11,28 +56,40 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Identifies the journal change, checkpoint entry, or registered backup for an [`Item`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Key {
     Journal { record: String, change: usize },
     Checkpoint { batch: String, item: usize },
     Registered(String),
 }
+/// A snapshot of a retained original. Restore and cleanup revalidate it before use.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
     pub key: Key,
     pub label: String,
+    /// Location holding the backup.
     pub source: Location,
+    /// Path of the backup within [`source`](Self::source).
     pub path: PathBuf,
+    /// Original parent directory, suggested as a restore destination.
     pub destination: Location,
+    /// Original filename to try first when restoring.
     pub name: String,
+    /// Fingerprint used to detect changes to the retained original.
     pub stamp: String,
+    /// Whether the backup group was eligible for cleanup when inventoried.
     pub cleanup: bool,
+    /// Human-readable description of the backups that cleanup would remove.
     pub cleanup_scope: String,
+    /// Items sharing this value are cleaned together.
     pub cleanup_group: String,
 }
+/// Available originals and any warnings encountered while discovering them.
 #[derive(Default)]
 pub struct Inventory {
     pub items: Vec<Item>,
+    /// Problems with individual backups or checkpoints that could be skipped.
     pub warnings: Vec<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -187,6 +244,8 @@ pub fn record_backup_in(
     });
     save_registry(config, &records)
 }
+/// Lists retained originals under the application's configuration directory.
+/// See [`inventory_in`] to choose the configuration directory explicitly.
 pub fn inventory(task: &Task) -> Result<Inventory> {
     inventory_in(&config()?, task)
 }
@@ -194,6 +253,8 @@ pub fn inventory(task: &Task) -> Result<Inventory> {
 pub fn import_folder(folder: &Path, task: &Task) -> Result<()> {
     import_folder_in(&config()?, folder, task)
 }
+/// Registers the entries of an older local replacement folder under `config`.
+/// The retained files stay in the folder so the registry can find them there.
 pub fn import_folder_in(config: &Path, folder: &Path, task: &Task) -> Result<()> {
     ensure!(
         folder
@@ -254,6 +315,13 @@ pub fn import_folder_in(config: &Path, folder: &Path, task: &Task) -> Result<()>
     }
     Ok(())
 }
+/// Discovers originals using the `history`, `transfers`, and `recovery` directories
+/// beneath `config`. Inspect [`Inventory::warnings`] alongside the returned items.
+///
+/// # Errors
+///
+/// Fails if the inventory cannot be read safely, exceeds its size limit, or
+/// encounters cancellation. Some individual discovery failures are reported as warnings.
 pub fn inventory_in(config: &Path, task: &Task) -> Result<Inventory> {
     let mut result = Inventory::default();
     let history = config.join("history");
@@ -396,12 +464,22 @@ fn verify(config: &Path, item: &Item, task: &Task) -> Result<Item> {
     );
     Ok(fresh)
 }
+/// Restores a verified copy into `destination` using the application configuration.
+/// See [`restore_in`] for naming and error behavior.
 pub fn restore(item: &Item, destination: &Location, task: &mut Task) -> Result<String> {
     restore_in(&config()?, item, destination, task)
 }
+/// Restores 1 to 100 selected originals using the application configuration.
+/// See [`restore_many_in`] for partial completion behavior.
 pub fn restore_many(items: &[Item], destination: &Location, task: &mut Task) -> Result<String> {
     restore_many_in(&config()?, items, destination, task)
 }
+/// Verifies all selected originals before restoring copies in selection order.
+///
+/// # Errors
+///
+/// Rejects selections outside the range of 1 to 100 items and stale originals.
+/// If a later copy fails, the error reports how many copies were restored.
 pub fn restore_many_in(
     config: &Path,
     items: &[Item],
@@ -431,6 +509,17 @@ pub fn restore_many_in(
         messages.join("\n")
     ))
 }
+/// Copies a retained original from the inventory under `config` into `destination`.
+///
+/// Uses [`Item::name`] when available, or an unused numbered sibling such as
+/// `notes (1).txt`. Checks the backup fingerprint before and after staging its
+/// contents and returns a display summary on success.
+///
+/// # Errors
+///
+/// Fails if the original disappeared or changed, the destination is unsuitable,
+/// or staging or transferring the copy fails. A writable local or remote
+/// directory outside the retained original is required.
 pub fn restore_in(
     config: &Path,
     item: &Item,
@@ -515,12 +604,21 @@ pub fn restore_in(
         item.name
     ))
 }
+/// Permanently cleans the group described by [`Item::cleanup_scope`] using the
+/// application configuration. See [`cleanup_in`] for eligibility rules.
 pub fn cleanup(item: &Item, task: &mut Task) -> Result<String> {
     cleanup_in(&config()?, item, task)
 }
+/// Cleans the distinct backup groups for 1 to 100 items using the application configuration.
 pub fn cleanup_many(items: &[Item], task: &mut Task) -> Result<String> {
     cleanup_many_in(&config()?, items, task)
 }
+/// Checks the selected items for eligibility and permanently cleans each distinct group once.
+///
+/// # Errors
+///
+/// Rejects invalid selections, stale backups, and protected groups. An error
+/// during cleanup reports how many groups were already cleaned.
 pub fn cleanup_many_in(config: &Path, items: &[Item], task: &mut Task) -> Result<String> {
     ensure!(
         !items.is_empty() && items.len() <= 100,
@@ -550,6 +648,13 @@ pub fn cleanup_many_in(config: &Path, items: &[Item], task: &mut Task) -> Result
         selected.len()
     ))
 }
+/// Permanently removes a registered backup, a completed checkpoint with its
+/// originals, or all backups in a journaled Undo/Redo chain under `config`.
+///
+/// # Errors
+///
+/// Refuses stale originals, incomplete checkpoints, pinned journal chains, and
+/// the latest reversible chain. Also propagates cancellation and storage errors.
 pub fn cleanup_in(config: &Path, item: &Item, task: &mut Task) -> Result<String> {
     let item = verify(config, item, task)?;
     ensure!(

@@ -1,4 +1,10 @@
 //! Cooperative transfer control and bounded retries of checkpointed operations.
+//!
+//! Share a [`Control`] with a worker through [`Task::control`](crate::operations::Task::control)
+//! to pause a transfer or adjust its bandwidth limit while it runs. A pause takes
+//! effect when the worker next checks the control. A paused worker continues
+//! checking its cancellation flag.
+
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -11,11 +17,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Live limits for streamed work and automatic checkpoint retries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     /// Zero means unlimited. This caps streamed processing, including staging.
     pub kib_per_second: u32,
+    /// Retry allowance for temporary checkpoint errors. Defaults to three and is capped at eight.
     pub retries: u8,
 }
 impl Default for Settings {
@@ -35,6 +43,7 @@ struct State {
     deadline: Option<Instant>,
     retry: Option<(u8, Duration)>,
 }
+/// Transfer state shared by the worker and the caller requesting pauses or limit changes.
 pub struct Control {
     state: Mutex<State>,
     changed: Condvar,
@@ -49,6 +58,8 @@ impl Control {
             changed: Condvar::new(),
         }
     }
+    /// Requests a pause, or resumes a paused transfer. [`Self::status`] reports when
+    /// the worker has acknowledged the request.
     pub fn toggle_pause(&self) {
         let mut state = self.state.lock().unwrap();
         state.pause = !state.pause;
@@ -59,12 +70,14 @@ impl Control {
     pub fn settings(&self) -> Settings {
         self.state.lock().unwrap().settings
     }
+    /// Applies new limits and wakes workers waiting on the previous settings.
     pub fn update(&self, settings: Settings) {
         let mut state = self.state.lock().unwrap();
         state.settings = settings;
         state.deadline = None;
         self.changed.notify_all();
     }
+    /// Returns whether a pause has been requested, including while acknowledgment is pending.
     pub fn paused(&self) -> bool {
         self.state.lock().unwrap().pause
     }

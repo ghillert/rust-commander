@@ -1,4 +1,14 @@
-//! Durable batch receipts and verified per-file staging. No credentials are stored.
+//! Checkpointed copies between local and remote directories.
+//!
+//! A batch records its selection, conflict decisions, and per-file progress on disk.
+//! After interruption, call [`run`] or [`run_resolved`] again with the same ID and
+//! inputs. The worker verifies staged bytes against the source and checks completed
+//! destinations before reusing them. Symbolic links are rejected during selection.
+//! Checkpoints identify remote connections by ID. Credentials are obtained from the connection.
+//!
+//! A successful batch that replaced destination entries keeps the originals
+//! for [recovery](crate::recovery). Other successful batches remove their staging directory.
+
 use crate::{
     filesystem::{self, Entry, Location},
     operations::Task,
@@ -159,6 +169,8 @@ fn equal_prefix(
     }
     Ok(())
 }
+/// Starts or resumes a copy in the application's checkpoint directory using
+/// the default [`TransferOptions`]. The batch ID must start with `batch-`.
 pub fn run(
     id: &str,
     from: &Location,
@@ -169,6 +181,54 @@ pub fn run(
     let root = crate::settings::path()?.with_file_name("transfers");
     run_in(&root, id, from, entries, to, task)
 }
+/// Starts or resumes a copy with its checkpoint stored beneath `root`.
+///
+/// Pass the same `id`, locations, and ordered selection when resuming. See
+/// [`run_resolved_in`] for conflict handling and errors.
+///
+/// # Examples
+///
+/// Cancel after the first streamed chunk, then finish the copy with a fresh task.
+///
+/// ```
+/// use rust_commander::filesystem::{self, Location};
+/// use rust_commander::{operations::Task, resumable};
+/// use std::fs;
+/// use std::sync::Arc;
+/// use std::sync::atomic::{AtomicBool, Ordering};
+/// use std::time::Duration;
+///
+/// let workspace = tempfile::tempdir()?;
+/// let source = workspace.path().join("source");
+/// let target = workspace.path().join("target");
+/// fs::create_dir(&source)?;
+/// fs::create_dir(&target)?;
+/// let contents = vec![42; 128 * 1024];
+/// fs::write(source.join("data.bin"), &contents)?;
+///
+/// let from = Location::Local(source);
+/// let to = Location::Local(target.clone());
+/// let entries = filesystem::list(&from)?;
+/// let checkpoints = workspace.path().join("transfers");
+/// let cancel = Arc::new(AtomicBool::new(false));
+/// let mut task = Task::new(Arc::clone(&cancel), move |progress| {
+///     if progress.bytes > 0 {
+///         cancel.store(true, Ordering::Relaxed);
+///     }
+/// })
+/// .report_every(Duration::ZERO);
+///
+/// let interrupted = resumable::run_in(&checkpoints, "batch-demo", &from, &entries, &to, &mut task);
+/// assert!(interrupted.is_err());
+/// assert!(task.progress.bytes > 0);
+/// assert!(!target.join("data.bin").exists());
+///
+/// let mut resumed = Task::default();
+/// resumable::run_in(&checkpoints, "batch-demo", &from, &entries, &to, &mut resumed)?;
+/// assert!(resumed.progress.completed_bytes > resumed.progress.bytes);
+/// assert_eq!(fs::read(target.join("data.bin"))?, contents);
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn run_in(
     root: &Path,
     id: &str,
@@ -188,6 +248,8 @@ pub fn run_in(
         task,
     )
 }
+/// Starts or resumes a checkpointed copy using the given conflict decisions.
+/// See [`run_resolved_in`] to choose where the checkpoint is stored.
 pub fn run_resolved(
     id: &str,
     from: &Location,
@@ -200,6 +262,13 @@ pub fn run_resolved(
     let root = crate::settings::path()?.with_file_name("transfers");
     run_resolved_in(&root, id, from, entries, to, options, overrides, task)
 }
+/// Starts or resumes a batch in `root` with its original options and per-target decisions.
+///
+/// # Errors
+///
+/// Rejects an invalid batch ID, archive locations, an empty selection, or a
+/// checkpoint belonging to a different transfer. Cancellation and verification
+/// failures can leave staged data for a subsequent attempt or inspection.
 #[allow(clippy::too_many_arguments)]
 pub fn run_resolved_in(
     root: &Path,

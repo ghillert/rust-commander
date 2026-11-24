@@ -23,6 +23,10 @@ runs:
       shell: bash
       run: cargo test --locked --all-targets --all-features
 
+    - name: Run documentation tests
+      shell: bash
+      run: cargo test --locked --all-features --doc
+
     - name: Test disposable real remote services
       if: runner.os == 'Linux'
       shell: bash

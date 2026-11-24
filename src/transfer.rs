@@ -1,3 +1,13 @@
+//! Local copy and move operations with explicit conflict policies.
+//!
+//! [`transfer`] applies one set of [`TransferOptions`] to a selection.
+//! To let a caller decide individual collisions, preview them with [`conflicts`]
+//! and pass the decisions to [`transfer_resolved`].
+//!
+//! A move can rename an entry directly on the same filesystem. When a move
+//! requires copying, the worker checks the source again before removing it.
+//! A source directory containing skipped entries is retained in full.
+
 use crate::{
     desktop::rename_exclusive,
     operations::{self, Task},
@@ -10,18 +20,27 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// How to handle an occupied destination name during a transfer.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConflictPolicy {
+    /// Report an unresolved collision during planning. This is the default.
     #[default]
     Refuse,
+    /// Leave the conflicting destination entry in place and skip the incoming one.
     Skip,
+    /// Give the incoming entry an unused numbered name, such as `notes (1).txt`.
     Rename,
+    /// Retain the existing local entry in a recovery folder before replacing it.
     Replace,
 }
 
+/// Conflict and directory-merge choices for a transfer.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TransferOptions {
+    /// Policy for a collision with no per-target decision.
     pub conflicts: ConflictPolicy,
+    /// Descend into matching directories to resolve conflicts between their children.
+    /// Defaults to `false`. [`ConflictPolicy::Rename`] renames the incoming directory as a whole.
     pub merge_folders: bool,
 }
 
@@ -267,6 +286,51 @@ impl Execution {
     }
 }
 
+/// Copies or moves a selection using conflict decisions keyed by destination path.
+///
+/// Use [`Conflict::target`] as the key in `overrides`. During a directory merge,
+/// children inherit the enclosing policy unless they have their own override.
+/// `moving` and the result have the same meaning as in [`transfer`].
+///
+/// # Errors
+///
+/// The selection and its conflicts are checked before copying begins. An I/O
+/// error, source change, or cancellation during execution can leave completed
+/// entries at the destination.
+///
+/// # Examples
+///
+/// Keep both versions of a file while leaving the default policy in effect
+/// for the rest of the selection.
+///
+/// ```
+/// use rust_commander::operations::Task;
+/// use rust_commander::transfer::{conflicts, transfer_resolved, ConflictPolicy, TransferOptions};
+/// use std::{collections::BTreeMap, fs};
+///
+/// let workspace = tempfile::tempdir()?;
+/// let sources = [workspace.path().join("notes.txt")];
+/// let destination = workspace.path().join("copies");
+/// fs::create_dir(&destination)?;
+/// fs::write(&sources[0], "incoming")?;
+/// fs::write(destination.join("notes.txt"), "existing")?;
+///
+/// let collisions = conflicts(&sources, &destination, false)?;
+/// assert_eq!(collisions.len(), 1);
+/// let decisions = BTreeMap::from([(collisions[0].target.clone(), ConflictPolicy::Rename)]);
+/// transfer_resolved(
+///     &sources,
+///     &destination,
+///     false,
+///     TransferOptions::default(),
+///     &decisions,
+///     &mut Task::default(),
+/// )?;
+///
+/// assert_eq!(fs::read_to_string(destination.join("notes.txt"))?, "existing");
+/// assert_eq!(fs::read_to_string(destination.join("notes (1).txt"))?, "incoming");
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn transfer_resolved(
     sources: &[PathBuf],
     destination: &Path,
@@ -479,6 +543,16 @@ pub(crate) fn transfer_report(
     result
 }
 
+/// Copies a local selection into an existing directory, or moves it when `moving` is true.
+///
+/// Returns a display summary including the recovery folder if existing entries
+/// were replaced. For per-target decisions, see [`transfer_resolved`].
+///
+/// # Errors
+///
+/// Rejects invalid selections, overlapping source and destination trees, and
+/// conflicts the policy cannot resolve. Completed entries can remain after a
+/// cancellation or I/O error.
 pub fn transfer(
     sources: &[PathBuf],
     destination: &Path,
@@ -496,14 +570,28 @@ pub fn transfer(
     )
 }
 
+/// A source and an occupied destination found by [`conflicts`].
 #[derive(Clone)]
 pub struct Conflict {
     pub source: PathBuf,
+    /// Destination entry to use as an override key for [`transfer_resolved`].
     pub target: PathBuf,
+    /// Source entry length from filesystem metadata, in bytes.
     pub source_size: u64,
+    /// Destination entry length from filesystem metadata, in bytes.
     pub target_size: u64,
 }
 
+/// Lists occupied destination entries for a local selection at the time of the call.
+///
+/// When `merge` is true, matching directories are inspected for child collisions.
+/// Symlinks are treated as entries. The transfer checks the filesystem again
+/// when building its plan.
+///
+/// # Errors
+///
+/// Fails if an entry cannot be inspected, a source has no filename, or more
+/// than 5,000 conflicts would be returned.
 pub fn conflicts(sources: &[PathBuf], destination: &Path, merge: bool) -> Result<Vec<Conflict>> {
     fn visit(source: &Path, target: &Path, merge: bool, result: &mut Vec<Conflict>) -> Result<()> {
         let input = fs::symlink_metadata(source)?;

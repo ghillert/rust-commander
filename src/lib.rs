@@ -1,3 +1,42 @@
+//! Rust Commander is a dual-pane file manager for local files, remote connections,
+//! and archives. This crate provides the desktop application and the file-management
+//! APIs it uses. File operations can also run directly from Rust code.
+//!
+//! # Working with files
+//!
+//! - Use an [`Operation`](operations::Operation) and [`operations::run`] to act on a
+//!   selection. A [`Task`](operations::Task) carries progress and cancellation.
+//! - Use [`transfer`] to preview local copy or move conflicts and choose how to
+//!   handle them. [`resumable`] provides checkpointed copies for local and remote files.
+//! - Use [`history::execute`] to journal an operation for Undo. Use [`recovery`]
+//!   to retrieve an earlier version as a separate copy.
+//!
+//! # Examples
+//!
+//! Copy a selected file into an existing directory using the same operation as
+//! the desktop application.
+//!
+//! ```
+//! use rust_commander::operations::{self, Operation, Task};
+//! use std::fs;
+//!
+//! let workspace = tempfile::tempdir()?;
+//! let source = workspace.path().join("notes.txt");
+//! let destination = workspace.path().join("copies");
+//! fs::write(&source, "meeting notes")?;
+//! fs::create_dir(&destination)?;
+//!
+//! let copy = Operation::Copy {
+//!     sources: vec![source.clone()],
+//!     destination: destination.clone(),
+//! };
+//! operations::run(copy, &mut Task::default())?;
+//!
+//! assert_eq!(fs::read_to_string(destination.join("notes.txt"))?, "meeting notes");
+//! assert_eq!(fs::read_to_string(source)?, "meeting notes");
+//! # Ok::<(), anyhow::Error>(())
+//! ```
+
 /// The application name used in windows, menus, and help.
 pub const APP_NAME: &str = "Rust Commander";
 

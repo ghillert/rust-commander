@@ -1,4 +1,13 @@
 //! Local operation journal. Undo validates complete contents before changing files.
+//!
+//! [`execute`] records an operation's outcome and snapshots the local paths it
+//! changes when journaling is supported. A failed or cancelled operation can still
+//! have reversible changes. Check [`Record::success`] for the outcome and
+//! [`Record::can_undo`] to decide whether to offer Undo.
+//!
+//! Run [`Operation::Undo`] through the journal to record the inverse operation
+//! for Redo. To retrieve a backup as a separate file, use [`crate::recovery`].
+
 use crate::operations::{self, Operation, Task};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -15,6 +24,7 @@ use std::{
 // target. Keep journal snapshots and replacements from overlapping.
 static STORAGE: RwLock<()> = RwLock::new(());
 
+/// A path's recorded states before and after an operation, with a backup when one exists.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Change {
     pub path: PathBuf,
@@ -37,13 +47,16 @@ pub enum ReplacementRecovery {
     Undo,
 }
 
+/// The persisted outcome of an operation and the changes available for Undo or Redo.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Record {
     pub id: String,
     pub label: String,
+    /// The operation's display message on success or its error on failure.
     pub result: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replacement_recovery: Option<ReplacementRecovery>,
+    /// Whether the operation itself succeeded.
     pub success: bool,
     #[serde(default)]
     pub cancelled: bool,
@@ -311,10 +324,45 @@ impl Recorder {
     }
 }
 
+/// Runs and journals an operation in the application's history directory.
+/// See [`execute_in`] for the difference between an operation failure and a journal error.
 pub fn execute(operation: Operation, task: &mut Task) -> Result<Record> {
     execute_in(operation, task, &root()?)
 }
 
+/// Runs an operation and persists its record under the history directory `root`.
+///
+/// The record contains the outcome even when the operation fails. Its
+/// [`result`](Record::result) holds the operation's message or error.
+///
+/// # Errors
+///
+/// Returns an error if the journal cannot be prepared, the changes cannot be
+/// inspected, or the record cannot be stored.
+///
+/// # Examples
+///
+/// Journal a directory creation, then undo it and obtain the record for Redo.
+///
+/// ```
+/// use rust_commander::history;
+/// use rust_commander::operations::{Operation, Task};
+///
+/// let workspace = tempfile::tempdir()?;
+/// let journal = workspace.path().join("history");
+/// let folder = workspace.path().join("drafts");
+/// let create = Operation::Mkdir(folder.clone());
+/// let record = history::execute_in(create, &mut Task::default(), &journal)?;
+/// assert!(record.can_undo());
+/// assert!(folder.is_dir());
+///
+/// let undo = Operation::Undo(Box::new(record));
+/// let inverse = history::execute_in(undo, &mut Task::default(), &journal)?;
+/// assert!(inverse.success, "{}", inverse.result);
+/// assert!(inverse.can_redo());
+/// assert!(!folder.exists());
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn execute_in(operation: Operation, task: &mut Task, root: &Path) -> Result<Record> {
     fs::create_dir_all(root)?;
     let directory = tempfile::Builder::new()
@@ -437,6 +485,13 @@ pub fn execute_in(operation: Operation, task: &mut Task, root: &Path) -> Result<
     Ok(record)
 }
 
+/// Reverses the paths in a record after validating current files and retained backups.
+/// Use [`execute`] with [`Operation::Undo`] to journal the inverse for Redo.
+///
+/// # Errors
+///
+/// Fails if Undo is unavailable, a path or backup differs from its recorded
+/// state, or staging or applying the changes fails.
 pub fn undo(record: &Record, task: &mut Task) -> Result<()> {
     if record.undone || record.undo_blocked || record.changes.is_empty() {
         bail!("This operation has no pending undo.");
@@ -574,6 +629,8 @@ fn revision() -> u128 {
         .as_nanos()
 }
 impl Record {
+    /// Returns whether this record has pending changes eligible for Undo.
+    /// Applying Undo rechecks the on-disk state.
     pub fn can_undo(&self) -> bool {
         !self.undone
             && !self.undo_blocked
@@ -581,6 +638,7 @@ impl Record {
             && !self.expired
             && !self.changes.is_empty()
     }
+    /// Returns whether this Undo record has pending changes eligible for Redo.
     pub fn can_redo(&self) -> bool {
         !self.undone
             && !self.undo_blocked

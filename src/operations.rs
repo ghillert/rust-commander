@@ -1,3 +1,13 @@
+//! File operations shared by the desktop UI and background workers.
+//!
+//! Pass an [`Operation`] to [`run`] with a [`Task`] to report progress and
+//! accept cancellation. Use [`crate::history::execute`] when a caller needs a
+//! journal of the changes for Undo or recovery.
+//!
+//! For local selections, [`preflight`] maps sources to unused names in a
+//! destination directory. [`copy_item`] copies one entry to an exact path.
+//! [`crate::transfer`] handles decisions about conflicting names.
+
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 use std::{
@@ -14,6 +24,11 @@ use std::{
 mod rate;
 pub(crate) mod totals;
 
+/// A file-management action and the inputs needed to perform it.
+///
+/// Local copy and move actions take a destination directory. The source entries
+/// keep their names unless an explicit [conflict policy](crate::transfer::ConflictPolicy)
+/// chooses new ones.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Operation {
     ExternalSave {
@@ -31,10 +46,12 @@ pub enum Operation {
         expected: crate::security_metadata::Snapshot,
         change: crate::security_metadata::Change,
     },
+    /// Restore each selected original as a new copy in `destination`.
     RecoveryRestore {
         items: Vec<crate::recovery::Item>,
         destination: crate::filesystem::Location,
     },
+    /// Permanently clean the backup groups represented by the selected originals.
     RecoveryCleanup(Vec<crate::recovery::Item>),
     DropTransfer {
         selection: crate::drag_drop::Selection,
@@ -101,8 +118,11 @@ pub enum Operation {
         overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
     },
 
+    /// Reverse the changes captured in a journal record.
     Undo(Box<crate::history::Record>),
+    /// Reapply changes by reversing the journal record produced by Undo.
     Redo(Box<crate::history::Record>),
+    /// Save edited UTF-8 text after checking the bytes originally read from disk.
     SaveText {
         path: PathBuf,
         #[serde(skip)]
@@ -126,6 +146,7 @@ pub enum Operation {
         partial: PathBuf,
         stamp: String,
     },
+    /// Copy or move local entries with per-target conflict decisions.
     ResolvedTransfer {
         sources: Vec<PathBuf>,
         destination: PathBuf,
@@ -158,6 +179,7 @@ pub enum Operation {
         #[serde(skip)]
         password: String,
     },
+    /// Copy or move local entries using a shared conflict policy.
     Transfer {
         sources: Vec<PathBuf>,
         destination: PathBuf,
@@ -207,10 +229,12 @@ pub enum Operation {
         connection: String,
         entries: Vec<crate::filesystem::Entry>,
     },
+    /// Copy local entries into an existing directory, refusing occupied names.
     Copy {
         sources: Vec<PathBuf>,
         destination: PathBuf,
     },
+    /// Move local entries into an existing directory, refusing occupied names.
     Move {
         sources: Vec<PathBuf>,
         destination: PathBuf,
@@ -437,15 +461,21 @@ impl Operation {
     }
 }
 
+/// Called before a path changes so the journal can capture its current state.
 pub type ChangeHook = Box<dyn FnMut(&Path) -> Result<()> + Send>;
 
+/// Progress observed by a worker during one operation.
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Progress {
+    /// Display path supplied by the most recent progress update.
     pub current: String,
+    /// Bytes processed during this run.
     pub bytes: u64,
     pub files: usize,
+    /// Planned byte count, when the worker can determine one.
     #[serde(default)]
     pub total_bytes: Option<u64>,
+    /// Bytes of planned work completed, including progress recovered from a checkpoint.
     #[serde(default)]
     pub completed_bytes: u64,
     #[serde(skip)]
@@ -453,6 +483,8 @@ pub struct Progress {
 }
 
 impl Progress {
+    /// Returns a fraction between zero and one, or `None` for an unknown total.
+    /// A known total of zero yields `Some(0.0)`.
     pub fn fraction(&self) -> Option<f32> {
         self.total_bytes.map(|total| {
             if total == 0 {
@@ -470,14 +502,23 @@ impl Progress {
     }
 }
 
+/// Progress reporting, cancellation, and journal hooks for one running operation.
+///
+/// [`Task::default`] starts with a clear cancellation flag and a silent progress
+/// callback. Use [`Task::new`] to share the flag or receive progress updates.
 pub struct Task {
     pub(crate) replacement_recovery: Option<crate::history::ReplacementRecovery>,
+    /// Set by a worker when its result cannot safely be undone automatically.
     pub undo_blocked: bool,
     pub notices: Vec<String>,
     pub(crate) private_roots: Vec<PathBuf>,
+    /// Optional hook for capturing a path's current state before a change.
     pub before_change: Option<ChangeHook>,
+    /// Set to `true` to request cancellation at the next [`check`](Self::check).
     pub cancel: Arc<AtomicBool>,
+    /// Optional shared control for pausing, pacing, and retrying checkpointed work.
     pub control: Option<Arc<crate::transfer_control::Control>>,
+    /// Latest progress, including work since the last callback.
     pub progress: Progress,
     report: Box<dyn FnMut(Progress) + Send>,
     total_planned: bool,
@@ -492,6 +533,7 @@ impl Default for Task {
 }
 
 impl Task {
+    /// Creates a task with a shared cancellation flag and a progress callback.
     pub fn new(cancel: Arc<AtomicBool>, report: impl FnMut(Progress) + Send + 'static) -> Self {
         Self {
             undo_blocked: false,
@@ -551,6 +593,7 @@ impl Task {
         }
     }
 
+    /// Checks for cancellation, then runs the installed change hook for `path`.
     pub fn capture(&mut self, path: &Path) -> Result<()> {
         self.check()?;
         if let Some(mut hook) = self.before_change.take() {
@@ -561,6 +604,10 @@ impl Task {
         Ok(())
     }
 
+    /// Waits while a pause is in effect and returns an error on cancellation.
+    ///
+    /// Workers call this between steps. Changes completed before cancellation
+    /// can remain on disk.
     pub fn check(&self) -> Result<()> {
         if self.cancel.load(Ordering::Relaxed) {
             bail!("Operation cancelled. Completed items were kept.");
@@ -637,6 +684,12 @@ impl Task {
         Ok(())
     }
 
+    /// Copies from the reader to the writer in chunks and returns the byte count.
+    ///
+    /// # Errors
+    ///
+    /// Cancellation and I/O failures can leave bytes in the writer. [`copy_item`]
+    /// stages regular files when a complete file must be published at once.
     pub fn stream(
         &mut self,
         input: &mut dyn Read,
@@ -661,6 +714,7 @@ impl Task {
     }
 }
 
+/// Returns whether entry metadata is readable, including for a dangling symlink.
 pub fn exists(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok()
 }
@@ -697,6 +751,15 @@ pub(crate) fn validate_sources(sources: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
+/// Returns the proposed target paths for a local selection, in source order.
+///
+/// The destination must be an existing directory. This check leaves the
+/// filesystem untouched. A target name can become occupied before the copy starts.
+///
+/// # Errors
+///
+/// Rejects empty, duplicate, or nested selections, unreadable sources, occupied
+/// or duplicate targets, and a destination inside a selected directory.
 pub fn preflight(sources: &[PathBuf], destination: &Path) -> Result<Vec<PathBuf>> {
     validate_sources(sources)?;
     let destination =
@@ -726,6 +789,17 @@ pub fn preflight(sources: &[PathBuf], destination: &Path) -> Result<Vec<PathBuf>
 }
 
 /// Creates new paths exclusively. Symlinks are copied as links, never followed.
+/// Copies a file, directory tree, or symlink to the exact unused path `target`.
+///
+/// Choose a target outside the source tree. Symlinks are recreated with their
+/// stored link text. Regular files are staged beside the target and published
+/// after the contents and supported metadata have been written.
+///
+/// # Errors
+///
+/// Fails if the target exists, the source is a special file, a regular file's
+/// size or modification time changes while copying, or the task encounters
+/// cancellation or an I/O error.
 pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
     task.tick(source, 0)?;
     let metadata = fs::symlink_metadata(source)?;
@@ -791,6 +865,8 @@ pub fn copy_item(source: &Path, target: &Path, task: &mut Task) -> Result<()> {
     Ok(())
 }
 
+/// Dispatches a single operation and returns its display message.
+/// [`run`] also records the outcome in the debug log and collects notices.
 pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
     task.check()?;
     match operation {
@@ -1260,6 +1336,12 @@ pub fn execute(operation: Operation, task: &mut Task) -> Result<String> {
     }
 }
 
+/// Runs an operation synchronously and includes its notices in the result.
+///
+/// # Errors
+///
+/// Returns the operation's error on cancellation, invalid input, or failure
+/// during execution. Earlier items in a batch may already have been processed.
 pub fn run(operation: Operation, task: &mut Task) -> Result<String> {
     let label = operation.label();
     crate::debug_log::record("operation", &format!("Started: {label}"));
@@ -1371,6 +1453,12 @@ pub(crate) fn source_stamp(path: &Path, task: &Task) -> Result<[u8; 32]> {
     Ok(digest.finalize().into())
 }
 
+/// Reads up to `limit` bytes of UTF-8 text for the built-in editor.
+///
+/// # Errors
+///
+/// Fails if the file exceeds `limit`, contains a NUL byte or invalid UTF-8,
+/// or cannot be read.
 pub fn read_text(path: &Path, limit: u64) -> Result<String> {
     let file = File::open(path)?;
     let mut bytes = Vec::new();
@@ -1387,10 +1475,39 @@ pub fn read_text(path: &Path, limit: u64) -> Result<String> {
     String::from_utf8(bytes).context("This file is not UTF-8. Use Open externally to view it.")
 }
 
-/// Refuses external changes and replaces the target only after a complete write.
+/// Saves UTF-8 text to an existing file using the bytes from when it was opened.
+///
+/// # Errors
+///
+/// Shares the checks in [`save_bytes`]. A stale `original` produces an error so
+/// the caller can reload the file before retrying.
+///
+/// # Examples
+///
+/// ```
+/// use rust_commander::operations::{read_text, save_text};
+/// use std::fs;
+///
+/// let workspace = tempfile::tempdir()?;
+/// let path = workspace.path().join("notes.txt");
+/// fs::write(&path, "draft")?;
+/// let original = read_text(&path, 1024)?;
+///
+/// save_text(&path, original.as_bytes(), "final draft")?;
+/// assert!(save_text(&path, original.as_bytes(), "outdated edit").is_err());
+/// assert_eq!(fs::read_to_string(&path)?, "final draft");
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn save_text(path: &Path, original: &[u8], text: &str) -> Result<()> {
     save_bytes(path, original, text.as_bytes())
 }
+/// Stages new bytes beside an existing file and checks `original` again before
+/// replacing it. The staged file inherits permissions and supported metadata.
+///
+/// # Errors
+///
+/// Fails for a symlink, a mismatch between `original` and the on-disk bytes
+/// at either check, or an I/O error while reading, staging, or replacing the file.
 pub fn save_bytes(path: &Path, original: &[u8], bytes: &[u8]) -> Result<()> {
     if fs::symlink_metadata(path)?.file_type().is_symlink() {
         bail!("Edit the symlink target directly.");
