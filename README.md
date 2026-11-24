@@ -80,7 +80,7 @@ published.
 - **Multiple windows:** restore all window sessions and independent tabs with a shared transfer queue, recovery
   history and preferences, guarded application-wide quit and a bring-all-forward command.
 - **Desktop commands:** a bookmark explorer, reviewed file attachments over encrypted
-  SMTP, documentation/community/website/donation links and a bounded application
+  SMTP, documentation/community/website links and a bounded application
   event console. See [desktop commands](docs/DESKTOP_COMMANDS.md).
 - **Migration:** preview and merge supported muCommander XML bookmarks, shortcuts,
   commands and preferences, with a backup before applying.

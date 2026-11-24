@@ -20,7 +20,7 @@ surface and the shared application controller.
 The native renderer accepts Settings; ordinary prompts, including permissions
 and deletion; packing; Connections; Archive tools; Batch rename; synchronization
 and recovery forms; Open as/Open with; exit confirmation; results; browser URLs;
-donation; email; external-editor confirmation; associations; updates; diagnostics
+email; external-editor confirmation; associations; updates; diagnostics
 reports; Select by pattern; tab naming; Empty Trash confirmation; settings import
 and imported-command review, ownership/ACL editing, SSH fingerprint review and editor draft recovery. Availability is based on the actual form schema, not its title.
 Unsupported field types, more than 512 fields, 128 result rows or five footer

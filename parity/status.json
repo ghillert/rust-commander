@@ -248,7 +248,7 @@
       "src/support.rs",
       "src/preferences.rs"
     ],
-    "note": "A reviewable HTTPS donation action defaults to GitHub Sponsors for ghillert, as declared in the repository funding configuration. Users can save a different credential-free HTTPS destination. URL validation, persistence and launch dispatch have tests; no payment is performed and native browser acceptance remains open.",
+    "note": "Default builds disable Donate. The optional donations Cargo feature enables the reviewed HTTPS link and uses saved donation preferences. Native browser acceptance remains open.",
     "status": "partial"
   },
   "DuplicateTab": {

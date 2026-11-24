@@ -1,6 +1,6 @@
 [package]
 name = "rust-commander"
-version = "0.7.0"
+version = "1.0.0-SNAPSHOT"
 edition = "2024"
 rust-version = "1.92"
 description = "A native Rust dual-pane file manager inspired by muCommander"
@@ -77,6 +77,7 @@ mdns-sd = { version = "0.21.7", default-features = false }
 drag = "2.1.1"
 
 [features]
+donations = []
 screenshot = []
 
 

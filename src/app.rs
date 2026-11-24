@@ -143,6 +143,7 @@ pub(crate) enum Action {
     GoToDocumentation,
     GoToForums,
     GoToWebsite,
+    #[cfg(feature = "donations")]
     Donate,
     ShowDebugConsole,
     RecallWindow1,
@@ -301,6 +302,7 @@ pub(crate) fn all_actions() -> Vec<Action> {
         Action::GoToDocumentation,
         Action::GoToForums,
         Action::GoToWebsite,
+        #[cfg(feature = "donations")]
         Action::Donate,
         Action::ShowDebugConsole,
         Action::RecallWindow1,
@@ -1373,6 +1375,8 @@ impl Commander {
             }
         }
         match action {
+            #[cfg(feature = "donations")]
+            Action::Donate => return,
             Action::ExternalEdit
             | Action::Associations
             | Action::CheckForUpdates
@@ -1387,7 +1391,6 @@ impl Commander {
             | Action::GoToDocumentation
             | Action::GoToForums
             | Action::GoToWebsite
-            | Action::Donate
             | Action::ShowDebugConsole
             | Action::RecallWindow1
             | Action::RecallWindow2

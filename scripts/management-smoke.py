@@ -16,8 +16,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, default=project / "target/debug/rust-commander")
     parser.add_argument("--output", type=Path, default=project / "target/management-smoke")
-    cases=["files", "recovery", "archive", "diagnostics", "report", "bookmarks", "email", "email-settings", "console", "donate", "help", "browser-url", "virtual-pack", "window", "extract", "copy", "settings"]
-    parser.add_argument("--case", action="append", choices=cases, dest="cases")
+    cases=["files", "recovery", "archive", "diagnostics", "report", "bookmarks", "email", "email-settings", "console", "help", "browser-url", "virtual-pack", "window", "extract", "copy", "settings"]
+    parser.add_argument("--case", action="append", choices=[*cases, "donate"], dest="cases",
+                        help="Render one case. The donate case requires a binary built with the donations feature.")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="rust-commander-management-") as directory:

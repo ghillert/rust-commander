@@ -13,6 +13,7 @@ pub(super) struct State {
     selected: Option<usize>,
     filter: String,
     name: String,
+    #[cfg(feature = "donations")]
     donation: String,
     browser_url: String,
     error: String,
@@ -117,6 +118,7 @@ impl Adapter {
                     self.app.fail(error);
                 }
             }
+            #[cfg(feature = "donations")]
             "Donate" => {
                 self.desktop_commands = State {
                     kind: Some("donate"),
@@ -229,6 +231,7 @@ impl Adapter {
             match kind {
                 "bookmarks" => "Explore bookmarks",
                 "email" => "Email files",
+                #[cfg(feature = "donations")]
                 "donate" => "Donate",
                 "browser-url" => "Open URL in browser",
                 _ => "Debug console",
@@ -329,6 +332,7 @@ impl Adapter {
                 dialog.button("console-copy", "Copy displayed events", true);
                 dialog.button("console-clear", "Clear events", true);
             }
+            #[cfg(feature = "donations")]
             "donate" => {
                 dialog.description="Choose the project's donation page. Opening the page does not make a payment. The HTTPS address is saved in preferences.".into();
                 dialog.fields.push(Field::text(
@@ -488,7 +492,8 @@ impl Adapter {
                 state.name.clear();
             }
             "bookmark-name" => state.name = value.into(),
-            "donation-url" => state.donation = value.into(),
+            #[cfg(feature = "donations")]
+            "donation-url" if state.kind == Some("donate") => state.donation = value.into(),
             "browser-url" => state.browser_url = value.into(),
             "console-filter" => state.filter = value.into(),
             "console-pause" => state.paused = value == "true",
@@ -561,7 +566,8 @@ impl Adapter {
                     crate::debug_log::clear();
                     self.desktop_commands.events.clear();
                 }
-                "donation-open" => {
+                #[cfg(feature = "donations")]
+                "donation-open" if self.desktop_commands.kind == Some("donate") => {
                     ensure!(
                         self.app.settings_valid,
                         "Repair the invalid configuration before saving a donation link"
@@ -786,7 +792,7 @@ mod tests {
         panic!("Attachment worker did not finish");
     }
     #[test]
-    fn all_eight_commands_are_registered_and_browser_links_are_dispatched() {
+    fn desktop_commands_are_registered_and_browser_links_are_dispatched() {
         let (_root, ui, state, _, _) = setup();
         let menus = action_menus();
         assert_eq!(
@@ -798,6 +804,7 @@ mod tests {
             "GoToDocumentation",
             "GoToForums",
             "GoToWebsite",
+            #[cfg(feature = "donations")]
             "Donate",
             "ShowDebugConsole",
             "CheckForUpdates",
@@ -818,6 +825,7 @@ mod tests {
             "GoToDocumentation",
             "GoToForums",
             "GoToWebsite",
+            #[cfg(feature = "donations")]
             "Donate",
             "ShowDebugConsole",
         ] {
@@ -943,6 +951,39 @@ mod tests {
             "https://example.test/docs/report.html"
         );
     }
+    #[cfg(not(feature = "donations"))]
+    #[test]
+    fn disabled_donate_command_is_hidden_and_legacy_bindings_are_inactive() {
+        let (_root, ui, state, _, _) = setup();
+        let mut preferences: crate::preferences::Preferences =
+            serde_json::from_value(serde_json::json!({
+                "command_actions": ["Donate", "Help"],
+                "shortcuts": {"Donate": "F12"},
+                "alternate_shortcuts": {"Donate": "F11"},
+                "donation_url": "https://example.test/support"
+            }))
+            .unwrap();
+        preferences.upgrade();
+        crate::preferences::validate(&preferences).unwrap();
+        state.borrow_mut().app.preferences = preferences;
+        state.borrow_mut().sync(&ui);
+        assert_eq!(ui.get_command_buttons().row_count(), 1);
+        assert_eq!(ui.get_command_buttons().row_data(0).unwrap().id, "Help");
+        assert!(action_named("Donate").is_none());
+        assert!(!supported_commands().iter().any(|name| name == "Donate"));
+        for key in [slint::platform::Key::F11, slint::platform::Key::F12] {
+            let mut event = slint::language::KeyEvent::default();
+            event.text = key.into();
+            assert!(!ui.invoke_global_key(event));
+        }
+        ui.invoke_action("Donate".into());
+        assert!(!state.borrow().desktop_commands.active());
+        assert!(state.borrow().desktop_commands.opened_urls.is_empty());
+        ui.invoke_menu("Help".into());
+        assert!(!ui.get_menu_items().iter().any(|item| item.id == "Donate"));
+    }
+
+    #[cfg(feature = "donations")]
     #[test]
     fn donation_link_is_validated_saved_and_opened_only_after_review() {
         let (root, ui, state, _, _) = setup();

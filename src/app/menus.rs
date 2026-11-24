@@ -247,6 +247,7 @@ pub(crate) fn action_menu_definitions() -> Vec<ActionMenu> {
                 vec![
                     ("Check for updates…", CheckForUpdates),
                     ("Project website", GoToWebsite),
+                    #[cfg(feature = "donations")]
                     ("Donate…", Donate),
                 ],
                 vec![

@@ -86,15 +86,13 @@ The **Help** menu includes:
 - **Community support:** the repository Issues page. The project has no separate
   forum enabled; the upstream `GoToForums` command maps to this support destination.
 - **Project website:** the Rust Commander repository.
-- **Donate…:** a reviewable HTTPS donation link, defaulting to
-  [GitHub Sponsors for ghillert](https://github.com/sponsors/ghillert), as declared
-  by the repository's published `.github/FUNDING.yml`. An edited link is saved
-  before opening it. Credentials and non-HTTPS links are rejected. Opening the
-  page does not make a payment.
 
 These actions open the system browser and report launch errors. The commands are
 also available to configurable shortcuts. Existing Help, update checks,
 diagnostics and reviewed bug reports remain in the same menu.
+
+Standard builds disable **Donate…**. Building with the `donations` Cargo feature
+enables the command and uses any previously saved donation URL and shortcuts.
 
 ## Debug console
 

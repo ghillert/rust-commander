@@ -63,18 +63,14 @@ fn configured_action(
     event: &slint::language::KeyEvent,
 ) -> Option<String> {
     let key = normalized_key(event.text.as_str())?;
-    preferences
-        .shortcuts
-        .iter()
-        .chain(preferences.alternate_shortcuts.iter())
-        .find_map(|(name, binding)| {
-            let binding = crate::preferences::shortcut(binding).ok()?;
-            (binding.logical_key == key
-                && binding.modifiers.command == event.modifiers.control
-                && binding.modifiers.shift == event.modifiers.shift
-                && binding.modifiers.alt == event.modifiers.alt)
-                .then(|| name.clone())
-        })
+    preferences.active_shortcuts().find_map(|(name, binding)| {
+        let binding = crate::preferences::shortcut(binding).ok()?;
+        (binding.logical_key == key
+            && binding.modifiers.command == event.modifiers.control
+            && binding.modifiers.shift == event.modifiers.shift
+            && binding.modifiers.alt == event.modifiers.alt)
+            .then(|| name.clone())
+    })
 }
 
 impl Adapter {

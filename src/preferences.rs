@@ -299,6 +299,11 @@ pub fn shortcut(text: &str) -> Result<Shortcut> {
     })
 }
 
+// Keep saved Donate buttons and bindings available to builds that enable them.
+fn command_enabled(id: &str) -> bool {
+    cfg!(feature = "donations") || id != "Donate"
+}
+
 pub fn validate(preferences: &Preferences) -> Result<()> {
     if !preferences.mail.host.is_empty()
         || !preferences.mail.sender.is_empty()
@@ -352,7 +357,7 @@ pub fn validate(preferences: &Preferences) -> Result<()> {
     }
     let mut command_names = std::collections::BTreeSet::new();
     for name in &preferences.command_actions {
-        if !catalog.contains(name) || !command_names.insert(name) {
+        if (command_enabled(name) && !catalog.contains(name)) || !command_names.insert(name) {
             bail!("Command-bar actions must be supported and unique");
         }
     }
@@ -360,11 +365,9 @@ pub fn validate(preferences: &Preferences) -> Result<()> {
         bail!("Pane ratio must be between 0.15 and 0.85");
     }
     let mut keys = Vec::new();
-    for value in preferences
-        .shortcuts
-        .values()
-        .chain(preferences.alternate_shortcuts.values())
-        .filter(|v| !v.is_empty())
+    for (_, value) in preferences
+        .active_shortcuts()
+        .filter(|(_, v)| !v.is_empty())
     {
         let key = shortcut(value)?;
         if keys.contains(&key) {
@@ -548,6 +551,13 @@ impl ToolbarAction {
 }
 
 impl Preferences {
+    pub(crate) fn active_shortcuts(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.shortcuts
+            .iter()
+            .chain(&self.alternate_shortcuts)
+            .filter(|(id, _)| command_enabled(id))
+    }
+
     /// Add new bindings to legacy settings without stealing an existing custom shortcut.
     pub fn upgrade(&mut self) {
         if self.command_bar_defaults_version == 0 {
@@ -560,10 +570,9 @@ impl Preferences {
         }
         for (name, binding) in Self::default().alternate_shortcuts {
             if self.alternate_shortcuts.get(&name) == Some(&binding)
-                && self
-                    .shortcuts
-                    .values()
-                    .any(|value| shortcut(value).ok() == shortcut(&binding).ok())
+                && self.shortcuts.iter().any(|(id, value)| {
+                    command_enabled(id) && shortcut(value).ok() == shortcut(&binding).ok()
+                })
             {
                 self.alternate_shortcuts.remove(&name);
             }
@@ -573,11 +582,11 @@ impl Preferences {
             if self.shortcuts.contains_key(&name) {
                 continue;
             }
-            let reserved = self
-                .shortcuts
-                .values()
-                .filter(|value| !value.is_empty())
-                .any(|value| shortcut(value).ok() == shortcut(&binding).ok());
+            let reserved = self.shortcuts.iter().any(|(id, value)| {
+                command_enabled(id)
+                    && !value.is_empty()
+                    && shortcut(value).ok() == shortcut(&binding).ok()
+            });
             self.shortcuts
                 .insert(name, if reserved { String::new() } else { binding });
         }
