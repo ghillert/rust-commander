@@ -1,4 +1,9 @@
-//! Bounded, read-only pages from local/remote objects or a private archive snapshot.
+//! Read-only access to a file by byte offset.
+//!
+//! Open a [`Source`] once, then use [`Source::page`] for decoded text or
+//! [`Source::hex`] for hexadecimal rows. Local and remote reads check for
+//! changes since opening. Archive reads use a private snapshot of the member.
+
 use super::*;
 use anyhow::ensure;
 use std::{
@@ -6,10 +11,14 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
+/// A shared source for paging through a local file, remote object, or archive member.
 #[derive(Debug)]
 pub struct Source {
+    /// Location providing access to the entry.
     pub location: Location,
+    /// Filesystem path, connection-relative path, or archive-root-relative member path.
     pub path: PathBuf,
+    /// Source length in bytes at the time it was opened.
     pub total: u64,
     stamp: String,
     local: Option<same_file::Handle>,
@@ -38,6 +47,17 @@ fn local_stamp(path: &Path) -> Result<String> {
     ))
 }
 impl Source {
+    /// Opens an entry for repeated reads and records its length and identity.
+    ///
+    /// Supply the path from [`Entry::path`](crate::filesystem::Entry::path).
+    /// Local and remote files are read on demand. Archive members are copied
+    /// once, up to [`PAGE_CACHE_LIMIT`], and further
+    /// reads use that copy even if the original archive changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for virtual discovery lists, unavailable source
+    /// metadata, or an archive member that cannot be snapshotted within the limit.
     pub fn open(location: Location, path: PathBuf) -> Result<Arc<Self>> {
         let docker = location
             .docker_target()
@@ -105,6 +125,15 @@ impl Source {
         );
         Ok(())
     }
+    /// Opens a reader positioned at the absolute byte `offset`, including end of file.
+    ///
+    /// Checks the source before returning the reader. Use [`Self::bytes`] for
+    /// a bounded read that also checks the source after reading.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `offset` exceeds [`Self::total`], a source change
+    /// is detected, or the backend cannot open or position the reader.
     pub fn reader_at(&self, offset: u64) -> Result<Box<dyn Read>> {
         ensure!(
             offset <= self.total,
@@ -133,6 +162,32 @@ impl Source {
             }),
         })
     }
+    /// Reads up to `count` bytes at an absolute byte `offset`, stopping at end of file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `count` exceeds [`PAGE_SIZE`](crate::text_document::PAGE_SIZE)
+    /// plus four bytes, `offset` is beyond the end, a source change is
+    /// detected, or the read fails.
+    ///
+    /// # Examples
+    ///
+    /// A page can end early at EOF. Reopen a changed local file before reading further.
+    ///
+    /// ```
+    /// use rust_commander::{filesystem::Location, viewer::source::Source};
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// let path = dir.path().join("notes.txt");
+    /// std::fs::write(&path, b"abcdef")?;
+    /// let source = Source::open(Location::Local(dir.path().to_owned()), path.clone())?;
+    /// assert_eq!(source.bytes(3, 8)?, b"def");
+    /// assert!(source.bytes(source.total, 1)?.is_empty());
+    ///
+    /// std::fs::write(&path, b"a longer file")?;
+    /// assert!(source.bytes(0, 1).is_err());
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn bytes(&self, offset: u64, count: u64) -> Result<Vec<u8>> {
         ensure!(
             count <= crate::text_document::PAGE_SIZE + 4,
@@ -145,6 +200,16 @@ impl Source {
         self.verify()?;
         Ok(bytes)
     }
+    /// Decodes a page near `offset` in the requested encoding.
+    ///
+    /// The offset is clamped to the file length and adjusted at UTF-8 or
+    /// UTF-16 character boundaries. Use the returned [`Page::next`](crate::text_document::Page::next)
+    /// byte offset to continue. The page retains a handle to this source.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the source cannot be read, a change is detected,
+    /// or the page cannot be decoded in the requested encoding.
     pub fn page(
         self: &Arc<Self>,
         offset: u64,
@@ -162,6 +227,11 @@ impl Source {
         page.source = Some(self.clone());
         Ok(page)
     }
+    /// Formats up to 64 KiB starting at `offset` as a hexadecimal dump with absolute offsets.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same read and offset errors as [`Self::bytes`].
     pub fn hex(&self, offset: u64) -> Result<String> {
         Ok(super::hex_dump_at(&self.bytes(offset, 65536)?, offset))
     }

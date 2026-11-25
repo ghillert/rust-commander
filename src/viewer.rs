@@ -1,15 +1,34 @@
+//! File viewers for text, hexadecimal data, images, and PDFs.
+//!
+//! Open a selected file with [`load`], or choose a [`Mode`] with [`load_as`].
+//! Match the returned [`Content`] to get decoded text, a raster, or a page
+//! that can fetch more data. Large text files and hexadecimal views use
+//! [`source::Source`] for byte-offset navigation.
+
 pub mod source;
+
+/// Maximum size in bytes for loading a whole file as editable text (16 MiB).
 pub const EDIT_LIMIT: u64 = 16 * 1024 * 1024;
+/// Maximum source size in bytes for image and PDF snapshots (512 MiB).
 pub const MEDIA_LIMIT: u64 = 512 * 1024 * 1024;
+/// Maximum uncompressed size in bytes of an archive member opened for paging (2 GiB).
 pub const PAGE_CACHE_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
+/// Shared backing data for a PDF, retained across rendering and password prompts.
 pub type PdfBytes = hayro::hayro_syntax::PdfData;
 
+/// A row-major image with four straight-alpha RGBA channels per pixel.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RasterImage {
+    /// Image dimensions as `[width, height]` in pixels.
     pub size: [usize; 2],
+    /// Rows of red, green, blue, and alpha values, starting at the top left.
     pub pixels: Vec<[u8; 4]>,
 }
 impl RasterImage {
+    /// Copies straight-alpha RGBA bytes into pixels.
+    ///
+    /// Supply four bytes per pixel in `size`. The constructor copies each
+    /// complete group of four and leaves dimension validation to the caller.
     pub fn from_rgba_unmultiplied(size: [usize; 2], bytes: &[u8]) -> Self {
         Self {
             size,
@@ -21,6 +40,10 @@ impl RasterImage {
                 .collect(),
         }
     }
+    /// Converts premultiplied RGBA bytes into straight-alpha pixels.
+    ///
+    /// Supply four bytes per pixel as in [`Self::from_rgba_unmultiplied`].
+    /// Partially transparent pixels have their color channels rescaled by alpha.
     pub fn from_rgba_premultiplied(size: [usize; 2], bytes: &[u8]) -> Self {
         let mut image = Self::from_rgba_unmultiplied(size, bytes);
         for pixel in &mut image.pixels {
@@ -42,38 +65,73 @@ use std::{
     path::Path,
 };
 
+/// The first view of a file, together with the data needed for further navigation.
 pub enum Content {
+    /// A PDF that requires a password before its first page can be displayed.
     LockedPdf {
+        /// Original PDF data to retry with [`render_pdf_data`] or [`PdfCache`].
         bytes: PdfBytes,
     },
+    /// An open PDF with its first page rendered.
     Pdf {
+        /// Original PDF data shared with subsequent page renders.
         bytes: PdfBytes,
+        /// Unrotated raster of the first page.
         image: crate::viewer::RasterImage,
+        /// Total number of pages in the document.
         pages: usize,
+        /// Searchable first-page text and its positions, or a text-extraction diagnostic.
         text: std::sync::Arc<crate::pdf_text::PageText>,
     },
+    /// Plain UTF-8 text detected in automatic mode.
     Text(String),
+    /// A complete text document with encoding and line-ending information.
     EncodedText(crate::text_document::Document),
+    /// The first text page, with a source for reading subsequent pages.
     LargeText(crate::text_document::Page),
+    /// A hexadecimal view of the first 64 KiB or less.
     Hex {
+        /// Formatted byte offsets, hexadecimal bytes, and printable ASCII.
         text: String,
+        /// Whether additional bytes follow the displayed portion.
         truncated: bool,
+        /// Source for paging through the file when available.
         source: Option<std::sync::Arc<source::Source>>,
     },
+    /// A decoded image or thumbnail.
     Image(crate::viewer::RasterImage),
 }
+/// How [`load_as`] should interpret the selected file.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Mode {
+    /// Recognizes image and PDF extensions, then tries text or hexadecimal for other files.
     #[default]
     Auto,
+    /// Decodes text with encoding information, paging files larger than [`EDIT_LIMIT`].
     Text,
+    /// Opens a paged hexadecimal view regardless of the file extension.
     Hex,
+    /// Passes the file to the image decoder regardless of the file extension.
     Image,
+    /// Opens the file as a PDF regardless of the file extension.
     Pdf,
 }
+/// Opens a file using [`Mode::Auto`]. See [`load_as`] for path conventions.
+///
+/// # Errors
+///
+/// Returns an error if the source cannot be read or the detected format cannot be opened.
 pub fn load(location: &Location, path: &Path) -> Result<Content> {
     load_as(location, path, Mode::Auto)
 }
+/// Produces a thumbnail fitting within 800 × 800 pixels for recognized image extensions.
+///
+/// Other files use [`load`], including its paging behavior for large text.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, exceeds the applicable
+/// size limit, or fails to decode.
 pub fn load_preview(location: &Location, path: &Path) -> Result<Content> {
     if !is_image_extension(path) {
         return load(location, path);
@@ -142,6 +200,40 @@ fn decode_image(bytes: &[u8], preview_edge: Option<u32>) -> Result<RasterImage> 
         image.as_raw(),
     ))
 }
+/// Opens the entry at `path` using the requested viewer mode.
+///
+/// Pass the path from [`Entry::path`](crate::filesystem::Entry::path). For a
+/// local location this is the filesystem path. For a remote or archive
+/// location it is relative to the connection or archive root. Images and
+/// PDFs use snapshots up to [`MEDIA_LIMIT`]. A PDF that needs a password
+/// yields [`Content::LockedPdf`].
+///
+/// # Errors
+///
+/// Returns an error for virtual discovery lists, unreadable sources, size
+/// limit violations, or content the selected decoder cannot open.
+///
+/// # Examples
+///
+/// View the same file as text and as hexadecimal bytes.
+///
+/// ```
+/// use rust_commander::filesystem::Location;
+/// use rust_commander::viewer::{self, Content, Mode};
+///
+/// let dir = tempfile::tempdir()?;
+/// let path = dir.path().join("notes.txt");
+/// std::fs::write(&path, b"ABC")?;
+/// let location = Location::Local(dir.path().to_owned());
+///
+/// assert!(matches!(viewer::load(&location, &path)?, Content::Text(s) if s == "ABC"));
+/// let Content::Hex { text, truncated, .. } = viewer::load_as(&location, &path, Mode::Hex)? else {
+///     panic!("expected a hexadecimal view");
+/// };
+/// assert!(text.starts_with("00000000  41 42 43"));
+/// assert!(!truncated);
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> {
     let extension = path
         .extension()
@@ -274,9 +366,26 @@ pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> 
     })
 }
 
+/// Renders the zero-based page at `index` using an empty password.
+///
+/// Returns the unrotated image and total page count.
+///
+/// # Errors
+///
+/// Returns an error if the PDF cannot be opened with an empty password or
+/// the requested page is missing or has invalid dimensions.
 pub fn render_pdf(bytes: &[u8], index: usize) -> Result<(crate::viewer::RasterImage, usize)> {
     render_pdf_password(bytes, index, "")
 }
+/// Renders one zero-based page from PDF bytes with the supplied password.
+///
+/// Returns the unrotated image and total page count. Use [`render_pdf_data`]
+/// when the PDF is already available as shared [`PdfBytes`].
+///
+/// # Errors
+///
+/// Returns an error if the password or PDF is invalid, the page is missing,
+/// or its dimensions are invalid.
 pub fn render_pdf_password(
     bytes: &[u8],
     index: usize,
@@ -284,6 +393,15 @@ pub fn render_pdf_password(
 ) -> Result<(RasterImage, usize)> {
     render_pdf_data(&bytes.to_vec().into(), index, password)
 }
+/// Renders a zero-based page from shared PDF data and returns the image and total page count.
+///
+/// The raster uses a white background and targets 1,400 pixels on its longest
+/// edge, with upscaling limited to twice the page's original dimensions.
+///
+/// # Errors
+///
+/// Returns an error if the PDF cannot be opened with `password` or the page
+/// is missing or has invalid dimensions.
 pub fn render_pdf_data(
     data: &PdfBytes,
     index: usize,
@@ -316,6 +434,15 @@ pub fn render_pdf_data(
         pdf.pages().len(),
     ))
 }
+/// Reads an entire local file, remote object, or archive member into memory.
+///
+/// Use the entry's path as for [`load_as`] and a byte limit below `u64::MAX`.
+/// For a bounded portion of a larger file, use [`source::Source::bytes`].
+///
+/// # Errors
+///
+/// Returns an error if the file exceeds `limit`, the backend cannot read it,
+/// or the location is a virtual discovery list.
 pub fn read(location: &Location, path: &Path, limit: u64) -> Result<Vec<u8>> {
     match location {
         Location::Network { .. } | Location::Containers => {
@@ -334,9 +461,13 @@ pub fn read(location: &Location, path: &Path, limit: u64) -> Result<Vec<u8>> {
     }
     .context("Cannot load the selected file")
 }
+/// Formats all supplied bytes as a hexadecimal dump starting at offset zero.
 pub fn hex_dump(bytes: &[u8]) -> String {
     hex_dump_at(bytes, 0)
 }
+/// Formats up to 16 bytes per row, labeling the first row with the byte `offset`.
+///
+/// Each row ends with printable ASCII, using a dot for nonprintable bytes.
 pub fn hex_dump_at(bytes: &[u8], offset: u64) -> String {
     use std::fmt::Write;
     let mut output = String::new();
@@ -362,7 +493,11 @@ pub fn hex_dump_at(bytes: &[u8], offset: u64) -> String {
     output
 }
 
-/// Small LRU of unrotated page images. Passwords and images remain in memory only.
+/// In-memory cache of recently rendered pages and searchable text for one PDF.
+///
+/// Create a fresh cache for each document. Lookups use the page index and
+/// changing the password clears cached pages. The cache holds up to three
+/// pages with a combined raster budget of 24 MiB.
 #[derive(Default)]
 pub struct PdfCache {
     password: String,
@@ -374,12 +509,18 @@ struct CachedPdfPage {
     count: usize,
     text: std::sync::Arc<crate::pdf_text::PageText>,
 }
+/// An unrotated page image, the document's page count, and the page's searchable text.
 pub type PdfPage = (
     RasterImage,
     usize,
     std::sync::Arc<crate::pdf_text::PageText>,
 );
 impl PdfCache {
+    /// Returns the unrotated raster and total page count for a zero-based page.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`render_pdf_data`] cannot render an uncached page.
     pub fn render(
         &mut self,
         bytes: &[u8],
@@ -389,6 +530,14 @@ impl PdfCache {
         self.render_with_text(bytes, page, password)
             .map(|(image, count, _)| (image, count))
     }
+    /// Returns the raster, page count, and searchable text for a zero-based page.
+    ///
+    /// A text-extraction failure is recorded in [`PageText::error`](crate::pdf_text::PageText::error)
+    /// so the raster can still be displayed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`render_pdf_data`] cannot render an uncached page.
     pub fn render_with_text(
         &mut self,
         bytes: &[u8],
@@ -397,6 +546,14 @@ impl PdfCache {
     ) -> Result<PdfPage> {
         self.render_data_with_text(&bytes.to_vec().into(), page, password)
     }
+    /// Renders or retrieves a zero-based [`PdfPage`] using shared document data.
+    ///
+    /// Prefer this method when paging through a [`Content::Pdf`]. Text-extraction
+    /// failures are reported alongside the rendered image as in [`Self::render_with_text`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`render_pdf_data`] cannot render an uncached page.
     pub fn render_data_with_text(
         &mut self,
         data: &PdfBytes,
@@ -450,6 +607,12 @@ impl PdfCache {
         Ok((image, count, text))
     }
 }
+/// Returns a copy of `image` rotated clockwise by `turns` quarter turns.
+///
+/// # Panics
+///
+/// A nontrivial rotation panics if the pixel buffer is shorter than the
+/// declared width times height.
 pub fn rotate(image: &RasterImage, turns: usize) -> RasterImage {
     let turns = turns % 4;
     let [w, h] = image.size;
@@ -471,6 +634,15 @@ pub fn rotate(image: &RasterImage, turns: usize) -> RasterImage {
     RasterImage { size, pixels }
 }
 
+/// Streams a local file, remote object, or archive member into a private, immutable snapshot.
+///
+/// `limit` bounds the number of source bytes. The [`Task`](crate::operations::Task)
+/// reports transfer progress and supports cancellation while copying.
+///
+/// # Errors
+///
+/// Returns an error if the source cannot be read, the copy exceeds `limit`,
+/// the task is cancelled, or the temporary backing file cannot be created or mapped.
 pub fn snapshot(
     location: &Location,
     path: &Path,

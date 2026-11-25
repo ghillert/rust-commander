@@ -1,3 +1,14 @@
+//! Browse, read, create, and extract local archives.
+//!
+//! [`list`] returns immediate children with paths relative to the archive
+//! root. Pass those paths to [`read_bytes`] or [`extract`]. To extract into
+//! an existing directory, preview collisions with [`extraction_conflicts`]
+//! and apply the chosen policies with [`extract_resolved`].
+//!
+//! [`pack`] chooses the output format from the destination filename.
+//! [`Format`] distinguishes directory-capable archives from single-file
+//! compression streams and read-only formats.
+
 use crate::{
     filesystem::{Entry, portable_relative, safe_relative},
     operations::{Task, exists},
@@ -13,20 +24,43 @@ use std::{
 };
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
+/// Archive container or single-file compression format recognized by [`format()`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
+    /// ZIP archive, with optional encryption and an archive comment.
     Zip,
+    /// Uncompressed tar archive.
     Tar,
+    /// Gzip-compressed tar archive (`.tar.gz` or `.tgz`).
     TarGz,
+    /// Bzip2-compressed tar archive (`.tar.bz2` or `.tbz2`).
     TarBz2,
+    /// XZ-compressed tar archive (`.tar.xz` or `.txz`).
     TarXz,
+    /// 7z archive, with optional encryption.
     SevenZ,
+    /// Gzip stream containing one file.
     Gzip,
+    /// Bzip2 stream containing one file.
     Bzip2,
+    /// XZ stream containing one file.
     Xz,
+    /// Read-only formats handled by libarchive, including RAR, ISO, and cpio.
     Extended,
 }
 
+/// Infers the format from the case-insensitive filename suffix, without opening the file.
+///
+/// # Examples
+///
+/// ```
+/// use rust_commander::archive::{format, Format};
+/// use std::path::Path;
+///
+/// assert_eq!(format(Path::new("backup.TAR.GZ")), Some(Format::TarGz));
+/// assert_eq!(format(Path::new("notes.txt.gz")), Some(Format::Gzip));
+/// assert_eq!(format(Path::new("notes.txt")), None);
+/// ```
 pub fn format(path: &Path) -> Option<Format> {
     let name = path.file_name()?.to_string_lossy().to_lowercase();
     if name.ends_with(".zip") {
@@ -198,6 +232,16 @@ fn visit(file: &Path, mut callback: impl FnMut(Member, &mut dyn Read) -> Result<
     Ok(())
 }
 
+/// Lists the immediate children of `prefix` in member-path order.
+///
+/// Use an empty path for the archive root. Each [`Entry::path`] includes
+/// `prefix`, so it can be passed directly to [`read_bytes`] or [`extract`].
+/// Directories are inferred when the archive contains only their descendants.
+///
+/// # Errors
+///
+/// Returns an error if the archive cannot be opened or read, a member path
+/// fails validation, or a required password is unavailable. See [`unlock`].
 pub fn list(file: &Path, prefix: &Path) -> Result<Vec<Entry>> {
     let mut entries: BTreeMap<PathBuf, Entry> = BTreeMap::new();
     visit(file, |member, _| {
@@ -234,7 +278,48 @@ fn included(path: &Path, selected: &[PathBuf], prefix: &Path) -> bool {
         && (selected.is_empty() || selected.iter().any(|s| path == s || path.starts_with(s)))
 }
 
-/// Extracts into a new directory only. No archive links or existing files are followed.
+/// Extracts selected members beneath `prefix` into a new directory.
+///
+/// Pass archive-root-relative paths in `selected`. Selecting a directory
+/// includes its descendants. An empty selection includes everything under
+/// `prefix`. Output paths have `prefix` stripped, and `destination` is the
+/// exact directory to create. Its parent must already exist.
+///
+/// # Errors
+///
+/// Returns an error if the destination exists, nothing matches, or the
+/// selection contains unsafe paths, links, or special files. Extraction
+/// accepts at most 100,000 entries and 10 GiB of declared member data.
+/// On cancellation or failure after creating the directory, it attempts to
+/// remove the partially extracted tree.
+///
+/// # Examples
+///
+/// Pack a directory, then extract one of its children directly into a new folder.
+///
+/// ```
+/// use rust_commander::{archive, operations::Task};
+/// use std::{fs, path::Path};
+///
+/// let dir = tempfile::tempdir()?;
+/// let notes = dir.path().join("notes");
+/// fs::create_dir(&notes)?;
+/// fs::write(notes.join("draft.txt"), "draft")?;
+/// fs::write(notes.join("final.txt"), "final")?;
+/// let zip = dir.path().join("notes.zip");
+/// let mut task = Task::default();
+/// archive::pack(&[notes], &zip, &mut task)?;
+///
+/// let prefix = Path::new("notes");
+/// let entries = archive::list(&zip, prefix)?;
+/// let draft = entries.iter().find(|entry| entry.name == "draft.txt").unwrap();
+/// assert_eq!(draft.path, prefix.join("draft.txt"));
+/// let out = dir.path().join("restored");
+/// archive::extract(&zip, std::slice::from_ref(&draft.path), prefix, &out, &mut task)?;
+/// assert_eq!(fs::read_to_string(out.join("draft.txt"))?, "draft");
+/// assert!(!out.join("final.txt").exists());
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn extract(
     file: &Path,
     selected: &[PathBuf],
@@ -720,6 +805,15 @@ fn visit_extended(
     Ok(())
 }
 
+/// Reads a complete regular member identified by its archive-root-relative `path`.
+///
+/// Set `limit` to the maximum number of bytes to accept, below `u64::MAX`.
+/// Use [`snapshot_member`] for a file-backed copy of a large member.
+///
+/// # Errors
+///
+/// Returns an error if the archive cannot be read, the member is missing or
+/// is not a regular file, or its declared or actual size exceeds `limit`.
 pub fn read_bytes(file: &Path, path: &Path, limit: u64) -> Result<Vec<u8>> {
     let mut result = None;
     visit(file, |member, input| {
@@ -742,6 +836,12 @@ pub fn read_bytes(file: &Path, path: &Path, limit: u64) -> Result<Vec<u8>> {
     result.context("Archive entry no longer exists")
 }
 
+/// Reads a complete archive member as UTF-8 text, subject to the byte limit in [`read_bytes`].
+///
+/// # Errors
+///
+/// Returns an error if the member cannot be read within `limit`, contains a
+/// NUL byte, or is not valid UTF-8.
 pub fn read_text(file: &Path, path: &Path, limit: u64) -> Result<String> {
     let bytes = read_bytes(file, path, limit)?;
     if bytes.contains(&0) {
@@ -761,6 +861,16 @@ pub(crate) fn password(path: &Path) -> Option<String> {
         .get(path)
         .cloned()
 }
+/// Validates `secret` and remembers it in memory for subsequent reads of this archive path.
+///
+/// Validation visits the archive and reads its regular members. If validation
+/// fails, the previous password for this path is restored.
+///
+/// # Errors
+///
+/// Returns an error if the archive cannot be read with the supplied password,
+/// a regular member's length differs from its header, or validation exceeds
+/// 100,000 members or 10 GiB of declared member data.
 pub fn unlock(path: &Path, secret: &str) -> Result<()> {
     let passwords = PASSWORDS.get_or_init(Default::default);
     let previous = passwords
@@ -799,9 +909,29 @@ pub fn unlock(path: &Path, secret: &str) -> Result<()> {
     }
     Ok(())
 }
+/// Creates a new archive of local `sources` using the format indicated by `destination`.
+///
+/// ZIP, tar (including compressed tar), and 7z store each source under its
+/// basename and include directory descendants. Standalone gzip, bzip2, and
+/// XZ streams accept one regular file. On reopening a stream, [`list`] derives
+/// the member name from the archive filename, e.g. `notes.txt` for `notes.txt.gz`.
+/// The completed archive is published from a temporary file in the destination's parent.
+///
+/// # Errors
+///
+/// Returns an error for an occupied destination, a missing parent, an
+/// unsupported output format, duplicate source basenames, links, or special
+/// files. The destination must lie outside selected directories. Cancellation
+/// and read or write failures also return an error.
 pub fn pack(sources: &[PathBuf], destination: &Path, task: &mut Task) -> Result<()> {
     pack_impl(sources, destination, None, "", None, task)
 }
+/// Creates an archive as in [`pack`], with an optional ZIP archive comment.
+///
+/// # Errors
+///
+/// In addition to [`pack`] errors, a nonempty comment requires ZIP, must fit
+/// in 65,535 UTF-8 bytes, and must pass [`crate::packing::validate_comment`].
 pub fn pack_with_comment(
     sources: &[PathBuf],
     destination: &Path,
@@ -810,6 +940,12 @@ pub fn pack_with_comment(
 ) -> Result<()> {
     pack_impl(sources, destination, None, comment, None, task)
 }
+/// Creates a password-protected ZIP or 7z archive using the default compression level.
+///
+/// # Errors
+///
+/// Returns an error for an empty password, an unsupported encryption format,
+/// or any failure described by [`pack`].
 pub fn pack_with_password(
     sources: &[PathBuf],
     destination: &Path,
@@ -818,6 +954,16 @@ pub fn pack_with_password(
 ) -> Result<()> {
     pack_with_password_and_level(sources, destination, secret, None, task)
 }
+/// Creates an archive with an optional ZIP comment and compression level.
+///
+/// `None` uses the writer's default. ZIP, gzip, XZ, 7z, and the gzip/XZ tar
+/// variants accept `0..=9`. Bzip2 and bzip2-compressed tar accept `1..=9`.
+/// Uncompressed tar takes `None`.
+///
+/// # Errors
+///
+/// Returns an error when the level is unsupported for the format or
+/// [`pack_with_comment`] would fail.
 pub fn pack_with_compression(
     sources: &[PathBuf],
     destination: &Path,
@@ -827,6 +973,12 @@ pub fn pack_with_compression(
 ) -> Result<()> {
     pack_impl(sources, destination, None, comment, compression_level, task)
 }
+/// Creates a password-protected ZIP or 7z archive with the chosen compression level.
+///
+/// # Errors
+///
+/// Returns an error for a level outside `0..=9` or any failure described by
+/// [`pack_with_password`]. Use `None` for default compression.
 pub fn pack_with_password_and_level(
     sources: &[PathBuf],
     destination: &Path,
@@ -836,6 +988,12 @@ pub fn pack_with_password_and_level(
 ) -> Result<()> {
     pack_with_password_options(sources, destination, secret, "", compression_level, task)
 }
+/// Creates a password-protected ZIP or 7z archive with compression and comment options.
+///
+/// # Errors
+///
+/// Returns the errors described by [`pack_with_password_and_level`]. Nonempty
+/// comments also have to satisfy the ZIP rules in [`pack_with_comment`].
 pub fn pack_with_password_options(
     sources: &[PathBuf],
     destination: &Path,
@@ -859,6 +1017,14 @@ pub fn pack_with_password_options(
         task,
     )
 }
+/// Unlocks an archive, then extracts selected members into a new directory.
+///
+/// Member paths and selection follow [`extract`]. Successful validation
+/// caches the password as in [`unlock`], even if extraction later fails.
+///
+/// # Errors
+///
+/// Returns an error if password validation or extraction fails.
 pub fn extract_with_password(
     file: &Path,
     selected: &[PathBuf],
@@ -871,7 +1037,19 @@ pub fn extract_with_password(
     extract(file, selected, prefix, destination, task)
 }
 
-/// Inspect conflicts without inflating archive data or changing the destination.
+/// Previews collisions between selected archive members and existing destination entries.
+///
+/// Uses the selection and prefix rules of [`extract`]. With `merge` enabled,
+/// matching directories are inspected for child collisions. Otherwise, a
+/// colliding directory is reported once. Each [`Conflict`](crate::transfer::Conflict)
+/// gives the prefix-stripped member path and the destination path to use as
+/// an override key in [`extract_resolved`]. The preview creates no files.
+///
+/// # Errors
+///
+/// Returns an error for an unreadable archive, an invalid destination, or a
+/// selected link, special file, or unsafe path. The preview allows up to
+/// 100,000 member paths (including inferred directories) and 5,000 conflicts.
 pub fn extraction_conflicts(
     file: &Path,
     selected: &[PathBuf],
@@ -941,8 +1119,18 @@ pub fn extraction_conflicts(
     Ok(result)
 }
 
-/// Validate and stage the entire selection before merging through the normal
-/// transfer planner. Existing files use exactly the same recovery/Undo guards.
+/// Extracts into a new directory or applies transfer policies when the destination exists.
+///
+/// For an existing directory, stages the selection in a temporary directory,
+/// then calls [`crate::transfer::transfer_resolved`]. Key per-entry `overrides`
+/// by the destination paths returned by [`extraction_conflicts`]. Returns a
+/// human-readable summary on success.
+///
+/// # Errors
+///
+/// Returns an error if the destination is unsuitable, extraction fails, or a
+/// collision cannot be resolved. If a transfer fails after staging, earlier
+/// completed transfers can remain in the destination.
 pub fn extract_resolved(
     file: &Path,
     selected: &[PathBuf],
@@ -973,7 +1161,16 @@ pub fn extract_resolved(
     crate::transfer::transfer_resolved(&sources, destination, false, options, overrides, task)
 }
 
-/// Stream a regular member into an immutable private snapshot, without a heap Vec.
+/// Streams one regular member into a private, file-backed snapshot.
+///
+/// `path` is relative to the archive root. The returned bytes remain
+/// available independently of later changes to the archive.
+///
+/// # Errors
+///
+/// Returns an error if `path` is missing, duplicated, or identifies a link
+/// or nonregular member. A declared or actual size over `limit`, cancellation,
+/// or a read or write failure also aborts the snapshot.
 pub fn snapshot_member(
     file: &Path,
     path: &Path,

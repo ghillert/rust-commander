@@ -1,3 +1,10 @@
+//! Browsing state for the two file panes.
+//!
+//! Each [`Pane`] owns its tabs. A [`Tab`] tracks one location, its navigation
+//! history, and the last directory listing received from a background worker.
+//! Call [`Tab::poll`] to apply listing updates. Use [`Tab::chosen`] to turn
+//! the current marks and cursor into file-operation sources.
+
 use crate::filesystem::{self, Entry, Location, Sort};
 use std::{
     collections::BTreeSet,
@@ -20,31 +27,51 @@ impl Drop for DockerListing {
     }
 }
 
+/// A directory view with its own history, filter, cursor, and marked paths.
+///
+/// The cursor identifies one row. Marks can span several rows and survive
+/// filtering. The parent row (`..`) can hold the cursor but cannot be marked.
 pub struct Tab {
+    /// Whether to group directories ahead of files when sorting the listing.
     pub folders_first: bool,
     watcher: Option<notify::RecommendedWatcher>,
     watch_path: Option<PathBuf>,
     changed: Arc<AtomicBool>,
     last_refresh: Instant,
+    /// Process-local identifier that stays with this tab as it moves between locations.
     pub id: u64,
+    /// Per-tab settings, including the custom title and optional location lock.
     pub state: crate::navigation::TabState,
     pub(crate) requested_location: Option<Location>,
     pub(crate) revision: u64,
     pub(crate) navigation_epoch: u64,
+    /// Location whose entries this tab displays.
     pub location: Location,
+    /// Editable address text. Navigation resets it to the location's label.
     pub address: String,
+    /// Case-insensitive substring used to filter entries by name.
     pub filter: String,
+    /// Sorted listing before the name and hidden-file filters are applied.
     pub entries: Vec<Entry>,
+    /// Marked paths, including entries temporarily hidden by a filter.
     pub selected: BTreeSet<PathBuf>,
+    /// Path of the focused entry. See [`Self::parent_focused`] when this is `None`.
     pub cursor: Option<PathBuf>,
     // The synthetic parent entry must never become a file-operation source.
     parent_cursor: bool,
+    /// Sort key for directory entries. Virtual lists use name order.
     pub sort: Sort,
+    /// Whether to reverse the order within each sort group.
     pub descending: bool,
+    /// Whether a listing has started and [`Self::poll`] is still awaiting its final result.
     pub loading: bool,
+    /// Error message from the latest failed listing or cancellation.
     pub error: Option<String>,
+    /// Requests keyboard focus for the address field.
     pub focus_address: bool,
+    /// Requests keyboard focus for the name filter.
     pub focus_filter: bool,
+    /// Requests that the pane scroll the focused row into view.
     pub scroll_to_cursor: bool,
     history: Vec<Location>,
     history_index: usize,
@@ -55,6 +82,10 @@ pub struct Tab {
 }
 
 impl Tab {
+    /// Opens a tab at `location` and starts its first background listing.
+    ///
+    /// New tabs sort by name with directories first. Call [`Self::poll`] after
+    /// a repaint signal to make newly listed entries available.
     pub fn new(location: Location, ctx: &crate::ui_signal::UiSignal) -> Self {
         let mut tab = Self {
             folders_first: true,
@@ -92,6 +123,10 @@ impl Tab {
         tab
     }
 
+    /// Requests a fresh listing and keeps the current rows available until it arrives.
+    ///
+    /// A refresh preserves an in-progress Docker listing. Local directories
+    /// and archive files are watched for changes when the platform permits it.
     pub fn refresh(&mut self, ctx: &crate::ui_signal::UiSignal) {
         // Routine refreshes from unrelated file jobs must not cancel an export.
         if self.docker_listing.is_none() {
@@ -221,6 +256,10 @@ impl Tab {
         }
     }
 
+    /// Refreshes after a watched filesystem change once the tab is idle.
+    ///
+    /// Closely spaced changes are coalesced. While a refresh is pending, the
+    /// tab requests another repaint so the event loop can call this again.
     pub fn poll_changes(&mut self, ctx: &crate::ui_signal::UiSignal) {
         if self.changed.load(Ordering::Relaxed) {
             if !self.loading && self.last_refresh.elapsed() > Duration::from_millis(250) {
@@ -232,6 +271,12 @@ impl Tab {
         }
     }
 
+    /// Applies any available background listing without blocking.
+    ///
+    /// A successful listing retains marks for paths still present. If the
+    /// cursor needs a new row, `hidden` controls whether dot-prefixed names
+    /// participate. A failed listing clears the entries and marks and records
+    /// the reason in [`error`](Self::error).
     pub fn poll(&mut self, hidden: bool) {
         if let Some(result) = crate::background::poll(&mut self.pending) {
             self.docker_listing = None;
@@ -292,6 +337,7 @@ impl Tab {
         }
     }
 
+    /// Returns the destination deferred by a location lock, so the caller can open it elsewhere.
     pub fn requested_navigation(&self) -> Option<&Location> {
         self.requested_location.as_ref()
     }
@@ -340,6 +386,11 @@ impl Tab {
         self.revision = self.revision.wrapping_add(1);
     }
 
+    /// Navigates to `location` and requests its listing.
+    ///
+    /// Changing location clears the filter and marks and replaces any forward
+    /// history. Revisiting the current location refreshes it. A location lock
+    /// leaves the tab in place and exposes the target via [`Self::requested_navigation`].
     pub fn navigate(&mut self, location: Location, ctx: &crate::ui_signal::UiSignal) {
         if self.prepare_navigation(&location) {
             if self.location == location {
@@ -418,6 +469,10 @@ impl Tab {
         self.filter.clear();
     }
 
+    /// Moves one history entry forward when `forward` is true, or back when false.
+    ///
+    /// At either end of the history, the tab stays put. A location lock can
+    /// defer the destination just as it does for [`Self::navigate`].
     pub fn history(&mut self, forward: bool, ctx: &crate::ui_signal::UiSignal) {
         if self.state.locked.is_some() {
             let index = if forward {
@@ -440,6 +495,10 @@ impl Tab {
         self.set_location(self.history[self.history_index].clone(), ctx);
     }
 
+    /// Returns indices into [`Self::entries`] in display order after name filtering.
+    ///
+    /// Set `hidden` to include names beginning with a dot. The synthetic parent
+    /// row has no index in the listing.
     pub fn visible(&self, hidden: bool) -> Vec<usize> {
         self.visible_indices(hidden).collect()
     }
@@ -456,10 +515,14 @@ impl Tab {
             .map(|(i, _)| i)
     }
 
+    /// Returns whether the cursor is on the synthetic parent row (`..`).
     pub fn parent_focused(&self) -> bool {
         self.parent_cursor && self.cursor.is_none()
     }
 
+    /// Returns a copy of the focused entry if it passes the current visibility filters.
+    ///
+    /// An empty cursor or a focused parent row yields `None`.
     pub fn focused(&self, hidden: bool) -> Option<Entry> {
         let cursor = self.cursor.as_ref()?;
         self.visible_indices(hidden).find_map(|index| {
@@ -468,11 +531,13 @@ impl Tab {
         })
     }
 
+    /// Clears row focus while preserving marked paths.
     pub fn clear_cursor(&mut self) {
         self.cursor = None;
         self.parent_cursor = false;
     }
 
+    /// Moves focus to the parent row when the location has a parent.
     pub fn focus_parent(&mut self) {
         if self.location.parent().is_some() {
             self.cursor = None;
@@ -480,6 +545,43 @@ impl Tab {
         }
     }
 
+    /// Returns the entries that a file operation should act on, in display order.
+    ///
+    /// Visible marks take precedence. If all marks are filtered out, the
+    /// focused visible entry is used. Network and container discovery lists
+    /// yield an empty selection, and the parent row is never a source.
+    ///
+    /// # Examples
+    ///
+    /// Mark one file, then filter the listing down to the focused file.
+    ///
+    /// ```
+    /// use rust_commander::{filesystem::Location, model::Tab, ui_signal::UiSignal};
+    /// use std::{fs, time::Duration};
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// fs::write(dir.path().join("alpha.txt"), "first")?;
+    /// fs::write(dir.path().join("beta.txt"), "second")?;
+    /// let mut tab = Tab::new(Location::Local(dir.path().to_owned()), &UiSignal::default());
+    /// # let start = std::time::Instant::now();
+    /// while tab.loading {
+    ///     tab.poll(false);
+    ///     if tab.loading {
+    ///         # assert!(start.elapsed() < Duration::from_secs(30), "listing timed out");
+    ///         std::thread::sleep(Duration::from_millis(1));
+    ///     }
+    /// }
+    ///
+    /// tab.toggle_mark_and_advance(false);
+    /// assert_eq!(tab.focused(false).unwrap().name, "beta.txt");
+    /// assert_eq!(tab.chosen(false)[0].name, "alpha.txt");
+    ///
+    /// tab.filter = "beta".into();
+    /// assert_eq!(tab.chosen(false)[0].name, "beta.txt");
+    /// tab.focus_parent();
+    /// assert!(tab.chosen(false).is_empty());
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn chosen(&self, hidden: bool) -> Vec<Entry> {
         if self.location.is_virtual_list() {
             return Vec::new();
@@ -498,7 +600,10 @@ impl Tab {
         self.focused(hidden).into_iter().collect()
     }
 
-    /// Toggle the current visible row's mark, then advance without marking the next row.
+    /// Toggles the focused visible entry's mark and advances one row.
+    ///
+    /// On the parent row this only advances the cursor. On the last visible
+    /// entry the cursor stays in place.
     pub fn toggle_mark_and_advance(&mut self, hidden: bool) {
         if self.parent_focused() {
             self.move_cursor(1, false, hidden);
@@ -518,10 +623,19 @@ impl Tab {
         self.move_cursor(1, false, hidden);
     }
 
+    /// Moves the cursor by a signed number of visible rows, stopping at either end.
+    ///
+    /// With `extend`, marks the entries in the traversed range, including both
+    /// ends. Use [`Self::move_cursor_with_parent`] to move up onto the parent row.
     pub fn move_cursor(&mut self, delta: isize, extend: bool, hidden: bool) {
         self.move_cursor_with_parent(delta, extend, hidden, false);
     }
 
+    /// Moves as in [`Self::move_cursor`], optionally including the parent row.
+    ///
+    /// The parent participates when it is already focused or `include_parent`
+    /// is true and the location has a parent. Extending a selection across it
+    /// marks only real entries.
     pub fn move_cursor_with_parent(
         &mut self,
         delta: isize,
@@ -577,21 +691,49 @@ impl Tab {
     }
 }
 
+/// One side of the file manager. A pane has at least one tab and a valid active index.
 pub struct Pane {
+    /// Open tabs in display order.
     pub tabs: Vec<Tab>,
+    /// Index of the active tab in [`Self::tabs`].
     pub active: usize,
 }
 impl Pane {
+    /// Borrows the active tab.
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`Self::active`] is outside [`Self::tabs`].
     pub fn tab(&self) -> &Tab {
         &self.tabs[self.active]
     }
+    /// Mutably borrows the active tab.
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`Self::active`] is outside [`Self::tabs`].
     pub fn tab_mut(&mut self) -> &mut Tab {
         &mut self.tabs[self.active]
     }
+    /// Opens and activates a fresh tab at the active tab's location.
+    ///
+    /// The new tab starts with its own history and an empty set of marks.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pane has no valid active tab.
     pub fn add_tab(&mut self, ctx: &crate::ui_signal::UiSignal) {
         self.tabs.push(Tab::new(self.tab().location.clone(), ctx));
         self.active = self.tabs.len() - 1;
     }
+    /// Closes the tab at `index` if another tab can remain open.
+    ///
+    /// Closing the active tab activates its right neighbor, or its left neighbor
+    /// if it was last. Closing a different tab preserves the active tab.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pane has multiple tabs and `index` is out of bounds.
     pub fn close_tab(&mut self, index: usize) {
         if self.tabs.len() > 1 {
             self.tabs.remove(index);

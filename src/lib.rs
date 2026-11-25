@@ -6,6 +6,8 @@
 //!
 //! - Browse a [`filesystem::Location`] with [`filesystem::list`]. The [`remote`]
 //!   module manages the connections used by remote locations.
+//! - Use [`model::Tab`] to track navigation and select entries. Open a selected
+//!   file with [`viewer::load`] or browse an archive with [`archive::list`].
 //! - Use an [`Operation`](operations::Operation) and [`operations::run`] to act on a
 //!   selection. A [`Task`](operations::Task) carries progress and cancellation.
 //!   [`queue::Queue`] persists pending work across restarts.
