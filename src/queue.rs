@@ -1,4 +1,13 @@
 //! Durable recipes. Passwords and editor contents are never serialized.
+//!
+//! [`Queue`] persists waiting, active, and failed operations. On restart,
+//! [`Queue::load_in`] puts the interrupted operation first and pauses the queue
+//! for review. [`Queue::requires_input`] identifies jobs that need fresh input
+//! or confirmation before they can run.
+//!
+//! For a single local file, [`Queue::prepare`] can produce a resumable copy.
+//! [`crate::resumable`] handles checkpointed batches.
+
 use crate::operations::{Operation, Task};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -15,14 +24,21 @@ use std::{
 // current snapshot open. Keep handles within the same coordinated access.
 static STORAGE: RwLock<()> = RwLock::new(());
 
+/// A snapshot of pending and failed work. Deque operations on a `Queue` act
+/// on [`waiting`](Self::waiting) in execution order.
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Queue {
+    /// Operations awaiting execution, with the next job at the front.
     pub waiting: VecDeque<Operation>,
+    /// The operation in progress when this snapshot was saved.
     pub active: Option<Operation>,
+    /// Failed operations retained for review or retry.
     pub failed: Vec<Operation>,
+    /// Whether the scheduler should wait for the user before starting another job.
     #[serde(skip)]
     pub paused: bool,
+    /// A load failure reported by [`Queue::load`] that blocks [`Queue::save`].
     #[serde(skip)]
     pub error: Option<String>,
 }
@@ -38,9 +54,12 @@ impl DerefMut for Queue {
     }
 }
 impl Queue {
+    /// Returns the path of `queue.json` beside the application's settings file.
     pub fn path() -> Result<PathBuf> {
         Ok(crate::settings::path()?.with_file_name("queue.json"))
     }
+    /// Loads the application's queue. A missing snapshot yields an empty queue.
+    /// Other failures yield a paused queue with a message in [`Queue::error`].
     pub fn load() -> Self {
         match Self::path().and_then(|p| Self::load_in(&p)) {
             Ok(q) => q,
@@ -53,6 +72,40 @@ impl Queue {
             },
         }
     }
+    /// Loads the snapshot at `path`, or an empty queue if the file is missing.
+    ///
+    /// Any saved `active` operation moves to the front of `waiting`. A queue
+    /// with waiting work starts paused, and failed jobs stay in `failed`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the snapshot cannot be read or decoded.
+    ///
+    /// # Examples
+    ///
+    /// An interrupted directory creation is offered again before the file
+    /// creation that depended on it.
+    ///
+    /// ```
+    /// use rust_commander::{operations::Operation, queue::Queue};
+    ///
+    /// let workspace = tempfile::tempdir()?;
+    /// let path = workspace.path().join("queue.json");
+    /// let mut queue = Queue {
+    ///     active: Some(Operation::Mkdir("drafts".into())),
+    ///     ..Queue::default()
+    /// };
+    /// queue.waiting.push_back(Operation::Mkfile("drafts/notes.txt".into()));
+    /// queue.save_in(&path)?;
+    ///
+    /// let restored = Queue::load_in(&path)?;
+    /// assert!(restored.paused);
+    /// assert!(restored.active.is_none());
+    /// assert_eq!(restored.waiting.len(), 2);
+    /// assert!(matches!(restored.waiting[0], Operation::Mkdir(_)));
+    /// assert!(matches!(restored.waiting[1], Operation::Mkfile(_)));
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn load_in(path: &Path) -> Result<Self> {
         let _storage = STORAGE
             .read()
@@ -68,12 +121,21 @@ impl Queue {
         q.paused = !q.waiting.is_empty();
         Ok(q)
     }
+    /// Saves the queue at [`Queue::path`]. An outstanding [`Queue::error`]
+    /// blocks the write so the original snapshot can be repaired.
     pub fn save(&self) -> Result<()> {
         if self.error.is_some() {
             bail!("Repair the saved queue before overwriting it");
         }
         self.save_in(&Self::path()?)
     }
+    /// Writes a snapshot to `path`, creating parent directories as needed.
+    /// The replacement is staged and synced in the destination directory.
+    /// This explicit-path method writes the supplied state even if [`Queue::error`] is set.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the snapshot cannot be serialized, written, or installed at `path`.
     pub fn save_in(&self, path: &Path) -> Result<()> {
         let _storage = STORAGE
             .write()
@@ -86,6 +148,10 @@ impl Queue {
         f.persist(path)?;
         Ok(())
     }
+    /// Returns whether the scheduler must pause this recipe for input or confirmation.
+    ///
+    /// Encrypted archive jobs need a password if theirs is empty. Editor
+    /// saves, recovery actions, and emptying the trash always require review.
     pub fn requires_input(op: &Operation) -> bool {
         matches!(op,Operation::PackProtected{password,..}|Operation::ExtractProtected{password,..} if password.is_empty())
             || matches!(op,Operation::PackTo{encrypted:true,password,..} if password.is_empty())
@@ -103,6 +169,18 @@ impl Queue {
                     | Operation::ArchiveSaveBytes { .. }
             )
     }
+    /// Prepares an eligible single-file local copy for interruption and restart.
+    ///
+    /// [`Operation::Copy`] qualifies for a single regular file. [`Operation::Transfer`]
+    /// and [`Operation::ResolvedTransfer`] also qualify for such a file if they
+    /// copy, refuse conflicts, and have no per-target overrides. The returned
+    /// [`Operation::ResumeLocal`] records the destination filename, a path for
+    /// partial data, and a stamp of the source. Other recipes pass through as supplied.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the eligible copy's paths or source stamp cannot be resolved,
+    /// or its checkpoint directory cannot be prepared.
     pub fn prepare(op: Operation) -> Result<Operation> {
         let single = resumable(&op);
         if let Some((source, destination, moving)) = single
@@ -173,6 +251,18 @@ fn resumable(op: &Operation) -> Option<(&PathBuf, &PathBuf, bool)> {
         _ => None,
     }
 }
+/// Completes a single-file transfer from its saved `partial` path and source `stamp`.
+///
+/// `destination` is the full output filename. The worker compares existing
+/// partial bytes with the start of `source`, appends the rest, and publishes
+/// the copy at an unused destination. For a move it rechecks the source
+/// fingerprint before deleting the original.
+///
+/// # Errors
+///
+/// Rejects an invalid checkpoint, a changed source, mismatching partial data,
+/// or an occupied destination. An interruption during staging can leave a
+/// checkpoint for another attempt. The output can already exist if cleanup fails.
 pub fn resume_local(
     source: &Path,
     destination: &Path,
@@ -327,6 +417,16 @@ fn remove_checkpoint_file(path: &Path) -> Result<()> {
     fs::remove_file(path)?;
     Ok(())
 }
+/// Discards the local checkpoint data belonging to a queued transfer recipe.
+///
+/// For [`Operation::ResumeLocal`] this removes the partial file and its source
+/// witness. For [`Operation::ResumeRemote`] it delegates to [`crate::resumable::discard`].
+/// Calling it for another operation succeeds without changing any files.
+///
+/// # Errors
+///
+/// Rejects invalid checkpoint paths and batches that still hold replacement
+/// originals. A filesystem error can interrupt cleanup.
 pub fn discard_checkpoint(op: &Operation) -> Result<()> {
     if let Operation::ResumeRemote { id, from, to, .. } = op {
         return crate::resumable::discard(id, from, to);

@@ -1,3 +1,12 @@
+//! Connections and file operations for remote storage.
+//!
+//! A [`Connection`] describes a service and its root. [`connect`] opens a
+//! session using [`Secrets`]. Pass the connection ID and a path relative to
+//! that root to [`list`], [`read`], and [`mkdir`]. An empty path denotes the root.
+//!
+//! [`transfer`] copies or moves entries into unused names. To review collisions,
+//! use [`conflicts_with_merge`] and supply the decisions to [`transfer_resolved`].
+
 use crate::{
     filesystem::{self, Entry, Location},
     operations::{self, Task},
@@ -12,41 +21,69 @@ use std::{
     sync::{Arc, OnceLock, RwLock},
 };
 
+/// Identifies a container on a local Docker engine for read-only browsing.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct DockerTarget {
+    /// Local Docker socket or Windows named-pipe endpoint.
     pub endpoint: String,
+    /// Full 64-character hexadecimal container ID.
     pub container: String,
 }
 
+/// A serializable storage profile. Locations refer to it by [`id`](Self::id),
+/// and [`connect`] accepts its credentials separately.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Connection {
+    /// Stable key shared by saved locations, live sessions, and stored credentials.
     pub id: String,
+    /// Display name used in the sidebar and at the connection root.
     pub name: String,
+    /// Backend identifier, such as `sftp`, `webdav`, or `s3`.
     pub service: String,
+    /// Server or service address in the format expected by the backend.
     pub endpoint: String,
+    /// Directory or object prefix exposed as the root of the connection.
     pub root: String,
+    /// Bucket, SMB share, or device identifier, depending on the service.
     pub bucket: String,
+    /// Storage region for services that use one.
     pub region: String,
+    /// Login name supplied to the service.
     pub username: String,
+    /// Path to a private key for SSH authentication.
     pub key_file: String,
+    /// Public OAuth client identifier for this profile.
     pub oauth_client_id: String,
+    /// Microsoft tenant used for OneDrive authorization.
     pub oauth_tenant: String,
+    /// Local loopback port used to receive the OAuth redirect.
     pub oauth_port: u16,
     /// Named connections are shown in the sidebar; URI descriptors restore tabs only.
     pub listed: bool,
+    /// Path within the connection to open when the profile is selected.
     pub initial_path: PathBuf,
+    /// Parent server profile for a share opened from the Network list.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_parent: Option<String>,
+    /// Engine and container identity for a Docker location.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub docker: Option<DockerTarget>,
+    /// Requested FTP transport security, resolved by [`Connection::tls_mode`].
     pub ftp_tls: FtpTls,
+    /// Whether opening the HTTP resource requires a session-supplied query string.
     pub query_required: bool,
+    /// Native SFTP preference recorded in the profile. The `sftp` service uses the native backend.
     pub native_sftp: bool,
+    /// Optional SSH known-hosts file used to verify server keys.
     pub known_hosts_file: String,
+    /// Whether to consult SSH configuration when resolving the host.
     pub ssh_use_config: bool,
+    /// Optional SSH configuration file to use for host lookup.
     pub ssh_config_file: String,
+    /// Optional DER-encoded CA certificate trusted by the FTPS connection.
     pub tls_ca_file: String,
+    /// Profile supplying credentials for this navigation, such as the parent of a network share.
     #[serde(skip)]
     #[doc(hidden)]
     pub credentials_from: String,
@@ -84,15 +121,22 @@ impl Default for Connection {
     }
 }
 
+/// How an FTP connection establishes transport security.
 #[derive(Clone, Copy, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum FtpTls {
+    /// Choose the mode from the endpoint as described by [`Connection::tls_mode`].
     #[default]
     Automatic,
+    /// Use unencrypted FTP.
     Plain,
+    /// Start an FTP connection and negotiate TLS before login.
     Explicit,
+    /// Establish TLS as soon as the connection opens.
     Implicit,
 }
 impl Connection {
+    /// Returns whether the application offers writes for this service type.
+    /// The server's permissions still apply to each operation.
     pub fn writable(&self) -> bool {
         !matches!(self.service.as_str(), "http" | "adb" | "nfs" | "docker")
     }
@@ -101,6 +145,8 @@ impl Connection {
         matches!(self.service.as_str(), "adb" | "nfs" | "docker")
     }
 
+    /// Returns the configured FTP mode, resolving [`FtpTls::Automatic`] to
+    /// [`FtpTls::Plain`] for a `ftp://` endpoint and [`FtpTls::Explicit`] otherwise.
     pub fn tls_mode(&self) -> FtpTls {
         match self.ftp_tls {
             FtpTls::Automatic if self.endpoint.starts_with("ftp://") => FtpTls::Plain,
@@ -110,26 +156,38 @@ impl Connection {
     }
 }
 
-// Secrets are serialized only for the OS credential store, never into settings.
+/// Authentication material for a session. [`save_credentials`] serializes the
+/// persistable fields to the OS credential store. Request-specific fields stay in memory.
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Secrets {
+    /// Login password for password-based authentication.
     pub password: String,
+    /// Passphrase used to unlock an encrypted SSH private key.
     pub ssh_passphrase: String,
+    /// Access key identifier for object storage.
     pub access_key_id: String,
+    /// Secret paired with [`Secrets::access_key_id`].
     pub secret_access_key: String,
+    /// Access token used for authenticated cloud requests.
     pub access_token: String,
+    /// Token used to renew expiring access tokens.
     pub refresh_token: String,
+    /// Client secret for OAuth providers that require one.
     pub oauth_client_secret: String,
+    /// Access-token expiry in Unix seconds, or zero when no expiry was supplied.
     pub expires_at: u64,
     /// URL queries may contain signed credentials. Never serialize them, even to keyring.
     #[serde(skip)]
     pub request_query: String,
+    /// HTTP resource path to which [`Secrets::request_query`] belongs.
     #[serde(skip)]
     pub request_path: String,
+    /// Host-key review state for the current SSH connection attempt.
     #[serde(skip)]
     pub ssh_review: Option<crate::ssh::Review>,
 }
+/// Storage service identifiers offered by the connection editor.
 pub const SERVICES: &[&str] = &[
     "sftp", "smb", "ftp", "webdav", "nfs", "adb", "s3", "http", "dropbox", "gdrive", "onedrive",
     "gcs", "webhdfs",
@@ -162,6 +220,28 @@ pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
     RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().expect("Cannot create storage runtime"))
 }
 
+/// Adds profiles to the in-memory registry, replacing entries with matching IDs.
+/// Call [`connect`] to open a session with explicit credentials.
+///
+/// # Examples
+///
+/// Registering a share's profile gives its root a parent in the Network browser.
+///
+/// ```
+/// use rust_commander::filesystem::Location;
+/// use rust_commander::remote::{self, Connection};
+///
+/// let share = Connection {
+///     service: "smb".into(),
+///     network_parent: Some("office-server".into()),
+///     ..Connection::default()
+/// };
+/// remote::register_profiles(std::slice::from_ref(&share));
+/// let root = Location::Remote { connection: share.id, path: Default::default() };
+/// let server = Location::Network { server: Some("office-server".into()) };
+/// assert_eq!(root.parent(), Some(server.clone()));
+/// assert_eq!(server.parent(), Some(Location::Network { server: None }));
+/// ```
 pub fn register_profiles(connections: &[Connection]) {
     if let Ok(mut map) = profiles().write() {
         for c in connections {
@@ -170,6 +250,7 @@ pub fn register_profiles(connections: &[Connection]) {
     }
 }
 
+/// Returns the registered display name, falling back to `id` if the profile is unavailable.
 pub fn connection_name(id: &str) -> String {
     profiles()
         .read()
@@ -178,6 +259,7 @@ pub fn connection_name(id: &str) -> String {
         .unwrap_or_else(|| id.to_owned())
 }
 
+/// Returns a copy of the registered profile, or `None` when it is unavailable.
 pub fn profile(id: &str) -> Option<Connection> {
     profiles().read().ok()?.get(id).cloned()
 }
@@ -228,6 +310,12 @@ pub(crate) fn navigation_credentials(
     Ok(provided)
 }
 
+/// Checks a profile's identifying fields and service-specific addressing before connection.
+///
+/// # Errors
+///
+/// Rejects missing names or IDs, unsupported services, invalid Docker targets,
+/// and endpoint URLs with embedded credentials or a query string.
 pub fn validate(connection: &Connection) -> Result<()> {
     if connection.name.trim().is_empty() || connection.id.is_empty() {
         bail!("Enter a connection name.");
@@ -314,6 +402,16 @@ pub(crate) fn clean_error(
     .into()
 }
 
+/// Opens a storage session and registers it under [`Connection::id`].
+///
+/// Services that support listing or inspecting the root are probed during
+/// connection. HTTP access is checked when the requested resource is opened.
+/// Set `remember` to store credentials for services that use them.
+///
+/// # Errors
+///
+/// Fails if validation, backend setup, the root probe, or credential storage
+/// fails. Docker targets are opened through the device browser.
 pub fn connect(connection: &Connection, secrets: Secrets, remember: bool) -> Result<()> {
     validate(connection)?;
     anyhow::ensure!(
@@ -498,10 +596,20 @@ fn refreshed_session(
         .context("Cloud reconnection failed")
 }
 
+/// Renames a remote entry within its parent using a default [`Task`].
+/// See [`rename_with_task`] for conflict and failure behavior.
 pub fn rename(id: &str, source: &Path, name: &str) -> Result<()> {
     rename_with_task(id, source, name, &mut Task::default())
 }
 
+/// Renames an entry by copying it to an unused sibling name, rechecking the
+/// source snapshot, and deleting the source. Renaming an entry to itself succeeds.
+///
+/// # Errors
+///
+/// Rejects an invalid name, a missing source, or an occupied destination.
+/// A source change detected after copying leaves both versions available.
+/// Cancellation or a backend error may leave a partially completed rename.
 pub fn rename_with_task(id: &str, source: &Path, name: &str, task: &mut Task) -> Result<()> {
     crate::filesystem::validate_name(name)?;
     let parent = source.parent().unwrap_or(Path::new(""));
@@ -530,10 +638,16 @@ const CREDENTIAL_SERVICE: &str = "rust-commander";
 // Retain access to credentials saved by the earlier muCommander Rust preview.
 const LEGACY_CREDENTIAL_SERVICE: &str = "mucommander-rust";
 
+/// Writes the persistable fields of [`Secrets`] to the OS credential store under `id`.
 pub fn save_credentials(id: &str, secrets: &Secrets) -> Result<()> {
     keyring::Entry::new(CREDENTIAL_SERVICE, id)?.set_password(&serde_json::to_string(secrets)?)?;
     Ok(())
 }
+/// Reads credentials for `id`, trying the legacy service name if the current entry is missing.
+///
+/// # Errors
+///
+/// Returns an error if neither entry exists or the stored credentials cannot be read or decoded.
 pub fn load_credentials(id: &str) -> Result<Secrets> {
     read_stored_credentials(
         &keyring::Entry::new(CREDENTIAL_SERVICE, id)?,
@@ -569,6 +683,8 @@ fn forget_stored_credentials(entries: &[keyring::Entry]) -> Result<()> {
     Ok(())
 }
 
+/// Removes current and legacy credentials for `id`, then evicts its live session.
+/// A missing credential entry is accepted, so the call can be repeated.
 pub fn forget_credentials(id: &str) -> Result<()> {
     forget_stored_credentials(&[
         keyring::Entry::new(CREDENTIAL_SERVICE, id)?,
@@ -581,6 +697,8 @@ pub fn forget_credentials(id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Joins normal path components with `/` for display. Non-UTF-8 names are
+/// rendered lossily and root, prefix, and parent components are omitted.
 pub fn display_path(path: &Path) -> String {
     path.components()
         .filter_map(|part| match part {
@@ -613,6 +731,14 @@ pub(crate) fn key(path: &Path, directory: bool) -> Result<String> {
     Ok(text)
 }
 
+/// Lists the children of a directory relative to the connection root.
+/// For services without directory listings, a nonempty path requests metadata
+/// for that resource and returns it as a single entry.
+///
+/// # Errors
+///
+/// Fails for an invalid path, a session or backend error, or a root listing
+/// on a service that cannot enumerate children.
 pub fn list(id: &str, path: &Path) -> Result<Vec<Entry>> {
     let session = session(id)?;
     if let Some(smb) = &session.smb {
@@ -714,6 +840,8 @@ fn http_stream(session: &Session, path: &Path, offset: u64) -> Result<Option<Box
     })))
 }
 
+/// Opens a reader at the beginning of a file under the connection root.
+/// Errors can occur while opening the file or later as the reader consumes it.
 pub fn read(id: &str, path: &Path) -> Result<Box<dyn Read>> {
     let session = session(id)?;
     if let Some(reader) = http_stream(&session, path, 0)? {
@@ -733,6 +861,12 @@ pub fn read(id: &str, path: &Path) -> Result<Box<dyn Read>> {
     ))
 }
 
+/// Reads a complete remote file into memory. Choose a `limit` below `u64::MAX`
+/// to allow a one-byte check for excess data. Use [`read`] for streaming.
+///
+/// # Errors
+///
+/// Returns an error if the file exceeds `limit` bytes or if reading fails.
 pub fn read_bytes(id: &str, path: &Path, limit: u64) -> Result<Vec<u8>> {
     let mut data = Vec::new();
     read(id, path)?.take(limit + 1).read_to_end(&mut data)?;
@@ -742,6 +876,8 @@ pub fn read_bytes(id: &str, path: &Path, limit: u64) -> Result<Vec<u8>> {
     Ok(data)
 }
 
+/// Creates a directory at `path` relative to the connection root.
+/// The service determines whether missing parent directories can be created.
 pub fn mkdir(id: &str, path: &Path) -> Result<()> {
     let session = session(id)?;
     if let Some(smb) = &session.smb {
@@ -754,6 +890,13 @@ pub fn mkdir(id: &str, path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Permanently deletes selected remote entries, removing directory contents first.
+/// A selected path that is already absent is treated as complete.
+///
+/// # Errors
+///
+/// Refuses to delete the connection root or an entry whose directory/file type
+/// changed. A backend error or cancellation can leave part of the selection deleted.
 pub fn delete(id: &str, entries: &[Entry], task: &mut Task) -> Result<()> {
     fn remove(
         id: &str,
@@ -823,6 +966,24 @@ pub fn delete(id: &str, entries: &[Entry], task: &mut Task) -> Result<()> {
     Ok(())
 }
 
+/// Copies entries into an existing local or remote directory, or moves them
+/// when `moving` is true. Top-level names must be unused and distinct.
+/// Use [`transfer_resolved`] to choose how to handle collisions.
+///
+/// For a move involving a remote endpoint, all copies finish and the source
+/// snapshots are checked again before removal begins. Local-to-local transfers
+/// use the [local file operations](crate::operations).
+///
+/// # Errors
+///
+/// Fails for an empty selection, occupied targets, or archive locations.
+/// Remote transfers reject entries identified as symlinks. Completed copies
+/// can remain after a source change, cancellation, or I/O failure.
+///
+/// # Panics
+///
+/// Passing a network or container discovery list as a file endpoint can panic.
+/// Open a concrete local or remote directory first.
 pub fn transfer(
     from: &Location,
     entries: &[Entry],
@@ -1169,6 +1330,9 @@ pub(crate) fn entry_at(location: &Location, path: &Path) -> Result<Option<Entry>
     }
 }
 
+/// Lists occupied top-level destination names for a selection. A pair of
+/// matching directories counts as one conflict. See [`conflicts_with_merge`]
+/// for a preview of conflicts within those directories.
 pub fn conflicts(
     from: &Location,
     entries: &[Entry],
@@ -1176,6 +1340,17 @@ pub fn conflicts(
 ) -> Result<Vec<crate::transfer::Conflict>> {
     conflicts_with_merge(from, entries, to, false)
 }
+/// Previews collisions between `entries` and existing paths at `to`.
+///
+/// With `merge` enabled, descends into matching directories when both entries
+/// are identified as directories and neither is a symlink. Each
+/// [`target`](crate::transfer::Conflict::target) can be passed as a decision
+/// key to [`transfer_resolved`]. A preview does not reserve those paths.
+///
+/// # Errors
+///
+/// Fails if an entry cannot be inspected or traversal reaches the depth or
+/// conflict-count limit.
 pub fn conflicts_with_merge(
     from: &Location,
     entries: &[Entry],
@@ -1325,6 +1500,89 @@ impl RemotePlanner<'_> {
         Ok(())
     }
 }
+/// Copies or moves a selection using per-destination conflict decisions.
+///
+/// Use the destination paths from [`conflicts_with_merge`] as `overrides` keys.
+/// For a remote destination, each key is relative to the connection root and
+/// includes the destination directory. The result summarizes completed work,
+/// skipped conflicts, and the paths of any replacement backups.
+///
+/// When a remote endpoint participates and `merge_folders` is enabled, matching
+/// directories are merged. Each child uses its own override or the batch policy.
+/// Replacing an entry copies the existing destination to a sibling and registers
+/// it for [recovery](crate::recovery) before removing it and copying the incoming entry.
+/// Local-to-local requests use [`crate::transfer::transfer_resolved`].
+///
+/// For a remote move, removal starts after copying and rechecking the source
+/// selection. A top-level folder with a skipped child stays intact, including
+/// children that were successfully copied to the destination.
+///
+/// # Errors
+///
+/// Planning rejects unresolved conflicts and invalid selections. An error or
+/// cancellation during execution can leave completed copies, earlier source
+/// removals, or a replacement backup with an incomplete or missing destination.
+///
+/// # Panics
+///
+/// Passing a network or container discovery list as a file source can panic.
+/// Supply the local or remote location that owns the selected entries.
+///
+/// # Examples
+///
+/// Move a file and merge a folder in the same batch. Skipping one conflict
+/// keeps the source folder intact. The filesystem-backed connection uses a
+/// temporary directory as the remote root.
+///
+/// ```
+/// use rust_commander::filesystem::{self, Location};
+/// use rust_commander::operations::Task;
+/// use rust_commander::remote::{self, Connection, Secrets};
+/// use rust_commander::transfer::{ConflictPolicy, TransferOptions};
+/// use std::{collections::BTreeMap, fs};
+///
+/// let local = tempfile::tempdir()?;
+/// let storage = tempfile::tempdir()?;
+/// let incoming = local.path().join("reports");
+/// let existing = storage.path().join("reports");
+/// let ready = local.path().join("ready.txt");
+/// fs::create_dir(&incoming)?;
+/// fs::create_dir(&existing)?;
+/// fs::write(&ready, "ready to move")?;
+/// fs::write(incoming.join("summary.txt"), "incoming summary")?;
+/// fs::write(incoming.join("details.txt"), "new details")?;
+/// fs::write(existing.join("summary.txt"), "existing summary")?;
+///
+/// let profile = Connection {
+///     service: "fs".into(),
+///     root: storage.path().display().to_string(),
+///     ..Connection::default()
+/// };
+/// remote::connect(&profile, Secrets::default(), false)?;
+/// let from = Location::Local(local.path().into());
+/// let to = Location::Remote {
+///     connection: profile.id,
+///     path: Default::default(),
+/// };
+/// let entries = filesystem::list(&from)?;
+/// let options = TransferOptions {
+///     merge_folders: true,
+///     ..TransferOptions::default()
+/// };
+/// let collisions = remote::conflicts_with_merge(&from, &entries, &to, options.merge_folders)?;
+/// assert_eq!(collisions.len(), 1);
+/// let decisions = BTreeMap::from([(collisions[0].target.clone(), ConflictPolicy::Skip)]);
+///
+/// let mut task = Task::default();
+/// remote::transfer_resolved(&from, &entries, &to, true, options, &decisions, &mut task)?;
+/// assert_eq!(fs::read_to_string(storage.path().join("ready.txt"))?, "ready to move");
+/// assert!(!ready.exists());
+/// assert_eq!(fs::read_to_string(existing.join("summary.txt"))?, "existing summary");
+/// assert_eq!(fs::read_to_string(existing.join("details.txt"))?, "new details");
+/// assert_eq!(fs::read_to_string(incoming.join("summary.txt"))?, "incoming summary");
+/// assert!(incoming.join("details.txt").is_file());
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn transfer_resolved(
     from: &Location,
     entries: &[Entry],
@@ -1493,7 +1751,8 @@ pub(crate) fn remove_entry(location: &Location, entry: &Entry, task: &mut Task) 
     }
 }
 
-/// Guarded remote editor save. Keep a server-side recovery copy before uploading.
+/// Saves edited UTF-8 text using the bytes originally read from the remote file.
+/// See [`save_bytes`] for recovery and concurrent-edit checks.
 pub fn save_text(
     id: &str,
     path: &Path,
@@ -1503,6 +1762,18 @@ pub fn save_text(
 ) -> Result<String> {
     save_bytes(id, path, original, text.as_bytes(), task)
 }
+/// Saves a remote editor buffer after comparing the current file with `original`.
+///
+/// Before uploading, this verifies and registers a sibling backup of the
+/// original and checks the target again. Where supported, the upload also
+/// uses the provider's ETag condition. A final read checks the uploaded bytes.
+/// On success the returned message includes the recovery path.
+///
+/// # Errors
+///
+/// Fails if either buffer exceeds [`crate::viewer::EDIT_LIMIT`], the original
+/// has changed, or a backup, upload, or verification step fails. A failure
+/// after the upload begins can leave a changed target and a retained backup.
 pub fn save_bytes(
     id: &str,
     path: &Path,
@@ -1617,6 +1888,10 @@ pub(crate) fn save_bytes_bounded(
         backup.display()
     ))
 }
+/// Searches a remote connection starting at the
+/// [configured root](crate::desktop::SearchOptions::root).
+/// The result includes matching paths, per-entry errors, and whether a search
+/// limit was reached. Invalid search options and cancellation return an error.
 pub fn search(
     id: &str,
     options: &crate::desktop::SearchOptions,

@@ -1,3 +1,10 @@
+//! Locations and directory entries shared by the file panes and file operations.
+//!
+//! [`list`] reads entries from a [`Location`]. Use [`Location::enter`] and
+//! [`Location::parent`] to navigate across filesystem and archive boundaries.
+//! Keep the [`Entry::path`] for subsequent operations. Its display name can be
+//! a lossy rendering of a native filename.
+
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -7,16 +14,37 @@ use std::{
     time::SystemTime,
 };
 
+/// A place a pane can display, including the lists used to discover remote resources.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Location {
+    /// A directory or path on the host filesystem.
     Local(PathBuf),
-    Archive { file: PathBuf, prefix: PathBuf },
-    Remote { connection: String, path: PathBuf },
-    Network { server: Option<String> },
+    /// A directory inside an archive.
+    Archive {
+        /// Local path of the archive, including a materialized copy when applicable.
+        file: PathBuf,
+        /// Directory within the archive. An empty prefix selects its root.
+        prefix: PathBuf,
+    },
+    /// A path served by a remote connection.
+    Remote {
+        /// ID of the [connection profile](crate::remote::Connection).
+        connection: String,
+        /// Path relative to the configured connection root. Empty selects the root.
+        path: PathBuf,
+    },
+    /// Network discovery, either at the server list or inside one server.
+    Network {
+        /// The selected server's profile ID, or `None` for the server list.
+        server: Option<String>,
+    },
+    /// The list of discoverable Docker containers.
     Containers,
 }
 
 impl Location {
+    /// Returns the address shown in the pane, including the prefix inside an archive.
+    /// Remote locations use the address built by [`crate::uri::address`].
     pub fn label(&self) -> String {
         match self {
             Self::Local(path) => path.display().to_string(),
@@ -29,6 +57,8 @@ impl Location {
         }
     }
 
+    /// Returns a short tab title, using the connection name at a remote root
+    /// and the archive filename at an archive root.
     pub fn title(&self) -> String {
         let path = match self {
             Self::Containers => return crate::i18n::text("Containers").into_owned(),
@@ -59,6 +89,38 @@ impl Location {
             .into_owned()
     }
 
+    /// Returns the location reached by navigating up one level.
+    ///
+    /// At an archive root this returns the recorded origin of a materialized
+    /// archive, or its local parent directory. At a remote root it returns the
+    /// container list or parent network server when the profile identifies one.
+    /// Local filesystem roots and the top-level discovery lists have no parent.
+    ///
+    /// # Examples
+    ///
+    /// Enter a ZIP file, list its contents, and navigate back to its containing directory.
+    ///
+    /// ```
+    /// use rust_commander::archive;
+    /// use rust_commander::filesystem::{self, Location};
+    /// use rust_commander::operations::Task;
+    /// use std::fs;
+    ///
+    /// let workspace = tempfile::tempdir()?;
+    /// let note = workspace.path().join("notes.txt");
+    /// let zip = workspace.path().join("notes.zip");
+    /// fs::write(&note, "meeting notes")?;
+    /// archive::pack(&[note], &zip, &mut Task::default())?;
+    ///
+    /// let folder = Location::Local(workspace.path().to_owned());
+    /// let entry = filesystem::entry_from_path(&zip)?;
+    /// let inside = folder.enter(&entry).expect("ZIP files can be opened as folders");
+    /// let contents = filesystem::list(&inside)?;
+    /// assert_eq!(contents.len(), 1);
+    /// assert_eq!(contents[0].name, "notes.txt");
+    /// assert_eq!(inside.parent(), Some(folder));
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn parent(&self) -> Option<Self> {
         match self {
             Self::Network { server: None } | Self::Containers => None,
@@ -89,6 +151,7 @@ impl Location {
         }
     }
 
+    /// Borrows the native path of a [`Location::Local`] location. Other variants return `None`.
     pub fn local(&self) -> Option<&Path> {
         match self {
             Self::Local(path) => Some(path),
@@ -112,6 +175,10 @@ impl Location {
         }
     }
 
+    /// Returns the location for a child directory or the root of a recognized local archive.
+    ///
+    /// Archive recognition uses the filename. Ordinary files and entries in
+    /// the network and container discovery lists return `None`.
     pub fn enter(&self, entry: &Entry) -> Option<Self> {
         if entry.is_dir {
             Some(match self {
@@ -137,15 +204,24 @@ impl Location {
     }
 }
 
+/// An entry as observed in a directory listing or by [`entry_from_path`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Entry {
+    /// Native local path, archive member path, or path relative to a remote root.
+    /// Discovery lists use this field to identify the listed resource.
     pub path: PathBuf,
+    /// Filename for display in the pane.
     pub name: String,
+    /// Whether the entry is a directory. Local listings also set this for links to directories.
     pub is_dir: bool,
+    /// Whether the listing identified this entry as a symbolic link.
     pub is_symlink: bool,
+    /// Entry length in bytes when [`size_known`](Self::size_known) is true.
     pub size: u64,
+    /// Whether the provider supplied a size. An unknown size may be represented by zero.
     #[serde(default = "known_size")]
     pub size_known: bool,
+    /// Last modification time, when available.
     pub modified: Option<SystemTime>,
 }
 fn known_size() -> bool {
@@ -153,6 +229,7 @@ fn known_size() -> bool {
 }
 
 impl Entry {
+    /// Returns a display category, checking for a link before a folder or an archive.
     pub fn kind(&self) -> &'static str {
         if self.is_symlink {
             "Link"
@@ -166,19 +243,35 @@ impl Entry {
     }
 }
 
+/// Primary sort key for a directory listing. Ties are broken by the display name.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Sort {
+    /// Name folded to lowercase. This is the default.
     #[default]
     Name,
+    /// Recorded entry length in bytes.
     Size,
+    /// Last modification time, when available.
     Modified,
+    /// Filename extension.
     Extension,
+    /// The category returned by [`Entry::kind`].
     Kind,
+    /// Owner label resolved from the path's metadata.
     Owner,
+    /// Group label resolved from the path's metadata.
     Group,
+    /// Unix permission bits or the Windows read-only flag.
     Permissions,
 }
 
+/// Lists the immediate entries at `location` in the order supplied by its provider.
+/// Use [`sort_entries`] to apply a pane sort order.
+///
+/// # Errors
+///
+/// Propagates directory, archive, and remote access errors. A local listing
+/// also fails if a child disappears before its metadata can be read.
 pub fn list(location: &Location) -> Result<Vec<Entry>> {
     match location {
         Location::Containers => crate::uri_backend::docker::list_containers(&Default::default()),
@@ -247,10 +340,13 @@ fn local_entry(item: fs::DirEntry) -> std::io::Result<Entry> {
     })
 }
 
+/// Sorts a listing in place, keeping directories first even in descending order.
 pub fn sort_entries(entries: &mut [Entry], sort: Sort, descending: bool) {
     sort_entries_with_options(entries, sort, descending, true);
 }
 
+/// Sorts a listing in place by `sort` and then by name. When `folders_first`
+/// is set, `descending` only affects the ordering within each group.
 pub fn sort_entries_with_options(
     entries: &mut [Entry],
     sort: Sort,
@@ -303,12 +399,15 @@ pub fn sort_entries_with_options(
     });
 }
 
+/// Returns the user's home directory, falling back to the working directory and then `/`.
 pub fn home() -> PathBuf {
     directories::BaseDirs::new()
         .map(|d| d.home_dir().to_owned())
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")))
 }
 
+/// Resolves a local path against `base` and expands a leading `~` path component.
+/// The path need not exist. Filesystem aliases and parent components are left for the caller.
 pub fn resolve_path(text: &str, base: &Path) -> PathBuf {
     resolve_native_path(Path::new(text), base)
 }
@@ -323,6 +422,17 @@ pub(crate) fn resolve_native_path(path: &Path, base: &Path) -> PathBuf {
     }
 }
 
+/// Parses a pane address, preserving `base` when `text` matches its current label.
+///
+/// A `remote://` address specifies a connection ID and a path within it. Other
+/// input is resolved as a native path against a local base, or `/` for other
+/// locations. An existing file with a recognized archive extension opens at its root.
+/// See [`crate::uri::parse`] for service-specific addresses such as `sftp://`.
+///
+/// # Errors
+///
+/// Rejects malformed remote addresses and remote URLs with embedded credentials,
+/// query strings, fragments, or invalid path components.
 pub fn parse_location(text: &str, base: &Location) -> Result<Location> {
     if text == base.label() {
         return Ok(base.clone());
@@ -357,6 +467,12 @@ pub fn parse_location(text: &str, base: &Location) -> Result<Location> {
     }
 }
 
+/// Checks the syntax of a single filename or directory name.
+///
+/// # Errors
+///
+/// Rejects blank names, `.`, `..`, either path separator, and NUL. On Windows,
+/// additional checks reject reserved punctuation and a trailing period or space.
 pub fn validate_name(name: &str) -> Result<()> {
     if name.trim().is_empty()
         || name.contains(['/', '\\', '\0'])
@@ -395,7 +511,12 @@ pub(crate) fn portable_relative(path: &Path) -> Result<PathBuf> {
     Ok(name)
 }
 
-/// Archive paths are interpreted portably, including Windows drive/UNC paths.
+/// Returns a relative archive member path with `.` components removed.
+///
+/// # Errors
+///
+/// Rejects an empty result, parent components, absolute paths, backslashes,
+/// colons, and NUL. The same checks apply to archive names on every platform.
 pub fn safe_relative(path: &Path) -> Result<PathBuf> {
     let text = path.to_string_lossy();
     if text.contains(['\\', ':', '\0']) || path.is_absolute() {
@@ -415,6 +536,7 @@ pub fn safe_relative(path: &Path) -> Result<PathBuf> {
     Ok(clean)
 }
 
+/// Formats bytes in binary units from bytes through TiB, for example `1.5 KiB`.
 pub fn human_size(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB"];
     let mut n = bytes as f64;
@@ -430,6 +552,12 @@ pub fn human_size(bytes: u64) -> String {
     }
 }
 
+/// Reads a local entry's own metadata. A symlink to a directory has
+/// [`Entry::is_symlink`] set and [`Entry::is_dir`] clear in this snapshot.
+///
+/// # Errors
+///
+/// Fails if the entry metadata cannot be read or the path has no filename.
 pub fn entry_from_path(path: &Path) -> Result<Entry> {
     let metadata = fs::symlink_metadata(path)?;
     Ok(Entry {
@@ -447,7 +575,9 @@ pub fn entry_from_path(path: &Path) -> Result<Entry> {
     })
 }
 
-/// Numeric IDs avoid blocking directory rendering on network name services.
+/// Returns the numeric Unix user ID, group ID, and permission bits of an absolute path.
+/// Numeric IDs avoid network name lookups. Symlinks report their own metadata.
+/// Relative paths, unavailable metadata, and non-Unix platforms yield three `None` values.
 pub fn ownership(path: &Path) -> (Option<u32>, Option<u32>, Option<u32>) {
     if !path.is_absolute() {
         return (None, None, None);

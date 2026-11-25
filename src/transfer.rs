@@ -30,7 +30,7 @@ pub enum ConflictPolicy {
     Skip,
     /// Give the incoming entry an unused numbered name, such as `notes (1).txt`.
     Rename,
-    /// Retain the existing local entry in a recovery folder before replacing it.
+    /// Retain the existing destination entry for recovery before replacing it.
     Replace,
 }
 
@@ -40,7 +40,9 @@ pub struct TransferOptions {
     /// Policy for a collision with no per-target decision.
     pub conflicts: ConflictPolicy,
     /// Descend into matching directories to resolve conflicts between their children.
-    /// Defaults to `false`. [`ConflictPolicy::Rename`] renames the incoming directory as a whole.
+    /// Defaults to `false`. During a [local transfer](transfer), [`ConflictPolicy::Rename`]
+    /// renames the incoming directory as a whole. [Remote transfers](crate::remote::transfer_resolved)
+    /// with merging enabled resolve collisions inside matching directories.
     pub merge_folders: bool,
 }
 

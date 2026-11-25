@@ -4,8 +4,11 @@
 //!
 //! # Working with files
 //!
+//! - Browse a [`filesystem::Location`] with [`filesystem::list`]. The [`remote`]
+//!   module manages the connections used by remote locations.
 //! - Use an [`Operation`](operations::Operation) and [`operations::run`] to act on a
 //!   selection. A [`Task`](operations::Task) carries progress and cancellation.
+//!   [`queue::Queue`] persists pending work across restarts.
 //! - Use [`transfer`] to preview local copy or move conflicts and choose how to
 //!   handle them. [`resumable`] provides checkpointed copies for local and remote files.
 //! - Use [`history::execute`] to journal an operation for Undo. Use [`recovery`]
