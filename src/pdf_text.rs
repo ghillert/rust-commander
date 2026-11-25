@@ -15,6 +15,8 @@ use std::{collections::HashSet, ops::Range, sync::Arc};
 const MAX_GLYPHS: usize = 65_536;
 const MAX_TEXT: usize = 2 * 1024 * 1024;
 
+/// One extracted PDF glyph with a range in the page's UTF-8 text and normalized bounds
+/// for selection.
 #[derive(Clone, Debug)]
 pub struct TextGlyph {
     /// Half-open UTF-8 byte range occupied by this glyph in [`PageText::text`].
@@ -22,6 +24,10 @@ pub struct TextGlyph {
     /// Normalized rectangle on the unrotated rendered page (top-left origin).
     pub bounds: [f32; 4],
 }
+/// Searchable text and glyph positions extracted from one PDF page.
+///
+/// Byte ranges address [`Self::text`], while display rectangles use normalized
+/// coordinates.
 #[derive(Clone, Debug, Default)]
 pub struct PageText {
     /// Searchable page text, including spaces and newlines inferred from glyph positions.
@@ -238,6 +244,8 @@ pub fn load_page_data(
     )
 }
 
+/// A PDF text match with its page index, byte range, and extracted text for
+/// highlighting.
 pub struct SearchHit {
     /// Zero-based index of the PDF page containing the match.
     pub page: usize,

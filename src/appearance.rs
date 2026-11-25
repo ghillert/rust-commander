@@ -1,5 +1,8 @@
 //! Platform appearance preferences and colors. Slint renders the widgets.
 use serde::{Deserialize, Serialize};
+/// Desktop styling preset used to choose colors and control geometry.
+///
+/// [`Self::Automatic`] resolves to a platform preset through [`Self::resolve`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DesktopStyle {
     /// Detects the desktop style from the host OS and, on Linux, the distribution.
@@ -15,6 +18,7 @@ pub enum DesktopStyle {
     Gnome,
 }
 impl DesktopStyle {
+    /// Desktop styles in the order shown in the appearance selector.
     pub const ALL: [Self; 5] = [
         Self::Automatic,
         Self::MacOs,
@@ -58,6 +62,7 @@ pub fn detect_linux(release: &str) -> DesktopStyle {
     }
 }
 
+/// Preference for light or dark colors, with an option to follow the system.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ColorScheme {
     /// Follows the desktop’s light or dark appearance.
@@ -78,6 +83,10 @@ impl ColorScheme {
         }
     }
 }
+/// Colors and corner radius for the file manager's shared views.
+///
+/// [`Self::new`] builds a palette from a desktop style and the effective light or dark
+/// appearance.
 pub struct Palette {
     /// Accent color for active controls and focus indicators.
     pub accent: slint::Color,

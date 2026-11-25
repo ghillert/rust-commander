@@ -5,6 +5,8 @@ use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Presentation of the current pane location as an editable address or navigable
+/// breadcrumbs.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LocationBar {
     /// Displays an editable location address.
@@ -14,6 +16,7 @@ pub enum LocationBar {
     Breadcrumbs,
 }
 impl LocationBar {
+    /// Location bar choices in the order shown in preferences.
     pub const ALL: [Self; 2] = [Self::Address, Self::Breadcrumbs];
     /// Returns the display label for the address field or breadcrumb location bar.
     pub fn label(self) -> &'static str {
@@ -24,6 +27,9 @@ impl LocationBar {
     }
 }
 
+/// Application preferences shared by file panes, dialogs, and background tools.
+///
+/// Use [`validate`] before applying edits to an existing configuration.
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Preferences {
@@ -236,6 +242,7 @@ impl Default for Preferences {
     }
 }
 
+/// Policy for choosing between operating-system file icons and the bundled icon set.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FileIconSource {
@@ -247,6 +254,7 @@ pub enum FileIconSource {
 }
 
 impl FileIconSource {
+    /// File icon source choices in the order shown in preferences.
     pub const ALL: [Self; 2] = [Self::SystemWithFallback, Self::BuiltIn];
 
     /// Returns the preferences label for the selected source of file icons.
@@ -258,6 +266,9 @@ impl FileIconSource {
     }
 }
 
+/// Canonical name of the non-modifier key in a shortcut.
+///
+/// [`Self::from_name`] normalizes common aliases before matching shortcuts.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Key(String);
 impl Key {
@@ -309,6 +320,8 @@ impl Key {
         Some(Self(canonical.into()))
     }
 }
+/// Modifier keys required by a shortcut. Command and Control names map to the same
+/// command flag when parsed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Modifiers {
     /// Requires the command modifier, written as Command or Control in shortcut text.
@@ -318,6 +331,9 @@ pub struct Modifiers {
     /// Requires Alt (Option on macOS) as part of the shortcut.
     pub alt: bool,
 }
+/// Normalized keyboard binding consisting of a logical key and its required modifiers.
+///
+/// Use [`shortcut()`] to parse the text stored in preferences.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shortcut {
     /// Canonical non-modifier key for the binding.
@@ -443,6 +459,8 @@ pub fn validate(preferences: &Preferences) -> Result<()> {
     Ok(())
 }
 
+/// An entry attribute that can appear in a file pane column and determine its sort
+/// order.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Column {
     /// Entry name as displayed in the file pane.
@@ -463,6 +481,7 @@ pub enum Column {
     Permissions,
 }
 impl Column {
+    /// Available columns in chooser order.
     pub const ALL: [Self; 8] = [
         Self::Name,
         Self::Size,
@@ -569,6 +588,7 @@ impl Column {
         }
     }
 }
+/// Configured type and width of a file pane column.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ColumnSpec {
     /// Entry attribute shown in this column.
@@ -576,6 +596,7 @@ pub struct ColumnSpec {
     /// Configured width in logical pixels (40 through 800), before optional scaling.
     pub width: f32,
 }
+/// A file manager command that can appear as a toolbar button.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ToolbarAction {
     /// Opens the prompt to create a directory in the active pane.
@@ -598,6 +619,7 @@ pub enum ToolbarAction {
     Queue,
 }
 impl ToolbarAction {
+    /// Available toolbar actions in chooser order.
     pub const ALL: [Self; 9] = [
         Self::NewFolder,
         Self::Copy,

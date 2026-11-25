@@ -10,6 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Named pane location saved for quick navigation.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Bookmark {
     /// Display name for this saved location.
@@ -18,6 +19,10 @@ pub struct Bookmark {
     pub location: Location,
 }
 
+/// Persisted application configuration, including window sessions, connection profiles,
+/// and shared preferences.
+///
+/// Use [`load`] at startup and [`save`] to replace the settings file.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -272,6 +277,10 @@ mod tests {
     }
 }
 
+/// Saved pane state and geometry for one desktop window.
+///
+/// [`Self::settings`] combines this window's layout and navigation state with the
+/// current global settings.
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct WindowSession {
     /// Snapshot of this window’s panes, tabs, and layout.

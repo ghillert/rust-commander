@@ -10,17 +10,21 @@ use std::{
     path::PathBuf,
     sync::{Arc, atomic::AtomicBool, mpsc::Receiver},
 };
+/// Action requested by the rename or search dialog for the window to perform.
 pub enum Effect {
     /// Submit the operation prepared by the tool as a file job.
     Run(Box<Operation>),
     /// Request pane navigation to the supplied location.
     Navigate(Location),
 }
+/// Batch rename dialog state, including the selected paths, naming options, and
+/// validation error.
 pub struct RenameForm {
     pub(crate) sources: Vec<PathBuf>,
     pub(crate) options: RenameOptions,
     pub(crate) error: Option<String>,
 }
+/// Recursive search dialog state, including its criteria, worker, and latest result.
 pub struct SearchForm {
     pub(crate) connection: Option<String>,
     pub(crate) options: SearchOptions,
@@ -35,6 +39,7 @@ impl Drop for SearchForm {
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
+/// Tracks the rename and search dialogs opened from the current pane.
 #[derive(Default)]
 pub struct Tools {
     pub(crate) rename: Option<RenameForm>,

@@ -13,6 +13,8 @@ use std::{
         mpsc::{self, Receiver},
     },
 };
+/// State of the file manager's comparison, synchronization, recovery, workspace, and
+/// file-opening dialogs.
 #[derive(Default)]
 pub struct Features {
     /// State of the folder comparison dialog while it is open.
@@ -42,6 +44,8 @@ pub struct Features {
     /// Message displayed when a workspace or application-choice action fails.
     pub error: Option<String>,
 }
+/// Request emitted by a dialog for the window to handle, such as running an operation or
+/// updating workspaces.
 pub enum Effect {
     /// Submit the supplied operation to the file-job runner.
     Run(Box<Operation>),
@@ -94,6 +98,8 @@ impl Features {
         self.recovery = Some(form);
     }
 }
+/// Synchronization dialog state, including the selected roots, filters, and plan
+/// awaiting review.
 pub struct SyncForm {
     pub(crate) rules: crate::path_rules::PathRules,
     pub(crate) preset_name: String,
@@ -164,6 +170,8 @@ impl SyncForm {
         });
     }
 }
+/// Recovery storage dialog state, including measured usage and record IDs selected for
+/// cleanup.
 #[derive(Default)]
 pub struct RecoveryForm {
     pub(crate) stats: Option<crate::history::Storage>,

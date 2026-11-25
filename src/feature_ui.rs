@@ -6,6 +6,7 @@ use crate::{
     operations::Operation,
 };
 use std::path::{Path, PathBuf};
+/// Inputs and selections for the archive dialog, initialized from both file panes.
 #[derive(Default)]
 pub struct ArchiveForm {
     /// Local path of the archive to edit, unlock, or browse, including a materialized copy.
@@ -40,6 +41,7 @@ pub struct ArchiveForm {
     /// Error message shown in the archive dialog, when present.
     pub error: Option<String>,
 }
+/// Effect produced by the archive dialog after the user submits an action.
 pub enum ArchiveAction {
     /// Submit the enclosed archive operation as a file job.
     Run(Box<Operation>),

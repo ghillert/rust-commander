@@ -10,6 +10,9 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+/// Action selected for a difference in a synchronization plan.
+///
+/// [`Plan::allows`] checks whether an action is available for a given item.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Choice {
     /// Leave the entries on both sides as they are.
@@ -35,6 +38,10 @@ impl Choice {
         }
     }
 }
+/// One reviewed difference between the synchronization roots.
+///
+/// The path is relative to both roots. Recorded entry state lets [`apply`] detect
+/// changes since preview.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
     /// Whether to create just this missing directory during a filtered copy. Its children are
@@ -54,6 +61,10 @@ pub struct Item {
     left_stamp: Option<String>,
     right_stamp: Option<String>,
 }
+/// Reviewable synchronization plan and the source state captured during preview.
+///
+/// Build a plan with [`preview_locations`], review the item choices, then pass it to
+/// [`apply`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Plan {
     /// Include and exclude rules used to build the plan and rechecked when applying it.

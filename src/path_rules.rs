@@ -4,6 +4,8 @@ use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+/// Serializable include and exclude glob settings shared by search, comparison, and
+/// synchronization.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct PathRules {
@@ -87,6 +89,10 @@ impl PathRules {
         })
     }
 }
+/// Validated path matchers returned by [`PathRules::compile`].
+///
+/// Match paths relative to the tool's root. [`Self::excluded`] checks ancestors as well
+/// as the path itself.
 pub struct CompiledRules {
     include: GlobSet,
     exclude: GlobSet,

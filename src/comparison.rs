@@ -13,6 +13,10 @@ use std::{
     path::PathBuf,
 };
 
+/// How a directory comparison judges files that appear on both sides.
+///
+/// Content mode compares streamed hashes. Metadata mode uses size and modification time
+/// and reports its results as unverified.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Mode {
     /// Hash both file streams to verify equality of their contents.
@@ -30,6 +34,7 @@ impl Mode {
         }
     }
 }
+/// Path rules and comparison mode used to inventory two directory trees.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Options {
@@ -38,6 +43,8 @@ pub struct Options {
     /// How to compare entries that are files on both sides.
     pub mode: Mode,
 }
+/// Named comparison options that can be saved in preferences and reapplied to a pair of
+/// folders.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Preset {
     /// User-visible name for recalling this comparison preset.

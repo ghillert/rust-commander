@@ -48,6 +48,7 @@ pub struct Change {
     pub backup_native: Option<String>,
 }
 
+/// Where the user can recover originals displaced by an operation that replaces entries.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReplacementRecovery {
     /// A local directory holds the originals displaced by replacement.
@@ -704,6 +705,7 @@ impl Record {
             && !self.changes.is_empty()
     }
 }
+/// Age and size limits used when choosing which unpinned recovery records to expire.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Retention {
@@ -723,6 +725,8 @@ impl Default for Retention {
         }
     }
 }
+/// Summary of history storage, referenced backup paths, and bytes in unreferenced
+/// directories.
 #[derive(Default, Debug)]
 pub struct Storage {
     /// Sum of file and symlink lengths beneath the history directory, in bytes.

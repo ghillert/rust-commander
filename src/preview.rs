@@ -11,6 +11,10 @@ use std::{
     sync::mpsc::{self, Receiver},
     time::{Duration, Instant},
 };
+/// State of a pane's preview for the focused entry.
+///
+/// [`Self::select`] updates the target. The desktop event loop waits for selection
+/// changes to settle before loading it.
 #[derive(Default)]
 pub struct Preview {
     pub(crate) presentation: crate::source_view::State,

@@ -9,6 +9,8 @@ use anyhow::{Context, Result, ensure};
 use regex::bytes::{Regex, RegexBuilder};
 use std::{io::Read, time::SystemTime};
 
+/// Additional filename, content, size, and modification-time criteria for
+/// [`crate::desktop::SearchOptions`].
 #[derive(Clone, Debug)]
 pub struct SearchFilters {
     /// Whether case matters when matching include and exclude globs.

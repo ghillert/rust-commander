@@ -3,8 +3,11 @@ use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use std::{io::Read, time::Duration};
 
+/// URL of the Rust Commander source repository.
 pub const REPOSITORY: &str = "https://github.com/ghillert/rust-commander";
+/// URL of the repository README used by the Documentation command.
 pub const DOCUMENTATION: &str = "https://github.com/ghillert/rust-commander/blob/main/README.md";
+/// URL of the repository's issue tracker.
 pub const COMMUNITY: &str = "https://github.com/ghillert/rust-commander/issues";
 /// Repository .github/FUNDING.yml names this GitHub Sponsors account.
 pub const DONATION: &str = "https://github.com/sponsors/ghillert";
@@ -51,6 +54,7 @@ pub fn web_link(value: &str) -> Result<url::Url> {
 const LATEST: &str = "https://api.github.com/repos/ghillert/rust-commander/releases/latest";
 const RESPONSE_LIMIT: u64 = 1024 * 1024;
 
+/// Release tag, display title, and page URL returned by the update service.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Release {
     /// Git tag from the release response, used for version comparison.
@@ -65,6 +69,8 @@ pub struct Release {
     #[serde(default)]
     prerelease: bool,
 }
+/// Result of a stable-release check. An available release may match the installed
+/// version.
 #[derive(Clone, Debug)]
 pub struct Update {
     /// Stable release returned by the endpoint, or `None` if no release was found.

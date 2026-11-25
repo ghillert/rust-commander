@@ -2,6 +2,9 @@
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+/// A filename glob paired with the application used to open matching files.
+///
+/// Rules are evaluated in list order by [`application`].
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Rule {
     /// Case-insensitive glob matched against the filename to select an application.

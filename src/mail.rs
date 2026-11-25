@@ -13,7 +13,11 @@ use lettre::{
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+/// Combined limit on raw attachment contents in one email, in bytes (25 MiB).
 pub const ATTACHMENT_LIMIT: usize = 25 * 1024 * 1024;
+/// SMTP connection and sender settings used to compose and send email.
+///
+/// The password is supplied separately to [`send`].
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Settings {
@@ -54,6 +58,7 @@ impl Settings {
         Ok(())
     }
 }
+/// One attachment with its display name and raw contents.
 #[derive(Clone)]
 pub struct File {
     /// Attachment name relative to the selection, with any directory components flattened
@@ -62,6 +67,8 @@ pub struct File {
     /// Complete contents of this attachment before MIME encoding.
     pub bytes: Vec<u8>,
 }
+/// Files gathered and checked from the pane selection by [`prepare`]. Pass them to
+/// [`message`] to compose an email.
 #[derive(Clone)]
 pub struct Prepared {
     /// Attachments in filename order, including files selected through directories.

@@ -3,6 +3,7 @@ use crate::filesystem::Location;
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 
+/// User-customized title and optional location lock for one tab.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TabState {
@@ -26,6 +27,7 @@ impl TabState {
     }
 }
 
+/// Direction in which the two file panes are arranged.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Orientation {
     /// Arrange the two panes horizontally, left and right.
@@ -35,6 +37,7 @@ pub enum Orientation {
     Stacked,
 }
 
+/// Orientation and space allocation of the split between the file panes.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Layout {
@@ -61,6 +64,7 @@ impl Layout {
     }
 }
 
+/// A previously visited pane location with the title shown in the recent-locations list.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RecentLocation {
     /// Display label saved with the recent location.

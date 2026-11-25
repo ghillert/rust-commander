@@ -12,6 +12,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Top-level entries selected at a pane location for a transfer or export.
+///
+/// [`Self::validate`] checks path scope and unique basenames before work starts.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Selection {
     /// Source location used to interpret the selected entries. For local paths from several
@@ -209,6 +212,10 @@ pub(crate) fn transient<T>(
     result
 }
 
+/// Temporary local files prepared for a native drag or another application.
+///
+/// Keep this value alive while the consumer uses [`Self::paths`], which are backed by
+/// its temporary directory.
 pub struct Export {
     /// Owns the temporary export directory for as long as the exported paths are needed.
     pub directory: tempfile::TempDir,

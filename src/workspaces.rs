@@ -3,6 +3,8 @@
 
 use crate::{filesystem::Location, preferences::Preferences};
 use serde::{Deserialize, Serialize};
+/// Named snapshot of the panes, their tabs, and the preferences used when restoring a
+/// workspace.
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Workspace {
     /// Name displayed when choosing a saved workspace.

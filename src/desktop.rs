@@ -75,6 +75,32 @@ pub fn rename_exclusive(source: &Path, destination: &Path) -> std::io::Result<()
     }
 }
 
+/// Find-and-replace and numbering options for [`rename_plan`].
+///
+/// The template can use `{name}`, `{ext}`, and `{n}` for the resulting base name,
+/// extension with its dot, and sequence number.
+///
+/// # Examples
+///
+/// Preview numbered photo names in selection order.
+///
+/// ```
+/// use rust_commander::desktop::{RenameOptions, rename_plan};
+///
+/// let dir = tempfile::tempdir()?;
+/// let sources = [dir.path().join("lily.jpg"), dir.path().join("fern.jpg")];
+/// let options = RenameOptions {
+///     template: "photo-{n}{ext}".into(),
+///     start: 7,
+///     width: 2,
+///     ..RenameOptions::default()
+/// };
+///
+/// let plan = rename_plan(&sources, &options)?;
+/// assert_eq!(plan[0].1, dir.path().join("photo-07.jpg"));
+/// assert_eq!(plan[1].1, dir.path().join("photo-08.jpg"));
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RenameOptions {
@@ -255,6 +281,7 @@ pub fn batch_rename(plan: &[(PathBuf, PathBuf)], task: &mut Task) -> Result<()> 
     Ok(())
 }
 
+/// Root, matching criteria, and result budget for a recursive file search.
 #[derive(Clone)]
 pub struct SearchOptions {
     /// Directory at which the search starts, using filesystem or connection-relative paths as
@@ -283,6 +310,9 @@ impl Default for SearchOptions {
         }
     }
 }
+/// Matched paths and per-entry diagnostics from a search.
+///
+/// Check [`Self::errors`] and [`Self::truncated`] to see where coverage was limited.
 pub struct SearchResult {
     /// Matching entry paths as returned by the location's listing.
     pub paths: Vec<PathBuf>,
@@ -306,6 +336,9 @@ pub fn search(options: &SearchOptions, task: &mut Task) -> Result<SearchResult> 
     )
 }
 
+/// One relative path and its comparison result across two directory trees.
+///
+/// [`Self::can_diff`] indicates whether both sides are eligible for a text diff.
 #[derive(Clone)]
 pub struct Comparison {
     /// Display form of the entry's path relative to the two roots.

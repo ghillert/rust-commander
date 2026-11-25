@@ -7,12 +7,18 @@ use anyhow::{Context, Result, bail, ensure};
 use std::path::{Path, PathBuf};
 use url::Url;
 
+/// Result of parsing a pane address with [`parse`].
+///
+/// A known location can be opened directly. A remote target carries the information
+/// needed to match or establish a connection.
 pub enum Input {
     /// A resolved pane location that navigation can open directly.
     Location(Location),
     /// A parsed remote address whose connection still needs to be matched or established.
     Remote(Box<Target>),
 }
+/// Remote location details parsed from a URI, with connection settings and session-only
+/// secrets kept separately.
 pub struct Target {
     /// Connection settings derived from the URI for matching or creating a connection
     /// profile.

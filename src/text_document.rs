@@ -6,6 +6,7 @@ use std::{
     path::Path,
 };
 
+/// Supported encoding for decoding or saving a text document.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Encoding {
     #[default]
@@ -21,6 +22,7 @@ pub enum Encoding {
     Latin1,
 }
 impl Encoding {
+    /// Supported text encodings in label lookup order.
     pub const ALL: [Self; 5] = [
         Self::Utf8,
         Self::Utf16Le,
@@ -43,6 +45,8 @@ impl Encoding {
         Self::ALL.into_iter().find(|e| e.label() == value)
     }
 }
+/// Decoded editor text with the original bytes and encoding settings needed for
+/// save-back.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Document {
     /// Source bytes retained when the document was decoded, including any leading BOM.
@@ -201,7 +205,12 @@ impl Document {
     }
 }
 
+/// Maximum number of source bytes represented by one text page (256 KiB). Readers can
+/// fetch extra bytes to handle character boundaries.
 pub const PAGE_SIZE: u64 = 256 * 1024;
+/// A bounded decoded text page with offsets in the original byte stream.
+///
+/// Use [`Self::next`] to continue reading without splitting a character.
 #[derive(Clone, Debug)]
 pub struct Page {
     /// Byte offset of the first source byte represented by this page after

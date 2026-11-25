@@ -11,6 +11,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// The server identity and public key presented for review when an SFTP connection
+/// encounters an unknown host key.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Challenge {
     /// Resolved hostname of the server presenting the key.
@@ -29,6 +31,9 @@ pub struct Challenge {
     /// User known-hosts file proposed for saving approval. `None` means saving is disabled.
     pub save_to: Option<PathBuf>,
 }
+/// Shares host-key review state between the SFTP connection worker and the dialog.
+///
+/// The worker can retry with the exact challenge accepted by the user.
 #[derive(Clone, Default)]
 pub struct Review {
     /// Shared slot where the connection worker places an unknown host key for the UI to
@@ -37,6 +42,11 @@ pub struct Review {
     /// Previously approved challenge that must exactly match the newly offered challenge.
     pub accepted: Option<Challenge>,
 }
+/// Resolved SSH endpoint, authentication options, and known-hosts configuration for an
+/// SFTP connection.
+///
+/// [`Self::resolve`] combines the connection profile with OpenSSH configuration when
+/// enabled.
 #[derive(Debug)]
 pub struct Config {
     /// Effective hostname to connect to after applying the profile and SSH configuration.

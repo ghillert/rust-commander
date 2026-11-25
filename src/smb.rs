@@ -69,6 +69,10 @@ pub(crate) fn list_shares(profile: &Connection, secrets: &Secrets) -> Result<Vec
     )
 }
 
+/// SMB share connection settings and credentials for browsing without an OS mount.
+///
+/// Operations address paths relative to the configured root. [`Self::new`] validates the
+/// endpoint and share name before any file operation connects.
 #[derive(Clone)]
 pub struct Share {
     profile: Connection,

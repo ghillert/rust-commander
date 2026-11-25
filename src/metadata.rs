@@ -208,6 +208,8 @@ pub fn parse_mode(value: &str) -> Result<u32> {
     ensure!(mode <= 0o7777, "Permissions must be between 0000 and 7777.");
     Ok(mode)
 }
+/// Display labels and Unix mode masks for the nine access bits and the three special
+/// permission bits.
 pub const PERMISSION_BITS: [(&str, u32); 12] = [
     ("Owner: Read", 0o400),
     ("Owner: Write", 0o200),

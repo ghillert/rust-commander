@@ -5,6 +5,7 @@ use crate::{
     viewer::Mode,
 };
 
+/// Explicit interpretation of a file as viewable content or as an archive.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     /// Open the selected entry using the specified built-in viewer mode.
@@ -12,6 +13,7 @@ pub enum Kind {
     /// Interpret the selected entry as the specified archive format.
     Archive(Format),
 }
+/// Display labels and interpretations offered in the Open As dialog.
 pub const CHOICES: &[(&str, Kind)] = &[
     ("Text", Kind::Viewer(Mode::Text)),
     ("Hexadecimal", Kind::Viewer(Mode::Hex)),
@@ -28,6 +30,8 @@ pub const CHOICES: &[(&str, Kind)] = &[
         Kind::Archive(Format::Extended),
     ),
 ];
+/// Selected file, requested interpretation, and optional archive password for the Open
+/// As dialog.
 pub struct Form {
     /// Pane location providing access to the selected entry.
     pub location: Location,

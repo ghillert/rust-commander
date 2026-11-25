@@ -8,6 +8,10 @@ use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
 };
+/// One directory row in the flattened tree returned by [`build`].
+///
+/// The depth controls indentation, and a listing error is attached to the row for the
+/// directory that failed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Node {
     /// Directory path in the tree's local, remote, or archive namespace.

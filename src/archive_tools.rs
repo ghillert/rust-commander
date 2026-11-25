@@ -15,6 +15,9 @@ use std::{
 };
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
+/// A change to an existing ZIP, applied by [`edit_zip`].
+///
+/// Member paths are relative to the archive root. Additions use local source paths.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum ZipEdit {
     /// Adds local files and directory trees beneath an archive directory.

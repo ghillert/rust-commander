@@ -571,6 +571,10 @@ impl ResultMessage {
     }
 }
 
+/// State and command handling for one file manager window.
+///
+/// The window owns both panes, its active file job, and the dialogs it presents. Use
+/// [`slint_ui::run`] to launch the desktop application.
 pub struct Commander {
     saved_windows: Vec<crate::settings::WindowSession>,
     window_id: usize,

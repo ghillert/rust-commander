@@ -11,6 +11,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// A parsed muCommander command alias with an argument template.
+///
+/// Use [`Self::expand`] to substitute selected paths while preserving individual
+/// arguments.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ImportedCommand {
     /// Trimmed command name used to identify the command when merging settings.
@@ -139,6 +143,9 @@ impl ImportedCommand {
     }
 }
 
+/// Import candidates and warnings collected from muCommander XML files.
+///
+/// Use [`Self::apply`] to merge the supported values into application settings.
 #[derive(Clone, Default)]
 pub struct Preview {
     /// Bookmark candidates with locations that could be translated during import.

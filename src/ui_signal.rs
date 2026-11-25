@@ -4,6 +4,9 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+/// Shared notifications from background workers to the event loop.
+///
+/// Clones share repaint requests, queued clipboard text, and close requests.
 #[derive(Clone, Default)]
 pub struct UiSignal {
     dirty: Arc<AtomicBool>,

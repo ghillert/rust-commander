@@ -17,6 +17,10 @@ use std::{
     },
 };
 
+/// State of the folder comparison dialog and its background workers.
+///
+/// [`Self::start`] begins a comparison, [`Self::start_diff`] opens a text diff for an
+/// eligible row, and [`Self::poll`] collects results.
 pub struct Form {
     /// Directory shown on the left side of the comparison.
     pub left: Location,
@@ -141,6 +145,7 @@ impl Form {
         }
     }
 }
+/// One pair of aligned display rows in a side-by-side text diff.
 pub struct DiffRow {
     /// Formatted left line with its one-based line number, or an empty string for an insertion.
     pub left: String,
@@ -149,6 +154,7 @@ pub struct DiffRow {
     /// Whether this row represents an insertion, deletion, or replacement.
     pub changed: bool,
 }
+/// Side-by-side text diff for the same relative file path on both sides of a comparison.
 pub struct Diff {
     /// Display form of the compared file's root-relative path.
     pub name: String,

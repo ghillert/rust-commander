@@ -5,6 +5,7 @@ use std::{
     time::SystemTime,
 };
 
+/// A timestamped diagnostic entry in the process-local log.
 #[derive(Clone, Debug)]
 pub struct Event {
     /// Monotonically increasing event number within this log buffer.
@@ -16,6 +17,10 @@ pub struct Event {
     /// Diagnostic text, limited to the first 512 characters by [`Buffer::record`].
     pub message: String,
 }
+/// An in-memory log of the most recent 2,000 diagnostic events.
+///
+/// Use [`Self::snapshot`] to copy the entries for display. [`Self::clear`] preserves
+/// event numbering.
 #[derive(Default)]
 pub struct Buffer {
     sequence: u64,

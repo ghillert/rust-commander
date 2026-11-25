@@ -3,6 +3,10 @@
 //! memory-mapped, so external truncation cannot invalidate a mapped document.
 use anyhow::{Result, ensure};
 use std::{fs::File, io::Read, path::Path, sync::Arc};
+/// An immutable byte snapshot backed by a private temporary file.
+///
+/// [`Self::capture`] copies the source before exposing a read-only slice through
+/// `AsRef<[u8]>`. The snapshot owns the backing file for its lifetime.
 #[derive(Debug)]
 pub struct Bytes {
     map: Option<memmap2::Mmap>,

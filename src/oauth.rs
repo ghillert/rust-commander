@@ -15,6 +15,10 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+/// Authorization and token endpoints and requested scopes for a supported browser
+/// sign-in provider.
+///
+/// Use [`provider`] to select the configuration for a connection.
 pub struct Provider {
     /// Provider endpoint opened in the browser to request authorization.
     pub authorization: String,

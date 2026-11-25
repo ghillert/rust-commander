@@ -1,5 +1,6 @@
 //! OS accessibility contrast preferences, with a manual shared-view override.
 use serde::{Deserialize, Serialize};
+/// Preference for following system contrast or forcing a high-contrast palette.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Contrast {
     /// Follow the desktop high-contrast setting where detection is available.
@@ -17,6 +18,7 @@ impl Contrast {
         }
     }
 }
+/// Foreground, background, highlight, and disabled colors used in high-contrast mode.
 pub struct Colors {
     /// Base surface color in high-contrast mode.
     pub background: slint::Color,

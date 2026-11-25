@@ -16,6 +16,10 @@ const FILE_MARKER: &str = "io.github.ghillert.rust-commander.files";
 #[cfg(not(target_os = "macos"))]
 const FILE_MARKER: &str = "application/x-rust-commander-files";
 
+/// Adapter for the system file clipboard.
+///
+/// The instance tracks the marker for its own selection so paste can recognize an in-app
+/// copy or cut.
 #[derive(Default)]
 pub struct NativeFiles {
     context: Option<ClipboardContext>,
@@ -234,6 +238,9 @@ pub fn decode_paths(values: &[String]) -> Result<Vec<PathBuf>> {
     Ok(result)
 }
 
+/// Native window handle handed to the platform's outbound file drag implementation.
+///
+/// Keep the underlying window alive while this handle is in use.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub struct Window(pub raw_window_handle::RawWindowHandle);
 #[cfg(any(target_os = "macos", target_os = "windows"))]

@@ -12,6 +12,10 @@ use unix as platform;
 #[cfg(windows)]
 use windows as platform;
 
+/// Reviewed identity and security attributes of a local filesystem entry.
+///
+/// Keep the snapshot returned by [`read`] and pass it to [`apply`] to detect intervening
+/// changes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
     /// Absolute local path of the reviewed filesystem entry.
@@ -30,6 +34,10 @@ pub struct Snapshot {
     /// Whether the reviewed entry is a directory, which affects which ACL rules apply.
     pub directory: bool,
 }
+/// Proposed owner, group, and ACL values for a reviewed [`Snapshot`].
+///
+/// Start with [`Snapshot::change`] to edit the recorded values. [`syntax`] describes the
+/// platform-specific ACL format.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Change {
     /// Requested owner as an account name or a platform user identifier.

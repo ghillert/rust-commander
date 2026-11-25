@@ -11,6 +11,7 @@ use std::{
     },
 };
 
+/// Language preference for the desktop UI, with a system-locale option.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Language {
     /// Choose a language from the process or OS locale, falling back to English.
@@ -24,6 +25,7 @@ pub enum Language {
     Spanish,
 }
 impl Language {
+    /// Language choices in the order shown in the preferences selector.
     pub const ALL: [Self; 4] = [Self::System, Self::English, Self::German, Self::Spanish];
     /// Returns the language name used in the preferences selector.
     pub fn label(self) -> &'static str {

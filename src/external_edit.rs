@@ -8,7 +8,14 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
+/// Maximum source and edited file size accepted for external editor save-back, in bytes
+/// (2 GiB).
 pub const LIMIT: u64 = 2 * 1024 * 1024 * 1024;
+/// A private working copy for an external editor and the original state needed for
+/// guarded save-back.
+///
+/// Keep the session alive while the editor uses [`Self::file`]. [`Self::save_operation`]
+/// builds an operation that also retains the temporary directory.
 #[derive(Clone)]
 pub struct Session {
     directory: std::sync::Arc<tempfile::TempDir>,

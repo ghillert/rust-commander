@@ -3,6 +3,8 @@ use crate::archive::{self, Format};
 use anyhow::{Context, Result, ensure};
 use std::path::{Path, PathBuf};
 
+/// Writable archive formats, with each format's dialog label and default filename
+/// suffix.
 pub const FORMATS: [(Format, &str, &str); 9] = [
     (Format::Zip, "ZIP", ".zip"),
     (Format::SevenZ, "7z", ".7z"),
@@ -15,6 +17,10 @@ pub const FORMATS: [(Format, &str, &str); 9] = [
     (Format::Xz, "XZ (one file)", ".xz"),
 ];
 
+/// Archive creation settings shared by the packing dialog and file jobs.
+///
+/// Use [`Self::validate_selection`] to check whether the chosen format, compression, and
+/// encryption fit a selection.
 pub struct Options {
     /// Writable archive or stream format selected for the output.
     pub format: Format,

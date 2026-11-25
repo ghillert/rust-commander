@@ -9,6 +9,9 @@ use std::{
 };
 
 const LIMIT: u64 = 192 * 1024 * 1024;
+/// Recoverable editor state containing the original document and the unsaved text.
+///
+/// The draft ID identifies a single entry across [`save`], [`load`], and [`discard`].
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Draft {
     /// Stable ID used to save, list, reload, and discard this editor's recovery draft.

@@ -9,6 +9,10 @@ use std::{
     path::Path,
     sync::mpsc::{self, Receiver},
 };
+/// An embedded shell session with a pseudoterminal and a terminal screen model.
+///
+/// [`Self::poll`] applies queued output to the screen and checks whether the shell has
+/// exited.
 pub struct Terminal {
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
