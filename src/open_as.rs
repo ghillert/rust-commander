@@ -33,6 +33,11 @@ pub struct Form {
     pub password: String,
 }
 impl Form {
+    /// Returns the dialog label for the selected viewer or archive interpretation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the form contains an interpretation absent from [`CHOICES`].
     pub fn label(&self) -> &'static str {
         CHOICES.iter().find(|(_, k)| *k == self.kind).unwrap().0
     }

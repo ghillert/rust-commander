@@ -1,3 +1,6 @@
+//! File-manager preferences, shortcut bindings, and pane-column formatting.
+//! Use [`validate`] to check a candidate configuration before applying it.
+
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -10,6 +13,7 @@ pub enum LocationBar {
 }
 impl LocationBar {
     pub const ALL: [Self; 2] = [Self::Address, Self::Breadcrumbs];
+    /// Returns the display label for the address field or breadcrumb location bar.
     pub fn label(self) -> &'static str {
         match self {
             Self::Address => "Editable address",
@@ -205,6 +209,7 @@ pub enum FileIconSource {
 impl FileIconSource {
     pub const ALL: [Self; 2] = [Self::SystemWithFallback, Self::BuiltIn];
 
+    /// Returns the preferences label for the selected source of file icons.
     pub fn label(self) -> &'static str {
         match self {
             Self::SystemWithFallback => "System with built-in fallback",
@@ -216,6 +221,8 @@ impl FileIconSource {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Key(String);
 impl Key {
+    /// Resolves a case-insensitive shortcut key name or supported alias to its canonical
+    /// logical key. An unknown name yields `None`.
     pub fn from_name(name: &str) -> Option<Self> {
         let upper = name.to_ascii_uppercase();
         let canonical = match upper.as_str() {
@@ -274,6 +281,12 @@ pub struct Shortcut {
     pub modifiers: Modifiers,
 }
 
+/// Parses a `+`-separated keyboard shortcut with one logical key. Command and Control map
+/// to the same command modifier, and Option is an alias for Alt.
+///
+/// # Errors
+///
+/// Returns an error for an unknown key, a missing key, or more than one non-modifier key.
 pub fn shortcut(text: &str) -> Result<Shortcut> {
     let mut modifiers = Modifiers::default();
     let mut key = None;
@@ -304,6 +317,13 @@ fn command_enabled(id: &str) -> bool {
     cfg!(feature = "donations") || id != "Donate"
 }
 
+/// Checks preferences before applying or importing them, including layout limits, toolbar
+/// and column choices, transfer and recovery settings, and shortcut assignments.
+///
+/// # Errors
+///
+/// Returns an error for an invalid setting, an invalid or duplicate shortcut, or an
+/// incomplete configured mail profile.
 pub fn validate(preferences: &Preferences) -> Result<()> {
     if !preferences.mail.host.is_empty()
         || !preferences.mail.sender.is_empty()
@@ -400,6 +420,7 @@ impl Column {
         Self::Group,
         Self::Permissions,
     ];
+    /// Returns the column heading displayed in a file pane.
     pub fn label(self) -> &'static str {
         match self {
             Self::Name => "Name",
@@ -412,6 +433,7 @@ impl Column {
             Self::Permissions => "Permissions",
         }
     }
+    /// Returns the listing sort key corresponding to this column.
     pub fn sort(self) -> Option<crate::filesystem::Sort> {
         Some(match self {
             Self::Size => crate::filesystem::Sort::Size,
@@ -424,6 +446,8 @@ impl Column {
             _ => crate::filesystem::Sort::Name,
         })
     }
+    /// Formats the entry's value for this column. Set `local` when native ownership and
+    /// permissions are available. Missing values use a dash.
     pub fn value(self, entry: &crate::filesystem::Entry, local: bool) -> String {
         match self {
             Self::Name => entry.name.clone(),
@@ -521,6 +545,7 @@ impl ToolbarAction {
         Self::Undo,
         Self::Queue,
     ];
+    /// Returns the user-facing name of the toolbar command.
     pub fn label(self) -> &'static str {
         match self {
             Self::NewFolder => "New folder",

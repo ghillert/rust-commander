@@ -772,6 +772,13 @@ pub(crate) fn cleanup_recovery_in(root: &Path, id: &str, task: &Task) -> Result<
     fs::remove_dir_all(directory)?;
     Ok(())
 }
+/// Discards a batch checkpoint belonging to the supplied source and destination. A missing
+/// checkpoint is already discarded. Saved replacement originals are retained for review.
+///
+/// # Errors
+///
+/// Returns an error for an invalid ID, links or unrecognized recovery data, a busy
+/// checkpoint, mismatched endpoints, retained originals, or a filesystem failure.
 pub fn discard_in(root: &Path, id: &str, from: &Location, to: &Location) -> Result<()> {
     filesystem::validate_name(id)?;
     ensure!(id.starts_with("batch-"), "Invalid checkpoint ID");

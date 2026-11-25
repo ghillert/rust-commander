@@ -1,3 +1,6 @@
+//! An embedded shell backed by a pseudoterminal. [`Terminal::poll`] applies
+//! queued output to the terminal screen model on the UI thread.
+
 use crate::ui_signal::UiSignal;
 use anyhow::Result;
 use portable_pty::{CommandBuilder, MasterPty, PtySize};
@@ -17,6 +20,13 @@ pub struct Terminal {
     pub(crate) status: String,
 }
 impl Terminal {
+    /// Starts the user's shell in `path` in a 100-column, 12-row pseudoterminal and
+    /// arranges for arriving output to wake the UI.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pseudoterminal, its streams, or the shell process cannot be
+    /// created.
     pub fn new(path: &Path, ctx: &UiSignal) -> Result<Self> {
         let pair = portable_pty::native_pty_system().openpty(PtySize {
             rows: 12,
@@ -83,6 +93,8 @@ impl Terminal {
         }
         Ok(())
     }
+    /// Checks for shell exit and feeds currently available output into the terminal
+    /// emulator. Each poll processes at most 64 queued output chunks.
     pub fn poll(&mut self) {
         if let Ok(Some(status)) = self.child.try_wait() {
             self.status = format!("Shell exited: {status}");

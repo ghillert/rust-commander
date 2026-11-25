@@ -50,6 +50,14 @@ fn remote_segments<'a>(segments: impl Iterator<Item = &'a str>) -> Result<PathBu
     Ok(path)
 }
 
+/// Interprets a typed address relative to the current pane. A local path, discovery
+/// address, or existing location resolves directly. A URI requiring a connection produces a
+/// target with its connection details and secrets.
+///
+/// # Errors
+///
+/// Returns an error for empty input, an unsupported scheme, an invalid path component or
+/// authority, or a referenced connection that is unavailable.
 pub fn parse(text: &str, base: &Location) -> Result<Input> {
     let text = text.trim();
     ensure!(!text.is_empty(), "Enter a folder path or URI.");
@@ -348,6 +356,9 @@ pub fn address(id: &str, path: &Path) -> String {
     url.to_string()
 }
 
+/// Checks whether an existing profile can serve the URI target, considering its mount
+/// prefix, service, user, and service-specific endpoint, share, or bucket. Query-bound and
+/// transient network profiles are excluded.
 pub fn matches_profile(target: &Target, c: &Connection) -> bool {
     let t = &target.connection;
     if c.query_required || c.id.starts_with("network-") {
@@ -420,6 +431,8 @@ pub(crate) fn relative_to_profile(path: &Path, c: &Connection) -> Result<PathBuf
         .into())
 }
 
+/// Returns the uppercase protocol label for a pane location, including local, archive,
+/// discovery, and remote locations.
 pub fn protocol(location: &Location) -> String {
     match location {
         Location::Local(_) => "FILE".into(),

@@ -1,3 +1,6 @@
+//! Named snapshots of pane tabs, their active locations, and preferences.
+//! [`persistent_location`] resolves temporary archive paths before saving a workspace.
+
 use crate::{filesystem::Location, preferences::Preferences};
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
@@ -11,6 +14,12 @@ pub struct Workspace {
     pub preferences: Preferences,
 }
 impl Workspace {
+    /// Trims a workspace name and returns the value to store.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the trimmed name is empty, exceeds 80 characters, or contains a
+    /// control character.
     pub fn validate_name(name: &str) -> anyhow::Result<String> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 80 || name.chars().any(char::is_control) {

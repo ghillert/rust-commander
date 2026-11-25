@@ -1,3 +1,6 @@
+//! Language preferences and strings for the desktop UI. Use [`translate`] for
+//! an explicit language or [`text`] for the active application language.
+
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
@@ -18,6 +21,7 @@ pub enum Language {
 }
 impl Language {
     pub const ALL: [Self; 4] = [Self::System, Self::English, Self::German, Self::Spanish];
+    /// Returns the language name used in the preferences selector.
     pub fn label(self) -> &'static str {
         match self {
             Self::System => "Follow system",
@@ -49,6 +53,7 @@ impl Language {
 static CURRENT: AtomicU8 = AtomicU8::new(1);
 static DE: OnceLock<BTreeMap<String, String>> = OnceLock::new();
 static ES: OnceLock<BTreeMap<String, String>> = OnceLock::new();
+/// Resolves the language preference and makes it the process-wide choice for [`text`].
 pub fn set(language: Language) {
     CURRENT.store(
         match language.resolved() {
@@ -59,6 +64,8 @@ pub fn set(language: Language) {
         Ordering::Relaxed,
     );
 }
+/// Looks up a UI string in the specified language, preserving recognized shortcut suffixes
+/// and diagnostic details. Returns the original text when no translation applies.
 pub fn translate(language: Language, text: &str) -> Cow<'_, str> {
     let catalog = match language.resolved() {
         Language::German => DE.get_or_init(|| {
@@ -89,6 +96,7 @@ pub fn translate(language: Language, text: &str) -> Cow<'_, str> {
     }
     Cow::Borrowed(text)
 }
+/// Translates a UI string using the language last selected by [`set`].
 pub fn text(text: &str) -> Cow<'_, str> {
     translate(
         match CURRENT.load(Ordering::Relaxed) {

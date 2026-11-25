@@ -1,3 +1,6 @@
+//! Selection-driven file previews for a pane. [`Preview::select`] tracks the
+//! focused entry so the UI can load its preview after the selection settles.
+
 use crate::ui_signal::UiSignal;
 use crate::{
     filesystem::{Entry, Location},
@@ -34,6 +37,9 @@ impl Preview {
         })
     }
 
+    /// Updates the preview target when the location, path, size, or modification time
+    /// changes. Clears the previous preview and queues the new one. Video previews use
+    /// listing metadata immediately.
     pub fn select(&mut self, location: Location, entry: Option<Entry>) {
         let changed = match (&self.target, &entry) {
             (Some((l, e)), Some(n)) => {

@@ -29,6 +29,7 @@ pub struct Change {
     pub acl: String,
 }
 impl Snapshot {
+    /// Copies the snapshot's editable owner, group, and ACL fields into a proposed change.
     pub fn change(&self) -> Change {
         Change {
             owner: self.owner.clone(),
@@ -37,6 +38,13 @@ impl Snapshot {
         }
     }
 }
+/// Captures the security metadata of an absolute local path, opening the entry for the
+/// platform's identity and ACL checks.
+///
+/// # Errors
+///
+/// Returns an error for a relative path, a symlink, or a failure opening the entry or
+/// reading its metadata.
 pub fn read(path: &Path) -> Result<Snapshot> {
     ensure!(
         path.is_absolute(),
@@ -49,6 +57,13 @@ pub fn read(path: &Path) -> Result<Snapshot> {
     let file = platform::open(path, None)?;
     platform::read(path, &file)
 }
+/// Checks the opened entry against the reviewed snapshot, applies the requested owner,
+/// group, and ACL, then reads back the result.
+///
+/// # Errors
+///
+/// Returns an error if the entry has changed, the ACL exceeds 64 KiB, the change is invalid
+/// for the platform, or the OS refuses the update.
 pub fn apply(expected: &Snapshot, change: &Change) -> Result<Snapshot> {
     ensure!(change.acl.len() <= 64 * 1024, "ACL rules exceed 64 KiB");
     let file = platform::open(&expected.path, Some((expected, change)))?;
@@ -59,6 +74,7 @@ pub fn apply(expected: &Snapshot, change: &Change) -> Result<Snapshot> {
     platform::apply(&file, expected, change)?;
     platform::read(&expected.path, &file)
 }
+/// Returns platform-specific editing instructions for the ACL text and owner/group fields.
 pub fn syntax() -> &'static str {
     if cfg!(target_os = "windows") {
         "DACL in Windows SDDL format, starting with D:. Owner/group accept account names or SIDs. A null DACL is refused; inheritance flags are retained as entered."

@@ -88,6 +88,13 @@ fn save_at(root: &Path, draft: &Draft) -> Result<()> {
     fs::File::open(root)?.sync_all()?;
     Ok(())
 }
+/// Persists a recovery draft under its ID in the settings directory. A discard receipt
+/// prevents a late save from recreating that draft.
+///
+/// # Errors
+///
+/// Returns an error if the draft exceeds the size limits or its recovery files cannot be
+/// locked, serialized, or written.
 pub fn save(draft: &Draft) -> Result<()> {
     save_at(&root()?, draft)
 }
@@ -107,9 +114,22 @@ fn discard_at(root: &Path, id: u64) -> Result<()> {
         Err(e) => Err(e.into()),
     }
 }
+/// Records the discard before removing the draft files so a pending save cannot revive the
+/// ID. Discarding a missing draft also records the receipt.
+///
+/// # Errors
+///
+/// Returns an error if the recovery directory cannot be locked or the receipt or draft
+/// cannot be updated.
 pub fn discard(id: u64) -> Result<()> {
     discard_at(&root()?, id)
 }
+/// Lists recoverable draft IDs and titles in ascending ID order. Reads the small title
+/// files and uses a fallback label when one is unavailable.
+///
+/// # Errors
+///
+/// Returns an error if the recovery directory cannot be opened, locked, or enumerated.
 pub fn list() -> Result<Vec<(u64, String)>> {
     let root = root()?;
     let _lock = locked(&root)?;
@@ -145,6 +165,13 @@ pub fn list() -> Result<Vec<(u64, String)>> {
     result.sort_by_key(|(id, _)| *id);
     Ok(result)
 }
+/// Loads the full recovery draft for the requested ID and validates its embedded ID and
+/// text sizes.
+///
+/// # Errors
+///
+/// Returns an error for a missing or nonregular draft file, malformed JSON, a mismatched
+/// ID, or an oversized draft.
 pub fn load(id: u64) -> Result<Draft> {
     let root = root()?;
     let _lock = locked(&root)?;

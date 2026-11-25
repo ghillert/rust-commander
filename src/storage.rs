@@ -6,6 +6,12 @@ use crate::{
 use anyhow::{Result, ensure};
 use sha2::{Digest, Sha256};
 use std::{io::Read, path::Path};
+/// Opens a local filesystem path or a connection-relative remote path for streaming reads.
+///
+/// # Errors
+///
+/// Returns an error if the backend cannot open the file or the location is an archive or
+/// discovery list.
 pub fn reader(location: &Location, path: &Path) -> Result<Box<dyn Read>> {
     Ok(match location {
         Location::Local(_) => Box::new(std::fs::File::open(path)?),
@@ -13,6 +19,12 @@ pub fn reader(location: &Location, path: &Path) -> Result<Box<dyn Read>> {
         _ => anyhow::bail!("Extract archive entries first"),
     })
 }
+/// Streams a file and returns its SHA-256 digest as lowercase hex. Honors the task's
+/// cancellation, pause, and bandwidth settings.
+///
+/// # Errors
+///
+/// Returns an error if the source cannot be read or the task is cancelled.
 pub fn hash(location: &Location, path: &Path, task: &Task) -> Result<String> {
     let mut input = reader(location, path)?;
     let mut hash = Sha256::new();
@@ -28,6 +40,14 @@ pub fn hash(location: &Location, path: &Path, task: &Task) -> Result<String> {
     }
     Ok(format!("{:x}", hash.finalize()))
 }
+/// Fingerprints an entry for later change detection using metadata and file contents.
+/// Directory stamps include descendants. Local stamps also record symlink targets,
+/// while remote tree inspection rejects symlinks. A missing entry yields `None`.
+///
+/// # Errors
+///
+/// Returns an error if inspection fails or is cancelled, or a remote tree contains links or
+/// exceeds traversal limits.
 pub fn stamp(location: &Location, path: &Path, task: &Task) -> Result<Option<String>> {
     if matches!(location, Location::Local(_)) {
         return crate::history::fingerprint(path, task);

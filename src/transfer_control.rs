@@ -49,6 +49,8 @@ pub struct Control {
     changed: Condvar,
 }
 impl Control {
+    /// Creates an initially running transfer control with the supplied bandwidth and retry
+    /// settings.
     pub fn new(settings: Settings) -> Self {
         Self {
             state: Mutex::new(State {
@@ -67,6 +69,7 @@ impl Control {
         state.deadline = None;
         self.changed.notify_all();
     }
+    /// Returns a snapshot of the settings currently in effect for this control.
     pub fn settings(&self) -> Settings {
         self.state.lock().unwrap().settings
     }
@@ -81,6 +84,8 @@ impl Control {
     pub fn paused(&self) -> bool {
         self.state.lock().unwrap().pause
     }
+    /// Returns the pause or retry status for the progress display, or an empty string
+    /// during ordinary transfer.
     pub fn status(&self) -> String {
         let state = self.state.lock().unwrap();
         if state.pause {
@@ -96,12 +101,20 @@ impl Control {
             String::new()
         }
     }
+    /// Returns the transfer chunk size in bytes. Unlimited transfers use 64 KiB, while a
+    /// rate limit selects roughly one tenth of a second of data, capped at 64 KiB.
     pub fn chunk_size(&self) -> usize {
         match self.settings().kib_per_second {
             0 => 65_536,
             limit => ((u64::from(limit) * 1024 / 10).clamp(1, 65_536)) as usize,
         }
     }
+    /// Acknowledges a pending pause and blocks the worker until resumed, checking the
+    /// cancellation flag while it waits.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `cancel` is set, including while paused.
     pub fn check(&self, cancel: &AtomicBool) -> Result<()> {
         let mut state = self.state.lock().unwrap();
         loop {

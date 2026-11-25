@@ -17,6 +17,13 @@ pub struct ImportedCommand {
     pub arguments: Vec<String>,
 }
 impl ImportedCommand {
+    /// Parses a muCommander command alias and quoted argument list for later expansion. The
+    /// command is stored as a program and separate arguments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid alias, unbalanced quotes, unsupported shell syntax
+    /// or placeholders, or more than 128 arguments.
     pub fn parse(alias: &str, value: &str) -> Result<Self> {
         ensure!(
             !alias.trim().is_empty() && alias.len() <= 80,
@@ -59,6 +66,26 @@ impl ImportedCommand {
             arguments,
         })
     }
+    /// Substitutes file and folder placeholders into an argument vector, including the
+    /// program name. A standalone `$f` becomes one argument per selected file, preserving
+    /// spaces within names.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an unknown or incomplete placeholder, or an embedded `$f`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rust_commander::config_import::ImportedCommand;
+    /// use std::path::{Path, PathBuf};
+    ///
+    /// let cmd = ImportedCommand::parse("view", "viewer $f")?;
+    /// let files = [PathBuf::from("meeting notes.txt"), PathBuf::from("agenda.txt")];
+    /// let args = cmd.expand(&files, Path::new("."))?;
+    /// assert_eq!(args, ["viewer", "meeting notes.txt", "agenda.txt"]);
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn expand(&self, files: &[PathBuf], folder: &Path) -> Result<Vec<String>> {
         let mut output = Vec::new();
         for arg in &self.arguments {
@@ -294,6 +321,13 @@ fn action(id: &str) -> Option<&'static str> {
         _ => return None,
     })
 }
+/// Reads supported muCommander XML files into an import preview. The caller can review
+/// bookmarks, shortcuts, commands, preferences, and warnings before applying them.
+///
+/// # Errors
+///
+/// Returns an error if no supported files are found, the directory or XML cannot be read,
+/// or the import exceeds its limits.
 pub fn preview(directory: &Path) -> Result<Preview> {
     ensure!(
         directory.is_dir(),
@@ -455,6 +489,14 @@ pub fn preview(directory: &Path) -> Result<Preview> {
     Ok(result)
 }
 impl Preview {
+    /// Merges the reviewed items into an in-memory settings candidate. Existing bookmarks,
+    /// command aliases, and customized shortcuts take precedence. Set `import_preferences`
+    /// to include supported display settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a preference value or the resulting settings are invalid. The
+    /// caller's settings are updated only after validation.
     pub fn apply(&self, settings: &mut Settings, import_preferences: bool) -> Result<()> {
         let mut candidate: Settings = serde_json::from_slice(&serde_json::to_vec(settings)?)?;
         for b in &self.bookmarks {

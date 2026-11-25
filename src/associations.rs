@@ -8,6 +8,12 @@ pub struct Rule {
     pub application: PathBuf,
 }
 impl Rule {
+    /// Checks that this filename rule can be saved with an installed application.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an empty or invalid glob, a pattern over 256 bytes, or an
+    /// application path that is relative or missing.
     pub fn validate(&self) -> Result<()> {
         ensure!(
             !self.pattern.is_empty() && self.pattern.len() <= 256,
@@ -20,6 +26,8 @@ impl Rule {
         );
         Ok(())
     }
+    /// Matches the final filename against this rule's case-insensitive glob. An invalid
+    /// glob or a path without a filename yields `false`.
     pub fn matches(&self, path: &Path) -> bool {
         path.file_name().is_some_and(|name| {
             globset::GlobBuilder::new(&self.pattern)
@@ -29,12 +37,16 @@ impl Rule {
         })
     }
 }
+/// Returns the application from the first rule matching the filename. Rule order determines
+/// precedence.
 pub fn application<'a>(rules: &'a [Rule], path: &Path) -> Option<&'a Path> {
     rules
         .iter()
         .find(|r| r.matches(path))
         .map(|r| r.application.as_path())
 }
+/// Lists application candidates from the platform's standard installation or launcher
+/// directories, sorted by filename. Unreadable locations are skipped.
 pub fn discover() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     #[cfg(target_os = "macos")]

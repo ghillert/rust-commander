@@ -7,6 +7,7 @@ pub enum Contrast {
     High,
 }
 impl Contrast {
+    /// Returns the preferences label for following the system or forcing high contrast.
     pub fn label(self) -> &'static str {
         match self {
             Self::System => "Follow system",
@@ -22,6 +23,8 @@ pub struct Colors {
     pub disabled: slint::Color,
 }
 impl Colors {
+    /// Builds a high-contrast palette with black or white backgrounds and a distinct
+    /// selection highlight.
     pub fn fallback(dark: bool) -> Self {
         let rgb = slint::Color::from_rgb_u8;
         Self {
@@ -54,6 +57,8 @@ impl Colors {
     }
 }
 #[cfg(target_os = "windows")]
+/// Returns the Windows system colors when high-contrast mode is active and its settings are
+/// available.
 pub fn system() -> Option<Colors> {
     use windows_sys::Win32::{
         Graphics::Gdi::*,
@@ -89,6 +94,9 @@ pub fn system() -> Option<Colors> {
     })
 }
 #[cfg(target_os = "linux")]
+/// Returns the fallback high-contrast palette when GNOME or KDE theme detection indicates
+/// high contrast. Detection refreshes in the background, so the first call can yield
+/// `None`.
 pub fn system() -> Option<Colors> {
     use std::sync::{
         Mutex, OnceLock,
@@ -126,6 +134,8 @@ pub fn system() -> Option<Colors> {
         .then(|| Colors::fallback(false))
 }
 #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+/// Returns `None` on platforms without system contrast detection. Call [`Colors::fallback`]
+/// for an explicit high-contrast preference.
 pub fn system() -> Option<Colors> {
     None
 }

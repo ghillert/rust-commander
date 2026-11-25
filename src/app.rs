@@ -1,3 +1,7 @@
+//! Desktop application state and window lifecycle.
+//!
+//! [`slint_ui::run`] starts the file manager with the paths supplied at launch.
+
 use crate::ui_signal::UiSignal;
 mod uri_navigation;
 use crate::{

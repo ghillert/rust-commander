@@ -19,9 +19,23 @@ pub struct Session {
     archive_stamp: Option<String>,
 }
 impl Session {
+    /// Creates a temporary working copy for an external editor and retains the original
+    /// bytes for detecting changes on save.
+    ///
+    /// # Errors
+    ///
+    /// Returns the preparation errors described by [`Self::prepare_with_task`].
     pub fn prepare(location: Location, source: PathBuf) -> Result<Self> {
         Self::prepare_with_task(location, source, &mut Task::default())
     }
+    /// Snapshots the selected file and writes it under its original filename in a private
+    /// working directory. An archive member also captures the container's fingerprint for
+    /// save-back.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a local symlink, a read-only archive, a source over 2 GiB,
+    /// cancellation, or a read or write failure.
     pub fn prepare_with_task(location: Location, source: PathBuf, task: &mut Task) -> Result<Self> {
         if matches!(location, Location::Local(_)) {
             ensure!(
@@ -61,6 +75,11 @@ impl Session {
             archive_stamp,
         })
     }
+    /// Compares the editor's working file byte-for-byte with the original snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the working path is a symlink or comparison fails.
     pub fn changed(&self) -> Result<bool> {
         ensure!(
             !std::fs::symlink_metadata(&self.file)?
@@ -74,6 +93,12 @@ impl Session {
             &Task::default(),
         )?)
     }
+    /// Reads the edited working file into memory for consumers that need its complete
+    /// contents.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the path is a symlink, exceeds 2 GiB, or cannot be read.
     pub fn bytes(&self) -> Result<Vec<u8>> {
         ensure!(
             !std::fs::symlink_metadata(&self.file)?
@@ -88,6 +113,13 @@ impl Session {
         ensure!(bytes.len() as u64 <= LIMIT, "Edited file exceeds 2 GiB");
         Ok(bytes)
     }
+    /// Builds an external-save operation carrying the original snapshot and a lease on the
+    /// working directory. The caller can queue the operation after the editor closes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the working file is missing, is not a regular file, or exceeds 2
+    /// GiB.
     pub fn save_operation(&self) -> Result<Operation> {
         let metadata = std::fs::symlink_metadata(&self.file)?;
         ensure!(
@@ -146,6 +178,13 @@ pub(crate) fn save(
     }
 }
 
+/// Replaces an archive member's contents after checking the container against `expected`.
+/// Stages the edited archive and checks for intervening changes before publishing it.
+///
+/// # Errors
+///
+/// Returns an error for an invalid member path, read-only or changed container, or a
+/// failure staging or writing the edit.
 pub fn save_archive(
     archive: &Path,
     path: &Path,

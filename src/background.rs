@@ -1,3 +1,6 @@
+//! Nonblocking collection of results from file-manager workers. See [`poll`] for
+//! how a receiver transitions from pending to completed or disconnected.
+
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 /// A disconnected worker is a completed failure, rather than a permanent busy

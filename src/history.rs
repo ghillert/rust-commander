@@ -80,6 +80,11 @@ pub struct Record {
     pub revision: u128,
 }
 
+/// Returns the history directory beside the application settings file.
+///
+/// # Errors
+///
+/// Returns an error if the settings path or its parent cannot be determined.
 pub fn root() -> Result<PathBuf> {
     Ok(crate::settings::path()?
         .parent()
@@ -87,10 +92,22 @@ pub fn root() -> Result<PathBuf> {
         .join("history"))
 }
 
+/// Loads recovery and Undo records from the application's history directory.
+///
+/// # Errors
+///
+/// Returns an error if the directory cannot be located or [`load_in`] fails.
 pub fn load() -> Result<Vec<Record>> {
     load_in(&root()?)
 }
 
+/// Loads the index and merges individually saved operation records by ID and revision. A
+/// missing or malformed index can be rebuilt in memory from those records. Results are
+/// ordered by creation time and revision.
+///
+/// # Errors
+///
+/// Returns an error if the storage lock or directory cannot be read.
 pub fn load_in(root: &Path) -> Result<Vec<Record>> {
     let _storage = STORAGE
         .read()
@@ -146,10 +163,22 @@ fn write_record_locked(path: &Path, record: &Record) -> Result<()> {
     Ok(())
 }
 
+/// Persists records and the history index in the application's history directory.
+///
+/// # Errors
+///
+/// Returns an error if the directory cannot be located or [`save_in`] fails.
 pub fn save(records: &[Record]) -> Result<()> {
     save_in(records, &root()?)
 }
 
+/// Writes per-operation records and replaces the index in `directory`. Backs up a malformed
+/// existing index before replacing it.
+///
+/// # Errors
+///
+/// Returns an error for an invalid record ID or if storage cannot be locked, created, or
+/// written.
 pub fn save_in(records: &[Record], directory: &Path) -> Result<()> {
     let _storage = STORAGE
         .write()
@@ -592,6 +621,8 @@ pub fn undo(record: &Record, task: &mut Task) -> Result<()> {
     Ok(())
 }
 
+/// Returns the current Unix time in whole seconds as a decimal string. Multiple calls
+/// within one second can produce the same value.
 pub fn timestamp() -> String {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -684,6 +715,12 @@ fn disk_usage(path: &Path) -> Result<u64> {
         Ok(meta.len())
     }
 }
+/// Reports total history bytes, bytes in unreferenced directories, and the number of
+/// recorded backup references. A missing directory has zero usage.
+///
+/// # Errors
+///
+/// Returns an error if the records or their disk usage cannot be read.
 pub fn storage_in(root: &Path) -> Result<Storage> {
     let mut info = Storage::default();
     if !root.exists() {
@@ -754,6 +791,13 @@ pub fn cleanup_candidates(
     }
     Ok(result)
 }
+/// Expires the selected records and saves their new state before removing their recovery
+/// copies. Returns the updated record list, including expired entries.
+///
+/// # Errors
+///
+/// Returns an error for a pinned record, an invalid backup path, or an I/O failure. A
+/// deletion failure can leave a backup after its record was expired.
 pub fn cleanup_in(root: &Path, ids: &[String]) -> Result<Vec<Record>> {
     let mut records = load_in(root)?;
     let mut remove = Vec::new();

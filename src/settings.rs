@@ -1,3 +1,6 @@
+//! Persistence of application preferences, connections, and window sessions.
+//! [`load`] restores the settings at startup and [`save`] replaces the settings file.
+
 use crate::filesystem::{Location, home};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -53,6 +56,12 @@ impl Default for Settings {
     }
 }
 
+/// Returns the settings JSON path, honoring `RUST_COMMANDER_CONFIG_DIR` and the legacy
+/// `MUCOMMANDER_CONFIG_DIR` override before the platform configuration directory.
+///
+/// # Errors
+///
+/// Returns an error if the platform configuration directory cannot be determined.
 pub fn path() -> Result<PathBuf> {
     Ok(configuration_paths()?.0)
 }
@@ -83,6 +92,13 @@ fn configuration_paths() -> Result<(PathBuf, Option<PathBuf>)> {
     Ok((dirs.config_dir().join("settings.json"), legacy))
 }
 
+/// Loads saved settings, falling back to the legacy location when applicable. Returns
+/// defaults when no settings file exists.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read or parsed. Invalid settings are preserved
+/// for inspection.
 pub fn load() -> Result<Settings> {
     let (current, legacy) = configuration_paths()?;
     load_from_paths(&current, legacy.as_deref())
@@ -108,6 +124,13 @@ fn load_from_paths(current: &Path, legacy: Option<&Path>) -> Result<Settings> {
     }
 }
 
+/// Serializes settings to a temporary file beside the configured settings file and replaces
+/// it once the contents have been synced.
+///
+/// # Errors
+///
+/// Returns an error if the path cannot be resolved or the configuration directory or file
+/// cannot be written.
 pub fn save(settings: &Settings) -> Result<()> {
     let path = path()?;
     save_to(&path, settings)
@@ -241,6 +264,8 @@ pub struct WindowSession {
     pub position: Option<[i32; 2]>,
 }
 impl WindowSession {
+    /// Combines this window's saved tabs, active pane, and layout with the supplied global
+    /// settings so a restored window keeps its own navigation state.
     pub fn settings(&self, globals: &Settings) -> Settings {
         let mut settings = globals.clone();
         settings.tabs = self.workspace.tabs.clone();

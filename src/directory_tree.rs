@@ -16,6 +16,8 @@ pub struct Node {
     pub expanded: bool,
     pub error: String,
 }
+/// Replaces the path in `root` while preserving its archive or remote connection. A
+/// discovery location keeps its identity.
 pub fn at(root: &Location, path: &Path) -> Location {
     match root {
         Location::Network { .. } | Location::Containers => root.clone(),
@@ -30,6 +32,8 @@ pub fn at(root: &Location, path: &Path) -> Location {
         },
     }
 }
+/// Borrows the local path, remote path, or archive prefix. A discovery location yields an
+/// empty path.
 pub fn path(location: &Location) -> &Path {
     match location {
         Location::Network { .. } | Location::Containers => Path::new(""),
@@ -38,6 +42,8 @@ pub fn path(location: &Location) -> &Path {
         | Location::Archive { prefix: p, .. } => p,
     }
 }
+/// Returns the filesystem root for an absolute local path, or the top level of the same
+/// archive, connection, or discovery list.
 pub fn root(location: &Location) -> Location {
     let path = path(location);
     let base = if matches!(location, Location::Local(_)) {
@@ -47,6 +53,14 @@ pub fn root(location: &Location) -> Location {
     };
     at(location, base)
 }
+/// Builds tree rows in depth-first display order, descending only into paths in `expanded`.
+/// A hidden directory is visible if explicitly expanded. Discovery lists yield no rows. The
+/// result contains at most 5,000 nodes across 64 levels.
+///
+/// # Errors
+///
+/// Cancellation aborts the traversal. A directory listing failure is recorded in
+/// [`Node::error`] so that other branches can still be displayed.
 pub fn build(
     root: &Location,
     expanded: &BTreeSet<PathBuf>,

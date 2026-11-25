@@ -11,6 +11,8 @@ pub struct TabState {
 }
 
 impl TabState {
+    /// Copies the tab title and converts a locked location to the form used in saved
+    /// workspaces.
     pub fn persistent(&self) -> Self {
         Self {
             title: self.title.clone(),
@@ -44,6 +46,8 @@ impl Default for Layout {
     }
 }
 impl Layout {
+    /// Sets the pane split ratio, clamping finite values to `0.15..=0.85`. Nonfinite input
+    /// leaves the current ratio in place.
     pub fn set_ratio(&mut self, ratio: f32) {
         if ratio.is_finite() {
             self.ratio = ratio.clamp(0.15, 0.85);
@@ -57,6 +61,8 @@ pub struct RecentLocation {
     pub location: Location,
 }
 
+/// Moves this location to the front of the recent list under the given title. Stores the
+/// persistent form, removes any previous occurrence, and keeps up to 50 locations.
 pub fn remember(list: &mut Vec<RecentLocation>, title: String, location: Location) {
     let location = crate::workspaces::persistent_location(&location);
     list.retain(|item| item.location != location);
@@ -104,6 +110,10 @@ pub fn select_pattern(
     Ok(matches.len())
 }
 
+/// Moves the cursor to a visible filename starting with `query`, using Unicode
+/// normalization and case-insensitive matching. The search wraps in the requested
+/// direction. Set `cycle` to start beyond the current row. Returns whether it found a
+/// match.
 pub fn quick_find(
     tab: &mut crate::model::Tab,
     query: &str,

@@ -18,6 +18,13 @@ pub struct Selection {
     pub entries: Vec<Entry>,
 }
 impl Selection {
+    /// Builds a selection from absolute local paths, reading each distinct path's metadata.
+    /// The first path supplies the source location.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an empty or oversized selection, unreadable entries, relative
+    /// paths, or entries rejected by [`Self::validate`].
     pub fn local(paths: &[PathBuf]) -> Result<Self> {
         ensure!(
             !paths.is_empty() && paths.len() <= 100_000,
@@ -41,6 +48,13 @@ impl Selection {
         selection.validate()?;
         Ok(selection)
     }
+    /// Checks that the entries form an unambiguous transferable selection. Local paths must
+    /// be absolute and nonlocal entries must belong to their source directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for discovery lists, invalid names, repeated destination names, a
+    /// selected folder with a selected descendant, or a count outside `1..=100_000`.
     pub fn validate(&self) -> Result<()> {
         ensure!(
             !matches!(self.from, Location::Network { .. } | Location::Containers),
@@ -95,9 +109,17 @@ impl Selection {
         }
         Ok(())
     }
+    /// Returns whether the source backend permits removing entries as part of a move.
     pub fn can_move(&self) -> bool {
         writable(&self.from)
     }
+    /// Checks whether this selection can be copied or moved to a drop target, including
+    /// directory ancestry and archive self-containment checks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid selection, a read-only destination, a move from a
+    /// read-only source, or a target that would contain itself.
     pub fn check_target(&self, to: &Location, moving: bool) -> Result<()> {
         self.validate()?;
         ensure!(writable(to), "This drop target is read-only.");
@@ -134,6 +156,8 @@ impl Selection {
         Ok(())
     }
 }
+/// Reports whether the location type, connection profile, or cached archive permits writes.
+/// The transfer itself can still fail on filesystem permissions.
 pub fn writable(location: &Location) -> bool {
     match location {
         Location::Network { .. } | Location::Containers => false,
@@ -187,6 +211,13 @@ pub struct Export {
     pub paths: Vec<PathBuf>,
     _lease: Option<fs::File>,
 }
+/// Exports the selection into a temporary local directory. Keep the returned [`Export`]
+/// alive for as long as the receiving application needs its paths.
+///
+/// # Errors
+///
+/// Returns an error if validation, source verification, copying, or extraction fails, or
+/// the task is cancelled.
 pub fn export(selection: &Selection, task: &mut Task) -> Result<Export> {
     selection.validate()?;
     export_in(selection, task, None)
@@ -270,6 +301,14 @@ pub(crate) fn export_in(
     })
 }
 
+/// Copies or moves the selection to a pane location using destination paths as per-item
+/// conflict keys. Archive transfers stage the contents. A move removes only source entries
+/// whose transfers completed.
+///
+/// # Errors
+///
+/// Returns an error if the drop target is invalid, conflicts are unresolved, the source
+/// changes, or transfer or archive publication fails.
 pub fn transfer(
     selection: &Selection,
     to: &Location,

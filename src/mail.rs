@@ -24,6 +24,13 @@ pub struct Settings {
     pub sender: String,
 }
 impl Settings {
+    /// Checks the SMTP server, port, optional username, and sender mailbox before composing
+    /// or sending mail.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid hostname, zero port, invalid username, or
+    /// unparseable sender.
     pub fn validate(&self) -> Result<()> {
         ensure!(
             !self.host.is_empty()
@@ -50,6 +57,14 @@ pub struct File {
 pub struct Prepared {
     pub files: Vec<File>,
 }
+/// Collects regular files from a local, remote, or archive selection into attachments
+/// sorted by name. Expands directories, checks for changes, and allows up to 100 files and
+/// 25 MiB in total.
+///
+/// # Errors
+///
+/// Returns an error for an empty attachment set, a link, a changed or unreadable source, an
+/// exceeded traversal or attachment limit, or cancellation.
 pub fn prepare(selection: &Selection, task: &Task) -> Result<Prepared> {
     selection.validate()?;
     let archive_stamp = match &selection.from {
@@ -142,6 +157,14 @@ fn mailbox(value: &str) -> Result<Mailbox> {
     );
     value.parse().context("Enter a valid email address")
 }
+/// Builds a multipart email with a plain-text body and the supplied attachments. Accepts
+/// one to 50 comma- or semicolon-separated recipients. Directory separators in attachment
+/// names are flattened for display.
+///
+/// # Errors
+///
+/// Returns an error for invalid addresses or header fields, invalid attachment names, or
+/// attachments exceeding the count or byte limits.
 pub fn message(
     settings: &Settings,
     to: &str,
@@ -200,6 +223,14 @@ pub fn message(
     }
     Ok(builder.multipart(multipart)?)
 }
+/// Submits the message to the configured SMTP server over implicit TLS or STARTTLS. Uses
+/// the supplied password if a username is configured.
+///
+/// # Errors
+///
+/// Returns an error for invalid settings or credentials, or if delivery cannot be
+/// confirmed. A delivery error can have an uncertain outcome and is not automatically
+/// retried.
 pub fn send(settings: &Settings, password: String, message: Message) -> Result<()> {
     settings.validate()?;
     ensure!(password.len() <= 4096, "SMTP password is too long");

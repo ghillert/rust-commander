@@ -1,3 +1,6 @@
+//! Dialog state for folder comparison, synchronization, recovery, workspaces,
+//! and file-opening choices. [`Features`] tracks which dialogs are open.
+
 use crate::{
     operations::{Operation, Task},
     ui_signal::UiSignal,
@@ -36,6 +39,8 @@ pub enum Effect {
     ReloadHistory,
 }
 impl Features {
+    /// Returns whether a comparison, synchronization, recovery, workspace, or file-opening
+    /// dialog is active.
     pub fn active(&self) -> bool {
         self.comparison.is_some()
             || self.sync.is_some()
@@ -44,6 +49,8 @@ impl Features {
             || self.open_with.is_some()
             || self.open_as.is_some()
     }
+    /// Opens a local synchronization form for these directories with left-to-right copying
+    /// selected and deletions disabled.
     pub fn sync(&mut self, left: PathBuf, right: PathBuf) {
         self.sync = Some(SyncForm {
             rules: Default::default(),
@@ -60,6 +67,7 @@ impl Features {
             error: None,
         });
     }
+    /// Opens the recovery view and requests its initial background refresh.
     pub fn recovery(&mut self, ctx: &UiSignal) {
         let mut form = RecoveryForm::default();
         form.refresh(ctx);

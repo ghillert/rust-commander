@@ -7,6 +7,9 @@ struct Lookup {
     extensions: HashMap<&'static str, &'static str>,
 }
 
+/// Returns the built-in icon key for a directory or filename. Exact names take precedence over
+/// extensions, and compound suffixes are tried before shorter ones. Unknown files use the
+/// generic file icon.
 pub fn file_icon(name: &str, directory: bool) -> &'static str {
     if directory {
         return catalog::FOLDER;

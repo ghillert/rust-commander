@@ -75,6 +75,12 @@ pub struct Share {
     secrets: Secrets,
 }
 impl Share {
+    /// Builds a share handle from the profile and credentials. Checks the server and share
+    /// name up front, and connects when a file operation needs the share.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the endpoint or share name is invalid.
     pub fn new(profile: &Connection, secrets: &Secrets) -> Result<Self> {
         let share = Self {
             profile: profile.clone(),
@@ -113,6 +119,14 @@ impl Share {
     fn run<T>(&self, f: impl std::future::Future<Output = Result<T>>) -> Result<T> {
         run(f, &self.secrets)
     }
+    /// Lists the children of a directory relative to the configured share root, omitting
+    /// the dot entries. Returned paths can be passed to [`Self::stat`] and
+    /// [`Self::reader`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid path or child name, or if connecting to or listing
+    /// the share fails.
     pub fn list(&self, path: &Path) -> Result<Vec<Entry>> {
         self.run(async {
             let (mut client, mut tree) = self.connect().await?;
@@ -134,6 +148,12 @@ impl Share {
                 .collect()
         })
     }
+    /// Reads metadata for a path relative to the configured root. A server response of “not
+    /// found” yields `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid path or another connection or metadata failure.
     pub fn stat(&self, path: &Path) -> Result<Option<Entry>> {
         self.run(async {
             let (mut client, mut tree) = self.connect().await?;
@@ -157,6 +177,11 @@ impl Share {
             }))
         })
     }
+    /// Creates a single directory at the given path under the configured root.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the path is invalid or the server refuses the creation.
     pub fn mkdir(&self, path: &Path) -> Result<()> {
         self.run(async {
             let (mut c, t) = self.connect().await?;
@@ -164,6 +189,12 @@ impl Share {
             Ok(())
         })
     }
+    /// Recursively deletes the selected entry, removing a directory after its children.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on cancellation or a listing or deletion failure. Children removed
+    /// before an error stay deleted.
     pub fn delete(&self, entry: &Entry, task: &mut Task) -> Result<()> {
         task.check()?;
         if entry.is_dir {
@@ -184,9 +215,21 @@ impl Share {
             Ok(())
         })
     }
+    /// Opens a streaming reader at the beginning of a share-relative file, using the
+    /// configured root.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the path is invalid or the file cannot be opened.
     pub fn reader(&self, path: &Path) -> Result<Box<dyn Read>> {
         self.reader_at(path, 0)
     }
+    /// Opens a streaming reader whose first request starts at the supplied byte offset.
+    /// Subsequent read failures are reported by the returned reader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the path is invalid or the server cannot open the file.
     pub fn reader_at(&self, path: &Path, offset: u64) -> Result<Box<dyn Read>> {
         let reader = self.run(async {
             let (mut c, t) = self.connect().await?;
@@ -207,6 +250,13 @@ impl Share {
             Ok(())
         })
     }
+    /// Streams `input` to the share and reports bytes through `task`. Set `exclusive` to
+    /// require a new destination file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if creation or writing fails, the input cannot be read, or the task
+    /// is cancelled. A failure can leave a partial remote file.
     pub fn write(
         &self,
         path: &Path,

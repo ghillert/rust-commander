@@ -17,6 +17,7 @@ impl DesktopStyle {
         Self::Ubuntu,
         Self::Gnome,
     ];
+    /// Returns the desktop style name shown in the appearance settings.
     pub fn label(self) -> &'static str {
         match self {
             Self::Automatic => "Automatic (this desktop)",
@@ -26,6 +27,8 @@ impl DesktopStyle {
             Self::Gnome => "Linux / GNOME",
         }
     }
+    /// Resolves the automatic style for the current OS. An explicit style is returned as
+    /// selected.
     pub fn resolve(self) -> Self {
         if self != Self::Automatic {
             return self;
@@ -37,6 +40,8 @@ impl DesktopStyle {
         }
     }
 }
+/// Chooses the Ubuntu palette when `release` contains an Ubuntu `ID=` entry from
+/// `os-release`. Other distributions use the GNOME palette.
 pub fn detect_linux(release: &str) -> DesktopStyle {
     if release.lines().any(|line| {
         line.strip_prefix("ID=")
@@ -56,6 +61,7 @@ pub enum ColorScheme {
     Dark,
 }
 impl ColorScheme {
+    /// Returns the display label for the system, light, or dark color preference.
     pub fn label(self) -> &'static str {
         match self {
             Self::System => "Follow system",
@@ -81,6 +87,8 @@ pub struct Palette {
 }
 
 impl Palette {
+    /// Builds the file manager palette and corner sizes for the resolved desktop style and
+    /// the supplied light or dark appearance.
     pub fn new(desktop: DesktopStyle, dark: bool) -> Self {
         let rgb = slint::Color::from_rgb_u8;
         let accent = match desktop.resolve() {
@@ -182,6 +190,8 @@ impl Palette {
     }
 }
 
+/// Returns whether to use dark colors. The system preference is consulted only for
+/// [`ColorScheme::System`].
 pub fn is_dark(scheme: ColorScheme, system_dark: bool) -> bool {
     match scheme {
         ColorScheme::Dark => true,

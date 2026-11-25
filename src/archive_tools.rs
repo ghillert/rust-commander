@@ -1,3 +1,6 @@
+//! Editing and temporary local copies of archives. Use [`materialize`] to browse
+//! a remote or nested archive and [`origin`] to locate its containing pane.
+
 use crate::{
     filesystem::{Location, portable_relative, safe_relative},
     operations::{self, Task},
@@ -25,6 +28,13 @@ pub enum ZipEdit {
     },
 }
 
+/// Applies an add, remove, or rename edit to a ZIP. Local edits are staged and the original
+/// is checked before replacement. A writable cached ZIP uses its origin's write-back path.
+///
+/// # Errors
+///
+/// Returns an error for an unsupported edit or member, path collisions, a changed or
+/// read-only source, cancellation, or I/O failure.
 pub fn edit_zip(file: &Path, edit: &ZipEdit, task: &mut Task) -> Result<()> {
     if crate::archive::format(file) != Some(crate::archive::Format::Zip) {
         bail!("Archive editing requires a local ZIP file.");
@@ -306,6 +316,8 @@ pub(crate) fn verify_cache_updates(updates: &[(PathBuf, PathBuf)]) -> Result<()>
 }
 static MATERIALIZED: OnceLock<Mutex<BTreeMap<PathBuf, Materialized>>> = OnceLock::new();
 
+/// Returns the containing location recorded for a materialized archive, or `None` if the
+/// path has no cache entry.
 pub fn origin(file: &Path) -> Option<Location> {
     MATERIALIZED
         .get_or_init(Default::default)
@@ -362,9 +374,23 @@ pub fn source_label(file: &Path) -> String {
     label(file, 0)
 }
 
+/// Copies a local, remote, or nested archive into the temporary archive cache and returns
+/// the local path for browsing. The original filename supplies the format.
+///
+/// # Errors
+///
+/// Returns an error when the source cannot be read, is larger than 128 MiB, exceeds eight
+/// levels of nesting, or cannot be cached.
 pub fn materialize(location: &Location, path: &Path) -> Result<PathBuf> {
     materialize_as(location, path, None)
 }
+/// Materializes an archive with an optional format override. An explicit format gives the
+/// copy a matching suffix, validates it by listing the root, and opens it read-only.
+///
+/// # Errors
+///
+/// Returns the errors from [`materialize`] and any error opening the copy in the requested
+/// format.
 pub fn materialize_as(
     location: &Location,
     path: &Path,
@@ -372,6 +398,13 @@ pub fn materialize_as(
 ) -> Result<PathBuf> {
     materialize_impl(location, path, format, "")
 }
+/// Opens a read-only cached copy using an explicit format and validates a nonempty password
+/// before publishing the copy.
+///
+/// # Errors
+///
+/// Returns an error if the copy cannot be materialized, unlocked, or listed in the chosen
+/// format.
 pub fn materialize_as_with_password(
     location: &Location,
     path: &Path,
@@ -502,12 +535,16 @@ fn materialize_impl(
     Ok(file)
 }
 
+/// Drops the process's cached archive entries and their temporary directories. Paths
+/// returned by [`materialize`] can become invalid.
 pub fn clear_cache() {
     if let Ok(mut cache) = MATERIALIZED.get_or_init(Default::default).lock() {
         cache.clear();
     }
 }
 
+/// Returns whether the format supports edits and its cached origin, if present, permits
+/// write-back. Filesystem access is checked when an edit runs.
 pub fn editable(file: &Path) -> bool {
     cached_origin(file).is_none_or(|entry| entry.writable)
         && matches!(

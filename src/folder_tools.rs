@@ -35,6 +35,7 @@ impl Drop for Form {
     }
 }
 impl Form {
+    /// Creates an idle comparison between the two roots with default comparison options.
     pub fn new(left: Location, right: Location) -> Self {
         Self {
             left,
@@ -49,6 +50,7 @@ impl Form {
             diff_pending: None,
         }
     }
+    /// Cancels active work and clears pending comparisons, diff rows, and errors.
     pub fn invalidate(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
         self.pending = None;
@@ -57,6 +59,8 @@ impl Form {
         self.result = None;
         self.error = None;
     }
+    /// Starts a background comparison using the current roots and options. The worker
+    /// signals the UI when [`Self::poll`] can collect the result.
     pub fn start(&mut self, ctx: &UiSignal) {
         self.invalidate();
         self.cancel = Arc::new(AtomicBool::new(false));
@@ -81,6 +85,8 @@ impl Form {
             ctx.request_repaint();
         });
     }
+    /// Starts a text diff for the comparison row at `index`. Ignores the request if that
+    /// row cannot be diffed or another diff is already running.
     pub fn start_diff(&mut self, index: usize, ctx: &UiSignal) {
         if self.diff_pending.is_some() {
             return;
@@ -108,6 +114,8 @@ impl Form {
             ctx.request_repaint();
         });
     }
+    /// Collects any completed comparison or text diff without blocking and records a worker
+    /// failure in the dialog's error field.
     pub fn poll(&mut self) {
         if let Some(result) = crate::background::poll(&mut self.pending) {
             match result {
@@ -132,6 +140,13 @@ pub struct Diff {
     pub name: String,
     pub rows: Vec<DiffRow>,
 }
+/// Loads the same relative path from both roots and aligns its decoded text. Each side must
+/// be a regular file of at most 1 MiB.
+///
+/// # Errors
+///
+/// Returns an error if a path is invalid, a file cannot be read or decoded, its listing
+/// metadata changes, or alignment fails or is cancelled.
 pub fn text_diff(left: &Location, right: &Location, relative: &Path, task: &Task) -> Result<Diff> {
     let relative = crate::filesystem::portable_relative(relative)?;
     fn load(root: &Location, relative: &Path, task: &Task) -> Result<String> {
@@ -190,6 +205,13 @@ pub fn text_diff(left: &Location, right: &Location, relative: &Path, task: &Task
         rows: align(&a, &b, task)?,
     })
 }
+/// Aligns lines by their longest common subsequence and pairs intervening edits into
+/// side-by-side rows. Line terminators participate in matching.
+///
+/// # Errors
+///
+/// Returns an error on cancellation or when either input exceeds 4,000 lines or the
+/// alignment table exceeds 4,100,000 cells.
 pub fn align(left: &str, right: &str, task: &Task) -> Result<Vec<DiffRow>> {
     let a: Vec<_> = left.split_inclusive('\n').collect();
     let b: Vec<_> = right.split_inclusive('\n').collect();

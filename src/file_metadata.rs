@@ -3,6 +3,12 @@ use anyhow::Result;
 use std::path::Path;
 
 #[cfg(target_os = "macos")]
+/// Copies the macOS ACL and extended attributes, including Finder tags and resource forks,
+/// to an existing target without following symlinks.
+///
+/// # Errors
+///
+/// Returns an error if a path cannot be represented or the native metadata copy fails.
 pub fn copy(source: &Path, target: &Path) -> Result<()> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt};
     unsafe extern "C" {
@@ -32,6 +38,12 @@ pub fn copy(source: &Path, target: &Path) -> Result<()> {
 }
 
 #[cfg(target_os = "linux")]
+/// Copies Linux user extended attributes and POSIX ACL attributes to an existing target. A
+/// source filesystem without extended-attribute support needs no copy.
+///
+/// # Errors
+///
+/// Returns an error if a selected attribute cannot be read or written.
 pub fn copy(source: &Path, target: &Path) -> Result<()> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt};
     let source = CString::new(source.as_os_str().as_bytes())?;
@@ -92,6 +104,12 @@ pub fn copy(source: &Path, target: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
+/// Copies the Windows discretionary access control list to the target, including its
+/// inheritance protection setting.
+///
+/// # Errors
+///
+/// Returns an error if Windows cannot read the source descriptor or apply it to the target.
 pub fn copy(source: &Path, target: &Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Security::{
@@ -155,6 +173,8 @@ pub fn copy(source: &Path, target: &Path) -> Result<()> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+/// Completes without copying native metadata on platforms without a metadata-copy
+/// implementation.
 pub fn copy(_source: &Path, _target: &Path) -> Result<()> {
     Ok(())
 }

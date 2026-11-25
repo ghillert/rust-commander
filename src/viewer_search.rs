@@ -5,6 +5,13 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use std::io::Read;
+/// Converts a query to the bytes to search for. Hex mode accepts whitespace between digit
+/// pairs. Text mode encodes the query in the selected encoding without a byte-order mark.
+///
+/// # Errors
+///
+/// Returns an error for an empty query, a query over 4,096 bytes, invalid hex, or
+/// unrepresentable text.
 pub fn needle(query: &str, hex: bool, encoding: Encoding) -> Result<Vec<u8>> {
     ensure!(
         !query.is_empty() && query.len() <= 4096,
@@ -34,6 +41,13 @@ pub fn needle(query: &str, hex: bool, encoding: Encoding) -> Result<Vec<u8>> {
         .encode(query)
     }
 }
+/// Returns the byte offset of the first aligned match at or after `start`, measured from
+/// the reader's initial position. Matches may cross read boundaries. An alignment of zero
+/// or one accepts any offset. End of input yields `None`.
+///
+/// # Errors
+///
+/// Returns an error for an empty needle, a failed read, or cancellation.
 pub fn find(
     reader: &mut dyn Read,
     needle: &[u8],
@@ -81,6 +95,12 @@ pub fn find(
         }
     }
 }
+/// Parses a byte offset in decimal or with a lowercase `0x` hexadecimal prefix. Surrounding
+/// whitespace is ignored.
+///
+/// # Errors
+///
+/// Returns an error if the value is invalid or outside the range of `u64`.
 pub fn offset(text: &str) -> Result<u64> {
     Ok(if let Some(s) = text.trim().strip_prefix("0x") {
         u64::from_str_radix(s, 16)?
@@ -88,6 +108,13 @@ pub fn offset(text: &str) -> Result<u64> {
         text.trim().parse()?
     })
 }
+/// Reads up to 64 KiB of a local file as hex rows. The first row begins at the 16-byte
+/// boundary at or before `offset` and is labeled with its file offset.
+///
+/// # Errors
+///
+/// Returns an error if the offset exceeds the file size or the file cannot be opened,
+/// positioned, or read.
 pub fn hex_page(path: &std::path::Path, offset: u64) -> Result<String> {
     use std::io::{Seek, SeekFrom};
     let mut input = std::fs::File::open(path)?;

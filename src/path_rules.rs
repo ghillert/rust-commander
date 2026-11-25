@@ -21,9 +21,34 @@ impl Default for PathRules {
     }
 }
 impl PathRules {
+    /// Returns whether the configured rules contain a restrictive include pattern or any
+    /// exclusions.
     pub fn filtered(&self) -> bool {
         !matches!(self.include.trim(), "" | "*" | "**") || !self.exclude.trim().is_empty()
     }
+    /// Compiles the include and exclude globs with the configured case sensitivity.
+    /// Separate patterns with semicolons or newlines. A blank include list matches all
+    /// filenames.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either list exceeds 16,384 bytes or contains an invalid glob.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rust_commander::path_rules::PathRules;
+    /// use std::path::Path;
+    ///
+    /// let rules = PathRules {
+    ///     include: "*.rs".into(),
+    ///     exclude: "target".into(),
+    ///     ..Default::default()
+    /// }.compile()?;
+    /// assert!(rules.included(Path::new("src/lib.rs")));
+    /// assert!(!rules.included(Path::new("target/generated.rs")));
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn compile(&self) -> Result<CompiledRules> {
         fn compile(text: &str, sensitive: bool) -> Result<GlobSet> {
             ensure!(text.len() <= 16_384, "Path rules are too long");
@@ -63,6 +88,8 @@ pub struct CompiledRules {
     exclude: GlobSet,
 }
 impl CompiledRules {
+    /// Returns whether the relative path or any ancestor matches an exclude glob. Each is
+    /// checked both as a path and by its final component.
     pub fn excluded(&self, relative: &Path) -> bool {
         // Excluding a directory also excludes all descendants, including direct callers.
         relative
@@ -74,6 +101,8 @@ impl CompiledRules {
                         .is_some_and(|n| self.exclude.is_match(Path::new(n)))
             })
     }
+    /// Returns whether the relative path or its filename matches an include glob and no
+    /// exclusion applies to it or its ancestors.
     pub fn included(&self, relative: &Path) -> bool {
         !self.excluded(relative)
             && (self.include.is_match(relative)

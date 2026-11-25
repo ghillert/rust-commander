@@ -18,6 +18,8 @@ pub struct Buffer {
     events: VecDeque<Event>,
 }
 impl Buffer {
+    /// Appends a timestamped event with the next sequence number. Messages retain up to 512
+    /// characters and the buffer keeps the newest 2,000 events.
     pub fn record(&mut self, category: &'static str, message: &str) {
         self.sequence += 1;
         self.events.push_back(Event {
@@ -30,9 +32,11 @@ impl Buffer {
             self.events.pop_front();
         }
     }
+    /// Removes buffered events while preserving the sequence counter.
     pub fn clear(&mut self) {
         self.events.clear();
     }
+    /// Copies the buffered events in order from oldest to newest.
     pub fn snapshot(&self) -> Vec<Event> {
         self.events.iter().cloned().collect()
     }
@@ -41,22 +45,29 @@ fn buffer() -> &'static Mutex<Buffer> {
     static LOG: OnceLock<Mutex<Buffer>> = OnceLock::new();
     LOG.get_or_init(Default::default)
 }
+/// Appends a categorized message to the process-wide diagnostic log when its lock is
+/// available.
 pub fn record(category: &'static str, message: &str) {
     if let Ok(mut log) = buffer().lock() {
         log.record(category, message);
     }
 }
+/// Clears the events in the process-wide diagnostic log.
 pub fn clear() {
     if let Ok(mut log) = buffer().lock() {
         log.clear();
     }
 }
+/// Copies the process-wide log in chronological insertion order. An unavailable lock yields
+/// an empty list.
 pub fn snapshot() -> Vec<Event> {
     buffer()
         .lock()
         .map(|log| log.snapshot())
         .unwrap_or_default()
 }
+/// Formats each matching event as one UTC-timestamped line with its sequence number and
+/// category. The case-insensitive substring filter applies to the entire formatted line.
 pub fn format(events: &[Event], filter: &str) -> String {
     let filter = filter.to_lowercase();
     events

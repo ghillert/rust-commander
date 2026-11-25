@@ -19,6 +19,7 @@ pub enum Choice {
     DeleteRight,
 }
 impl Choice {
+    /// Returns the action label shown for a proposed synchronization choice.
     pub fn label(self) -> &'static str {
         match self {
             Self::Skip => "Skip",
@@ -135,6 +136,37 @@ fn contents_equal(a: &Path, b: &Path, task: &Task) -> Result<bool> {
 pub fn preview(left: &Path, right: &Path, direction: u8, task: &Task) -> Result<Plan> {
     preview_with_rules(left, right, direction, &Default::default(), task)
 }
+/// Previews differences between two local trees using the supplied path rules. Direction
+/// `0` copies missing entries both ways, `1` proposes left-to-right copies, and `2`
+/// proposes right-to-left copies. Conflicting entries initially have [`Choice::Skip`].
+///
+/// # Errors
+///
+/// Returns an error for overlapping roots, invalid rules, unsupported entries, excessive
+/// differences, a tree that changes while scanning, or cancellation.
+///
+/// # Examples
+///
+/// ```
+/// use rust_commander::{operations::Task, path_rules::PathRules};
+/// use rust_commander::sync::{self, Choice};
+/// use std::fs;
+///
+/// let left = tempfile::tempdir()?;
+/// let right = tempfile::tempdir()?;
+/// fs::write(left.path().join("notes.txt"), "notes")?;
+/// fs::write(left.path().join("cache.bin"), b"cache")?;
+/// let rules = PathRules { include: "*.txt".into(), ..Default::default() };
+/// let mut task = Task::default();
+/// let plan = sync::preview_with_rules(left.path(), right.path(), 1, &rules, &task)?;
+/// assert_eq!(plan.items.len(), 1);
+/// assert_eq!(plan.items[0].choice, Choice::LeftToRight);
+///
+/// sync::apply(&plan, &mut task)?;
+/// assert_eq!(fs::read_to_string(right.path().join("notes.txt"))?, "notes");
+/// assert!(!right.path().join("cache.bin").exists());
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn preview_with_rules(
     left: &Path,
     right: &Path,
@@ -235,6 +267,14 @@ pub fn preview_with_rules(
         right_stamp,
     })
 }
+/// Applies the reviewed choices after checking the filters, write capabilities, and
+/// recorded fingerprints. Skipped items are left alone. Returns a summary of the completed
+/// work.
+///
+/// # Errors
+///
+/// Returns an error for stale source or destination data, a disallowed choice,
+/// cancellation, or an operation failure. Earlier completed items can remain applied.
 pub fn apply(plan: &Plan, task: &mut Task) -> Result<String> {
     let rules = plan.rules.compile()?;
     anyhow::ensure!(
@@ -381,6 +421,12 @@ mod tests {
 }
 
 mod remote;
+/// Previews synchronization between local or connected remote folders using the default
+/// path rules. Direction values follow [`preview_with_rules`].
+///
+/// # Errors
+///
+/// Returns an error if [`preview_locations_with_rules`] cannot build a plan.
 pub fn preview_locations(
     left: &crate::filesystem::Location,
     right: &crate::filesystem::Location,
@@ -389,6 +435,14 @@ pub fn preview_locations(
 ) -> Result<Plan> {
     preview_locations_with_rules(left, right, direction, &Default::default(), task)
 }
+/// Builds a filtered synchronization plan for two pane locations, using
+/// [`preview_with_rules`] for two local folders and the remote planner when a connection is
+/// involved.
+///
+/// # Errors
+///
+/// Returns an error for unsupported roots, invalid rules, an unstable or unreadable tree,
+/// an exceeded planning limit, or cancellation.
 pub fn preview_locations_with_rules(
     left: &crate::filesystem::Location,
     right: &crate::filesystem::Location,

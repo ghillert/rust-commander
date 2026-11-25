@@ -20,6 +20,7 @@ pub enum Mode {
     Metadata,
 }
 impl Mode {
+    /// Returns the comparison mode's display label, including whether equality is verified.
     pub fn label(self) -> &'static str {
         match self {
             Self::Content => "Verified file contents",
@@ -77,6 +78,14 @@ fn inventory(
 pub fn compare(left: &Location, right: &Location, task: &mut Task) -> Result<Vec<Comparison>> {
     compare_with_options(left, right, &Options::default(), task)
 }
+/// Recursively compares two directory trees in relative-path order. Content mode hashes
+/// both regular files. Metadata mode compares known sizes and modification times and labels
+/// those results as unverified. Exclusions prune subtrees and symlinks are never traversed.
+///
+/// # Errors
+///
+/// Returns an error for archive roots, invalid path rules, unreadable entries,
+/// cancellation, or a traversal exceeding the depth or entry limits.
 pub fn compare_with_options(
     left: &Location,
     right: &Location,

@@ -9,6 +9,12 @@ pub const COMMUNITY: &str = "https://github.com/ghillert/rust-commander/issues";
 /// Repository .github/FUNDING.yml names this GitHub Sponsors account.
 pub const DONATION: &str = "https://github.com/sponsors/ghillert";
 
+/// Parses an HTTP or HTTPS link suitable for opening in the user's browser.
+///
+/// # Errors
+///
+/// Returns an error for an unsupported scheme, a missing host, embedded credentials,
+/// control characters, or a URL over 8,192 bytes.
 pub fn browser_link(value: &str) -> Result<url::Url> {
     ensure!(
         value.len() <= 8192 && !value.chars().any(char::is_control),
@@ -26,6 +32,11 @@ pub fn browser_link(value: &str) -> Result<url::Url> {
     Ok(url)
 }
 
+/// Parses an HTTPS website link with a host and no embedded credentials.
+///
+/// # Errors
+///
+/// Returns an error for a malformed URL or one that fails those requirements.
 pub fn web_link(value: &str) -> Result<url::Url> {
     let url = url::Url::parse(value)?;
     ensure!(
@@ -69,6 +80,28 @@ fn version(text: &str) -> Result<[u64; 3]> {
     );
     Ok([parts[0], parts[1], parts[2]])
 }
+/// Validates a stable GitHub release response and compares its numeric version with
+/// `current`. A stable release supersedes a prerelease with the same major, minor, and
+/// patch version.
+///
+/// # Errors
+///
+/// Returns an error for an oversized or malformed response, a draft or prerelease, an
+/// unexpected release URL, or an unsupported version.
+///
+/// # Examples
+///
+/// ```
+/// use rust_commander::support::parse_release;
+///
+/// let release = br#"{
+///     "tag_name": "v1.0.0",
+///     "html_url": "https://github.com/ghillert/rust-commander/releases/tag/v1.0.0"
+/// }"#;
+/// assert!(parse_release(release, "1.0.0-SNAPSHOT")?.newer);
+/// assert!(!parse_release(release, "1.0.0")?.newer);
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn parse_release(bytes: &[u8], current: &str) -> Result<Update> {
     ensure!(
         bytes.len() as u64 <= RESPONSE_LIMIT,
@@ -106,9 +139,22 @@ pub fn parse_release(bytes: &[u8], current: &str) -> Result<Update> {
         newer,
     })
 }
+/// Queries GitHub for the latest stable Rust Commander release and compares it with the
+/// running package version. A missing latest release yields an empty update.
+///
+/// # Errors
+///
+/// Returns an error for a network failure, rate limit, unsuccessful response other than
+/// “not found,” or invalid release data.
 pub fn check_updates() -> Result<Update> {
     check_at(LATEST, env!("CARGO_PKG_VERSION"))
 }
+/// Checks a supplied release endpoint against `current` using the same validation as
+/// [`check_updates`]. A 404 response yields an update with no release.
+///
+/// # Errors
+///
+/// Returns an error if the request fails or [`parse_release`] rejects the response.
 #[doc(hidden)]
 pub fn check_at(endpoint: &str, current: &str) -> Result<Update> {
     let response = reqwest::blocking::Client::builder()
@@ -141,6 +187,8 @@ pub fn check_at(endpoint: &str, current: &str) -> Result<Update> {
     parse_release(&bytes, current)
 }
 
+/// Returns a shareable build summary with the application version, OS, architecture, and UI
+/// version. It can be generated without reading user settings or file paths.
 pub fn diagnostics() -> String {
     format!(
         "Rust Commander {}\nOS: {}\nArchitecture: {}\nBuild: {}\nUI: Slint 1.18.1\nUpdates: manual checks of GitHub stable releases\n",
@@ -154,6 +202,8 @@ pub fn diagnostics() -> String {
         }
     )
 }
+/// Builds the GitHub new-issue URL with a bug report template and [`diagnostics`] for the
+/// user to review before submitting.
 pub fn bug_report_url() -> String {
     let mut url = url::Url::parse(&format!("{REPOSITORY}/issues/new")).unwrap();
     let body = format!(

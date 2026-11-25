@@ -221,6 +221,13 @@ pub(crate) fn record_backup(
     }
     record_backup_in(&config()?, source, path, target, task)
 }
+/// Registers a retained copy at `path` under `config`, recording its fingerprint and
+/// the original `target`. Registering the same source and path replaces the prior record.
+///
+/// # Errors
+///
+/// Returns an error if the recovery name is unrecognized, the copy cannot be
+/// fingerprinted, or its registry cannot be locked or saved.
 #[doc(hidden)]
 pub fn record_backup_in(
     config: &Path,

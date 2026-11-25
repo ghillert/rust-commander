@@ -179,6 +179,13 @@ fn words(text: &str) -> Result<Vec<String>> {
     Ok(values)
 }
 impl Config {
+    /// Resolves an SFTP connection profile into SSH host, port, identity, and host-key
+    /// settings. Applies OpenSSH configuration when enabled in the profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid endpoint or host alias, or if the effective
+    /// configuration cannot be obtained or interpreted.
     pub fn resolve(c: &crate::remote::Connection) -> Result<Self> {
         let url = url::Url::parse(&c.endpoint).context("Invalid SFTP endpoint")?;
         let alias = url
@@ -427,6 +434,14 @@ fn verify_text(text: &str, host: &str, key: &keys::PublicKey) -> Result<Option<b
     Ok(recorded.then_some(accepted))
 }
 impl Config {
+    /// Checks a server public key against the configured known-hosts files. Returns `true`
+    /// for a recognized matching key and `false` when the host has no recorded key and
+    /// needs review.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a conflicting or revoked key, or a known-hosts file that cannot
+    /// be read or validated.
     pub fn verify(&self, key: &keys::PublicKey) -> Result<bool> {
         let mut recorded = false;
         let mut accepted = false;
@@ -458,6 +473,12 @@ impl Config {
         );
         Ok(accepted)
     }
+    /// Builds the host-key review prompt with the key algorithm, SHA-256 fingerprint, and
+    /// proposed destination for a saved decision.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the key cannot be represented in OpenSSH format.
     pub fn challenge(&self, key: &keys::PublicKey) -> Result<Challenge> {
         Ok(Challenge {
             host: self.host.clone(),
@@ -471,6 +492,14 @@ impl Config {
     }
 }
 impl Challenge {
+    /// Persists the reviewed host key in the configured known-hosts file. Rechecks the
+    /// fingerprint and existing file under a lock before appending. An existing match needs
+    /// no new entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if saving is disabled, the key changed during review, or the file
+    /// cannot be locked or written.
     pub fn remember(&self) -> Result<()> {
         let path = self
             .save_to

@@ -1,3 +1,6 @@
+//! Local file tools for batch rename, directory comparison, split and combine,
+//! and metadata changes. Use [`rename_plan`] to review targets before [`batch_rename`].
+
 use crate::{
     filesystem,
     operations::{self, Task},
@@ -12,6 +15,13 @@ use std::{
     time::SystemTime,
 };
 
+/// Renames a local path using the platform's exclusive rename operation so an occupied
+/// destination cannot be overwritten.
+///
+/// # Errors
+///
+/// Returns the filesystem error if the destination exists, the paths are invalid, or the
+/// rename fails.
 pub fn rename_exclusive(source: &Path, destination: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
     {
@@ -88,6 +98,14 @@ impl Default for RenameOptions {
     }
 }
 
+/// Previews source and target paths in input order. Find and replace is applied before
+/// expanding `{name}`, `{ext}`, and `{n}` in the template. Targets may reuse names
+/// belonging to other sources in the plan.
+///
+/// # Errors
+///
+/// Returns an error for invalid filenames, patterns or numbering, duplicate targets, or
+/// collisions with entries outside the selection.
 pub fn rename_plan(
     sources: &[PathBuf],
     options: &RenameOptions,
@@ -151,6 +169,13 @@ pub fn rename_plan(
     Ok(plan)
 }
 
+/// Applies a rename plan within one directory. Moves entries through temporary names so
+/// swaps can succeed and attempts rollback after a failure.
+///
+/// # Errors
+///
+/// Returns an error for an empty or invalid plan, an occupied target outside the selection,
+/// cancellation, or a filesystem or rollback failure.
 pub fn batch_rename(plan: &[(PathBuf, PathBuf)], task: &mut Task) -> Result<()> {
     if plan.is_empty() {
         bail!("Select files to rename.");
@@ -249,6 +274,12 @@ pub struct SearchResult {
     pub errors: Vec<String>,
     pub truncated: bool,
 }
+/// Runs the recursive [`search`](crate::search::search) from the local root in `options`.
+/// Inspect the result for individual read errors and truncation.
+///
+/// # Errors
+///
+/// Returns an error for invalid options, cancellation, or an invalid entry path.
 pub fn search(options: &SearchOptions, task: &mut Task) -> Result<SearchResult> {
     crate::search::search(
         &crate::filesystem::Location::Local(options.root.clone()),
@@ -264,6 +295,13 @@ pub struct Comparison {
     pub path: PathBuf,
     pub can_diff: bool,
 }
+/// Compares two local directory trees with the default content-verifying
+/// [`comparison`](crate::comparison) options.
+///
+/// # Errors
+///
+/// Returns an error if the comparison cannot traverse or read an entry, exceeds traversal
+/// limits, or is cancelled.
 pub fn compare(left: &Path, right: &Path, task: &mut Task) -> Result<Vec<Comparison>> {
     crate::comparison::compare(
         &crate::filesystem::Location::Local(left.into()),
@@ -272,6 +310,13 @@ pub fn compare(left: &Path, right: &Path, task: &mut Task) -> Result<Vec<Compari
     )
 }
 
+/// Splits a file into numbered parts of at most `chunk_size` bytes in a new directory.
+/// Numbering starts at `part-000001`. An empty input creates an empty directory.
+///
+/// # Errors
+///
+/// Returns an error for a zero chunk size, an occupied destination, cancellation, or I/O
+/// failure. A failed split attempts to remove the partial directory.
 pub fn split(source: &Path, destination: &Path, chunk_size: u64, task: &mut Task) -> Result<()> {
     if chunk_size == 0 {
         bail!("Chunk size must be greater than zero.");
@@ -311,6 +356,13 @@ pub fn split(source: &Path, destination: &Path, chunk_size: u64, task: &mut Task
     }
     result
 }
+/// Concatenates parts in the order supplied and publishes the completed file at a new
+/// destination. Use the original part order when reversing [`split`].
+///
+/// # Errors
+///
+/// Returns an error for an empty selection, an occupied destination, cancellation, or I/O
+/// failure.
 pub fn combine(sources: &[PathBuf], destination: &Path, task: &mut Task) -> Result<()> {
     if sources.is_empty() {
         bail!("Select the parts to combine.");
@@ -326,6 +378,13 @@ pub fn combine(sources: &[PathBuf], destination: &Path, task: &mut Task) -> Resu
     Ok(())
 }
 
+/// Summarizes counts and byte sizes across local paths, traversing directories without
+/// following symlinks. A single selected path also gets its own metadata description.
+///
+/// # Errors
+///
+/// Returns an error if an entry cannot be inspected, the byte count overflows, or the task
+/// is cancelled.
 pub fn properties(paths: &[PathBuf], task: &mut Task) -> Result<String> {
     let mut total = 0u64;
     let mut files = 0;
@@ -367,6 +426,12 @@ pub fn properties(paths: &[PathBuf], task: &mut Task) -> Result<String> {
     Ok(text)
 }
 
+/// Sets the modification time on each selected path in order.
+///
+/// # Errors
+///
+/// Returns an error for a symlink or a failed metadata update. Paths processed before a
+/// failure may already have the new time.
 pub fn change_modified(paths: &[PathBuf], modified: SystemTime) -> Result<()> {
     for path in paths {
         if fs::symlink_metadata(path)?.file_type().is_symlink() {
@@ -391,6 +456,11 @@ pub fn change_modified(paths: &[PathBuf], modified: SystemTime) -> Result<()> {
     Ok(())
 }
 
+/// Launches the platform's external terminal for the supplied directory.
+///
+/// # Errors
+///
+/// Returns an error if the platform terminal process cannot be started.
 pub fn open_terminal(path: &Path) -> Result<()> {
     #[cfg(target_os = "macos")]
     {

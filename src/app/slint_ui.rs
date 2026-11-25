@@ -2277,6 +2277,12 @@ fn smoke_step(
     });
 }
 
+/// Starts the desktop application, restores windows with the supplied startup paths, and
+/// runs the Slint event loop until quit.
+///
+/// # Errors
+///
+/// Returns an error if the UI backend, windows, or event loop cannot be initialized or run.
 pub fn run(paths: &[PathBuf]) -> anyhow::Result<()> {
     #[cfg(target_os = "macos")]
     {

@@ -1,6 +1,13 @@
 //! A separate GTK event loop keeps native Wayland/X11 drag-and-drop independent of winit.
 use anyhow::{Result, bail};
 use std::path::PathBuf;
+/// Starts a separate instance of the executable as a GTK file-drag helper and returns after
+/// spawning it.
+///
+/// # Errors
+///
+/// Returns an error for an empty path list or if the helper executable cannot be found or
+/// started.
 pub fn launch(paths: &[PathBuf]) -> Result<()> {
     if paths.is_empty() {
         bail!("Select files to drag");
@@ -19,6 +26,8 @@ fn file_source(files: &[gtk4::gio::File]) -> gtk4::DragSource {
     source.set_content(Some(&gdk::ContentProvider::for_value(&list.to_value())));
     source
 }
+/// Runs the GTK helper's event loop and returns its exit status. The window offers the
+/// supplied paths as a copy drag and closes when the drag ends.
 pub fn run(paths: Vec<PathBuf>) -> i32 {
     use gtk4::{gio, prelude::*};
     let app = gtk4::Application::builder()

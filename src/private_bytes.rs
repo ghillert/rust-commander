@@ -14,6 +14,13 @@ impl AsRef<[u8]> for Bytes {
     }
 }
 impl Bytes {
+    /// Copies the stream into a private temporary file, reports progress under `path`, and
+    /// shares its contents as immutable bytes. An empty stream yields an empty slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on cancellation, if more than `limit` bytes are read, or if
+    /// temporary storage or mapping fails.
     pub fn capture(
         input: &mut dyn Read,
         limit: u64,

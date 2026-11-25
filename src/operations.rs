@@ -289,6 +289,8 @@ pub enum Operation {
 }
 
 impl Operation {
+    /// Returns whether the operation uses transfer controls, including copy, move, resume,
+    /// and folder synchronization.
     pub fn is_transfer(&self) -> bool {
         matches!(
             self,
@@ -305,6 +307,7 @@ impl Operation {
         )
     }
 
+    /// Returns the short action name used in progress and history displays.
     pub fn label(&self) -> &'static str {
         match self {
             Self::RecoveryRestore { .. } => "Restore recovery copy",
@@ -618,9 +621,17 @@ impl Task {
         Ok(())
     }
 
+    /// Returns the current transfer buffer size in bytes, or 64 KiB when no transfer
+    /// control is attached.
     pub fn chunk_size(&self) -> usize {
         self.control.as_ref().map_or(65536, |c| c.chunk_size())
     }
+    /// Applies any configured bandwidth limit to `bytes` of completed work. With no
+    /// transfer control this returns immediately.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transfer is cancelled during pacing.
     pub fn pace(&self, bytes: u64) -> Result<()> {
         if let Some(control) = &self.control {
             control.pace(bytes, &self.cancel)?;
@@ -670,6 +681,13 @@ impl Task {
         }
     }
 
+    /// Accounts for `bytes` against the current path, updates transfer rate and progress,
+    /// and emits a progress report when its interval has elapsed. Pass zero to report the
+    /// path without adding bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a cancellation or transfer-control check interrupts progress.
     pub fn tick(&mut self, path: &Path, bytes: u64) -> Result<()> {
         self.check()?;
         self.pace(bytes)?;

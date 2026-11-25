@@ -23,6 +23,7 @@ impl Encoding {
         Self::Windows1252,
         Self::Latin1,
     ];
+    /// Returns the canonical encoding name used in the viewer and editor.
     pub fn label(self) -> &'static str {
         match self {
             Self::Utf8 => "UTF-8",
@@ -32,6 +33,7 @@ impl Encoding {
             Self::Latin1 => "ISO-8859-1",
         }
     }
+    /// Looks up an encoding by its exact, case-sensitive [`label`](Self::label).
     pub fn named(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|e| e.label() == value)
     }
@@ -46,6 +48,23 @@ pub struct Document {
     pub crlf: bool,
 }
 impl Document {
+    /// Detects UTF-16 byte order from a leading BOM and otherwise decodes as UTF-8. Retains
+    /// the original bytes and line-ending information for editing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when [`Self::decode`] rejects the input.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rust_commander::text_document::{Document, Encoding};
+    ///
+    /// let doc = Document::detect(b"\xef\xbb\xbffirst\r\n".to_vec())?;
+    /// assert_eq!(doc.encoding, Encoding::Utf8);
+    /// assert_eq!(doc.encode("second\n")?, b"\xef\xbb\xbfsecond\r\n");
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn detect(bytes: Vec<u8>) -> Result<Self> {
         let encoding = if bytes.starts_with(&[0xff, 0xfe]) {
             Encoding::Utf16Le
@@ -56,6 +75,13 @@ impl Document {
         };
         Self::decode(bytes, encoding)
     }
+    /// Decodes text using the specified encoding and removes a matching BOM from the
+    /// displayed text. The document retains the original bytes and records whether all line
+    /// feeds use CRLF.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for invalid encoded text or a decoded NUL character.
     pub fn decode(bytes: Vec<u8>, encoding: Encoding) -> Result<Self> {
         let bom = match encoding {
             Encoding::Utf8 => bytes.starts_with(&[0xef, 0xbb, 0xbf]),
@@ -105,6 +131,12 @@ impl Document {
             crlf,
         })
     }
+    /// Encodes edited text with the document's current encoding, BOM setting, and CRLF
+    /// preference.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the selected single-byte encoding cannot represent a character.
     pub fn encode(&self, text: &str) -> Result<Vec<u8>> {
         let text = if self.crlf {
             text.replace("\r\n", "\n").replace('\n', "\r\n")
@@ -167,6 +199,13 @@ pub struct Page {
     pub source: Option<std::sync::Arc<crate::viewer::source::Source>>,
 }
 impl Page {
+    /// Reads a bounded local text page near the byte offset, clamping it to the file length
+    /// and aligning UTF-16 reads to a code unit. Continue at the returned page's `next`
+    /// offset.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on file I/O or if the requested page cannot be decoded.
     pub fn read(path: &Path, offset: u64, encoding: Encoding) -> Result<Self> {
         let mut file = File::open(path)?;
         let total = file.metadata()?.len();
@@ -179,6 +218,13 @@ impl Page {
         file.take(PAGE_SIZE + 4).read_to_end(&mut bytes)?;
         Self::from_bytes(bytes, offset, total, encoding)
     }
+    /// Decodes a page from bytes beginning at `offset` in a file of `total` bytes. Supply
+    /// up to [`PAGE_SIZE`] plus four bytes of lookahead so UTF-8 characters and UTF-16
+    /// surrogate pairs can be kept whole at page boundaries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if decoding fails or the page cannot advance before EOF.
     pub fn from_bytes(
         mut bytes: Vec<u8>,
         mut offset: u64,

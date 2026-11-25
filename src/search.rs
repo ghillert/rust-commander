@@ -34,6 +34,12 @@ impl Default for SearchFilters {
         }
     }
 }
+/// Parses a trimmed RFC 3339 timestamp as an optional search boundary. A blank value clears
+/// the boundary.
+///
+/// # Errors
+///
+/// Returns an error for a nonempty value that is not an RFC 3339 timestamp.
 pub fn parse_date(value: &str) -> Result<Option<SystemTime>> {
     if value.trim().is_empty() {
         return Ok(None);
@@ -44,11 +50,20 @@ pub fn parse_date(value: &str) -> Result<Option<SystemTime>> {
             .into(),
     ))
 }
+/// Formats a search boundary as an RFC 3339 UTC timestamp, or an empty string for an unset
+/// boundary.
 pub fn date_label(value: Option<SystemTime>) -> String {
     value
         .map(|v| chrono::DateTime::<chrono::Utc>::from(v).to_rfc3339())
         .unwrap_or_default()
 }
+/// Validates result limits, size and time ranges, path globs, and the optional content
+/// matcher before walking the tree.
+///
+/// # Errors
+///
+/// Returns an error for an invalid matcher, a reversed range, or a maximum result count
+/// outside `1..=100_000`.
 pub fn validate(options: &SearchOptions) -> Result<()> {
     let f = &options.filters;
     ensure!(
@@ -149,6 +164,14 @@ impl Content {
         }
     }
 }
+/// Walks from the root in the search options, applying name, metadata, and optional content
+/// filters. Individual read failures are collected in the result. Reaching a traversal or
+/// result limit returns the matches so far with `truncated` set.
+///
+/// # Errors
+///
+/// Returns an error for invalid options, cancellation, or an entry outside the configured
+/// root.
 pub fn search(
     location: &Location,
     options: &SearchOptions,

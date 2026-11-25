@@ -38,6 +38,11 @@ impl Default for Options {
     }
 }
 impl Options {
+    /// Returns the packing dialog's display label for the selected format.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the format is absent from [`FORMATS`], such as a read-only archive format.
     pub fn label(&self) -> &'static str {
         FORMATS
             .iter()
@@ -45,6 +50,14 @@ impl Options {
             .unwrap()
             .1
     }
+    /// Selects a format by display label and updates the destination filename or URI
+    /// suffix. Clears incompatible compression levels and clears the password when the new
+    /// format cannot encrypt.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an unknown label or a destination URI whose filename cannot be
+    /// rewritten.
     pub fn set_format(&mut self, label: &str, destination: &mut String) -> Result<()> {
         self.format = FORMATS
             .iter()
@@ -102,6 +115,12 @@ impl Options {
         }
         Ok(())
     }
+    /// Replaces a known archive suffix, including a compound tar suffix, with the selected
+    /// format's suffix. Preserves the parent directory and an already matching suffix.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a suffix is needed for a format absent from [`FORMATS`].
     pub fn destination(&self, path: &Path) -> PathBuf {
         if archive::format(path) == Some(self.format) {
             return path.to_owned();
@@ -132,6 +151,8 @@ impl Options {
         );
         path.with_file_name(name)
     }
+    /// Returns the configured ZIP comment, or an empty string for a format without
+    /// comments.
     pub fn comment(&self) -> &str {
         if self.format == Format::Zip {
             &self.comment
@@ -139,6 +160,13 @@ impl Options {
             ""
         }
     }
+    /// Checks the packing options against a selection of local paths. Single-file
+    /// compression formats require exactly one regular file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an empty selection, invalid encryption, comment or level, or
+    /// unsuitable input for the selected stream format.
     pub fn validate(&self, sources: &[PathBuf]) -> Result<()> {
         self.validate_encryption()?;
         ensure!(
@@ -155,6 +183,13 @@ impl Options {
         }
         Ok(())
     }
+    /// Validates the options against the entries in a local, remote, or archive selection
+    /// before packing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid selection, unsupported options, or a single-file
+    /// stream selection containing a directory, link, or multiple entries.
     pub fn validate_selection(&self, selection: &crate::drag_drop::Selection) -> Result<()> {
         self.validate_encryption()?;
         selection.validate()?;
@@ -233,6 +268,13 @@ pub fn destination(
     })
 }
 
+/// Packs the selection and publishes the result at the given local or remote file location.
+/// Nonlocal sources are exported to temporary storage before packing.
+///
+/// # Errors
+///
+/// Returns an error for an invalid selection, occupied or unsupported target, changed
+/// source detected during processing, cancellation, or packing or transfer failure.
 pub fn pack_to(
     selection: &crate::drag_drop::Selection,
     target: &crate::filesystem::Location,
@@ -408,6 +450,8 @@ pub fn validate_level(format: Format, level: Option<u8>) -> Result<()> {
     Ok(())
 }
 
+/// Formats a compression level for display. `None` selects the default and level zero has a
+/// format-specific meaning.
 pub fn level_label(format: Format, level: Option<u8>) -> String {
     match level {
         None => "Default".into(),
@@ -425,6 +469,8 @@ pub fn level_label(format: Format, level: Option<u8>) -> String {
     }
 }
 
+/// Lists the default and valid numeric compression levels for the format, using labels
+/// accepted by [`parse_level`].
 pub fn level_choices(format: Format) -> Vec<String> {
     std::iter::once(None)
         .chain((0..=9).map(Some))
@@ -433,6 +479,12 @@ pub fn level_choices(format: Format) -> Vec<String> {
         .collect()
 }
 
+/// Looks up a compression-level label for the given format. The default label yields
+/// `None`.
+///
+/// # Errors
+///
+/// Returns an error if the label is absent from [`level_choices`].
 pub fn parse_level(format: Format, label: &str) -> Result<Option<u8>> {
     std::iter::once(None)
         .chain((0..=9).map(Some))
@@ -442,6 +494,13 @@ pub fn parse_level(format: Format, label: &str) -> Result<Option<u8>> {
         .context("Choose a supported compression level.")
 }
 
+/// Checks whether the format accepts the supplied archive comment. An empty comment is
+/// valid for every format.
+///
+/// # Errors
+///
+/// A nonempty comment requires ZIP, must fit in 65,535 UTF-8 bytes, and cannot contain the
+/// ZIP end-of-directory signature.
 pub fn validate_comment(format: Format, comment: &str) -> Result<()> {
     ensure!(
         comment.is_empty() || format == Format::Zip,

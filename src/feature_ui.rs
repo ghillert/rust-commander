@@ -1,3 +1,6 @@
+//! Archive dialog state and actions derived from the two pane selections.
+//! [`ArchiveForm::new`] fills in the source, member prefix, and suggested destination.
+
 use crate::{
     filesystem::{Entry, Location},
     operations::Operation,
@@ -26,6 +29,9 @@ pub enum ArchiveAction {
     Browse(PathBuf),
 }
 impl ArchiveForm {
+    /// Initializes archive tools from both pane selections. An open archive supplies its
+    /// file and member prefix, and the other local pane is preferred for the suggested
+    /// output path.
     pub fn new(
         location: &Location,
         chosen: &[Entry],

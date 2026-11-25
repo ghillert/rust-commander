@@ -20,6 +20,12 @@ pub struct Provider {
     pub token: String,
     pub scopes: &'static str,
 }
+/// Returns the authorization endpoint, token endpoint, and scopes for the configured Google
+/// Drive, Dropbox, or OneDrive connection.
+///
+/// # Errors
+///
+/// Returns an error for an unsupported service or invalid Microsoft tenant identifier.
 pub fn provider(connection: &Connection) -> Result<Provider> {
     Ok(match connection.service.as_str() {
         "gdrive" => Provider {
@@ -55,6 +61,8 @@ pub fn provider(connection: &Connection) -> Result<Provider> {
     })
 }
 
+/// Returns whole seconds since the Unix epoch for token expiry calculations, or zero for a
+/// time before the epoch.
 pub fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -66,10 +74,19 @@ fn nonce() -> String {
     rand::rngs::OsRng.fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
+/// Derives the PKCE S256 challenge from the verifier using SHA-256 and unpadded URL-safe
+/// Base64.
 pub fn challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
+/// Builds the provider's browser sign-in URL with the client ID, redirect URI, state,
+/// scopes, and PKCE challenge. Requests offline access where the provider requires it.
+///
+/// # Errors
+///
+/// Returns an error if the client ID is blank or the authorization endpoint cannot be
+/// parsed.
 pub fn authorization_url(
     connection: &Connection,
     provider: &Provider,
@@ -130,6 +147,13 @@ fn callback_url(target: &str, expected_state: &str) -> Result<url::Url> {
     Ok(url)
 }
 
+/// Extracts the authorization code from a loopback callback request target after validating
+/// the callback path and the expected state.
+///
+/// # Errors
+///
+/// Returns an error for a malformed or declined callback, mismatched state, or a missing,
+/// empty, or duplicated authorization code.
 pub fn parse_callback(target: &str, expected_state: &str) -> Result<String> {
     let url = callback_url(target, expected_state)?;
     let pairs = url.query_pairs().into_owned().collect::<Vec<_>>();
@@ -162,6 +186,13 @@ fn respond(stream: &mut TcpStream, status: &str, message: &str) {
     let _ = stream.write_all(response.as_bytes());
 }
 
+/// Opens the system browser, listens for the provider's loopback callback, and exchanges
+/// the authorization code for tokens. Returns the updated secrets for the caller to store.
+///
+/// # Errors
+///
+/// Returns an error if sign-in is declined, cancelled, or times out, or if browser launch,
+/// the callback listener, or the token exchange fails.
 pub fn authorize(
     connection: &Connection,
     mut secrets: Secrets,
@@ -306,6 +337,13 @@ fn apply_tokens(secrets: &mut Secrets, value: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Exchanges the saved refresh token and returns a copy of the secrets updated with the
+/// provider's token response.
+///
+/// # Errors
+///
+/// Returns an error if the refresh token is missing, the provider is unsupported, or the
+/// exchange or token response is invalid.
 pub fn refresh(connection: &Connection, secrets: &Secrets) -> Result<Secrets> {
     if secrets.refresh_token.is_empty() {
         bail!("The cloud session expired. Sign in again from Connections.");

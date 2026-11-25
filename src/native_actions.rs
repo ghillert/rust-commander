@@ -4,6 +4,8 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
+/// Returns whether `path` is a macOS application bundle directory with an `.app` extension.
+/// Other platforms return `false`.
 pub fn is_application(path: &Path) -> bool {
     cfg!(target_os = "macos")
         && path.is_dir()
@@ -11,6 +13,12 @@ pub fn is_application(path: &Path) -> bool {
             .extension()
             .is_some_and(|s| s.eq_ignore_ascii_case("app"))
 }
+/// Asks the native file manager to reveal the path. Finder and Explorer select the entry,
+/// while other desktops open its containing directory.
+///
+/// # Errors
+///
+/// Returns an error if the platform opener cannot be launched.
 pub fn reveal(path: &Path) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
@@ -28,6 +36,12 @@ pub fn reveal(path: &Path) -> Result<()> {
     }
     Ok(())
 }
+/// Launches the selected application with the file path as an argument. Supports macOS app
+/// bundles and desktop launchers on systems using `gio`.
+///
+/// # Errors
+///
+/// Returns an error if the application path is relative or missing, or the launch fails.
 pub fn open_with(path: &Path, application: &Path) -> Result<()> {
     if !application.is_absolute() || !application.exists() {
         bail!("Choose an existing application with an absolute path");
@@ -54,6 +68,11 @@ pub fn open_with(path: &Path, application: &Path) -> Result<()> {
     }
     Ok(())
 }
+/// Starts macOS Quick Look for one or more local files.
+///
+/// # Errors
+///
+/// Returns an error for an empty selection, an unsupported platform, or a launcher failure.
 pub fn quick_look(paths: &[PathBuf]) -> Result<()> {
     if paths.is_empty() {
         bail!("Select a local file to preview");

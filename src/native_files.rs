@@ -1,3 +1,6 @@
+//! Native file clipboard and drag support, mounted-drive discovery, and
+//! filesystem breadcrumbs. [`NativeFiles`] tracks the clipboard selection across copy and paste.
+
 #[cfg(not(target_os = "linux"))]
 use anyhow::Context;
 use anyhow::{Result, bail};
@@ -40,6 +43,14 @@ impl NativeFiles {
             .get_text()
             .map_err(|e| anyhow::anyhow!("Clipboard unavailable: {e}"))
     }
+    /// Publishes local file paths to the system clipboard and records whether the request
+    /// is a cut. Also writes the platform's file-list formats and a marker identifying this
+    /// selection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the list is empty, a file has disappeared, the paths cannot be
+    /// encoded, or the clipboard is unavailable.
     pub fn copy(&mut self, paths: &[PathBuf], moving: bool) -> Result<()> {
         if paths.is_empty() {
             bail!("Select local files to copy.");
@@ -110,6 +121,13 @@ impl NativeFiles {
         self.moving = moving;
         Ok(())
     }
+    /// Reads local paths from the system clipboard and returns whether the paste requests a
+    /// move. Uses this instance's selection marker and any available native cut
+    /// information.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the clipboard cannot supply a decodable list of local files.
     pub fn paste(&mut self) -> Result<(Vec<PathBuf>, bool)> {
         let values = self
             .context()?
@@ -141,6 +159,8 @@ impl NativeFiles {
             .unwrap_or(moving);
         Ok((paths, moving))
     }
+    /// Returns whether the system clipboard still contains the marker written by this
+    /// instance. An unavailable clipboard yields `false`.
     pub fn owns_selection(&mut self) -> bool {
         let marker = self
             .context()
@@ -148,6 +168,12 @@ impl NativeFiles {
             .and_then(|context| context.get_buffer(FILE_MARKER).ok());
         !self.marker.is_empty() && marker.as_deref() == Some(self.marker.as_slice())
     }
+    /// Publishes a marker for an in-app remote selection and clears the remembered local
+    /// paths. The application retains the remote entries separately.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the system clipboard cannot be updated.
     pub fn mark_remote(&mut self) -> Result<()> {
         let mut marker = vec![0u8; 32];
         rand::rngs::OsRng.fill_bytes(&mut marker);
@@ -162,11 +188,18 @@ impl NativeFiles {
         self.moving = false;
         Ok(())
     }
+    /// Clears this instance's pending cut flag after consuming a move.
     pub fn consume_cut(&mut self) {
         self.moving = false;
     }
 }
 
+/// Decodes absolute paths and local `file:` URLs from clipboard lines. Skips blank lines
+/// and URI-list comments and preserves the first occurrence of each path.
+///
+/// # Errors
+///
+/// Returns an error for invalid or nonlocal file URLs, relative paths, or an empty result.
 pub fn decode_paths(values: &[String]) -> Result<Vec<PathBuf>> {
     let mut result = Vec::new();
     for value in values {
@@ -408,6 +441,12 @@ pub(crate) fn drop_position(
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
+/// Starts a native outbound file drag from `window` using the supplied local paths.
+///
+/// # Errors
+///
+/// Returns an error if the paths or window handle cannot be used or the native drag cannot
+/// start.
 pub fn drag_out(window: &Window, paths: Vec<PathBuf>) -> Result<()> {
     drag_out_with(window, paths, false, || {})
 }
@@ -472,6 +511,8 @@ fn drag_item(
     Ok(())
 }
 
+/// Lists the platform's mounted drives and network volumes for the drive menu. Returns
+/// display labels and mount paths, deduplicated by path and sorted by label.
 pub fn mounted_drives() -> Vec<(String, PathBuf)> {
     #[cfg(not(target_os = "linux"))]
     let mut result = network_mounts();
@@ -509,6 +550,8 @@ pub fn mounted_drives() -> Vec<(String, PathBuf)> {
     result
 }
 
+/// Builds breadcrumb labels and their cumulative paths in order from the first component to
+/// the last.
 pub fn breadcrumbs(path: &Path) -> Vec<(String, PathBuf)> {
     let mut current = PathBuf::new();
     let mut result = Vec::new();

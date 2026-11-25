@@ -23,6 +23,8 @@ static REVISION: AtomicU64 = AtomicU64::new(0);
 fn names() -> &'static Mutex<Names> {
     NAMES.get_or_init(Default::default)
 }
+/// Returns the revision of the owner/group name cache. A new revision signals that a
+/// background name lookup has completed.
 pub fn names_revision() -> u64 {
     REVISION.load(Ordering::Relaxed)
 }
@@ -128,6 +130,8 @@ fn resolve_identity(_key: &Key) -> Option<String> {
     None
 }
 
+/// Returns owner and group labels for an absolute local path. Numeric IDs or SIDs can
+/// appear while names are resolved in the background. Unavailable identities yield `None`.
 pub fn ownership_labels(path: &Path) -> (Option<String>, Option<String>) {
     if !path.is_absolute() {
         return (None, None);
@@ -157,6 +161,8 @@ pub fn ownership_labels(path: &Path) -> (Option<String>, Option<String>) {
         (None, None)
     }
 }
+/// Returns a numeric sort key for local permissions, using Unix mode bits or the Windows
+/// read-only flag. A relative path or unavailable metadata yields `None`.
 pub fn permission_key(path: &Path) -> Option<u32> {
     if !path.is_absolute() {
         return None;
@@ -176,6 +182,22 @@ pub fn permission_key(path: &Path) -> Option<u32> {
         None
     }
 }
+/// Parses an octal Unix permission mode, with optional `0o` prefix and surrounding
+/// whitespace.
+///
+/// # Errors
+///
+/// Returns an error for an empty value, non-octal digits, or a value above `0o7777`.
+///
+/// # Examples
+///
+/// ```
+/// use rust_commander::metadata::{parse_mode, symbolic};
+///
+/// assert_eq!(symbolic(parse_mode("0750")?), "rwxr-x---");
+/// assert_eq!(symbolic(parse_mode("0o4755")?), "rwsr-xr-x");
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn parse_mode(value: &str) -> Result<u32> {
     let value = value.trim().strip_prefix("0o").unwrap_or(value.trim());
     ensure!(
@@ -200,6 +222,8 @@ pub const PERMISSION_BITS: [(&str, u32); 12] = [
     ("Set group ID", 0o2000),
     ("Sticky bit", 0o1000),
 ];
+/// Formats the owner, group, and other mode bits as nine symbolic permission characters,
+/// including set-user-ID, set-group-ID, and sticky bits.
 pub fn symbolic(mode: u32) -> String {
     let mut output = String::new();
     for (shift, special, letter) in [(6, 0o4000, 's'), (3, 0o2000, 's'), (0, 0o1000, 't')] {
@@ -220,6 +244,12 @@ pub fn symbolic(mode: u32) -> String {
     }
     output
 }
+/// Builds the platform-specific ownership, permissions, and ACL description for the
+/// properties dialog. ACL lookup failures are included in the displayed description.
+///
+/// # Errors
+///
+/// Returns an error when the path's metadata cannot be read.
 pub fn describe(path: &Path) -> Result<String> {
     let mut lines = Vec::new();
     let metadata = std::fs::symlink_metadata(path)?;
@@ -270,6 +300,12 @@ pub fn describe(path: &Path) -> Result<String> {
     Ok(lines.join("\n"))
 }
 #[cfg(target_os = "macos")]
+/// Returns the native extended ACL text for a macOS entry, or `None` when it has no
+/// additional rules.
+///
+/// # Errors
+///
+/// Returns an error if the path or its ACL cannot be read or converted to text.
 pub fn acl_text(path: &Path) -> Result<Option<String>> {
     use std::{
         ffi::{CStr, CString},
@@ -314,6 +350,12 @@ pub fn acl_text(path: &Path) -> Result<Option<String>> {
     }))
 }
 #[cfg(target_os = "linux")]
+/// Formats Linux POSIX access and default ACL attributes as text. A missing or unsupported
+/// ACL yields `None`.
+///
+/// # Errors
+///
+/// Returns an error if an attribute is unreadable, too large, or malformed.
 pub fn acl_text(path: &Path) -> Result<Option<String>> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt};
     let path = CString::new(path.as_os_str().as_bytes())?;
@@ -350,13 +392,27 @@ pub fn acl_text(path: &Path) -> Result<Option<String>> {
     Ok((!lines.is_empty()).then(|| lines.join("\n")))
 }
 #[cfg(windows)]
+/// Returns the Windows access-rule description for the entry's discretionary access control
+/// list.
+///
+/// # Errors
+///
+/// Returns an error if the Windows security descriptor cannot be read or interpreted.
 pub fn acl_text(path: &Path) -> Result<Option<String>> {
     windows::acl_text(path).map(Some)
 }
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+/// Returns `Ok(None)` on platforms without a native ACL reader.
 pub fn acl_text(_path: &Path) -> Result<Option<String>> {
     Ok(None)
 }
+/// Decodes a Linux version-2 POSIX ACL extended attribute into textual entries in their
+/// stored order.
+///
+/// # Errors
+///
+/// Returns an error if the header or entry length is invalid, a permission exceeds three
+/// bits, or a tag is unrecognized.
 pub fn decode_posix_acl(bytes: &[u8]) -> Result<Vec<String>> {
     ensure!(
         bytes.len() >= 4

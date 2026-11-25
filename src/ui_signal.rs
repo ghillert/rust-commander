@@ -14,9 +14,12 @@ pub struct UiSignal {
 }
 
 impl UiSignal {
+    /// Marks the UI dirty so the event loop can repaint after a worker update.
     pub fn request_repaint(&self) {
         self.dirty.store(true, Ordering::Release);
     }
+    /// Schedules a repaint after `delay`. When several requests are pending, the earliest
+    /// deadline wins.
     pub fn request_repaint_after(&self, delay: std::time::Duration) {
         let when = std::time::Instant::now() + delay;
         let mut deadline = self.deadline.lock().unwrap_or_else(|e| e.into_inner());
@@ -39,6 +42,7 @@ impl UiSignal {
             notify();
         }
     }
+    /// Queues text for the UI thread to place on the clipboard and requests a repaint.
     pub fn copy_text(&self, text: String) {
         self.clipboard
             .lock()
@@ -46,6 +50,8 @@ impl UiSignal {
             .push(text);
         self.request_repaint();
     }
+    /// Signals the UI thread to close the window and requests a repaint so it can process
+    /// the request.
     pub fn request_close(&self) {
         self.close.store(true, Ordering::Relaxed);
         self.request_repaint();

@@ -29,6 +29,8 @@ pub struct PageText {
     pub error: Option<String>,
 }
 impl PageText {
+    /// Returns the index of the glyph nearest to a normalized point on the displayed page,
+    /// accounting for clockwise quarter turns. A page with no glyphs yields `None`.
     pub fn nearest(&self, x: f32, y: f32, rotation: usize) -> Option<usize> {
         self.glyphs
             .iter()
@@ -44,12 +46,16 @@ impl PageText {
             })
             .map(|(index, _)| index)
     }
+    /// Converts two inclusive glyph indices, in either order, to a half-open UTF-8 byte
+    /// range in [`Self::text`]. An invalid index yields `None`.
     pub fn selection(&self, first: usize, last: usize) -> Option<Range<usize>> {
         Some(
             self.glyphs.get(first.min(last))?.range.start
                 ..self.glyphs.get(first.max(last))?.range.end,
         )
     }
+    /// Returns the rotated, normalized bounds of glyphs overlapping the supplied UTF-8 byte
+    /// range.
     pub fn rectangles(&self, range: &Range<usize>, rotation: usize) -> Vec<[f32; 4]> {
         self.glyphs
             .iter()
@@ -58,6 +64,8 @@ impl PageText {
             .collect()
     }
 }
+/// Rotates a normalized `[left, top, right, bottom]` rectangle clockwise by the given
+/// number of quarter turns about the page center.
 pub fn rotate_bounds([x0, y0, x1, y1]: [f32; 4], rotation: usize) -> [f32; 4] {
     match rotation % 4 {
         1 => [1.0 - y1, x0, 1.0 - y0, x1],
@@ -155,6 +163,13 @@ impl Device<'_> for TextDevice<'_> {
         }
     }
 }
+/// Extracts visible glyph text and normalized bounds from one parsed PDF page for searching
+/// and selection.
+///
+/// # Errors
+///
+/// Returns an error on cancellation, invalid page dimensions, or extraction beyond 65,536
+/// glyphs or 2 MiB of text.
 pub fn extract_page(page: &pdf::hayro_syntax::page::Page<'_>, task: &Task) -> Result<PageText> {
     task.check()?;
     let (width, height) = page.render_dimensions();
@@ -185,9 +200,23 @@ pub fn extract_page(page: &pdf::hayro_syntax::page::Page<'_>, task: &Task) -> Re
     );
     Ok(device.result)
 }
+/// Extracts text and glyph positions from a zero-based page in a PDF byte slice. Supply an
+/// empty password for an unprotected document.
+///
+/// # Errors
+///
+/// Returns an error if the document cannot be opened, the page is absent, or
+/// [`extract_page`] fails.
 pub fn load_page(bytes: &[u8], password: &str, page: usize, task: &Task) -> Result<PageText> {
     load_page_data(&bytes.to_vec().into(), password, page, task)
 }
+/// Extracts one zero-based page from shared PDF bytes. Reuse the backing data when
+/// navigating multiple pages.
+///
+/// # Errors
+///
+/// Returns an error for an unreadable PDF, an incorrect password, a missing page, or a page
+/// extraction failure.
 pub fn load_page_data(
     data: &crate::viewer::PdfBytes,
     password: &str,
@@ -226,6 +255,14 @@ pub fn find(
         task,
     )
 }
+/// Searches extracted PDF text for a case-insensitive literal, starting at a zero-based
+/// page and UTF-8 byte offset. Searches in the requested direction and wraps once. Returns
+/// the matching page and byte range, or `None`.
+///
+/// # Errors
+///
+/// Returns an error for an empty or oversized query, an unreadable document or page, or
+/// cancellation.
 pub fn find_data(
     data: &crate::viewer::PdfBytes,
     password: &str,
