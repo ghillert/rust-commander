@@ -31,90 +31,151 @@ pub(crate) mod totals;
 /// chooses new ones.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Operation {
+    /// Write an external editor's private working copy back to its source.
     ExternalSave {
+        /// Location from which the file or archive member was opened.
         location: crate::filesystem::Location,
+        /// Source entry path in the location's filesystem, connection, or archive.
         path: PathBuf,
+        /// Local file edited inside the leased temporary directory.
         #[serde(skip)]
         working: PathBuf,
+        /// Snapshot taken before editing, needed to detect changes and perform save-back.
         #[serde(skip)]
         original: Option<Arc<crate::private_bytes::Bytes>>,
+        /// Keeps the editor's temporary directory alive until save-back finishes.
         #[serde(skip)]
         lease: Option<Arc<tempfile::TempDir>>,
+        /// Fingerprint of the containing archive when opened, used for archive save-back.
         expected: Option<String>,
     },
+    /// Update ownership and access rules after verifying the reviewed metadata.
     Security {
+        /// Snapshot identifying the local file and the security metadata the user reviewed.
         expected: crate::security_metadata::Snapshot,
+        /// Owner, group, and ACL values to apply to the verified entry.
         change: crate::security_metadata::Change,
     },
     /// Restore each selected original as a new copy in `destination`.
     RecoveryRestore {
+        /// Retained originals selected from the recovery inventory.
         items: Vec<crate::recovery::Item>,
+        /// Writable local or remote directory that receives the restored copies.
         destination: crate::filesystem::Location,
     },
     /// Permanently clean the backup groups represented by the selected originals.
     RecoveryCleanup(Vec<crate::recovery::Item>),
+    /// Copy or move a pane selection, including transfers into or out of an editable archive.
     DropTransfer {
+        /// Source location and entries captured by the drag.
         selection: crate::drag_drop::Selection,
+        /// Destination directory or writable archive location.
         to: crate::filesystem::Location,
+        /// Whether to move (`true`) or copy (`false`) the selected entries.
         moving: bool,
+        /// Default conflict policy and directory merge behavior.
         options: crate::transfer::TransferOptions,
+        /// Per-entry conflict decisions keyed by the incoming entry's destination path.
         overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
     },
+    /// Ask the operating system to empty its Trash.
     EmptyTrash,
+    /// Start or resume a batch copy using [`crate::resumable::run_resolved`].
     ResumeRemote {
+        /// Persistent `batch-` identifier used to find the checkpoint manifest.
         id: String,
+        /// Local or remote directory containing the selected entries.
         from: crate::filesystem::Location,
+        /// Selected entries as returned by the source directory listing.
         entries: Vec<crate::filesystem::Entry>,
+        /// Local or remote destination directory for the selected entries.
         to: crate::filesystem::Location,
+        /// Batch conflict and merge settings retained across retries.
         #[serde(default)]
         options: crate::transfer::TransferOptions,
+        /// Per-destination decisions recorded for this batch.
         #[serde(default)]
         overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
     },
+    /// Save edited member contents after verifying the enclosing archive.
     ArchiveSaveBytes {
+        /// Local path to the archive or its materialized copy.
         archive: PathBuf,
+        /// Path of the member relative to the archive root.
         path: PathBuf,
+        /// Archive fingerprint captured before opening the member for editing.
         expected: Option<String>,
+        /// Complete replacement contents, already encoded for writing.
         #[serde(skip)]
         bytes: Vec<u8>,
     },
+    /// Extract selected members with the policies used by [`crate::archive::extract_resolved`].
     ExtractResolved {
+        /// Local path to the archive containing the selected members.
         archive: PathBuf,
+        /// Archive-root-relative member paths. An empty selection includes everything under
+        /// `prefix`.
         selected: Vec<PathBuf>,
+        /// Directory prefix to strip from output paths. An empty path represents the archive
+        /// root.
         prefix: PathBuf,
+        /// Local output directory, which may already contain entries.
         destination: PathBuf,
+        /// Default conflict policy and directory merge behavior.
         options: crate::transfer::TransferOptions,
+        /// Per-entry conflict decisions keyed by the incoming entry's destination path.
         overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
     },
+    /// Replace a local file with encoded editor output after checking its original contents.
     SaveBytes {
+        /// Local file to replace.
         path: PathBuf,
+        /// Bytes read when editing began, used to detect changes before replacement.
         #[serde(skip)]
         original: Vec<u8>,
+        /// Complete replacement contents, already encoded for writing.
         #[serde(skip)]
         bytes: Vec<u8>,
     },
+    /// Write encoded editor output to an existing remote file.
     RemoteSaveBytes {
+        /// ID of the connection profile that owns the entry.
         connection: String,
+        /// Path of the existing file relative to the connection root.
         path: PathBuf,
+        /// Bytes read when editing began, used to detect changes before replacement.
         #[serde(skip)]
         original: Vec<u8>,
+        /// Complete replacement contents, already encoded for writing.
         #[serde(skip)]
         bytes: Vec<u8>,
     },
+    /// Save externally edited bytes to a remote file using the external editor's size limit.
     RemoteExternalSave {
+        /// ID of the connection profile that owns the entry.
         connection: String,
+        /// Path of the existing file relative to the connection root.
         path: PathBuf,
+        /// Bytes read when editing began, used to detect changes before replacement.
         #[serde(skip)]
         original: Vec<u8>,
+        /// Complete replacement contents, already encoded for writing.
         #[serde(skip)]
         bytes: Vec<u8>,
     },
+    /// Copy or move between local or remote folders with individual conflict decisions.
     RemoteTransferResolved {
+        /// Local or remote directory containing the selected entries.
         from: crate::filesystem::Location,
+        /// Selected entries as returned by the source directory listing.
         entries: Vec<crate::filesystem::Entry>,
+        /// Local or remote destination directory for the selected entries.
         to: crate::filesystem::Location,
+        /// Whether to move (`true`) or copy (`false`) the selected entries.
         moving: bool,
+        /// Default conflict policy and directory merge behavior.
         options: crate::transfer::TransferOptions,
+        /// Per-entry conflict decisions keyed by the incoming entry's destination path.
         overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
     },
 
@@ -124,167 +185,282 @@ pub enum Operation {
     Redo(Box<crate::history::Record>),
     /// Save edited UTF-8 text after checking the bytes originally read from disk.
     SaveText {
+        /// Local file whose contents are being edited.
         path: PathBuf,
+        /// Bytes read when editing began, used to detect changes before replacement.
         #[serde(skip)]
         original: Vec<u8>,
+        /// Replacement text to write as UTF-8.
         #[serde(skip)]
         text: String,
     },
+    /// Apply the choices and change checks in a reviewed folder synchronization plan.
     Sync(crate::sync::Plan),
+    /// Save UTF-8 editor text to a remote file after checking its original contents.
     RemoteSave {
+        /// ID of the connection profile that owns the entry.
         connection: String,
+        /// Path of the existing file relative to the connection root.
         path: PathBuf,
+        /// Bytes read when editing began, used to detect changes before replacement.
         #[serde(skip)]
         original: Vec<u8>,
+        /// Replacement text to write as UTF-8.
         #[serde(skip)]
         text: String,
     },
+    /// Continue a single-file copy or move from its local transfer checkpoint.
     ResumeLocal {
+        /// Local file originally queued for transfer.
         source: PathBuf,
+        /// Exact final file path, which must still be unused.
         destination: PathBuf,
+        /// Whether to remove the verified source after publishing the destination file.
         moving: bool,
+        /// Path to the partially copied file in the queue's transfer storage.
         partial: PathBuf,
+        /// Source fingerprint or metadata stamp captured for this queue entry.
         stamp: String,
     },
     /// Copy or move local entries with per-target conflict decisions.
     ResolvedTransfer {
+        /// Local entries to copy or move.
         sources: Vec<PathBuf>,
+        /// Existing local directory that receives the selected entries.
         destination: PathBuf,
+        /// Whether to move (`true`) or copy (`false`) the selected entries.
         moving: bool,
+        /// Default conflict policy and directory merge behavior.
         options: crate::transfer::TransferOptions,
+        /// Per-entry conflict decisions keyed by the incoming entry's destination path.
         overrides: std::collections::BTreeMap<PathBuf, crate::transfer::ConflictPolicy>,
     },
+    /// Rename an entry within its remote parent directory.
     RemoteRename {
+        /// ID of the connection profile that owns the entry.
         connection: String,
+        /// Current entry path relative to the connection root.
         source: PathBuf,
+        /// New filename within the same directory.
         name: String,
     },
+    /// Add, remove, or rename members of an editable ZIP, tar, or 7z archive.
     ArchiveEdit {
+        /// Local archive path, including a cached archive with a writable origin.
         archive: PathBuf,
+        /// Member edit and the paths it operates on.
         edit: crate::archive_tools::ZipEdit,
     },
+    /// Create a password-protected ZIP or 7z archive from local sources.
     PackProtected {
+        /// Local file or directory paths to include at the archive root.
         sources: Vec<PathBuf>,
+        /// Path of the new local archive, including the suffix that chooses its format.
         destination: PathBuf,
+        /// Password used for encryption, omitted from serialized operations.
         #[serde(skip)]
         password: String,
+        /// Compression level for the selected format, or `None` for the writer's default.
         #[serde(default)]
         compression_level: Option<u8>,
     },
+    /// Validate an archive password and extract the selected members into a new directory.
     ExtractProtected {
+        /// Local path to the archive containing the selected members.
         archive: PathBuf,
+        /// Archive-root-relative member paths. An empty selection includes everything under
+        /// `prefix`.
         selected: Vec<PathBuf>,
+        /// Directory prefix to strip from output paths. An empty path represents the archive
+        /// root.
         prefix: PathBuf,
+        /// New local directory to create for the extracted contents.
         destination: PathBuf,
+        /// Password used to unlock the archive, omitted from serialized operations.
         #[serde(skip)]
         password: String,
     },
     /// Copy or move local entries using a shared conflict policy.
     Transfer {
+        /// Local entries to copy or move.
         sources: Vec<PathBuf>,
+        /// Existing local directory that receives the selected entries.
         destination: PathBuf,
+        /// Whether to move (`true`) or copy (`false`) the selected entries.
         moving: bool,
+        /// Default conflict policy and directory merge behavior.
         options: crate::transfer::TransferOptions,
     },
+    /// Apply a plan of `(old_path, new_path)` pairs in one local directory.
     BatchRename(Vec<(PathBuf, PathBuf)>),
+    /// Summarize the selected local paths, including the contents of selected directories.
     Properties(Vec<PathBuf>),
+    /// Compare the contents of two local directory trees.
     Compare {
+        /// Root directory for the left-hand side of the comparison.
         left: PathBuf,
+        /// Root directory for the right-hand side of the comparison.
         right: PathBuf,
     },
+    /// Compare two local or remote directory trees by content.
     CompareLocations {
+        /// Location used as the left root for matching relative paths.
         left: crate::filesystem::Location,
+        /// Location used as the right root for matching relative paths.
         right: crate::filesystem::Location,
     },
+    /// Split one local file into sequentially numbered parts.
     Split {
+        /// File whose bytes will be split.
         source: PathBuf,
+        /// New directory to create for the numbered parts.
         destination: PathBuf,
+        /// Maximum number of bytes per part. Must be greater than zero.
         bytes: u64,
     },
+    /// Concatenate local files in the supplied order to create one new file.
     Combine {
+        /// Part paths in the exact order their bytes should be written.
         sources: Vec<PathBuf>,
+        /// Exact path of the new combined file.
         destination: PathBuf,
     },
+    /// Create an empty local file at the given unused path.
     Mkfile(PathBuf),
+    /// Set the Unix permission bits of selected local entries.
     Permissions {
+        /// Local paths to update. Symlinks are rejected.
         paths: Vec<PathBuf>,
+        /// Octal permission and special bits in the range `0o0000..=0o7777`.
         mode: u32,
     },
+    /// Set the modification time of selected local entries.
     Modified {
+        /// Local files or directories to update. Symlinks are rejected.
         paths: Vec<PathBuf>,
+        /// New modification timestamp to apply to every selected path.
         time: SystemTime,
     },
+    /// Permanently remove the selected local paths and the contents of selected directories.
     PermanentDelete(Vec<PathBuf>),
+    /// Copy or move between local or remote folders, refusing occupied names.
     RemoteTransfer {
+        /// Local or remote directory containing the selected entries.
         from: crate::filesystem::Location,
+        /// Selected entries as returned by the source directory listing.
         entries: Vec<crate::filesystem::Entry>,
+        /// Local or remote destination directory for the selected entries.
         to: crate::filesystem::Location,
+        /// Whether to move (`true`) or copy (`false`) the selected entries.
         moving: bool,
     },
+    /// Create a directory on a remote connection.
     RemoteMkdir {
+        /// ID of the connection profile that owns the parent directory.
         connection: String,
+        /// Path of the new directory relative to the connection root.
         path: PathBuf,
     },
+    /// Permanently delete remote entries, removing directory contents before their parents.
     RemoteDelete {
+        /// ID of the connection profile that owns the selected entries.
         connection: String,
+        /// Entries selected for deletion from the remote listing.
         entries: Vec<crate::filesystem::Entry>,
     },
     /// Copy local entries into an existing directory, refusing occupied names.
     Copy {
+        /// Local files or directories to copy.
         sources: Vec<PathBuf>,
+        /// Existing local directory that receives the selected entries.
         destination: PathBuf,
     },
     /// Move local entries into an existing directory, refusing occupied names.
     Move {
+        /// Local files or directories to move.
         sources: Vec<PathBuf>,
+        /// Existing local directory that receives the selected entries.
         destination: PathBuf,
     },
+    /// Rename a local entry within its current directory, refusing an occupied target.
     Rename {
+        /// Current local path of the entry.
         source: PathBuf,
+        /// New filename within the source's parent directory.
         name: String,
     },
+    /// Move the selected local paths to the operating system's Trash.
     Trash(Vec<PathBuf>),
+    /// Create one local directory at the given path under an existing parent.
     Mkdir(PathBuf),
+    /// Pack a pane selection into a new local archive.
     PackSelection {
+        /// Source location and entries to include in the archive.
         selection: crate::drag_drop::Selection,
+        /// Path of the new local archive, including the suffix that chooses its format.
         destination: PathBuf,
+        /// Compression level for the selected format, or `None` for the writer's default.
         #[serde(default)]
         compression_level: Option<u8>,
+        /// Optional ZIP archive comment. Use an empty string for other formats.
         #[serde(default)]
         comment: String,
+        /// Whether the UI should let packing continue in the background.
         #[serde(default)]
         background: bool,
     },
+    /// Pack a pane selection into a new local or remote archive.
     PackTo {
+        /// Source location and entries to include in the archive.
         selection: crate::drag_drop::Selection,
+        /// Exact local or remote output file. Its suffix selects the archive format.
         target: crate::filesystem::Location,
+        /// Compression level for the selected format, or `None` for the writer's default.
         #[serde(default)]
         compression_level: Option<u8>,
+        /// Optional ZIP archive comment. Use an empty string for other formats.
         #[serde(default)]
         comment: String,
+        /// Whether to encrypt the new ZIP or 7z archive with `password`.
         #[serde(default)]
         encrypted: bool,
+        /// Password used when encryption is enabled, omitted from serialized operations.
         #[serde(skip)]
         password: String,
+        /// Whether the UI should let packing continue in the background.
         #[serde(default)]
         background: bool,
     },
+    /// Create a new archive from a selection on the local filesystem.
     Pack {
+        /// Local file or directory paths to include at the archive root.
         sources: Vec<PathBuf>,
+        /// Path of the new local archive, including the suffix that chooses its format.
         destination: PathBuf,
+        /// Compression level for the selected format, or `None` for the writer's default.
         #[serde(default)]
         compression_level: Option<u8>,
+        /// Optional ZIP archive comment. Use an empty string for other formats.
         #[serde(default)]
         comment: String,
+        /// Whether the UI should let packing continue in the background.
         #[serde(default)]
         background: bool,
     },
+    /// Extract selected archive members into a new local directory.
     Extract {
+        /// Local path to the archive containing the selected members.
         archive: PathBuf,
+        /// Archive-root-relative member paths. An empty selection includes everything under
+        /// `prefix`.
         selected: Vec<PathBuf>,
+        /// Directory prefix to strip from output paths. An empty path represents the archive
+        /// root.
         prefix: PathBuf,
+        /// New local directory to create for the extracted contents.
         destination: PathBuf,
     },
+    /// Compute and display MD5, SHA-1, SHA-256, and SHA-512 digests for one local file.
     Checksum(PathBuf),
 }
 
@@ -472,8 +648,9 @@ pub type ChangeHook = Box<dyn FnMut(&Path) -> Result<()> + Send>;
 pub struct Progress {
     /// Display path supplied by the most recent progress update.
     pub current: String,
-    /// Bytes processed during this run.
+    /// Cumulative bytes reported by the worker, including any restored checkpoint offset.
     pub bytes: u64,
+    /// Number of completed streams and other entries the worker reports as processed.
     pub files: usize,
     /// Planned byte count, when the worker can determine one.
     #[serde(default)]
@@ -513,6 +690,8 @@ pub struct Task {
     pub(crate) replacement_recovery: Option<crate::history::ReplacementRecovery>,
     /// Set by a worker when its result cannot safely be undone automatically.
     pub undo_blocked: bool,
+    /// Additional messages to include with the operation's result, such as the location of
+    /// retained recovery copies.
     pub notices: Vec<String>,
     pub(crate) private_roots: Vec<PathBuf>,
     /// Optional hook for capturing a path's current state before a change.

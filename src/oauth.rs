@@ -16,8 +16,11 @@ use std::{
 };
 
 pub struct Provider {
+    /// Provider endpoint opened in the browser to request authorization.
     pub authorization: String,
+    /// Provider endpoint for exchanging authorization codes and refreshing access tokens.
     pub token: String,
+    /// Space-separated OAuth scopes requested during browser sign-in.
     pub scopes: &'static str,
 }
 /// Returns the authorization endpoint, token endpoint, and scopes for the configured Google

@@ -10,10 +10,15 @@ use std::{
 };
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Node {
+    /// Directory path in the tree's local, remote, or archive namespace.
     pub path: PathBuf,
+    /// Display label for this row, using the directory name or root label.
     pub title: String,
+    /// Nesting level in the displayed tree. The root is at depth zero.
     pub depth: usize,
+    /// Whether this directory was requested to expand during the tree walk.
     pub expanded: bool,
+    /// Listing failure for this node, or an empty string when no failure was recorded.
     pub error: String,
 }
 /// Replaces the path in `root` while preserving its archive or remote connection. A

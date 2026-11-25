@@ -8,12 +8,19 @@ use std::path::{Path, PathBuf};
 use url::Url;
 
 pub enum Input {
+    /// A resolved pane location that navigation can open directly.
     Location(Location),
+    /// A parsed remote address whose connection still needs to be matched or established.
     Remote(Box<Target>),
 }
 pub struct Target {
+    /// Connection settings derived from the URI for matching or creating a connection
+    /// profile.
     pub connection: Connection,
+    /// Decoded path in the remote service's namespace. For SMB the share name is stored
+    /// separately in the connection profile.
     pub path: PathBuf,
+    /// Session-only URI data, including a supplied password or request query.
     pub secrets: Secrets,
 }
 

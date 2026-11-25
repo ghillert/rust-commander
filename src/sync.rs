@@ -12,10 +12,15 @@ use std::{
 };
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Choice {
+    /// Leave the entries on both sides as they are.
     Skip,
+    /// Copy the reviewed left entry to its corresponding path on the right.
     LeftToRight,
+    /// Copy the reviewed right entry to its corresponding path on the left.
     RightToLeft,
+    /// Remove the reviewed entry from the left side.
     DeleteLeft,
+    /// Remove the reviewed entry from the right side.
     DeleteRight,
 }
 impl Choice {
@@ -32,24 +37,37 @@ impl Choice {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
+    /// Whether to create just this missing directory during a filtered copy. Its children are
+    /// reviewed separately.
     #[serde(default)]
     pub shallow_directory: bool,
+    /// Entry path relative to both synchronization roots.
     pub path: PathBuf,
+    /// Action proposed by the preview or selected during review.
     pub choice: Choice,
+    /// Whether both sides had different contents or incompatible entry types at preview time.
     pub conflict: bool,
+    /// Whether the entry was present on the left during the preview.
     pub left: bool,
+    /// Whether the entry was present on the right during the preview.
     pub right: bool,
     left_stamp: Option<String>,
     right_stamp: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Plan {
+    /// Include and exclude rules used to build the plan and rechecked when applying it.
     #[serde(default)]
     pub rules: Box<crate::path_rules::PathRules>,
+    /// Left and right locations for a plan involving a remote backend. Local-only plans use the
+    /// root paths directly.
     #[serde(default)]
     pub remote_roots: Option<(crate::filesystem::Location, crate::filesystem::Location)>,
+    /// Left root path, relative to the configured connection for a remote folder.
     pub left: PathBuf,
+    /// Right root path, relative to the configured connection for a remote folder.
     pub right: PathBuf,
+    /// Differences presented for review, including entries whose chosen action is to skip.
     pub items: Vec<Item>,
     left_stamp: Option<String>,
     right_stamp: Option<String>,

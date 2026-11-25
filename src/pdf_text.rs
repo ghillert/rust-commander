@@ -17,15 +17,22 @@ const MAX_TEXT: usize = 2 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct TextGlyph {
+    /// Half-open UTF-8 byte range occupied by this glyph in [`PageText::text`].
     pub range: Range<usize>,
     /// Normalized rectangle on the unrotated rendered page (top-left origin).
     pub bounds: [f32; 4],
 }
 #[derive(Clone, Debug, Default)]
 pub struct PageText {
+    /// Searchable page text, including spaces and newlines inferred from glyph positions.
     pub text: String,
+    /// Glyphs in extraction order, with byte ranges in [`Self::text`] and normalized page
+    /// bounds.
     pub glyphs: Vec<TextGlyph>,
+    /// Whether at least one glyph was skipped because it had no Unicode mapping.
     pub unmapped: bool,
+    /// Text-extraction failure reported by the viewer when the page image can still be
+    /// displayed.
     pub error: Option<String>,
 }
 impl PageText {
@@ -232,9 +239,14 @@ pub fn load_page_data(
 }
 
 pub struct SearchHit {
+    /// Zero-based index of the PDF page containing the match.
     pub page: usize,
+    /// Half-open UTF-8 byte range of the match in the extracted page text.
     pub range: Range<usize>,
+    /// Extracted text and glyph positions for the matching page, used to highlight the
+    /// range.
     pub text: Arc<PageText>,
+    /// Whether the search crossed the end or beginning of the document to reach this match.
     pub wrapped: bool,
 }
 /// Search visible Unicode text, not compressed PDF bytes. Holds one text page at a time.

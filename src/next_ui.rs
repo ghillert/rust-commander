@@ -15,27 +15,47 @@ use std::{
 };
 #[derive(Default)]
 pub struct Features {
+    /// State of the folder comparison dialog while it is open.
     pub comparison: Option<crate::folder_tools::Form>,
+    /// State of the synchronization dialog, including any preview being reviewed.
     pub sync: Option<SyncForm>,
+    /// State of the recovery storage and cleanup dialog while it is open.
     pub recovery: Option<RecoveryForm>,
+    /// Whether the saved-workspaces dialog is open.
     pub workspaces: bool,
+    /// Name entered for saving or renaming a workspace.
     pub workspace_name: String,
+    /// Zero-based index of the selected saved workspace, when one is selected.
     pub workspace_selected: Option<usize>,
+    /// File path and editable application path in the Open With dialog, when open.
     pub open_with: Option<(PathBuf, String)>,
+    /// Selected file and requested interpretation in the Open As dialog, when open.
     pub open_as: Option<crate::open_as::Form>,
+    /// Discovered application paths available to the Open With chooser.
     pub applications: Vec<PathBuf>,
+    /// Search text used to narrow the applications displayed in the chooser.
     pub application_filter: String,
+    /// Whether accepting Open With saves a filename association for later opens.
     pub remember_application: bool,
+    /// Filename glob paired with the application when saving an association.
     pub application_pattern: String,
+    /// Message displayed when a workspace or application-choice action fails.
     pub error: Option<String>,
 }
 pub enum Effect {
+    /// Submit the supplied operation to the file-job runner.
     Run(Box<Operation>),
+    /// Capture the current panes and preferences as a new workspace with the supplied name.
     SaveWorkspace(String),
+    /// Restore the saved workspace at the given zero-based index.
     LoadWorkspace(usize),
+    /// Change the name of the workspace at the given zero-based index to the supplied name.
     RenameWorkspace(usize, String),
+    /// Remove the saved workspace at the given zero-based index.
     DeleteWorkspace(usize),
+    /// Persist the current in-memory operation history.
     SaveHistory,
+    /// Refresh the in-memory history from the saved operation records.
     ReloadHistory,
 }
 impl Features {

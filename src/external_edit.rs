@@ -12,8 +12,12 @@ pub const LIMIT: u64 = 2 * 1024 * 1024 * 1024;
 #[derive(Clone)]
 pub struct Session {
     directory: std::sync::Arc<tempfile::TempDir>,
+    /// Path of the private working copy passed to the external editor.
     pub file: PathBuf,
+    /// Local, remote, or archive location containing the original entry.
     pub location: Location,
+    /// Path of the original entry within the location's namespace, used for guarded
+    /// save-back.
     pub source: PathBuf,
     original: std::sync::Arc<crate::private_bytes::Bytes>,
     archive_stamp: Option<String>,

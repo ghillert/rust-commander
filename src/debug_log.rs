@@ -7,9 +7,13 @@ use std::{
 
 #[derive(Clone, Debug)]
 pub struct Event {
+    /// Monotonically increasing event number within this log buffer.
     pub sequence: u64,
+    /// Wall-clock time when the buffer recorded the event.
     pub time: SystemTime,
+    /// Subsystem label used to group and filter events.
     pub category: &'static str,
+    /// Diagnostic text, limited to the first 512 characters by [`Buffer::record`].
     pub message: String,
 }
 #[derive(Default)]

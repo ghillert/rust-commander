@@ -17,10 +17,16 @@ pub const ATTACHMENT_LIMIT: usize = 25 * 1024 * 1024;
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Settings {
+    /// SMTP server hostname. Supply the port separately in [`Self::port`].
     pub host: String,
+    /// TCP port used to connect to the SMTP server.
     pub port: u16,
+    /// Use TLS from the start of the connection. When false, the transport requires
+    /// STARTTLS.
     pub implicit_tls: bool,
+    /// SMTP login name. An empty value selects delivery without authentication.
     pub username: String,
+    /// Sender mailbox used in the message's `From` header.
     pub sender: String,
 }
 impl Settings {
@@ -50,11 +56,15 @@ impl Settings {
 }
 #[derive(Clone)]
 pub struct File {
+    /// Attachment name relative to the selection, with any directory components flattened
+    /// when constructing the email.
     pub name: String,
+    /// Complete contents of this attachment before MIME encoding.
     pub bytes: Vec<u8>,
 }
 #[derive(Clone)]
 pub struct Prepared {
+    /// Attachments in filename order, including files selected through directories.
     pub files: Vec<File>,
 }
 /// Collects regular files from a local, remote, or archive selection into attachments

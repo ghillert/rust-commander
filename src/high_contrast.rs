@@ -2,8 +2,10 @@
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Contrast {
+    /// Follow the desktop high-contrast setting where detection is available.
     #[default]
     System,
+    /// Use a high-contrast palette even when the desktop does not request one.
     High,
 }
 impl Contrast {
@@ -16,10 +18,15 @@ impl Contrast {
     }
 }
 pub struct Colors {
+    /// Base surface color in high-contrast mode.
     pub background: slint::Color,
+    /// Foreground for ordinary text and controls.
     pub foreground: slint::Color,
+    /// Background for highlighted controls and the focused row.
     pub highlight: slint::Color,
+    /// Foreground for text drawn over the highlight color.
     pub highlight_text: slint::Color,
+    /// Foreground for disabled controls.
     pub disabled: slint::Color,
 }
 impl Colors {

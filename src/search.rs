@@ -11,13 +11,26 @@ use std::{io::Read, time::SystemTime};
 
 #[derive(Clone, Debug)]
 pub struct SearchFilters {
+    /// Whether case matters when matching include and exclude globs.
     pub name_case_sensitive: bool,
+    /// Whether to match the content query as a line-oriented regular expression.
     pub content_regex: bool,
+    /// Whether case matters in literal and regular-expression content searches.
     pub content_case_sensitive: bool,
+    /// Exclude globs for entry names and relative paths. Excluding a directory prunes its
+    /// descendants.
     pub exclude: String,
+    /// Inclusive lower size bound in bytes. A size filter requires a known size and excludes
+    /// directories.
     pub min_size: Option<u64>,
+    /// Inclusive upper size bound in bytes. A size filter requires a known size and excludes
+    /// directories.
     pub max_size: Option<u64>,
+    /// Earliest allowed modification time, inclusive. Entries must supply a timestamp when this
+    /// is set.
     pub modified_after: Option<SystemTime>,
+    /// Latest allowed modification time, inclusive. Entries must supply a timestamp when this
+    /// is set.
     pub modified_before: Option<SystemTime>,
 }
 impl Default for SearchFilters {

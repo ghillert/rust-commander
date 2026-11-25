@@ -13,10 +13,14 @@ use std::{
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Language {
+    /// Choose a language from the process or OS locale, falling back to English.
     #[default]
     System,
+    /// Display the original English interface strings.
     English,
+    /// Use the German translation catalog.
     German,
+    /// Use the Spanish translation catalog.
     Spanish,
 }
 impl Language {

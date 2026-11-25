@@ -78,11 +78,18 @@ pub fn rename_exclusive(source: &Path, destination: &Path) -> std::io::Result<()
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RenameOptions {
+    /// Pattern to replace in each original filename before applying the template.
     pub find: String,
+    /// Replacement text. In regex mode it can refer to captured groups.
     pub replace: String,
+    /// Whether to interpret the find pattern as a regular expression.
     pub regex: bool,
+    /// Filename template. `{name}` inserts the replaced stem, `{ext}` its extension including
+    /// the dot, and `{n}` the sequence number.
     pub template: String,
+    /// Sequence number assigned to the first source for the `{n}` placeholder.
     pub start: usize,
+    /// Minimum zero-padded width for `{n}`, capped at 12.
     pub width: usize,
 }
 impl Default for RenameOptions {
@@ -250,11 +257,18 @@ pub fn batch_rename(plan: &[(PathBuf, PathBuf)], task: &mut Task) -> Result<()> 
 
 #[derive(Clone)]
 pub struct SearchOptions {
+    /// Directory at which the search starts, using filesystem or connection-relative paths as
+    /// appropriate.
     pub root: PathBuf,
+    /// Include globs matched against the root-relative path or its final component.
     pub pattern: String,
+    /// Content query for regular files. An empty string disables content matching.
     pub content: String,
+    /// Whether to include dot-prefixed names and descend into dot-prefixed folders.
     pub hidden: bool,
+    /// Maximum matches to return, from 1 through 100,000.
     pub max_results: usize,
+    /// Case sensitivity, exclusions, and metadata bounds applied to the search.
     pub filters: crate::search::SearchFilters,
 }
 impl Default for SearchOptions {
@@ -270,8 +284,12 @@ impl Default for SearchOptions {
     }
 }
 pub struct SearchResult {
+    /// Matching entry paths as returned by the location's listing.
     pub paths: Vec<PathBuf>,
+    /// Up to 1,000 diagnostics for entries or directories the search could not inspect.
     pub errors: Vec<String>,
+    /// Whether a result or traversal limit stopped the search, or additional diagnostics
+    /// were omitted.
     pub truncated: bool,
 }
 /// Runs the recursive [`search`](crate::search::search) from the local root in `options`.
@@ -290,9 +308,13 @@ pub fn search(options: &SearchOptions, task: &mut Task) -> Result<SearchResult> 
 
 #[derive(Clone)]
 pub struct Comparison {
+    /// Display form of the entry's path relative to the two roots.
     pub name: String,
+    /// Display label describing a difference, a match, or an unverified result.
     pub status: String,
+    /// Relative path used to locate the entry under either comparison root.
     pub path: PathBuf,
+    /// Whether both sides list a non-directory, non-symlink entry eligible for a text diff.
     pub can_diff: bool,
 }
 /// Compares two local directory trees with the default content-verifying

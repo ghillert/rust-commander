@@ -17,13 +17,20 @@ use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum ZipEdit {
+    /// Adds local files and directory trees beneath an archive directory.
     Add {
+        /// Local paths to add, each stored under its basename.
         sources: Vec<PathBuf>,
+        /// Archive-root-relative parent for the new members. An empty path selects the root.
         prefix: PathBuf,
     },
+    /// Removes the listed archive-root-relative member paths and their descendants.
     Remove(Vec<PathBuf>),
+    /// Renames a member and rewrites the prefix of any descendants.
     Rename {
+        /// Existing archive-root-relative member path.
         source: PathBuf,
+        /// New archive-root-relative path for that member.
         target: PathBuf,
     },
 }

@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Rule {
+    /// Case-insensitive glob matched against the filename to select an application.
     pub pattern: String,
+    /// Absolute path to the installed application or launcher for matching files.
     pub application: PathBuf,
 }
 impl Rule {

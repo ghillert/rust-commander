@@ -8,24 +8,45 @@ use crate::{
 use std::path::{Path, PathBuf};
 #[derive(Default)]
 pub struct ArchiveForm {
+    /// Local path of the archive to edit, unlock, or browse, including a materialized copy.
     pub file: String,
+    /// Display label for the original source when `file` points to a cached archive.
     pub source_display: Option<String>,
+    /// Proposed output path when creating an encrypted archive.
     pub destination: String,
+    /// Password entered for encrypted archive creation or unlocking.
     pub password: String,
+    /// Optional compression level for encrypted archive creation. `None` uses the format
+    /// default.
     pub compression_level: Option<u8>,
+    /// Selected action index, with 0 for editing, 1 for encrypted creation, and 2 for
+    /// unlocking.
     pub mode: usize,
+    /// Selected edit index, with 0 for adding files, 1 for removing members, and 2 for
+    /// renaming.
     pub edit_mode: usize,
+    /// Local paths to add to the archive, one per line.
     pub additions: String,
+    /// Existing archive-root-relative member path for a rename.
     pub source: String,
+    /// New archive-root-relative member path for a rename.
     pub target: String,
+    /// Directory within the archive where new members will be added.
     pub prefix: PathBuf,
+    /// Archive-root-relative paths of the members selected for removal.
     pub selected: Vec<PathBuf>,
+    /// Local entries selected for inclusion in a new encrypted archive.
     pub sources: Vec<PathBuf>,
+    /// Error message shown in the archive dialog, when present.
     pub error: Option<String>,
 }
 pub enum ArchiveAction {
+    /// Submit the enclosed archive operation as a file job.
     Run(Box<Operation>),
+    /// Validate the supplied password for the archive at the given path and browse its root
+    /// on success.
     Unlock(PathBuf, String),
+    /// Open the archive at the supplied path in a file pane.
     Browse(PathBuf),
 }
 impl ArchiveForm {

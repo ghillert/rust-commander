@@ -14,18 +14,29 @@ use windows as platform;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
+    /// Absolute local path of the reviewed filesystem entry.
     pub path: PathBuf,
+    /// Platform file identifier checked on apply to detect replacement at the same path.
     pub identity: String,
+    /// Owner's numeric user ID on Unix or SID on Windows.
     pub owner: String,
+    /// Group's numeric ID on Unix or SID on Windows. Empty if Windows reports no group.
     pub group: String,
+    /// Access-control rules captured in the platform's text format, described by
+    /// [`syntax`].
     pub acl: String,
+    /// Unix permission and special bits masked to `0o7777`. Windows snapshots use zero.
     pub mode: u32,
+    /// Whether the reviewed entry is a directory, which affects which ACL rules apply.
     pub directory: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Change {
+    /// Requested owner as an account name or a platform user identifier.
     pub owner: String,
+    /// Requested group as a group name or platform group identifier.
     pub group: String,
+    /// Requested ACL text in the platform format described by [`syntax`].
     pub acl: String,
 }
 impl Snapshot {

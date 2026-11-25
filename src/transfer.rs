@@ -575,6 +575,8 @@ pub fn transfer(
 /// A source and an occupied destination found by [`conflicts`].
 #[derive(Clone)]
 pub struct Conflict {
+    /// Incoming path involved in the collision. Archive extraction previews strip the selected
+    /// archive prefix.
     pub source: PathBuf,
     /// Destination entry to use as an override key for [`transfer_resolved`].
     pub target: PathBuf,

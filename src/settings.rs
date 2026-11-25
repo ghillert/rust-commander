@@ -12,26 +12,43 @@ use std::{
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Bookmark {
+    /// Display name for this saved location.
     pub name: String,
+    /// Location to navigate to when the bookmark is opened.
     pub location: Location,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    /// Snapshots used to restore the individual windows of the last session.
     pub window_sessions: Vec<WindowSession>,
+    /// Tab titles and location locks, indexed by pane and then by tab in the same order as
+    /// [`Self::tabs`].
     pub tab_states: [Vec<crate::navigation::TabState>; 2],
+    /// Recently visited locations and their display titles, most recent first.
     pub recent_locations: Vec<crate::navigation::RecentLocation>,
+    /// Paths of recently opened files, most recent first.
     pub recent_files: Vec<PathBuf>,
+    /// Command aliases and argument templates imported from muCommander.
     pub imported_commands: Vec<crate::config_import::ImportedCommand>,
+    /// Named pane and preference snapshots available to restore.
     pub workspaces: Vec<crate::workspaces::Workspace>,
+    /// Ordered tab locations for each of the two panes.
     pub tabs: [Vec<Location>; 2],
+    /// Zero-based active tab index for each pane.
     pub active_tabs: [usize; 2],
+    /// Zero-based index of the active pane (0 or 1).
     pub active_pane: usize,
+    /// Named locations offered by the bookmarks menu.
     pub bookmarks: Vec<Bookmark>,
+    /// Whether the panes show entries with dot-prefixed names.
     pub show_hidden: bool,
+    /// Legacy flag that selects dark mode on restore when the color scheme is set to System.
     pub dark_mode: bool,
+    /// Saved remote connection profiles used to reopen remote locations.
     pub connections: Vec<crate::remote::Connection>,
+    /// User preferences shared by the file manager and its tools.
     pub preferences: crate::preferences::Preferences,
 }
 
@@ -257,9 +274,13 @@ mod tests {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct WindowSession {
+    /// Snapshot of this window’s panes, tabs, and layout.
     pub workspace: crate::workspaces::Workspace,
+    /// Window width in logical pixels at the time of saving.
     pub width: f32,
+    /// Window height in logical pixels at the time of saving.
     pub height: f32,
+    /// Window position on the desktop as `[x, y]` in physical pixels, when recorded.
     #[serde(default)]
     pub position: Option<[i32; 2]>,
 }

@@ -2,11 +2,16 @@
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DesktopStyle {
+    /// Detects the desktop style from the host OS and, on Linux, the distribution.
     #[default]
     Automatic,
+    /// Uses the macOS palette and control styling.
     MacOs,
+    /// Uses the Windows palette and control styling.
     Windows,
+    /// Uses the Ubuntu palette with its orange accent.
     Ubuntu,
+    /// Uses the GNOME palette, also used for Linux distributions without a dedicated style.
     Gnome,
 }
 impl DesktopStyle {
@@ -55,9 +60,12 @@ pub fn detect_linux(release: &str) -> DesktopStyle {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ColorScheme {
+    /// Follows the desktop’s light or dark appearance.
     #[default]
     System,
+    /// Uses the light appearance regardless of the system setting.
     Light,
+    /// Uses the dark appearance regardless of the system setting.
     Dark,
 }
 impl ColorScheme {
@@ -71,18 +79,31 @@ impl ColorScheme {
     }
 }
 pub struct Palette {
+    /// Accent color for active controls and focus indicators.
     pub accent: slint::Color,
+    /// Background color of the sidebar.
     pub sidebar: slint::Color,
+    /// Background color of the toolbar.
     pub toolbar: slint::Color,
+    /// Base background color of file panes.
     pub background: slint::Color,
+    /// Color of borders and separators between UI elements.
     pub line: slint::Color,
+    /// Background color for alternating rows in the file list.
     pub stripe: slint::Color,
+    /// Background behind the cursor in the active file pane.
     pub selection: slint::Color,
+    /// Foreground color used over the selection background.
     pub selection_text: slint::Color,
+    /// Text color for entries marked for an operation.
     pub marked_text: slint::Color,
+    /// Background for a marked entry that also holds the active pane’s cursor.
     pub marked_cursor: slint::Color,
+    /// Cursor background in the pane without keyboard focus.
     pub inactive_selection: slint::Color,
+    /// Tint for folder icons.
     pub folder: slint::Color,
+    /// Corner radius in logical pixels for this desktop style.
     pub radius: u8,
 }
 

@@ -18,15 +18,25 @@ use std::{
 };
 
 pub struct Form {
+    /// Directory shown on the left side of the comparison.
     pub left: Location,
+    /// Directory shown on the right side of the comparison.
     pub right: Location,
+    /// Path rules and comparison mode for the next comparison.
     pub options: Options,
+    /// Editable name used to save or select a preset.
     pub preset_name: String,
+    /// Rows from the most recently completed comparison, when available.
     pub result: Option<Vec<Comparison>>,
+    /// Receiver for the outstanding directory comparison.
     pub pending: Option<Receiver<Result<Vec<Comparison>, String>>>,
+    /// Cancellation flag shared with the active comparison or diff worker.
     pub cancel: Arc<AtomicBool>,
+    /// Diagnostic from a failed comparison or text diff, when available.
     pub error: Option<String>,
+    /// Completed side-by-side diff for a selected comparison row.
     pub diff: Option<Diff>,
+    /// Receiver for the outstanding text diff.
     pub diff_pending: Option<Receiver<Result<Diff, String>>>,
 }
 impl Drop for Form {
@@ -132,12 +142,17 @@ impl Form {
     }
 }
 pub struct DiffRow {
+    /// Formatted left line with its one-based line number, or an empty string for an insertion.
     pub left: String,
+    /// Formatted right line with its one-based line number, or an empty string for a deletion.
     pub right: String,
+    /// Whether this row represents an insertion, deletion, or replacement.
     pub changed: bool,
 }
 pub struct Diff {
+    /// Display form of the compared file's root-relative path.
     pub name: String,
+    /// Aligned display rows in document order.
     pub rows: Vec<DiffRow>,
 }
 /// Loads the same relative path from both roots and aligns its decoded text. Each side must

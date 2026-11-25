@@ -53,9 +53,12 @@ const RESPONSE_LIMIT: u64 = 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Release {
+    /// Git tag from the release response, used for version comparison.
     pub tag_name: String,
+    /// GitHub page for the Rust Commander release tag.
     pub html_url: String,
     #[serde(default)]
+    /// Display title supplied by GitHub. Defaults to an empty string when omitted.
     pub name: String,
     #[serde(default)]
     draft: bool,
@@ -64,7 +67,10 @@ pub struct Release {
 }
 #[derive(Clone, Debug)]
 pub struct Update {
+    /// Stable release returned by the endpoint, or `None` if no release was found.
     pub release: Option<Release>,
+    /// Whether the available release supersedes the installed version. For example,
+    /// a stable `1.0.0` supersedes `1.0.0-SNAPSHOT`.
     pub newer: bool,
 }
 fn version(text: &str) -> Result<[u64; 3]> {

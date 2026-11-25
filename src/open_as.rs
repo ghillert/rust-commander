@@ -7,7 +7,9 @@ use crate::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
+    /// Open the selected entry using the specified built-in viewer mode.
     Viewer(Mode),
+    /// Interpret the selected entry as the specified archive format.
     Archive(Format),
 }
 pub const CHOICES: &[(&str, Kind)] = &[
@@ -27,9 +29,13 @@ pub const CHOICES: &[(&str, Kind)] = &[
     ),
 ];
 pub struct Form {
+    /// Pane location providing access to the selected entry.
     pub location: Location,
+    /// Entry whose contents will be opened with the selected interpretation.
     pub entry: Entry,
+    /// Viewer mode or archive format selected in the dialog.
     pub kind: Kind,
+    /// Password entered for opening an encrypted archive, empty if none was supplied.
     pub password: String,
 }
 impl Form {

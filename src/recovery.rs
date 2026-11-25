@@ -59,14 +59,29 @@ use std::{
 /// Identifies the journal change, checkpoint entry, or registered backup for an [`Item`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Key {
-    Journal { record: String, change: usize },
-    Checkpoint { batch: String, item: usize },
+    /// Identifies a retained copy by its Undo journal record and change index.
+    Journal {
+        /// ID of the history record that owns the backup.
+        record: String,
+        /// Zero-based index in the history record's list of changes.
+        change: usize,
+    },
+    /// Identifies a retained original by its resumable transfer batch and item index.
+    Checkpoint {
+        /// ID of the resumable transfer batch retaining the original.
+        batch: String,
+        /// Zero-based index in the batch manifest's list of transfer items.
+        item: usize,
+    },
+    /// Identifies a separately registered recovery copy by its registry ID.
     Registered(String),
 }
 /// A snapshot of a retained original. Restore and cleanup revalidate it before use.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
+    /// Identifier used to look up this copy again before restoring or cleaning it.
     pub key: Key,
+    /// Human-readable description of the operation or backup that produced the copy.
     pub label: String,
     /// Location holding the backup.
     pub source: Location,
@@ -88,6 +103,7 @@ pub struct Item {
 /// Available originals and any warnings encountered while discovering them.
 #[derive(Default)]
 pub struct Inventory {
+    /// Recoverable originals found across the journal, transfer checkpoints, and registry.
     pub items: Vec<Item>,
     /// Problems with individual backups or checkpoints that could be skipped.
     pub warnings: Vec<String>,

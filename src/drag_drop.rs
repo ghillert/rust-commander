@@ -14,7 +14,10 @@ use std::{
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Selection {
+    /// Source location used to interpret the selected entries. For local paths from several
+    /// folders, this uses the first entry's parent.
     pub from: Location,
+    /// Top-level entries in selection order, each with a distinct destination basename.
     pub entries: Vec<Entry>,
 }
 impl Selection {
@@ -207,7 +210,9 @@ pub(crate) fn transient<T>(
 }
 
 pub struct Export {
+    /// Owns the temporary export directory for as long as the exported paths are needed.
     pub directory: tempfile::TempDir,
+    /// Materialized local paths of the top-level entries in their original selection order.
     pub paths: Vec<PathBuf>,
     _lease: Option<fs::File>,
 }

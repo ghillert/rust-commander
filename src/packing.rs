@@ -16,12 +16,19 @@ pub const FORMATS: [(Format, &str, &str); 9] = [
 ];
 
 pub struct Options {
+    /// Writable archive or stream format selected for the output.
     pub format: Format,
+    /// Format-specific compression level, or `None` for the writer's default.
     pub compression_level: Option<u8>,
+    /// Archive comment used when creating ZIP output.
     pub comment: String,
+    /// Whether the application should run this packing job in the background.
     pub background: bool,
+    /// Whether the packing dialog shows the expanded list of source entries.
     pub expanded: bool,
+    /// Whether to encrypt the ZIP or 7z output with the supplied password.
     pub encrypted: bool,
+    /// Password supplied to the writer when encryption is enabled.
     pub password: String,
 }
 impl Default for Options {

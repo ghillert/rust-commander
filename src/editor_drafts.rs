@@ -11,11 +11,18 @@ use std::{
 const LIMIT: u64 = 192 * 1024 * 1024;
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Draft {
+    /// Stable ID used to save, list, reload, and discard this editor's recovery draft.
     pub id: u64,
+    /// Display title stored with the draft for the recovery list.
     pub title: String,
+    /// Pane location from which the edited document was opened.
     pub location: crate::filesystem::Location,
+    /// Original entry path in the location's namespace.
     pub path: PathBuf,
+    /// Original document bytes, decoded text, and encoding settings needed to resume
+    /// editing.
     pub document: crate::text_document::Document,
+    /// Unsaved editor buffer to restore alongside the original document.
     pub text: String,
 }
 fn root() -> Result<PathBuf> {

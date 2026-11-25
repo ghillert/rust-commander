@@ -6,7 +6,9 @@ use unicode_normalization::UnicodeNormalization;
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TabState {
+    /// Custom tab title. An empty value lets the UI derive a title from the location.
     pub title: String,
+    /// Location this tab is pinned to. Navigation elsewhere can be opened in another tab.
     pub locked: Option<Location>,
 }
 
@@ -26,15 +28,19 @@ impl TabState {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Orientation {
+    /// Arrange the two panes horizontally, left and right.
     #[default]
     SideBySide,
+    /// Arrange the two panes vertically, top and bottom.
     Stacked,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Layout {
+    /// Direction along which the file panes share the available space.
     pub orientation: Orientation,
+    /// Fraction of the split assigned to the first pane, from 0.15 through 0.85.
     pub ratio: f32,
 }
 impl Default for Layout {
@@ -57,7 +63,9 @@ impl Layout {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RecentLocation {
+    /// Display label saved with the recent location.
     pub title: String,
+    /// Persistent location to reopen when this history entry is selected.
     pub location: Location,
 }
 

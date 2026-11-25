@@ -11,7 +11,9 @@ use std::{
     sync::{Arc, atomic::AtomicBool, mpsc::Receiver},
 };
 pub enum Effect {
+    /// Submit the operation prepared by the tool as a file job.
     Run(Box<Operation>),
+    /// Request pane navigation to the supplied location.
     Navigate(Location),
 }
 pub struct RenameForm {

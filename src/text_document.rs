@@ -9,10 +9,15 @@ use std::{
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Encoding {
     #[default]
+    /// UTF-8 text, with an optional leading byte-order mark.
     Utf8,
+    /// UTF-16 text in little-endian byte order.
     Utf16Le,
+    /// UTF-16 text in big-endian byte order.
     Utf16Be,
+    /// Windows-1252, the single-byte Western European Windows code page.
     Windows1252,
+    /// ISO-8859-1, which maps each byte to the same Unicode code point.
     Latin1,
 }
 impl Encoding {
@@ -40,11 +45,18 @@ impl Encoding {
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Document {
+    /// Source bytes retained when the document was decoded, including any leading BOM.
     pub original: Vec<u8>,
+    /// Decoded text with a matching leading BOM removed. Line endings are retained.
     pub text: String,
+    /// Encoding to use when saving edited text.
     pub encoding: Encoding,
+    /// Encoding used to decode [`Self::original`], retained across output encoding changes.
     pub original_encoding: Encoding,
+    /// Whether UTF-8 or UTF-16 output should include a leading byte-order mark.
     pub bom: bool,
+    /// Whether encoding an edit converts line feeds to CRLF. Initially set when the input
+    /// contains CRLF and every line feed belongs to a CRLF pair.
     pub crlf: bool,
 }
 impl Document {
@@ -192,10 +204,39 @@ impl Document {
 pub const PAGE_SIZE: u64 = 256 * 1024;
 #[derive(Clone, Debug)]
 pub struct Page {
+    /// Byte offset of the first source byte represented by this page after
+    /// character-boundary adjustments.
     pub offset: u64,
+    /// Exclusive end offset in source bytes. Resume at this offset to include any character
+    /// that straddled the read boundary.
+    ///
+    /// # Examples
+    ///
+    /// When a read ends partway through `é`, the next page starts at its first byte.
+    ///
+    /// ```
+    /// use rust_commander::text_document::{Encoding, Page};
+    ///
+    /// let source = "aé!".as_bytes();
+    /// let total = source.len() as u64;
+    /// let first = Page::from_bytes(source[..2].to_vec(), 0, total, Encoding::Utf8)?;
+    /// assert_eq!(first.document.text, "a");
+    /// assert_eq!(first.next, 1);
+    ///
+    /// let rest = source[first.next as usize..].to_vec();
+    /// let last = Page::from_bytes(rest, first.next, total, Encoding::Utf8)?;
+    /// assert_eq!(last.document.text, "é!");
+    /// assert_eq!(last.next, total);
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub next: u64,
+    /// Total length of the source in bytes. Paging is complete when [`Self::next`] reaches
+    /// this value.
     pub total: u64,
+    /// Decoded text and encoding information for the bytes in this page.
     pub document: Document,
+    /// Shared reader for further pages when loaded through
+    /// [`crate::viewer::source::Source`].
     pub source: Option<std::sync::Arc<crate::viewer::source::Source>>,
 }
 impl Page {

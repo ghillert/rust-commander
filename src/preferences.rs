@@ -7,8 +7,10 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LocationBar {
+    /// Displays an editable location address.
     #[default]
     Address,
+    /// Displays clickable path components for navigating to parent directories.
     Breadcrumbs,
 }
 impl LocationBar {
@@ -25,41 +27,77 @@ impl LocationBar {
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Preferences {
+    /// SMTP server, sender, and delivery settings for emailing selected files.
     pub mail: crate::mail::Settings,
+    /// Website opened by the Donate command when the feature is enabled.
     pub donation_url: String,
+    /// Bandwidth limit and retry allowance given to new transfer controls.
     pub transfers: crate::transfer_control::Settings,
+    /// Named comparison and path-filter settings available in the folder tools.
     pub folder_tool_presets: Vec<crate::comparison::Preset>,
+    /// Whether to display the expandable directory tree.
     pub directory_tree: bool,
+    /// Whether a pane with a parent location displays a `..` row.
     pub parent_entry: bool,
+    /// Filename-to-application rules in match order. The first matching rule wins.
     pub associations: Vec<crate::associations::Rule>,
+    /// Desktop style used to choose the palette and shape of controls.
     pub desktop_style: crate::appearance::DesktopStyle,
+    /// Whether to follow system contrast settings or force a high-contrast palette.
     pub contrast: crate::high_contrast::Contrast,
+    /// Light or dark appearance preference, including following the system.
     pub color_scheme: crate::appearance::ColorScheme,
+    /// Whether to request native file icons or use the bundled set.
     pub file_icon_source: FileIconSource,
+    /// Presentation of the current location above each file pane.
     pub location_bar: LocationBar,
+    /// Base interface text size in logical pixels, from 10 through 24.
     pub font_size: f32,
+    /// Whether to display the main toolbar.
     pub toolbar: bool,
+    /// Whether to display the navigation sidebar.
     pub sidebar: bool,
+    /// Width of the navigation sidebar in logical pixels.
     pub sidebar_width: f32,
+    /// Width of the directory tree in logical pixels.
     pub tree_width: f32,
+    /// Whether to show the command buttons along the bottom of the window.
     pub command_bar: bool,
+    /// Version of the command-bar defaults already applied by [`Self::upgrade`].
     #[serde(default)]
     pub command_bar_defaults_version: u8,
+    /// Whether to display the window’s status bar.
     pub status_bar: bool,
+    /// Whether to display only the active file pane.
     pub single_pane: bool,
+    /// Whether file panes refresh their listings in response to filesystem notifications.
     pub auto_refresh: bool,
+    /// Whether to ask for confirmation when quitting the application.
     pub confirm_quit: bool,
+    /// Whether file listings place directories before files when sorting.
     pub folders_first: bool,
+    /// Primary shortcut text by action ID, using the syntax accepted by [`shortcut`].
     pub shortcuts: BTreeMap<String, String>,
+    /// Language used for translated interface strings.
     pub language: crate::i18n::Language,
+    /// Visible file-list columns in display order. The name column must come first.
     pub columns: Vec<ColumnSpec>,
+    /// Commands shown on the toolbar, in button order.
     pub toolbar_actions: Vec<ToolbarAction>,
+    /// Size, age, and automatic cleanup settings for retained recovery records.
     pub recovery: crate::history::Retention,
+    /// Whether to display a preview of the focused entry.
     pub preview: bool,
+    /// Width of the preview pane in logical pixels.
     pub preview_width: f32,
+    /// Orientation and split ratio used when displaying both file panes.
     pub layout: crate::navigation::Layout,
+    /// Action IDs shown on the command bar in display order, up to 12 entries.
     pub command_actions: Vec<String>,
+    /// Optional second shortcut text by action ID, using the same syntax as the primary
+    /// binding.
     pub alternate_shortcuts: BTreeMap<String, String>,
+    /// Whether to scale configured column widths proportionally to fit the pane.
     pub auto_size_columns: bool,
 }
 impl Default for Preferences {
@@ -201,8 +239,10 @@ impl Default for Preferences {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FileIconSource {
+    /// Requests native file icons and uses bundled icons when a native icon is unavailable.
     #[default]
     SystemWithFallback,
+    /// Uses the bundled filename and folder icons.
     BuiltIn,
 }
 
@@ -271,13 +311,18 @@ impl Key {
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Modifiers {
+    /// Requires the command modifier, written as Command or Control in shortcut text.
     pub command: bool,
+    /// Requires Shift as part of the shortcut.
     pub shift: bool,
+    /// Requires Alt (Option on macOS) as part of the shortcut.
     pub alt: bool,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shortcut {
+    /// Canonical non-modifier key for the binding.
     pub logical_key: Key,
+    /// Modifier keys required along with the logical key.
     pub modifiers: Modifiers,
 }
 
@@ -400,13 +445,21 @@ pub fn validate(preferences: &Preferences) -> Result<()> {
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Column {
+    /// Entry name as displayed in the file pane.
     Name,
+    /// File size in human-readable units. Directories and unknown sizes show a dash.
     Size,
+    /// Last modification time in the local time zone.
     Modified,
+    /// Final filename extension, without the leading dot.
     Extension,
+    /// Entry category, such as file, folder, archive, or link.
     Kind,
+    /// Owner identity for local files when available.
     Owner,
+    /// Group identity for local files when available.
     Group,
+    /// Unix mode or Windows read-only status for local files.
     Permissions,
 }
 impl Column {
@@ -518,19 +571,30 @@ impl Column {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ColumnSpec {
+    /// Entry attribute shown in this column.
     pub kind: Column,
+    /// Configured width in logical pixels (40 through 800), before optional scaling.
     pub width: f32,
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ToolbarAction {
+    /// Opens the prompt to create a directory in the active pane.
     NewFolder,
+    /// Starts copying the active pane’s chosen entries.
     Copy,
+    /// Starts moving the active pane’s chosen entries.
     Move,
+    /// Opens the rename prompt for the chosen entry.
     Rename,
+    /// Opens the file search form for the active location.
     Search,
+    /// Opens the embedded terminal or toggles its visibility if already running.
     Terminal,
+    /// Opens the archive tools for the current pane selections.
     Archive,
+    /// Requests undo of a journaled file operation.
     Undo,
+    /// Opens the transfer queue and operation history.
     Queue,
 }
 impl ToolbarAction {

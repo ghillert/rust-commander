@@ -27,55 +27,81 @@ static STORAGE: RwLock<()> = RwLock::new(());
 /// A path's recorded states before and after an operation, with a backup when one exists.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Change {
+    /// Absolute local path whose state the journal tracks.
     pub path: PathBuf,
+    /// Local recovery copy of the entry as it existed before the operation, when retained.
     pub backup: Option<PathBuf>,
+    /// Fingerprint of the recovery copy, checked before restoring it.
     pub backup_stamp: Option<String>,
+    /// Fingerprint of the original path before execution. `None` means it did not exist.
     pub before: Option<String>,
+    /// Fingerprint of the path after execution. `None` means it no longer exists.
     pub after: Option<String>,
+    /// Fingerprint of the original entry's platform-specific metadata, when recorded.
     #[serde(default)]
     pub before_native: Option<String>,
+    /// Platform-specific metadata fingerprint used to detect subsequent changes.
     #[serde(default)]
     pub after_native: Option<String>,
+    /// Platform-specific metadata fingerprint of the recovery copy, when recorded.
     #[serde(default)]
     pub backup_native: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReplacementRecovery {
+    /// A local directory holds the originals displaced by replacement.
     Folder(PathBuf),
+    /// Use the recovery manager to find retained originals.
     Manager,
+    /// Undo of the journaled operation can restore the replaced contents.
     Undo,
 }
 
 /// The persisted outcome of an operation and the changes available for Undo or Redo.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Record {
+    /// Stable journal identifier used as the record's directory name.
     pub id: String,
+    /// Human-readable operation name displayed in history.
     pub label: String,
     /// The operation's display message on success or its error on failure.
     pub result: String,
+    /// Where to find originals displaced by this operation, when reported by the worker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replacement_recovery: Option<ReplacementRecovery>,
     /// Whether the operation itself succeeded.
     pub success: bool,
+    /// Whether cancellation was recorded for this operation.
     #[serde(default)]
     pub cancelled: bool,
+    /// Time the record was created, in whole seconds since the Unix epoch.
     #[serde(default)]
     pub created_at: u64,
+    /// Whether this action has been reversed or its Redo opportunity has been consumed.
     pub undone: bool,
+    /// Whether the worker disabled automatic reversal, for example after an external change.
     #[serde(default)]
     pub undo_blocked: bool,
+    /// Local paths with recorded changes, in the order in which they were captured.
     pub changes: Vec<Change>,
+    /// ID of the record targeted by this Undo or Redo, including failed attempts.
     #[serde(default)]
     pub inverse_of: Option<String>,
+    /// ID of the original operation in an Undo/Redo chain. A root record uses its own ID when
+    /// this is absent.
     #[serde(default)]
     pub logical_root: Option<String>,
+    /// Whether this record describes an Undo, making it a possible Redo candidate.
     #[serde(default)]
     pub is_undo: bool,
+    /// Whether to protect this record's recovery chain from retention cleanup.
     #[serde(default)]
     pub pinned: bool,
+    /// Whether cleanup has retired this record's recovery data.
     #[serde(default)]
     pub expired: bool,
+    /// Last revision time in Unix nanoseconds, used to select the latest saved state.
     #[serde(default)]
     pub revision: u128,
 }
@@ -681,8 +707,11 @@ impl Record {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Retention {
+    /// History storage budget in mebibytes used to select cleanup candidates.
     pub max_mib: u64,
+    /// Retention age in days, measured from the newest record in a recovery chain.
     pub max_days: u64,
+    /// Whether to run retention cleanup automatically after an operation.
     pub automatic: bool,
 }
 impl Default for Retention {
@@ -696,8 +725,11 @@ impl Default for Retention {
 }
 #[derive(Default, Debug)]
 pub struct Storage {
+    /// Sum of file and symlink lengths beneath the history directory, in bytes.
     pub bytes: u64,
+    /// Number of backup paths referenced by journaled changes.
     pub backups: usize,
+    /// Bytes in history subdirectories whose names match no loaded record ID.
     pub orphan_bytes: u64,
 }
 fn disk_usage(path: &Path) -> Result<u64> {

@@ -15,6 +15,7 @@ pub struct Terminal {
     writer: Box<dyn Write + Send>,
     receiver: Receiver<Vec<u8>>,
     parser: vt100::Parser,
+    /// Whether keyboard input is directed to the terminal.
     pub focused: bool,
     size: (u16, u16),
     pub(crate) status: String,

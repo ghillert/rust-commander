@@ -15,8 +15,10 @@ use std::{
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Mode {
+    /// Hash both file streams to verify equality of their contents.
     #[default]
     Content,
+    /// Compare listed sizes and modification times and report the result as unverified.
     Metadata,
 }
 impl Mode {
@@ -31,12 +33,16 @@ impl Mode {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Options {
+    /// Path globs that select files and prune excluded subtrees.
     pub rules: PathRules,
+    /// How to compare entries that are files on both sides.
     pub mode: Mode,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Preset {
+    /// User-visible name for recalling this comparison preset.
     pub name: String,
+    /// Comparison mode and path rules restored when the preset is selected.
     pub options: Options,
 }
 

@@ -13,31 +13,56 @@ use std::{
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Challenge {
+    /// Resolved hostname of the server presenting the key.
     pub host: String,
+    /// TCP port of the server presenting the key.
     pub port: u16,
+    /// Host token used to match known-hosts records, including any configured host-key
+    /// alias.
     pub lookup: String,
+    /// OpenSSH algorithm name for the presented public key.
     pub algorithm: String,
+    /// SHA-256 fingerprint displayed for host-key review.
     pub fingerprint: String,
+    /// Presented public key encoded in OpenSSH format.
     pub public_key: String,
+    /// User known-hosts file proposed for saving approval. `None` means saving is disabled.
     pub save_to: Option<PathBuf>,
 }
 #[derive(Clone, Default)]
 pub struct Review {
+    /// Shared slot where the connection worker places an unknown host key for the UI to
+    /// review.
     pub offered: Arc<Mutex<Option<Challenge>>>,
+    /// Previously approved challenge that must exactly match the newly offered challenge.
     pub accepted: Option<Challenge>,
 }
 #[derive(Debug)]
 pub struct Config {
+    /// Effective hostname to connect to after applying the profile and SSH configuration.
     pub host: String,
+    /// Effective SSH service port.
     pub port: u16,
+    /// Effective SSH login name.
     pub user: String,
+    /// Identity file paths considered for public-key authentication, in attempt order.
     pub identities: Vec<PathBuf>,
+    /// User and system known-hosts files consulted when verifying the server key.
     pub known_hosts: Vec<PathBuf>,
+    /// User known-hosts file for recording a reviewed key, if configured.
     pub save_to: Option<PathBuf>,
+    /// Host-key alias or host token used in known-hosts lookups. A nonstandard port uses
+    /// `[host]:port` when there is no alias.
     pub lookup: String,
+    /// Whether agent keys must match configured identities.
     pub identities_only: bool,
+    /// Effective SSH agent setting. `None` uses the platform default and `"none"` disables
+    /// the agent.
     pub agent: Option<String>,
+    /// Whether the SSH configuration permits password authentication.
     pub password_auth: bool,
+    /// Whether the SSH configuration permits authentication with identity files and agent
+    /// keys.
     pub public_key_auth: bool,
 }
 fn local_user() -> String {

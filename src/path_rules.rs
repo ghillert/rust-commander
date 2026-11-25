@@ -7,8 +7,12 @@ use std::path::Path;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct PathRules {
+    /// Include globs separated by semicolons or newlines. Blank includes all filenames.
     pub include: String,
+    /// Exclude globs separated by semicolons or newlines. A matching directory excludes its
+    /// entire subtree.
     pub exclude: String,
+    /// Whether both sets of globs distinguish uppercase and lowercase characters.
     pub case_sensitive: bool,
 }
 impl Default for PathRules {

@@ -13,7 +13,10 @@ use std::{
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ImportedCommand {
+    /// Trimmed command name used to identify the command when merging settings.
     pub alias: String,
+    /// Program name followed by argument templates. [`Self::expand`] substitutes selected
+    /// paths before launch.
     pub arguments: Vec<String>,
 }
 impl ImportedCommand {
@@ -138,11 +141,18 @@ impl ImportedCommand {
 
 #[derive(Clone, Default)]
 pub struct Preview {
+    /// Bookmark candidates with locations that could be translated during import.
     pub bookmarks: Vec<Bookmark>,
+    /// Primary shortcut bindings keyed by Rust Commander action ID.
     pub shortcuts: BTreeMap<String, String>,
+    /// Secondary shortcut bindings keyed by Rust Commander action ID.
     pub alternate_shortcuts: BTreeMap<String, String>,
+    /// Parsed commands available to merge into the user's command list.
     pub commands: Vec<ImportedCommand>,
+    /// Recognized preference names and their imported string values, applied when
+    /// preference import is selected.
     pub preferences: BTreeMap<String, String>,
+    /// Descriptions of skipped items and settings that require manual review.
     pub unsupported: Vec<String>,
 }
 #[derive(Default)]

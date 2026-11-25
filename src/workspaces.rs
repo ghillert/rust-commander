@@ -5,12 +5,18 @@ use crate::{filesystem::Location, preferences::Preferences};
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Workspace {
+    /// Name displayed when choosing a saved workspace.
     pub name: String,
+    /// Saved titles and location locks in the same pane and tab order as [`Self::tabs`].
     #[serde(default)]
     pub tab_states: [Vec<crate::navigation::TabState>; 2],
+    /// Tab locations in display order for each of the two panes.
     pub tabs: [Vec<Location>; 2],
+    /// Zero-based index of the active tab in each pane.
     pub active_tabs: [usize; 2],
+    /// Zero-based index of the pane to activate on restore.
     pub active_pane: usize,
+    /// File manager preferences captured when the workspace was saved.
     pub preferences: Preferences,
 }
 impl Workspace {
