@@ -32,8 +32,10 @@ impl Host {
 
     pub fn sync(&mut self, ui: &CommanderWindow, target: Option<PathBuf>, dark: bool) {
         let target = target.filter(|_| {
+            // Keep the button on the same surface as the source picker popup.
             ui.get_preview_visible()
                 && ui.get_preview_can_open()
+                && !ui.get_preview_source()
                 && !ui.get_viewer_visible()
                 && ui.get_dialog_title().is_empty()
                 && !ui.get_native_form_open()
@@ -149,5 +151,30 @@ mod tests {
         adapter.native_preview.clicked.set(true);
         adapter.preview_native_events();
         assert!(adapter.app.pending_view.is_some());
+    }
+
+    #[test]
+    fn xml_preview_retires_the_native_button_until_the_image_view_returns() {
+        i_slint_backend_testing::init_no_event_loop();
+        let ui = CommanderWindow::new().unwrap();
+        ui.set_preview_visible(true);
+        ui.set_preview_can_open(true);
+        ui.set_preview_image_file(true);
+        let mut host = Host::default();
+        let target = Some(PathBuf::from("preview.svg"));
+        host.sync(&ui, target.clone(), false);
+        assert_eq!(host.target, target);
+        let native_click = host.clicked.clone();
+
+        ui.set_preview_source(true);
+        host.sync(&ui, target.clone(), false);
+        assert!(host.target.is_none());
+        assert!(!ui.get_preview_native());
+        native_click.set(true);
+        assert!(host.take_clicked().is_none());
+
+        ui.set_preview_source(false);
+        host.sync(&ui, target.clone(), false);
+        assert_eq!(host.target, target);
     }
 }

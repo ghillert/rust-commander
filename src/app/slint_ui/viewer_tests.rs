@@ -709,12 +709,31 @@ fn svg_preview_opens_full_view_and_edit_opens_the_source() {
     assert!(ui.get_preview_source());
     assert_eq!(ui.get_preview_image().size().width, 0);
     assert_eq!(ui.get_preview_text(), source);
+    ui.invoke_preview_source_mode_selected("Plain original".into());
+    assert_eq!(ui.get_preview_source_mode(), "Plain original");
+    ElementHandle::find_by_accessible_label(&ui, "Preview source view")
+        .find(|element| {
+            element.accessible_role() == Some(i_slint_backend_testing::AccessibleRole::Combobox)
+        })
+        .unwrap()
+        .mock_single_click(slint::platform::PointerEventButton::Left);
+    ElementHandle::find_by_accessible_label(&ui, "Highlighted original")
+        .find(|element| {
+            element.accessible_role() == Some(i_slint_backend_testing::AccessibleRole::ListItem)
+        })
+        .unwrap()
+        .mock_single_click(slint::platform::PointerEventButton::Left);
+    assert_eq!(ui.get_preview_source_mode(), "Highlighted original");
     ui.invoke_toggle_preview_svg();
     assert!(!ui.get_preview_svg_xml());
     assert!(!ui.get_preview_source());
     assert_eq!(ui.get_preview_image().size().width, 800);
 
-    ui.invoke_open_preview_image();
+    ui.invoke_toggle_preview_svg();
+    ElementHandle::find_by_accessible_label(&ui, "Open image in full view")
+        .next()
+        .unwrap()
+        .mock_single_click(slint::platform::PointerEventButton::Left);
     wait(&state, &ui);
     assert!(ui.get_viewer_visible());
     assert_eq!(ui.get_viewer_image().size().width, 32);

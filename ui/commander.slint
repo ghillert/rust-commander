@@ -1110,6 +1110,7 @@ export component CommanderWindow inherits Window {
                     Image { source: root.preview-image; image-fit: contain; height: self.source.height > 0 ? 200px : 0px; }
                     Button { text: Words.translate("Open full view",Words.version); accessible-label: Words.translate("Open image in full view",Words.version);
                         visible: root.preview-image-file && !root.preview-native; height: self.visible ? 32px : 0px; vertical-stretch: 0;
+                        enabled: root.preview-can-open;
                         clicked => {root.open-preview-image();} }
                     preview-native-slot := Rectangle {
                         horizontal-stretch: 1;
