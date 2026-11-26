@@ -31,6 +31,7 @@ bzip2 = "0.5"
 globset = "0.4"
 hayro = "0.8"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "tiff", "ico"] }
+resvg = { version = "0.48.1", default-features = false, features = ["raster-images", "text", "system-fonts"] }
 md-5 = "0.10"
 libc = "0.2"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "rustls-tls"] }

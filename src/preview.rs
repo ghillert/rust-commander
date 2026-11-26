@@ -41,6 +41,13 @@ impl Preview {
         })
     }
 
+    pub(crate) fn image_target(&self) -> Option<&(Location, Entry)> {
+        self.image.as_ref()?;
+        self.target
+            .as_ref()
+            .filter(|(_, entry)| !entry.is_dir && crate::viewer::is_image_extension(&entry.path))
+    }
+
     /// Updates the preview target when the location, path, size, or modification time
     /// changes. Clears the previous preview and queues the new one. Video previews use
     /// listing metadata immediately.

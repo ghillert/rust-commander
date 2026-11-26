@@ -59,10 +59,12 @@ impl RasterImage {
 }
 use crate::filesystem::Location;
 use anyhow::{Context, Result, bail};
+use resvg::{tiny_skia, usvg};
 use std::{
     fs::File,
     io::{Cursor, Read},
     path::Path,
+    sync::{Arc, LazyLock},
 };
 
 /// The first view of a file, together with the data needed for further navigation.
@@ -138,6 +140,7 @@ pub fn load_preview(location: &Location, path: &Path) -> Result<Content> {
     }
     #[cfg(target_os = "macos")]
     if matches!(location, Location::Local(_))
+        && !is_svg_extension(path)
         && let Some(image) = macos_thumbnail(path)
     {
         return Ok(Content::Image(image));
@@ -171,18 +174,32 @@ fn macos_thumbnail(path: &Path) -> Option<RasterImage> {
     let bytes = std::fs::read(output.path()).ok()?;
     decode_image(&bytes, None).ok()
 }
-fn is_image_extension(path: &Path) -> bool {
+pub(crate) fn is_svg_extension(path: &Path) -> bool {
     path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            [
-                "png", "jpg", "jpeg", "gif", "bmp", "webp", "tif", "tiff", "ico",
-            ]
-            .contains(&extension.to_ascii_lowercase().as_str())
-        })
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
+}
+pub(crate) fn is_image_extension(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| {
+        [
+            "png", "jpg", "jpeg", "gif", "bmp", "webp", "tif", "tiff", "ico", "svg",
+        ]
+        .iter()
+        .any(|format| extension.eq_ignore_ascii_case(format))
+    })
 }
 fn decode_image(bytes: &[u8], preview_edge: Option<u32>) -> Result<RasterImage> {
     let mut reader = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    if reader.format().is_none() {
+        let (encoding, bytes) = encoding_rs::Encoding::for_bom(bytes)
+            .map_or((encoding_rs::UTF_8, bytes), |(encoding, bom)| {
+                (encoding, &bytes[bom..])
+            });
+        if let Some(text) = encoding.decode_without_bom_handling_and_without_replacement(bytes)
+            && text.trim_start().starts_with('<')
+        {
+            return render_svg(&text, preview_edge);
+        }
+    }
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(8192);
     limits.max_image_height = Some(8192);
@@ -200,6 +217,54 @@ fn decode_image(bytes: &[u8], preview_edge: Option<u32>) -> Result<RasterImage> 
         image.as_raw(),
     ))
 }
+
+fn render_svg(text: &str, preview_edge: Option<u32>) -> Result<RasterImage> {
+    static FONTS: LazyLock<Arc<usvg::fontdb::Database>> = LazyLock::new(|| {
+        let mut fonts = usvg::fontdb::Database::new();
+        fonts.load_system_fonts();
+        Arc::new(fonts)
+    });
+
+    let select_font = usvg::FontResolver::default_font_selector();
+    let options = usvg::Options {
+        font_resolver: usvg::FontResolver {
+            select_font: Box::new(move |font, database| {
+                if database.is_empty() {
+                    *database = FONTS.clone();
+                }
+                select_font(font, database)
+            }),
+            ..Default::default()
+        },
+        image_href_resolver: usvg::ImageHrefResolver {
+            // Preview the snapshot without resolving references to other local files.
+            resolve_string: Box::new(|_, _| None),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let tree = usvg::Tree::from_str(text, &options).context("Cannot read SVG")?;
+    let size = tree.size();
+    let edge = size.width().max(size.height());
+    // Rasterize even small icons at preview resolution for a sharp fit in the pane.
+    // The full viewer uses the SVG's own dimensions, up to a bounded raster size.
+    let target = preview_edge.map_or(edge.min(4096.0), |edge| edge as f32);
+    let scale = target / edge;
+    anyhow::ensure!(scale.is_finite(), "Invalid SVG scale");
+    let width = (size.width() * scale).round().max(1.0) as u32;
+    let height = (size.height() * scale).round().max(1.0) as u32;
+    let mut pixmap = tiny_skia::Pixmap::new(width, height).context("Invalid SVG raster size")?;
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
+    Ok(RasterImage::from_rgba_premultiplied(
+        [width as usize, height as usize],
+        pixmap.data(),
+    ))
+}
+
 /// Opens the entry at `path` using the requested viewer mode.
 ///
 /// Pass the path from [`Entry::path`](crate::filesystem::Entry::path). For a

@@ -90,10 +90,8 @@ impl Adapter {
                 if let Err(error) = open::that_detached(path) {
                     self.app.fail(error);
                 }
-            } else if self.app.preview.image.is_some()
-                && let Some((location, entry)) = self.app.preview.target.clone()
+            } else if let Some((location, entry)) = self.app.preview.image_target().cloned()
                 && entry.path == path
-                && crate::icons::file_icon(&entry.name, entry.is_dir) == "image"
             {
                 self.app
                     .view_as(entry, false, location, crate::viewer::Mode::Auto, &self.ctx);

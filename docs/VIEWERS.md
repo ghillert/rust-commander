@@ -30,6 +30,12 @@ edited through Archive tools. Choose explicit ZIP/7z and enter the optional arch
 password for password-protected files. Other archive uses libarchive's format
 detection and encryption support.
 
+## SVG previews
+
+Select an SVG file to see it in the preview pane. Use **Open full view** or
+**F3** to open the image viewer, and **F4** to edit the SVG source. Rendering
+supports embedded images and installed fonts. Linked images are skipped.
+
 ## Video previews
 
 Video files in the preview pane show their extension, size, and modification time

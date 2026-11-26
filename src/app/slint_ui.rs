@@ -2036,13 +2036,8 @@ impl Adapter {
         );
         ui.set_preview_visible(self.app.preferences.preview);
         ui.set_preview_video(self.app.preview.is_video());
-        ui.set_preview_image_file(
-            self.app.preferences.preview
-                && self.app.preview.image.is_some()
-                && self.app.preview.target.as_ref().is_some_and(|(_, entry)| {
-                    crate::icons::file_icon(&entry.name, entry.is_dir) == "image"
-                }),
-        );
+        let image_target = self.app.preview.image_target();
+        ui.set_preview_image_file(self.app.preferences.preview && image_target.is_some());
         ui.set_preview_can_open(
             (self.app.preview.external_video_path().is_some() || ui.get_preview_image_file())
                 && !self.blocked(),
@@ -2091,17 +2086,7 @@ impl Adapter {
             .preview
             .external_video_path()
             .map(Path::to_owned)
-            .or_else(|| {
-                ui.get_preview_image_file()
-                    .then(|| {
-                        self.app
-                            .preview
-                            .target
-                            .as_ref()
-                            .map(|(_, entry)| entry.path.clone())
-                    })
-                    .flatten()
-            });
+            .or_else(|| image_target.map(|(_, entry)| entry.path.clone()));
         self.native_preview.sync(ui, target, self.dark);
     }
 
@@ -2692,9 +2677,7 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
         if !a.blocked()
             && !a.app.exiting
             && a.app.preferences.preview
-            && a.app.preview.image.is_some()
-            && let Some((location, entry)) = a.app.preview.target.clone()
-            && crate::icons::file_icon(&entry.name, entry.is_dir) == "image"
+            && let Some((location, entry)) = a.app.preview.image_target().cloned()
         {
             a.app
                 .view_as(entry, false, location, crate::viewer::Mode::Auto, &a.ctx);

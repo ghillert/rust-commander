@@ -675,6 +675,60 @@ fn image_preview_opens_the_displayed_file_in_the_full_viewer() {
 }
 
 #[test]
+fn svg_preview_opens_full_view_and_edit_opens_the_source() {
+    let source = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 20">
+        <rect width="16" height="20" fill="rgb(20,40,60)" fill-opacity="0.5"/>
+    </svg>"#;
+    let (_root, ui, state, path) = setup("preview.SVG", source.as_bytes());
+    let entry = filesystem::entry_from_path(&path).unwrap();
+    {
+        let mut a = state.borrow_mut();
+        let location = a.app.tab().location.clone();
+        a.app.preferences.preview = true;
+        a.app.preview.select(location, Some(entry));
+    }
+    for _ in 0..1500 {
+        let mut a = state.borrow_mut();
+        let ctx = a.ctx.clone();
+        a.app.preview.poll(&ctx);
+        a.sync(&ui);
+        if ui.get_preview_can_open() {
+            break;
+        }
+        drop(a);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let preview = ui.get_preview_image().to_rgba8().unwrap();
+    assert_eq!((preview.width(), preview.height()), (800, 500));
+    assert_eq!(preview.as_bytes()[..4], [20, 40, 60, 128]);
+    assert_eq!(preview.as_bytes()[799 * 4..800 * 4], [0; 4]);
+
+    ui.invoke_open_preview_image();
+    wait(&state, &ui);
+    assert!(ui.get_viewer_visible());
+    assert_eq!(ui.get_viewer_image().size().width, 32);
+    assert_eq!(ui.get_viewer_image().size().height, 20);
+
+    ui.invoke_viewer_action("close".into());
+    // The fixture starts its first listing before creating the SVG.
+    {
+        let mut a = state.borrow_mut();
+        let tab = a.app.tab_mut();
+        tab.entries = filesystem::list(&tab.location).unwrap();
+        let entry = tab
+            .entries
+            .iter()
+            .find(|e| e.name == "preview.SVG")
+            .unwrap();
+        tab.cursor = Some(entry.path.clone());
+    }
+    ui.invoke_action("Edit".into());
+    wait(&state, &ui);
+    assert!(ui.get_viewer_editable());
+    assert_eq!(ui.get_viewer_text(), source);
+}
+
+#[test]
 fn utf16_source_views_preserve_the_bom_encoding_and_line_endings() {
     let source = "<root>\r\n\t<name>café 雪</name>\r\n</root>\r\n";
     let bytes: Vec<u8> = [0xff, 0xfe]

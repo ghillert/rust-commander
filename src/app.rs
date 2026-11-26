@@ -1154,13 +1154,12 @@ impl Commander {
         }
     }
     fn view(&mut self, entry: Entry, editable: bool, ctx: &UiSignal) {
-        self.view_as(
-            entry,
-            editable,
-            self.tab().location.clone(),
-            crate::viewer::Mode::Auto,
-            ctx,
-        );
+        let mode = if editable && crate::viewer::is_svg_extension(&entry.path) {
+            crate::viewer::Mode::Text
+        } else {
+            crate::viewer::Mode::Auto
+        };
+        self.view_as(entry, editable, self.tab().location.clone(), mode, ctx);
     }
     fn view_as(
         &mut self,

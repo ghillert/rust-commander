@@ -41,6 +41,49 @@ fn explicit_viewers_override_extensions_without_changing_sources() {
         matches!(viewer::load_as(&location,&png,Mode::Image).unwrap(),Content::Image(image) if image.size == [2,3])
     );
     assert!(viewer::load_as(&location, &file, Mode::Image).is_err());
+    let svg = root.path().join("vector.xml");
+    fs::write(
+        &svg,
+        br#"<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="3" height="4"/>"#,
+    )
+    .unwrap();
+    assert!(
+        matches!(viewer::load_as(&location, &svg, Mode::Image).unwrap(), Content::Image(image) if image.size == [3, 4])
+    );
+}
+
+#[test]
+fn archived_svg_preview_renders_without_loading_external_images() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("vector.svg");
+    let external = root.path().join("external.png");
+    image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 0, 255]))
+        .save(&external)
+        .unwrap();
+    fs::write(
+        &path,
+        format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 2">
+                <image href="{}" width="2" height="2"/>
+                <rect x="2" width="2" height="2" fill="blue"/>
+            </svg>"#,
+            external.display(),
+        ),
+    )
+    .unwrap();
+    let zip = root.path().join("images.zip");
+    archive::pack(&[path], &zip, &mut Task::default()).unwrap();
+    let location = Location::Archive {
+        file: zip,
+        prefix: Default::default(),
+    };
+    let Content::Image(image) = viewer::load_preview(&location, Path::new("vector.svg")).unwrap()
+    else {
+        panic!("Expected an SVG preview");
+    };
+    assert_eq!(image.size, [800, 400]);
+    assert_eq!(image.pixels[0], [0; 4]);
+    assert_eq!(image.pixels[799], [0, 0, 255, 255]);
 }
 
 #[test]
