@@ -428,6 +428,7 @@ struct Editor {
     document: Option<crate::text_document::Document>,
     text_page: Option<crate::text_document::Page>,
     pdf: Option<PdfState>,
+    svg: Option<SvgView>,
     image: Option<crate::viewer::RasterImage>,
     zoom: f32,
     kind: &'static str,
@@ -440,6 +441,10 @@ struct Editor {
     can_edit: bool,
     error: Option<String>,
     confirm_close: bool,
+}
+struct SvgView {
+    show_xml: bool,
+    complete: bool,
 }
 struct PdfState {
     bytes: crate::viewer::PdfBytes,
@@ -499,6 +504,10 @@ type PdfResult = Result<
     String,
 >;
 impl Editor {
+    fn shows_svg_xml(&self) -> bool {
+        self.svg.as_ref().is_some_and(|svg| svg.show_xml)
+    }
+
     fn dirty(&self) -> bool {
         self.editable
             && (self.text != self.original
@@ -1187,65 +1196,72 @@ impl Commander {
                 let mut document = None;
                 let mut text_page = None;
                 let mut page_source = None;
-                let (text, image, kind, pdf) =
-                    match crate::viewer::load_as(&location, &entry.path, mode)? {
-                        crate::viewer::Content::LockedPdf { bytes } => (
-                            String::new(),
-                            Some(crate::viewer::RasterImage {
-                                size: [1, 1],
-                                pixels: vec![[255; 4]],
-                            }),
-                            "PDF viewer",
-                            Some(PdfState::new(bytes, 0)),
-                        ),
-                        crate::viewer::Content::Text(text) => {
-                            document =
-                                crate::text_document::Document::detect(text.as_bytes().to_vec())
-                                    .ok();
-                            (text, None, "Text viewer", None)
-                        }
-                        crate::viewer::Content::EncodedText(doc) => {
-                            let text = doc.text.clone();
-                            document = Some(doc);
-                            (text, None, "Text viewer", None)
-                        }
-                        crate::viewer::Content::LargeText(page) => {
-                            page_source = page.source.clone();
-                            let text = page.document.text.clone();
-                            text_page = Some(page);
-                            (text, None, "Paged text viewer", None)
-                        }
-                        crate::viewer::Content::Hex {
+                let loaded = crate::viewer::load_with_svg(&location, &entry.path, mode)?;
+                let mut svg = None;
+                let (text, image, kind, pdf) = match loaded.content {
+                    crate::viewer::Content::LockedPdf { bytes } => (
+                        String::new(),
+                        Some(crate::viewer::RasterImage {
+                            size: [1, 1],
+                            pixels: vec![[255; 4]],
+                        }),
+                        "PDF viewer",
+                        Some(PdfState::new(bytes, 0)),
+                    ),
+                    crate::viewer::Content::Text(text) => {
+                        document =
+                            crate::text_document::Document::detect(text.as_bytes().to_vec()).ok();
+                        (text, None, "Text viewer", None)
+                    }
+                    crate::viewer::Content::EncodedText(doc) => {
+                        let text = doc.text.clone();
+                        document = Some(doc);
+                        (text, None, "Text viewer", None)
+                    }
+                    crate::viewer::Content::LargeText(page) => {
+                        page_source = page.source.clone();
+                        let text = page.document.text.clone();
+                        text_page = Some(page);
+                        (text, None, "Paged text viewer", None)
+                    }
+                    crate::viewer::Content::Hex {
+                        text,
+                        truncated,
+                        source,
+                    } => {
+                        page_source = source;
+                        (
                             text,
-                            truncated,
-                            source,
-                        } => {
-                            page_source = source;
-                            (
-                                text,
-                                None,
-                                if truncated {
-                                    "Hex viewer · paged"
-                                } else {
-                                    "Hex viewer"
-                                },
-                                None,
-                            )
-                        }
-                        crate::viewer::Content::Image(image) => {
-                            (String::new(), Some(image), "Image viewer", None)
-                        }
-                        crate::viewer::Content::Pdf {
-                            bytes,
-                            image,
-                            pages,
-                            text,
-                        } => {
-                            let mut pdf = PdfState::new(bytes, pages);
-                            pdf.text = text;
-                            (pdf.text.text.clone(), Some(image), "PDF viewer", Some(pdf))
-                        }
-                    };
+                            None,
+                            if truncated {
+                                "Hex viewer · paged"
+                            } else {
+                                "Hex viewer"
+                            },
+                            None,
+                        )
+                    }
+                    crate::viewer::Content::Image(image) => {
+                        let text = loaded.svg.map_or_else(String::new, |source| {
+                            svg = Some(SvgView {
+                                show_xml: false,
+                                complete: source.complete,
+                            });
+                            source.text
+                        });
+                        (text, Some(image), "Image viewer", None)
+                    }
+                    crate::viewer::Content::Pdf {
+                        bytes,
+                        image,
+                        pages,
+                        text,
+                    } => {
+                        let mut pdf = PdfState::new(bytes, pages);
+                        pdf.text = text;
+                        (pdf.text.text.clone(), Some(image), "PDF viewer", Some(pdf))
+                    }
+                };
                 let path = location.local().map(|_| entry.path.clone());
                 let remote = if let Location::Remote { connection, .. } = &location {
                     Some((connection.clone(), entry.path.clone()))
@@ -1267,12 +1283,18 @@ impl Commander {
                                 .is_none_or(|s| s.total <= crate::viewer::EDIT_LIMIT)))
                     && (path.is_some() || remote.is_some())
                     && !entry.is_symlink;
+                let original = if svg.is_some() {
+                    String::new()
+                } else {
+                    text.clone()
+                };
                 Ok(Editor {
                     navigation,
                     image_revision: 0,
                     document,
                     text_page,
                     pdf,
+                    svg,
                     image,
                     zoom: 1.0,
                     kind,
@@ -1282,7 +1304,7 @@ impl Commander {
                         && kind == "Text viewer"
                         && (path.is_some() || remote.is_some())
                         && !entry.is_symlink,
-                    original: text.clone(),
+                    original,
                     text,
                     path,
                     remote,

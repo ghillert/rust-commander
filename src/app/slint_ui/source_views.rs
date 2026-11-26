@@ -164,18 +164,21 @@ impl Adapter {
             }
             .into(),
         );
-        let source = self
-            .app
-            .editor
-            .as_mut()
-            .filter(|e| e.image.is_none() && e.pdf.is_none() && !e.kind.starts_with("Hex"));
+        let source = self.app.editor.as_mut().filter(|e| {
+            e.shows_svg_xml()
+                || (e.image.is_none() && e.pdf.is_none() && !e.kind.starts_with("Hex"))
+        });
         ui.set_viewer_source(source.is_some());
         if let Some(editor) = source {
             let state = &mut editor.navigation.presentation;
+            let xml_path = editor
+                .svg
+                .as_ref()
+                .map(|_| editor.navigation.path.with_extension("xml"));
             state.update(
-                &editor.navigation.path,
+                xml_path.as_deref().unwrap_or(&editor.navigation.path),
                 &editor.text,
-                editor.text_page.is_none(),
+                editor.text_page.is_none() && editor.svg.as_ref().is_none_or(|svg| svg.complete),
                 VIEWER_LIMIT,
                 self.dark,
                 &self.ctx,
@@ -183,7 +186,11 @@ impl Adapter {
             ui.set_viewer_source_mode(state.mode.label().into());
             ui.set_viewer_source_modes(self.viewer_source_cache.modes(state));
             ui.set_viewer_source_language(state.language.as_str().into());
-            ui.set_viewer_source_notice(state.notice.as_str().into());
+            ui.set_viewer_source_notice(if editor.svg.as_ref().is_some_and(|svg| !svg.complete) {
+                tr("XML source is truncated.").into_owned().into()
+            } else {
+                state.notice.as_str().into()
+            });
             let active = state.prepared.is_some() && state.mode != Mode::Plain;
             let restore_search_selection = active && !ui.get_viewer_source_active();
             ui.set_viewer_source_active(active);
@@ -224,13 +231,14 @@ impl Adapter {
         }
 
         let preview = &mut self.app.preview;
-        let source = self.app.preferences.preview && preview.source_text;
+        let source = self.app.preferences.preview && (preview.source_text || preview.svg_xml);
         ui.set_preview_source(source);
         if source {
             let state = &mut preview.presentation;
             let path = &preview.target.as_ref().unwrap().1.path;
+            let xml_path = preview.svg_xml.then(|| path.with_extension("xml"));
             state.update(
-                path,
+                xml_path.as_deref().unwrap_or(path),
                 &preview.text,
                 preview.complete,
                 PREVIEW_LIMIT,
@@ -239,7 +247,11 @@ impl Adapter {
             );
             ui.set_preview_source_mode(state.mode.label().into());
             ui.set_preview_source_modes(self.preview_source_cache.modes(state));
-            ui.set_preview_source_notice(state.notice.as_str().into());
+            ui.set_preview_source_notice(if preview.svg_xml && !preview.complete {
+                tr("XML source is truncated.").into_owned().into()
+            } else {
+                state.notice.as_str().into()
+            });
             ui.set_preview_source_active(state.prepared.is_some() && state.mode != Mode::Plain);
             ui.set_preview_source_revision(state.revision as i32);
             ui.set_preview_source_lines(

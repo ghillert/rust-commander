@@ -1833,6 +1833,11 @@ impl Adapter {
             ui.set_viewer_path(editor.title.clone().into());
             ui.set_viewer_kind(editor.kind.into());
             ui.set_viewer_can_save(editor.editable);
+            ui.set_viewer_svg(editor.svg.is_some());
+            ui.set_viewer_svg_xml(editor.shows_svg_xml());
+            if editor.svg.is_some() && !editor.shows_svg_xml() {
+                ui.set_viewer_find_visible(false);
+            }
             ui.set_viewer_pdf_document(editor.pdf.is_some());
             ui.set_viewer_locked(editor.pdf.as_ref().is_some_and(|p| p.locked));
             ui.set_viewer_busy(
@@ -1903,6 +1908,8 @@ impl Adapter {
             ui.set_viewer_text(
                 if ui.get_viewer_source() {
                     editor.navigation.presentation.display(&editor.text)
+                } else if editor.svg.is_some() {
+                    ""
                 } else {
                     &editor.text
                 }
@@ -2005,15 +2012,23 @@ impl Adapter {
                 editor.pdf.as_ref().map(|pdf| pdf.page).unwrap_or(0),
             );
             if self.viewer_stamp.as_ref() != Some(&stamp) {
-                ui.set_viewer_zoom(editor.zoom);
-                ui.set_viewer_image(if editor.pdf.as_ref().is_some_and(|pdf| pdf.text_view) {
-                    Default::default()
-                } else {
-                    editor.image.as_ref().map(image).unwrap_or_default()
-                });
+                if opening || editor.svg.is_none() {
+                    ui.set_viewer_zoom(editor.zoom);
+                }
+                ui.set_viewer_image(
+                    if editor.shows_svg_xml()
+                        || editor.pdf.as_ref().is_some_and(|pdf| pdf.text_view)
+                    {
+                        Default::default()
+                    } else {
+                        editor.image.as_ref().map(image).unwrap_or_default()
+                    },
+                );
                 self.viewer_stamp = Some(stamp);
             }
         } else {
+            ui.set_viewer_svg(false);
+            ui.set_viewer_svg_xml(false);
             self.viewer_stamp = None;
             self.pdf_marks_stamp = None;
         }
@@ -2036,6 +2051,8 @@ impl Adapter {
         );
         ui.set_preview_visible(self.app.preferences.preview);
         ui.set_preview_video(self.app.preview.is_video());
+        ui.set_preview_svg(self.app.preview.svg);
+        ui.set_preview_svg_xml(self.app.preview.svg_xml);
         let image_target = self.app.preview.image_target();
         ui.set_preview_image_file(self.app.preferences.preview && image_target.is_some());
         ui.set_preview_can_open(
@@ -2053,11 +2070,15 @@ impl Adapter {
                     .into(),
             );
             ui.set_preview_text(
-                self.app
-                    .preview
-                    .presentation
-                    .display(&self.app.preview.text)
-                    .into(),
+                if !self.app.preview.svg || self.app.preview.svg_xml {
+                    self.app
+                        .preview
+                        .presentation
+                        .display(&self.app.preview.text)
+                } else {
+                    ""
+                }
+                .into(),
             );
             let stamp = self.app.preview.target.as_ref().map(|(location, entry)| {
                 format!(
@@ -2066,7 +2087,7 @@ impl Adapter {
                     entry.path,
                     entry.modified,
                     entry.size,
-                    self.app.preview.image.is_some()
+                    self.app.preview.image.is_some() && !self.app.preview.svg_xml
                 )
             });
             if self.preview_stamp != stamp {
@@ -2075,6 +2096,7 @@ impl Adapter {
                         .preview
                         .image
                         .as_ref()
+                        .filter(|_| !self.app.preview.svg_xml)
                         .map(image)
                         .unwrap_or_default(),
                 );
@@ -2972,6 +2994,11 @@ fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
     });
     callback!(on_preview_source_mode_selected, |a, w, label| {
         a.app.preview.presentation.select(&label);
+    });
+    callback!(on_toggle_preview_svg, |a, w| {
+        if a.app.preferences.preview && a.app.preview.svg {
+            a.app.preview.svg_xml = !a.app.preview.svg_xml;
+        }
     });
     callback!(on_viewer_pdf_select, |a, w, x, y, begin| {
         a.pdf_select(x, y, begin);

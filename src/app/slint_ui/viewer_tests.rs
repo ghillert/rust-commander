@@ -703,11 +703,47 @@ fn svg_preview_opens_full_view_and_edit_opens_the_source() {
     assert_eq!(preview.as_bytes()[..4], [20, 40, 60, 128]);
     assert_eq!(preview.as_bytes()[799 * 4..800 * 4], [0; 4]);
 
+    assert!(ui.get_preview_svg());
+    ui.invoke_toggle_preview_svg();
+    assert!(ui.get_preview_svg_xml());
+    assert!(ui.get_preview_source());
+    assert_eq!(ui.get_preview_image().size().width, 0);
+    assert_eq!(ui.get_preview_text(), source);
+    ui.invoke_toggle_preview_svg();
+    assert!(!ui.get_preview_svg_xml());
+    assert!(!ui.get_preview_source());
+    assert_eq!(ui.get_preview_image().size().width, 800);
+
     ui.invoke_open_preview_image();
     wait(&state, &ui);
     assert!(ui.get_viewer_visible());
     assert_eq!(ui.get_viewer_image().size().width, 32);
     assert_eq!(ui.get_viewer_image().size().height, 20);
+
+    assert!(ui.get_viewer_svg());
+    ui.set_viewer_zoom(2.0);
+    ui.invoke_viewer_action("toggle-svg-view".into());
+    wait(&state, &ui);
+    assert!(ui.get_viewer_svg_xml());
+    assert!(ui.get_viewer_can_find());
+    assert!(!ui.get_viewer_editable());
+    assert_eq!(ui.get_viewer_image().size().width, 0);
+    assert_eq!(ui.get_viewer_text(), source);
+    assert_eq!(ui.get_viewer_source_language(), "XML");
+    ui.invoke_focus_viewer_search();
+    assert!(ui.get_viewer_find_visible());
+    ui.set_viewer_query("fill-opacity".into());
+    ui.invoke_find_in_viewer();
+    assert_eq!(
+        state.borrow().app.editor.as_ref().unwrap().navigation.last,
+        Some(source.find("fill-opacity").unwrap() as u64),
+    );
+    ui.invoke_viewer_action("toggle-svg-view".into());
+    assert!(!ui.get_viewer_svg_xml());
+    assert!(!ui.get_viewer_source());
+    assert!(!ui.get_viewer_find_visible());
+    assert_eq!(ui.get_viewer_image().size().width, 32);
+    assert_eq!(ui.get_viewer_zoom(), 2.0);
 
     ui.invoke_viewer_action("close".into());
     // The fixture starts its first listing before creating the SVG.

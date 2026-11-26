@@ -550,6 +550,9 @@ export component CommanderWindow inherits Window {
     in property <image> preview-image;
     in property <bool> preview-image-file;
     callback open-preview-image();
+    in property <bool> preview-svg;
+    in property <bool> preview-svg-xml;
+    callback toggle-preview-svg();
     in property <bool> preview-source;
     in property <string> source-font-family: "monospace";
     in property <bool> preview-source-active;
@@ -650,6 +653,7 @@ export component CommanderWindow inherits Window {
     private property <string> viewer-hex-query;
     private property <string> viewer-page-input;
     in-out property <bool> viewer-find-visible;
+    out property <bool> viewer-can-find: root.viewer-text-controls || root.viewer-svg-xml || (root.viewer-pdf-document && !root.viewer-locked);
     out property <bool> viewer-tools-visible: root.viewer-native ? root.viewer-native-tools-open : viewer-tools.is-open;
     public function focus-viewer() {if root.viewer-native {root.viewer-native-document-focus+=1;}viewer-overlay.focus();if root.viewer-image.width==0 {if root.viewer-source-active {viewer-source-view.focus();}else{viewer-contents.focus();}}}
     public function focus-viewer-chrome() {viewer-overlay.focus();}
@@ -665,7 +669,7 @@ export component CommanderWindow inherits Window {
         if searching {viewer-search.focus();}
     }
     public function focus-viewer-search() {
-        if root.viewer-text-controls || (root.viewer-pdf-document && !root.viewer-locked) {
+        if root.viewer-can-find {
             viewer-tools.close();root.viewer-native-tools-open=false; root.viewer-find-visible = true;
             if root.viewer-native {root.viewer-native-find-focus+=1;}else{viewer-search.focus(); viewer-search.select-all();}
         }
@@ -691,6 +695,8 @@ export component CommanderWindow inherits Window {
     in property <bool> viewer-can-save;
     in-out property <string> viewer-text;
     in property <image> viewer-image;
+    in property <bool> viewer-svg;
+    in property <bool> viewer-svg-xml;
     in property <bool> viewer-editable;
     in property <bool> viewer-source;
     in property <bool> viewer-source-active;
@@ -1095,6 +1101,11 @@ export component CommanderWindow inherits Window {
                         text: root.preview-text; color: Palette.foreground; wrap: word-wrap;
                         vertical-stretch: 0;
                     }
+                    if root.preview-svg: Button {
+                        text: root.preview-svg-xml ? Words.translate("SVG view", Words.version) : Words.translate("XML view", Words.version);
+                        height: 32px; vertical-stretch: 0;
+                        clicked => {root.toggle-preview-svg();}
+                    }
                     if root.preview-source: DialogChoice {accessible-label:"Preview source view";model:root.preview-source-modes;current-value <=> root.preview-source-mode;selected(value)=>{root.preview-source-mode-selected(value);}}
                     Image { source: root.preview-image; image-fit: contain; height: self.source.height > 0 ? 200px : 0px; }
                     Button { text: Words.translate("Open full view",Words.version); accessible-label: Words.translate("Open image in full view",Words.version);
@@ -1362,7 +1373,13 @@ export component CommanderWindow inherits Window {
                             label: root.viewer-pdf-text ? "Page view" : "Text view"; show-label: true;
                             clicked => {root.viewer-action("pdf-text");}
                         }
-                        if root.viewer-text-controls || (root.viewer-pdf-document && !root.viewer-locked): ChromeButton {
+                        if root.viewer-svg: ChromeButton {
+                            width: 100px;
+                            label: root.viewer-svg-xml ? Words.translate("SVG view", Words.version) : Words.translate("XML view", Words.version);
+                            show-label: true;
+                            clicked => {root.viewer-action("toggle-svg-view");}
+                        }
+                        if root.viewer-can-find: ChromeButton {
                             label: "Find"; icon: Glyphs.action("Search"); show-label: true;
                             checkable: true; checked: root.viewer-find-visible;
                             clicked => {if root.viewer-find-visible {root.viewer-find-visible=false;root.focus-viewer();} else {root.focus-viewer-search();}}
@@ -1417,7 +1434,7 @@ export component CommanderWindow inherits Window {
                     content-width: max(self.visible-width, viewer-page.width);
                     content-height: max(self.visible-height, viewer-page.height);
                     viewer-page := Rectangle {
-                        accessible-label:"PDF page";
+                        accessible-label:root.viewer-svg ? Words.translate("SVG view", Words.version) : "PDF page";
                         accessible-role:image;
                         x: max(0px, (image-scroll.visible-width - self.width) / 2);
                         y: 0px;

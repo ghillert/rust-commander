@@ -187,7 +187,10 @@ fn header_widths(ui: &CommanderWindow) -> Vec<(&'static str, f32)> {
     if ui.get_viewer_pdf_document() && !ui.get_viewer_locked() {
         v.push(("pdf-text", 80.0));
     }
-    if ui.get_viewer_text_controls() || (ui.get_viewer_pdf_document() && !ui.get_viewer_locked()) {
+    if ui.get_viewer_svg() {
+        v.push(("toggle-svg-view", 100.0));
+    }
+    if ui.get_viewer_can_find() {
         v.push(("find", 64.0));
     }
     if ui.get_viewer_can_save() {
@@ -217,6 +220,14 @@ fn header(ui: &CommanderWindow, widths: &[(&str, f32)]) -> Vec<Control> {
                     "Page view"
                 } else {
                     "Text view"
+                },
+            ),
+            "toggle-svg-view" => (
+                Kind::Button,
+                if ui.get_viewer_svg_xml() {
+                    "SVG view"
+                } else {
+                    "XML view"
                 },
             ),
             "save" => (Kind::Button, "Save"),

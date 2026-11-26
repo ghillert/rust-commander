@@ -1252,6 +1252,7 @@ fn viewer_close_and_exit_preserve_unsaved_text_until_confirmed() {
         document: None,
         text_page: None,
         pdf: None,
+        svg: None,
         image: None,
         zoom: 1.0,
         kind: "Text",

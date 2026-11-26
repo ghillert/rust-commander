@@ -92,6 +92,7 @@ impl Adapter {
                         document: Some(draft.document),
                         text_page: None,
                         pdf: None,
+                        svg: None,
                         image: None,
                         zoom: 1.0,
                         kind: "Text viewer",

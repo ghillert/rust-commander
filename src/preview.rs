@@ -4,7 +4,7 @@
 use crate::ui_signal::UiSignal;
 use crate::{
     filesystem::{Entry, Location},
-    viewer::Content,
+    viewer::{Content, Loaded},
 };
 use std::{
     path::Path,
@@ -20,9 +20,11 @@ pub struct Preview {
     pub(crate) presentation: crate::source_view::State,
     pub(crate) source_text: bool,
     pub(crate) complete: bool,
+    pub(crate) svg: bool,
+    pub(crate) svg_xml: bool,
     pub(crate) target: Option<(Location, Entry)>,
     changed: Option<Instant>,
-    pending: Option<Receiver<Result<Content, String>>>,
+    pending: Option<Receiver<Result<Loaded, String>>>,
     pub(crate) text: String,
     pub(crate) image: Option<crate::viewer::RasterImage>,
     pub(crate) loading: bool,
@@ -65,6 +67,8 @@ impl Preview {
             self.presentation = Default::default();
             self.source_text = false;
             self.complete = false;
+            self.svg = false;
+            self.svg_xml = false;
             self.image = None;
             self.text.clear();
             self.changed = Some(Instant::now());
@@ -101,7 +105,7 @@ impl Preview {
                     let path = entry.path.clone();
                     let ctx = ctx.clone();
                     std::thread::spawn(move || {
-                        let result = crate::viewer::load_preview(&location, &path)
+                        let result = crate::viewer::load_preview_with_svg(&location, &path)
                             .map_err(|e| format!("{e:#}"));
                         let _ = sender.send(result);
                         ctx.request_repaint();
@@ -110,6 +114,14 @@ impl Preview {
             }
         }
         if let Some(result) = crate::background::poll(&mut self.pending) {
+            let result = result.map(|loaded| {
+                if let Some(svg) = loaded.svg {
+                    self.svg = true;
+                    self.complete = svg.complete;
+                    self.text = svg.text;
+                }
+                loaded.content
+            });
             match result {
                 Ok(Content::Text(t)) => {
                     self.text = t;
@@ -241,7 +253,7 @@ mod tests {
             pixels: vec![[0; 4]],
         });
         sender
-            .send(Ok(Content::Text("Late result".into())))
+            .send(Ok(Content::Text("Late result".into()).into()))
             .unwrap();
         preview.select(location.clone(), Some(entry("clip.mp4")));
         preview.poll(&UiSignal::default());

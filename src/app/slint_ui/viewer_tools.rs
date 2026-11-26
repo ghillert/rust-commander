@@ -218,6 +218,13 @@ impl Adapter {
         }
     }
     pub(super) fn viewer_tool_action(&mut self, editor: &mut Editor, action: &str) -> bool {
+        if action == "toggle-svg-view" {
+            if let Some(svg) = &mut editor.svg {
+                svg.show_xml = !svg.show_xml;
+                editor.image_revision += 1;
+            }
+            return true;
+        }
         if let Some(mode) = action.strip_prefix("source-mode:") {
             editor.navigation.presentation.select(mode);
             editor.navigation.last = None;
@@ -293,7 +300,10 @@ impl Adapter {
             editor.navigation.last = None;
         }
         editor.navigation.query = format!("{hex}:{query}");
-        if !hex && editor.kind == "Text viewer" && editor.text_page.is_none() {
+        if !hex
+            && ((editor.kind == "Text viewer" && editor.text_page.is_none())
+                || editor.shows_svg_xml())
+        {
             let display = editor.navigation.presentation.display(&editor.text);
             let start = editor
                 .navigation

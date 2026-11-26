@@ -103,6 +103,23 @@ pub enum Content {
     /// A decoded image or thumbnail.
     Image(crate::viewer::RasterImage),
 }
+
+pub(crate) struct Loaded {
+    pub content: Content,
+    pub svg: Option<SvgSource>,
+}
+
+impl From<Content> for Loaded {
+    fn from(content: Content) -> Self {
+        Self { content, svg: None }
+    }
+}
+
+pub(crate) struct SvgSource {
+    pub text: String,
+    pub complete: bool,
+}
+
 /// How [`load_as`] should interpret the selected file.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Mode {
@@ -135,15 +152,19 @@ pub fn load(location: &Location, path: &Path) -> Result<Content> {
 /// Returns an error if the file cannot be opened, exceeds the applicable
 /// size limit, or fails to decode.
 pub fn load_preview(location: &Location, path: &Path) -> Result<Content> {
+    load_preview_with_svg(location, path).map(|loaded| loaded.content)
+}
+
+pub(crate) fn load_preview_with_svg(location: &Location, path: &Path) -> Result<Loaded> {
     if !is_image_extension(path) {
-        return load(location, path);
+        return load_with_svg(location, path, Mode::Auto);
     }
     #[cfg(target_os = "macos")]
     if matches!(location, Location::Local(_))
         && !is_svg_extension(path)
         && let Some(image) = macos_thumbnail(path)
     {
-        return Ok(Content::Image(image));
+        return Ok(image);
     }
     let snapshot = snapshot(
         location,
@@ -152,10 +173,10 @@ pub fn load_preview(location: &Location, path: &Path) -> Result<Content> {
         &mut crate::operations::Task::default(),
     )?;
     let bytes: &[u8] = snapshot.as_ref().as_ref();
-    Ok(Content::Image(decode_image(bytes, Some(800))?))
+    decode_image(bytes, Some(800))
 }
 #[cfg(target_os = "macos")]
-fn macos_thumbnail(path: &Path) -> Option<RasterImage> {
+fn macos_thumbnail(path: &Path) -> Option<Loaded> {
     // ImageIO (through sips) downsamples during decoding, avoiding a full-size
     // raster and the associated copies for large local images.
     if std::fs::metadata(path).ok()?.len() > MEDIA_LIMIT {
@@ -187,7 +208,7 @@ pub(crate) fn is_image_extension(path: &Path) -> bool {
         .any(|format| extension.eq_ignore_ascii_case(format))
     })
 }
-fn decode_image(bytes: &[u8], preview_edge: Option<u32>) -> Result<RasterImage> {
+fn decode_image(bytes: &[u8], preview_edge: Option<u32>) -> Result<Loaded> {
     let mut reader = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
     if reader.format().is_none() {
         let (encoding, bytes) = encoding_rs::Encoding::for_bom(bytes)
@@ -197,7 +218,20 @@ fn decode_image(bytes: &[u8], preview_edge: Option<u32>) -> Result<RasterImage> 
         if let Some(text) = encoding.decode_without_bom_handling_and_without_replacement(bytes)
             && text.trim_start().starts_with('<')
         {
-            return render_svg(&text, preview_edge);
+            let image = render_svg(&text, preview_edge)?;
+            let limit = if preview_edge.is_some() {
+                crate::source_view::PREVIEW_LIMIT
+            } else {
+                EDIT_LIMIT as usize
+            };
+            let end = text.floor_char_boundary(text.len().min(limit));
+            return Ok(Loaded {
+                content: Content::Image(image),
+                svg: Some(SvgSource {
+                    text: text[..end].to_owned(),
+                    complete: end == text.len(),
+                }),
+            });
         }
     }
     let mut limits = image::Limits::default();
@@ -212,10 +246,11 @@ fn decode_image(bytes: &[u8], preview_edge: Option<u32>) -> Result<RasterImage> 
         decoded
     };
     let image = decoded.to_rgba8();
-    Ok(RasterImage::from_rgba_unmultiplied(
+    Ok(Content::Image(RasterImage::from_rgba_unmultiplied(
         [image.width() as usize, image.height() as usize],
         image.as_raw(),
     ))
+    .into())
 }
 
 fn render_svg(text: &str, preview_edge: Option<u32>) -> Result<RasterImage> {
@@ -300,6 +335,10 @@ fn render_svg(text: &str, preview_edge: Option<u32>) -> Result<RasterImage> {
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> {
+    load_with_svg(location, path, mode).map(|loaded| loaded.content)
+}
+
+pub(crate) fn load_with_svg(location: &Location, path: &Path, mode: Mode) -> Result<Loaded> {
     let extension = path
         .extension()
         .unwrap_or_default()
@@ -329,7 +368,8 @@ pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> 
                 text: source.hex(0)?,
                 truncated: source.total > 65536,
                 source: Some(source),
-            });
+            }
+            .into());
         }
         let prefix = source.bytes(0, 3)?;
         let encoding = if prefix.starts_with(&[0xff, 0xfe]) {
@@ -343,7 +383,7 @@ pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> 
             .page(0, encoding)
             .or_else(|_| source.page(0, crate::text_document::Encoding::Windows1252))
         {
-            return Ok(Content::LargeText(page));
+            return Ok(Content::LargeText(page).into());
         }
         if mode == Mode::Text {
             bail!("Cannot decode this source as text; open it as hexadecimal instead.");
@@ -352,7 +392,8 @@ pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> 
             text: source.hex(0)?,
             truncated: source.total > 65536,
             source: Some(source),
-        });
+        }
+        .into());
     }
     let snapshot = if image || pdf {
         Some(snapshot(
@@ -387,7 +428,8 @@ pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> 
         ) {
             return Ok(Content::LockedPdf {
                 bytes: data.clone(),
-            });
+            }
+            .into());
         }
         let (image, pages, text) = PdfCache::default().render_data_with_text(&data, 0, "")?;
         return Ok(Content::Pdf {
@@ -395,10 +437,11 @@ pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> 
             image,
             pages,
             text,
-        });
+        }
+        .into());
     }
     if image {
-        return Ok(Content::Image(decode_image(bytes, None)?));
+        return decode_image(bytes, None);
     }
     if mode == Mode::Text {
         return Ok(Content::EncodedText(
@@ -408,27 +451,29 @@ pub fn load_as(location: &Location, path: &Path, mode: Mode) -> Result<Content> 
                     crate::text_document::Encoding::Windows1252,
                 )
             })?,
-        ));
+        )
+        .into());
     }
     if bytes.starts_with(&[0xff, 0xfe])
         || bytes.starts_with(&[0xfe, 0xff])
         || bytes.starts_with(&[0xef, 0xbb, 0xbf])
     {
-        return Ok(Content::EncodedText(
-            crate::text_document::Document::detect(bytes.to_vec())?,
-        ));
+        return Ok(
+            Content::EncodedText(crate::text_document::Document::detect(bytes.to_vec())?).into(),
+        );
     }
     if !bytes.contains(&0)
         && let Ok(text) = String::from_utf8(bytes.to_vec())
     {
-        return Ok(Content::Text(text));
+        return Ok(Content::Text(text).into());
     }
     let source = source::Source::open(location.clone(), path.to_owned())?;
     Ok(Content::Hex {
         text: source.hex(0)?,
         truncated: source.total > 65536,
         source: Some(source),
-    })
+    }
+    .into())
 }
 
 /// Renders the zero-based page at `index` using an empty password.

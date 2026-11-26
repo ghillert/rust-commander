@@ -32,9 +32,12 @@ detection and encryption support.
 
 ## SVG previews
 
-Select an SVG file to see it in the preview pane. Use **Open full view** or
-**F3** to open the image viewer, and **F4** to edit the SVG source. Rendering
-supports embedded images and installed fonts. Linked images are skipped.
+Select an SVG file to see it in the preview pane. Choose **XML view** to read
+the source and **SVG view** to return to the image. The same switch is available
+in the full viewer, which opens with **Open full view** or **F3**. Use **F4**
+to edit the SVG source. The XML view shows up to 256 KiB in the preview pane
+or 16 MiB in the full viewer, with a notice when the source is truncated.
+Rendering supports embedded images and installed fonts. Linked images are skipped.
 
 ## Video previews
 
