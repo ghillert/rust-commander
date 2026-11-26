@@ -12,6 +12,11 @@ a tree node. Hold the pointer near the top or bottom of a file list to scroll.
 The original selection stays attached to the gesture when navigation changes the
 source pane. Locked tabs follow the normal rule of opening another tab.
 
+Drop one or more folders onto the **Favorites** heading to save them as
+bookmarks under their folder names. The section expands to show the bookmarks.
+Dropping onto a saved bookmark opens the normal transfer confirmation for that
+location.
+
 ## Files, archives, and remote services
 
 Local, archive, and remote entries share the same drag payload and transfer

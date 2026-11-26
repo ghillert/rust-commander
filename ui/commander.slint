@@ -876,6 +876,7 @@ export component CommanderWindow inherits Window {
                             width: root.sidebar-panel-width * 1px; horizontal-stretch: 0; background: Chrome.sidebar;
                             places-list := ListView {
                                 for place in root.places: place-focus := FocusScope {
+                                    private property <string> tooltip-text: place.heading ? Words.translate("Drop folders here to add them to Favorites.",Words.version) : place.title;
                                     focus-on-tab-navigation: true;
                                     accessible-role: list-item;
                                     accessible-label: place.title;
@@ -912,12 +913,12 @@ export component CommanderWindow inherits Window {
                                             }
                                         }
                                     }
-                                    if !place.heading: FileDropZone {
-                                        side:root.active-pane;target:"place:"+place.id;priority:60;
+                                    if !place.heading || place.section == "favorites": FileDropZone {
+                                        side:root.active-pane;target:place.heading ? "favorites" : "place:"+place.id;priority:60;
                                         clip-top:places-list.absolute-position.y/1px;
                                         clip-bottom:(places-list.absolute-position.y+places-list.height)/1px;
                                     }
-                                    if !place.heading: Tooltip {text:@markdown("\{place.title}");}
+                                    if !place.heading || place.section == "favorites": Tooltip {text:@markdown("\{place-focus.tooltip-text}");}
                                 }
                             }
                         }

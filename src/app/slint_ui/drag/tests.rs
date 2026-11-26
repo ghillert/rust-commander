@@ -330,6 +330,119 @@ fn ordinary_pointer_drag_crosses_the_threshold_and_keeps_multiple_selected_files
     ui.window().dispatch_event(WindowEvent::PointerExited);
 }
 
+#[cfg(debug_assertions)]
+#[test]
+fn dragging_a_folder_to_the_favorites_heading_saves_a_bookmark() {
+    use i_slint_backend_testing::ElementHandle;
+    use slint::platform::{PointerEventButton::Left, WindowEvent};
+
+    let (root, ui, state, left, _) = setup();
+    let settings_path = root.path().join("favorites.json");
+    {
+        let mut a = state.borrow_mut();
+        a.app.settings_valid = true;
+        a.desktop_settings_path = Some(settings_path.clone());
+    }
+    ui.invoke_toggle_place_section("favorites".into());
+    assert!(!state.borrow().place_sections_expanded[1]);
+    slint::platform::update_timers_and_animations();
+
+    let center = |label| {
+        let item = ElementHandle::find_by_accessible_label(&ui, label)
+            .next()
+            .unwrap();
+        let origin = item.absolute_position();
+        let size = item.size();
+        slint::LogicalPosition::new(origin.x + size.width / 2.0, origin.y + size.height / 2.0)
+    };
+    let source = center("folder");
+    let favorite_heading = center("Favorites");
+    ui.window().dispatch_event(WindowEvent::PointerPressed {
+        position: source,
+        button: Left,
+    });
+    i_slint_backend_testing::mock_elapsed_time(Duration::from_millis(200));
+    ui.window().dispatch_event(WindowEvent::PointerMoved {
+        position: slint::LogicalPosition::new(source.x - 40.0, source.y),
+    });
+    state.borrow_mut().drag.cursor = Some(favorite_heading);
+    prime_release(&state, &ui);
+    ui.window().dispatch_event(WindowEvent::PointerReleased {
+        position: favorite_heading,
+        button: Left,
+    });
+    assert_eq!(
+        state.borrow().app.bookmarks.len(),
+        1,
+        "a physical drop must add the bookmark"
+    );
+
+    let folder = left.join("folder");
+    let selected = Handle::new(Selection::local(std::slice::from_ref(&folder)).unwrap());
+    let transfers = ui.global::<Transfers>();
+    let data = payload(&selected.token);
+    assert_eq!(
+        transfers.invoke_can_drop(0, "favorites".into(), data.clone(), DragAction::Move),
+        DragAction::Copy
+    );
+    assert!(transfers.invoke_drop(0, "favorites".into(), data, DragAction::Move));
+    let a = state.borrow();
+    assert!(a.place_sections_expanded[1]);
+    assert!(a.app.prompt.is_none() && a.app.job.is_none());
+    assert_eq!(a.app.bookmarks.len(), 1);
+    assert_eq!(a.app.bookmarks[0].name, "folder");
+    assert_eq!(a.app.bookmarks[0].location, Location::Local(folder.clone()));
+    drop(a);
+    let saved: Settings = serde_json::from_slice(&std::fs::read(&settings_path).unwrap()).unwrap();
+    assert_eq!(saved.bookmarks.len(), 1);
+    assert_eq!(saved.bookmarks[0].location, Location::Local(folder));
+
+    let file = Handle::new(Selection::local(&[left.join("alpha.txt")]).unwrap());
+    let data = payload(&file.token);
+    assert_eq!(
+        transfers.invoke_can_drop(0, "favorites".into(), data.clone(), DragAction::Copy),
+        DragAction::None
+    );
+    assert!(transfers.invoke_drop(0, "place:bookmark:0".into(), data, DragAction::Copy));
+    assert!(matches!(
+        state.borrow().app.prompt.as_ref().unwrap().kind,
+        PromptKind::DropTransfer { .. }
+    ));
+}
+
+#[test]
+fn native_folder_drops_reach_favorites_outside_the_file_panes() {
+    use i_slint_backend_testing::ElementHandle;
+
+    let (root, ui, state, _, right) = setup();
+    let folder = right.join("external folder");
+    std::fs::create_dir(&folder).unwrap();
+    slint::platform::update_timers_and_animations();
+    let heading = ElementHandle::find_by_accessible_label(&ui, "Favorites")
+        .next()
+        .unwrap();
+    let origin = heading.absolute_position();
+    let position = (
+        origin.x + heading.size().width / 2.0,
+        origin.y + heading.size().height / 2.0,
+    );
+    assert_eq!(ui.invoke_drop_side(position.0, position.1), -1);
+    let mut a = state.borrow_mut();
+    a.app.settings_valid = true;
+    a.desktop_settings_path = Some(root.path().join("favorites.json"));
+    a.drag.position = Some(position);
+    a.pending_drops = vec![folder.clone()];
+    a.drag_tick(&ui);
+    drop(a);
+    slint::platform::update_timers_and_animations();
+    let mut a = state.borrow_mut();
+    a.drop_deadline = Some(std::time::Instant::now());
+    a.tick(&ui);
+    assert_eq!(a.app.bookmarks.len(), 1);
+    assert_eq!(a.app.bookmarks[0].location, Location::Local(folder));
+    assert!(a.app.prompt.is_none() && a.app.job.is_none());
+}
+
 #[test]
 fn dragging_and_abandoning_an_https_file_never_starts_a_download() {
     use std::net::TcpListener;

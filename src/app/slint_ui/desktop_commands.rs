@@ -55,8 +55,10 @@ impl Drop for Email {
         self.cancel.store(true, Ordering::Relaxed);
     }
 }
+pub(super) const BOOKMARK_LIMIT: usize = 10_000;
+
 impl Adapter {
-    fn save_desktop_settings(&self) -> anyhow::Result<()> {
+    pub(super) fn save_desktop_settings(&self) -> anyhow::Result<()> {
         let settings = self.app.snapshot_settings();
         #[cfg(test)]
         if let Some(path) = &self.desktop_settings_path {
@@ -704,7 +706,7 @@ impl Adapter {
                 "A bookmark with that name already exists"
             );
             if id == "bookmark-add" {
-                ensure!(bookmarks.len() < 10000, "Bookmark limit reached");
+                ensure!(bookmarks.len() < BOOKMARK_LIMIT, "Bookmark limit reached");
                 bookmarks.push(Bookmark {
                     name: name.into(),
                     location: self.app.tab().location.clone(),

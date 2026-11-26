@@ -735,28 +735,31 @@ impl Adapter {
         {
             self.drop_deadline = None;
             let paths = std::mem::take(&mut self.pending_drops);
-            if let Some(side) = self.pending_drop_side.take() {
+            let pane = self.pending_drop_side.take();
+            let target = self.drag.last_hit.take().or_else(|| {
+                let side = pane?;
+                self.drag
+                    .position
+                    .is_none_or(|(x, y)| ui.invoke_drop_side(x, y) >= 0)
+                    .then(|| (side as i32, "pane".into()))
+            });
+            if let Some((side, target)) = target {
                 let data = self
                     .drag
                     .incoming
                     .take()
                     .unwrap_or_else(|| drag::dropped_payload(paths));
-                let target = self.drag.last_hit.take().or_else(|| {
-                    self.drag
-                        .position
-                        .is_none_or(|(x, y)| ui.invoke_drop_side(x, y) >= 0)
-                        .then(|| (side as i32, "pane".into()))
-                });
                 let action = self
                     .drag
                     .drop_action
                     .take()
                     .unwrap_or(slint::private_unstable_api::re_exports::DragAction::Copy);
-                if let Some((side, target)) = target {
-                    self.drop_to(side, &target, data, action);
-                }
-                self.drag.hovered.clear();
+                self.drop_to(side, &target, data, action);
+            } else {
+                self.drag.incoming = None;
+                self.drag.drop_action = None;
             }
+            self.drag.hovered.clear();
         }
         self.app.poll(&self.ctx);
         self.security_tick();

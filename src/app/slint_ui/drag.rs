@@ -57,7 +57,35 @@ pub(super) fn selection(data: &slint::DataTransfer) -> Option<Rc<Selection>> {
     data.user_data()?.downcast::<Selection>().ok()
 }
 type Hits = Rc<RefCell<BTreeMap<(i32, String, i32), ()>>>;
-type Targets = Rc<RefCell<BTreeMap<(i32, String), Location>>>;
+type Targets = Rc<RefCell<BTreeMap<(i32, String), DropTarget>>>;
+
+enum DropTarget {
+    Transfer(Location),
+    Favorites,
+}
+
+impl DropTarget {
+    fn accepted(&self, data: &slint::DataTransfer, proposed: DragAction) -> DragAction {
+        match self {
+            Self::Transfer(to) => accepted(to, data, proposed),
+            Self::Favorites => {
+                let folders = selection(data).map_or_else(
+                    || data.has_file_paths(),
+                    |selection| {
+                        !selection.from.is_virtual_list()
+                            && !selection.entries.is_empty()
+                            && selection.entries.iter().all(|entry| entry.is_dir)
+                    },
+                );
+                if folders {
+                    DragAction::Copy
+                } else {
+                    DragAction::None
+                }
+            }
+        }
+    }
+}
 #[derive(Default)]
 pub(super) struct State {
     pub rows: [Vec<Handle>; 2],
@@ -127,20 +155,28 @@ impl Adapter {
         data: &slint::DataTransfer,
         proposed: DragAction,
     ) -> DragAction {
-        if self.blocked() || self.app.job.is_some() || !(0..2).contains(&side) {
-            return DragAction::None;
-        }
-        let Some(to) = self.drop_destination(side as usize, target) else {
-            return DragAction::None;
-        };
-        accepted(&to, data, proposed)
+        self.drop_target(side, target)
+            .map_or(DragAction::None, |target| target.accepted(data, proposed))
     }
-    fn native_targets(&self, ui: &CommanderWindow) -> BTreeMap<(i32, String), Location> {
+
+    fn drop_target(&self, side: i32, target: &str) -> Option<DropTarget> {
+        if self.blocked() || self.app.job.is_some() || !(0..2).contains(&side) {
+            return None;
+        }
+        if target == "favorites" {
+            return Some(DropTarget::Favorites);
+        }
+        self.drop_destination(side as usize, target)
+            .map(DropTarget::Transfer)
+    }
+
+    fn native_targets(&self, ui: &CommanderWindow) -> BTreeMap<(i32, String), DropTarget> {
         let mut targets = BTreeMap::new();
         if self.blocked() || self.app.job.is_some() {
             return targets;
         }
         for (side, visible) in self.visible_row_ranges(ui).into_iter().enumerate() {
+            targets.insert((side as i32, "favorites".into()), DropTarget::Favorites);
             let mut ids = vec!["pane".to_owned()];
             ids.extend(
                 self.row_cache[side][visible]
@@ -154,7 +190,7 @@ impl Adapter {
             ids.extend((0..self.enhancements.drop_count()).map(|i| format!("tree:{i}")));
             for id in ids {
                 if let Some(to) = self.drop_destination(side, &id) {
-                    targets.insert((side as i32, id), to);
+                    targets.insert((side as i32, id), DropTarget::Transfer(to));
                 }
             }
         }
@@ -167,13 +203,22 @@ impl Adapter {
         data: slint::DataTransfer,
         action: DragAction,
     ) -> bool {
-        if self.can_drop(side, target, &data, action) == DragAction::None {
-            return false;
-        }
-        trace("drop confirmation");
-        let Some(to) = self.drop_destination(side as usize, target) else {
+        let Some(destination) = self.drop_target(side, target) else {
             return false;
         };
+        if destination.accepted(&data, action) == DragAction::None {
+            return false;
+        }
+        let DropTarget::Transfer(to) = destination else {
+            return match self.add_dropped_favorites(&data) {
+                Ok(()) => true,
+                Err(error) => {
+                    self.app.fail(error);
+                    false
+                }
+            };
+        };
+        trace("drop confirmation");
         let selection = match selection(&data) {
             Some(selection) => Ok((*selection).clone()),
             None => data
@@ -201,6 +246,76 @@ impl Adapter {
             return false;
         }
         true
+    }
+
+    fn add_dropped_favorites(&mut self, data: &slint::DataTransfer) -> anyhow::Result<()> {
+        use anyhow::{Context, ensure};
+
+        let locations = if let Some(selection) = selection(data) {
+            selection
+                .entries
+                .iter()
+                .map(|entry| {
+                    selection
+                        .from
+                        .enter(entry)
+                        .context("Drop folders to add them to Favorites.")
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?
+        } else {
+            data.file_paths()?
+                .map(|path| {
+                    ensure!(
+                        path.is_absolute() && path.is_dir(),
+                        "Drop folders to add them to Favorites."
+                    );
+                    Ok(Location::Local(path.to_owned()))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?
+        };
+        let mut bookmarks = Vec::new();
+        for location in locations {
+            if !self
+                .app
+                .bookmarks
+                .iter()
+                .chain(&bookmarks)
+                .any(|bookmark| bookmark.location == location)
+            {
+                ensure!(
+                    self.app.bookmarks.len() + bookmarks.len()
+                        < super::desktop_commands::BOOKMARK_LIMIT,
+                    "Bookmark limit reached"
+                );
+                bookmarks.push(Bookmark {
+                    name: location.title(),
+                    location,
+                });
+            }
+        }
+        self.place_sections_expanded[place_section_index("favorites").unwrap()] = true;
+        if bookmarks.is_empty() {
+            return Ok(());
+        }
+        ensure!(
+            self.app.settings_valid,
+            "Repair the invalid configuration before saving bookmarks"
+        );
+        let added = bookmarks.len();
+        let previous_count = self.app.bookmarks.len();
+        self.app.bookmarks.extend(bookmarks);
+        if let Err(error) = self.save_desktop_settings() {
+            self.app.bookmarks.truncate(previous_count);
+            return Err(error);
+        }
+        self.app.status = if added == 1 {
+            "Bookmark added."
+        } else {
+            "Bookmarks added."
+        }
+        .into();
+        self.app.status_error = false;
+        Ok(())
     }
     pub(super) fn hover_drop(&mut self, side: i32, target: &str) {
         if self.blocked()
@@ -269,7 +384,7 @@ pub(super) fn wire(ui: &CommanderWindow, state: Rc<RefCell<Adapter>>) {
                 targets
                     .borrow()
                     .get(&(side, target.to_string()))
-                    .map(|to| accepted(to, &data, action))
+                    .map(|target| target.accepted(&data, action))
                     .unwrap_or(DragAction::None)
             }
         });
