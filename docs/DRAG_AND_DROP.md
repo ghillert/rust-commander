@@ -2,7 +2,8 @@
 
 Drag one file, a folder, or a marked selection to another pane, a folder row,
 open tab, breadcrumb, sidebar location, directory-tree node, or writable local
-archive. The highlighted target identifies the destination. Dropping opens a
+archive. A drop on a regular file row or the pane footer uses that pane's current
+folder. The highlighted target identifies the destination. Dropping opens a
 transfer confirmation: choose **Copy** or **Move**, review the destination, and
 choose skip, keep both, replace, folder merging, or individual conflict rules.
 Cancel leaves both sides unchanged.

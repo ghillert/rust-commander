@@ -119,6 +119,7 @@ component FilePane inherits Rectangle {
     }
 
     background: Chrome.pane;
+    FileDropZone {side:root.side;priority:5;enabled:root.visible;
     VerticalLayout {
         spacing: 0px;
         Rectangle {
@@ -139,7 +140,7 @@ component FilePane inherits Rectangle {
                     clicked => { root.tab(index); }
                     context-menu(x,y) => {root.context-menu("TabContext:"+index,x,y);}
                     middle-clicked => {root.close-tab(index);}
-                    FileDropZone {side:root.side;target:"tab:"+index;priority:60;}
+                    FileDropZone {side:root.side;target:"tab:"+index;priority:60;fallback-to-pane:true;}
                 }
                 Rectangle { horizontal-stretch: 1; }
                 ChromeButton { label: Words.translate("New tab",Words.version); icon: Glyphs.action("NewTab"); height: 24px; clicked => { root.action("NewTab"); } }
@@ -185,7 +186,7 @@ component FilePane inherits Rectangle {
                                     emphasized: index == root.breadcrumbs.length - 1;
                                     max-width: 150px; min-width: 20px; height: 24px;
                                     clicked => {root.breadcrumb(index);}
-                                    FileDropZone {side:root.side;target:"breadcrumb:"+index;priority:60;}
+                                    FileDropZone {side:root.side;target:"breadcrumb:"+index;priority:60;fallback-to-pane:true;}
                                 }
                             }
                         }
@@ -290,7 +291,6 @@ component FilePane inherits Rectangle {
             accessible-item-count: root.rows.length;
             accessible-delegate-focus: root.cursor-index;
             key-pressed(event) => { return root.key-event(event) ? EventResult.accept : EventResult.reject; }
-            FileDropZone {side:root.side;priority:5;
             TouchArea {
                 clicked => {files-focus.focus(); root.action("ActivatePane");}
                 pointer-event(event) => {if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
@@ -379,6 +379,7 @@ component FilePane inherits Rectangle {
                     }
                     FileDropZone {
                         side:root.side;target:"folder:"+row.id;priority:50;
+                        fallback-to-pane:true;
                         clip-top:files-focus.absolute-position.y/1px;
                         clip-bottom:(files-focus.absolute-position.y+files-focus.height)/1px;
                     }
@@ -393,7 +394,6 @@ component FilePane inherits Rectangle {
             scroll-down := FileDropZone {side:root.side;priority:100;height:18px;y:parent.height - self.height;highlight:false;}
             Timer {interval:60ms;running:scroll-up.active;triggered=>{list.content-y=min(0px,list.content-y+24px);}}
             Timer {interval:60ms;running:scroll-down.active;triggered=>{list.content-y=max(min(0px,list.visible-height - list.content-height),list.content-y - 24px);}}
-            }
         }
         if root.error != "": Text { text: root.error; color: #c74343; wrap: word-wrap; }
         Rectangle {
@@ -401,6 +401,7 @@ component FilePane inherits Rectangle {
             Rectangle { height: 1px; background: Chrome.separator; }
             Text { x: 10px; width: parent.width - 20px; text: root.summary; height: parent.height; vertical-alignment: center; color: Chrome.secondary; font-size: 10px; }
         }
+    }
     }
 }
 

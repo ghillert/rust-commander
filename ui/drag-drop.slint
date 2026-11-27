@@ -25,6 +25,7 @@ export component FileDropZone inherits Rectangle {
     in property <int> priority:10;
     in property <bool> enabled:true;
     in property <bool> highlight:true;
+    in property <bool> fallback-to-pane:false;
     in property <float> clip-top:-1000000;
     in property <float> clip-bottom:1000000;
     private property <bool> native-over: root.enabled && Transfers.native-active
@@ -41,8 +42,11 @@ export component FileDropZone inherits Rectangle {
         @children
         can-drop(event) => {return Transfers.can-drop(root.side,root.target,event.data,event.proposed-action);}
         dropped(event) => {
-            let action=Transfers.can-drop(root.side,root.target,event.data,event.proposed-action);
-            return action!=DragAction.none && Transfers.drop(root.side,root.target,event.data,action) ? action : DragAction.none;
+            // Slint can deliver a release to a child drop area that declined hover.
+            let preferred-action=Transfers.can-drop(root.side,root.target,event.data,event.proposed-action);
+            let target=preferred-action==DragAction.none && root.fallback-to-pane ? "pane" : root.target;
+            let action=target==root.target ? preferred-action : Transfers.can-drop(root.side,target,event.data,event.proposed-action);
+            return action!=DragAction.none && Transfers.drop(root.side,target,event.data,action) ? action : DragAction.none;
         }
     }
     Rectangle {

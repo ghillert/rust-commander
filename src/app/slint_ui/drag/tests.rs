@@ -332,6 +332,92 @@ fn ordinary_pointer_drag_crosses_the_threshold_and_keeps_multiple_selected_files
 
 #[cfg(debug_assertions)]
 #[test]
+fn a_right_to_left_drag_targets_the_left_pane() {
+    use i_slint_backend_testing::ElementHandle;
+    use slint::platform::{PointerEventButton::Left, WindowEvent};
+
+    let (_root, ui, state, left, right) = setup();
+    let source = right.join("incoming.txt");
+    std::fs::write(&source, b"source").unwrap();
+    {
+        let mut a = state.borrow_mut();
+        let tab = a.app.panes[1].tab_mut();
+        tab.entries = filesystem::list(&tab.location).unwrap();
+        tab.revision += 1;
+        a.sync(&ui);
+    }
+    slint::platform::update_timers_and_animations();
+    let element = |label| {
+        ElementHandle::find_by_accessible_label(&ui, label)
+            .next()
+            .unwrap()
+    };
+    let source_row = element("incoming.txt").absolute_position();
+    let start = slint::LogicalPosition::new(source_row.x + 50.0, source_row.y + 10.0);
+    let file_row = element("alpha.txt").absolute_position();
+    let folder_row = element("folder");
+    let folder_origin = folder_row.absolute_position();
+    let left_files = element("Left files");
+    let list_origin = left_files.absolute_position();
+
+    for (area, destination, expected) in [
+        (
+            "file row",
+            slint::LogicalPosition::new(file_row.x + 50.0, file_row.y + 10.0),
+            left.clone(),
+        ),
+        (
+            "pane footer",
+            slint::LogicalPosition::new(
+                list_origin.x + 50.0,
+                list_origin.y + left_files.size().height + 12.0,
+            ),
+            left.clone(),
+        ),
+        (
+            "folder row",
+            slint::LogicalPosition::new(
+                folder_origin.x + 50.0,
+                folder_origin.y + folder_row.size().height - 2.0,
+            ),
+            left.join("folder"),
+        ),
+    ] {
+        ui.window().dispatch_event(WindowEvent::PointerPressed {
+            position: start,
+            button: Left,
+        });
+        i_slint_backend_testing::mock_elapsed_time(Duration::from_millis(200));
+        ui.window().dispatch_event(WindowEvent::PointerMoved {
+            position: slint::LogicalPosition::new(start.x - 36.0, start.y),
+        });
+        state.borrow_mut().drag.cursor = Some(destination);
+        prime_release(&state, &ui);
+        ui.window().dispatch_event(WindowEvent::PointerReleased {
+            position: destination,
+            button: Left,
+        });
+
+        {
+            let a = state.borrow();
+            let Some(Prompt {
+                kind: PromptKind::DropTransfer { to, selection, .. },
+                ..
+            }) = &a.app.prompt
+            else {
+                panic!("a right-to-left drop on the {area} should open transfer confirmation");
+            };
+            assert_eq!(to, &Location::Local(expected));
+            assert_eq!(selection.entries[0].path, source);
+        }
+        ui.invoke_dialog_action("cancel".into());
+        ui.window().dispatch_event(WindowEvent::PointerExited);
+    }
+    assert!(!left.join("incoming.txt").exists());
+}
+
+#[cfg(debug_assertions)]
+#[test]
 fn dragging_a_folder_to_the_favorites_heading_saves_a_bookmark() {
     use i_slint_backend_testing::ElementHandle;
     use slint::platform::{PointerEventButton::Left, WindowEvent};
